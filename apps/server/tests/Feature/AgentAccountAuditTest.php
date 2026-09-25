@@ -362,7 +362,9 @@ test('the audit filter bar is the house filter component, every label labels a c
     $clear = $bar.'//a[@href="'.route('dashboard.account.audit.index').'"]';
 
     expect($xpath->query($clear)?->length)->toBe(0, 'an unfiltered log offers to clear filters it does not have')
-        ->and($page(['audit_site' => $site->id])->query($clear)?->length)->toBe(1, 'a filtered log offers no way back to everything');
+        ->and($page(['audit_site' => $site->id])->query($clear)?->length)->toBe(1, 'a filtered log offers no way back to everything')
+        // "0" is a real search the controller applies, and PHP calls it false.
+        ->and($page(['audit_search' => '0'])->query($clear)?->length)->toBe(1, 'a search for "0" filters the log but offers no way back to everything');
 
     // The browser tab and the page heading name the same page in the same case.
     expect(trim((string) $xpath->query('//title')?->item(0)?->textContent))

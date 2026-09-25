@@ -50,10 +50,10 @@
 
                 <div class="wf-filter-actions">
                     <button class="button" type="submit">{{ __('account_audit.filters.apply') }}</button>
-                    @if ($auditAction || $auditSearch || $auditSiteId)
+                    @if ($auditAction !== '' || $auditSearch !== '' || $auditSiteId !== null)
                         <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">{{ __('account_audit.filters.clear') }}</a>
                     @endif
-                    <span class="wf-filter-help">{{ $auditAction || $auditSearch || $auditSiteId ? __('account_audit.filters.filtered') : __('account_audit.filters.all') }}</span>
+                    <span class="wf-filter-help">{{ $auditAction !== '' || $auditSearch !== '' || $auditSiteId !== null ? __('account_audit.filters.filtered') : __('account_audit.filters.all') }}</span>
                 </div>
             </form>
 
