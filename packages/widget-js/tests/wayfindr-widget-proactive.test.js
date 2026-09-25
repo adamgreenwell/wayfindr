@@ -303,6 +303,29 @@ test('engagement opens the ordinary widget and carries the delivery into the fir
   widget.destroy();
 });
 
+test('the opener painted on engagement is tagged automated from the first paint', async () => {
+  // Painted locally before the conversation exists; the server's copy, which
+  // replaces it after the first send, carries `sender.automated`. Without the
+  // same flag here the tag would appear only once the visitor had already
+  // answered what looked like a person.
+  const { widget } = proactiveWidget();
+
+  await settle();
+  widget.root.querySelector('.wayfindr-widget__proactive-open').click();
+  await settle();
+
+  const opener = widget.root.querySelector('.wayfindr-widget__timeline .wayfindr-widget__message');
+
+  assert.ok(opener, 'no opener was painted, so this proves nothing');
+  assert.match(opener.textContent, /Questions about plans/);
+
+  const tag = opener.querySelector('.wayfindr-widget__message-automated');
+
+  assert.equal(tag && tag.textContent, 'Automated', 'the painted opener reads like a reply somebody typed');
+
+  widget.destroy();
+});
+
 test('a rejected engagement never paints an opener the server did not accept', async () => {
   const { calls, dom, widget } = proactiveWidget({ outcomeStatuses: { engaged: 404 } });
 

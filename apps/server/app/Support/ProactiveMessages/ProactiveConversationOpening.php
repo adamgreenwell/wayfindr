@@ -65,8 +65,9 @@ final class ProactiveConversationOpening
         $conversation->messages()->create([
             // A real support-side opening, but not credited to a human agent.
             // The default API presentation already calls an unknown sender
-            // `system`; the dashboard and widget give this specific class a
-            // clearer label.
+            // `system`. The dashboard labels this class a proactive message;
+            // the widget shows the site's name, as it does for an API token,
+            // and marks this class alone as automated (`sender.automated`).
             'sender_type' => ProactiveMessageRule::class,
             'sender_id' => $delivery->proactive_message_rule_id,
             'type' => 'text',
