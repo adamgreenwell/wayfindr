@@ -13,11 +13,13 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseAuditTrail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
@@ -257,6 +259,65 @@ test('conversation creation uses the site scoped visitor', function (): void {
     ]);
 
     expect(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
+});
+
+test('a creation rule may close an empty widget conversation, and the first message reopens it and is heard', function (): void {
+    // The widget opens the conversation in its own request, before the visitor
+    // has written anything, so nobody is waiting yet and the rule's close runs.
+    // The first message then reopens it -- and has to reach an agent.
+    Notification::fake();
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $agent = User::factory()->for($site->account()->firstOrFail())->create();
+    Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-first-message']);
+    AutomationRule::factory()->for($site->account()->firstOrFail())->enabled()->create([
+        'name' => 'Close widget intake',
+        'event' => AutomationRuleEvent::ConversationCreated,
+        'actions' => [['type' => 'set_status', 'value' => 'closed']],
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-first-message');
+    $identity = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-first-message',
+        'visitor_token' => $token,
+    ];
+
+    $created = $this->postJson('/api/conversations', $identity + ['subject' => 'Need help'])->assertCreated();
+
+    expect($created->json('data.status'))->toBe('closed', 'a creation rule close was withheld from a widget conversation nobody is waiting in yet')
+        ->and(AutomationRuleExecution::query()->sole()->action_results)->toBe([
+            ['type' => 'set_status', 'status' => 'applied', 'detail' => 'open->closed'],
+        ]);
+
+    $this->postJson('/api/conversations/'.$created->json('data.support_code').'/messages', $identity + [
+        'body' => 'Is anyone there?',
+    ])->assertCreated()->assertJsonPath('data.conversation.status', 'open');
+
+    expect(Conversation::query()->sole()->status)->toBe('open')
+        ->and(Notification::sent($agent, ConversationNeedsReply::class))->toHaveCount(1, 'the first widget message reopened a rule-closed conversation and alerted nobody');
+});
+
+test('a widget reply that reopens a closed conversation reaches the support team', function (): void {
+    Notification::fake();
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $agent = User::factory()->for($site->account()->firstOrFail())->create();
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REOPENED',
+        'status' => 'closed',
+        'closed_at' => now()->subHour(),
+    ]);
+    conversationOwnedBySession($conversation, $token);
+
+    $this->postJson('/api/conversations/WF-REOPENED/messages', [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'It broke again.',
+    ])->assertCreated()->assertJsonPath('data.conversation.status', 'open');
+
+    expect(Notification::sent($agent, ConversationNeedsReply::class))
+        ->toHaveCount(1, 'a widget reply that reopened a closed conversation alerted nobody');
 });
 
 test('conversation creation can refresh safe host context for the visitor', function (): void {

@@ -72,18 +72,15 @@ final class AutomationRuleEvaluator
             throw new InvalidArgumentException('The automation rule and subject must belong to the same account.');
         }
 
-        // A withheld action is one the definition now refuses but an older
-        // rule may still hold. It is left out of what would run -- here and
-        // live, since the engine runs exactly this list -- instead of failing
-        // the whole rule on every event it sees.
-        $actions = array_values(array_filter(
-            $rule->actions,
-            fn (mixed $action): bool => ! AutomationRuleDefinition::withholdsAction($event, $action),
-        ));
-        $withheldActions = array_values(array_filter(
-            $rule->actions,
-            fn (mixed $action): bool => AutomationRuleDefinition::withholdsAction($event, $action),
-        ));
+        // A withheld action is one that would close the conversation on a
+        // visitor who is waiting for a reply. It is left out of what would run
+        // -- here and live, since the engine runs exactly this list and logs
+        // exactly the withheld one -- instead of failing the whole rule on
+        // every event it sees.
+        $visitorAwaitingReply = $this->visitorAwaitingReply($event, $subject);
+        $withholds = fn (mixed $action): bool => AutomationRuleDefinition::withholdsAction($event, $action, $visitorAwaitingReply);
+        $actions = array_values(array_filter($rule->actions, fn (mixed $action): bool => ! $withholds($action)));
+        $withheldActions = array_values(array_filter($rule->actions, $withholds));
 
         AutomationRuleDefinition::assertValid($event, $rule->conditions, $actions);
 
@@ -112,6 +109,26 @@ final class AutomationRuleEvaluator
             'actions' => $matched ? $actions : [],
             'withheld_actions' => $matched ? $withheldActions : [],
         ];
+    }
+
+    /**
+     * Whether a visitor is waiting for a reply as this event's rules run.
+     *
+     * Always, for a visitor message. For a new conversation, when it already
+     * holds a visitor message: inbound mail stores the conversation and its
+     * first message together and announces the creation first, while the
+     * widget and the API open an empty conversation that the visitor writes
+     * into afterwards. A dry run asks the same question of the conversation as
+     * it stands now, as it does of every condition.
+     */
+    private function visitorAwaitingReply(AutomationRuleEvent $event, Ticket|Conversation $subject): bool
+    {
+        return match ($event) {
+            AutomationRuleEvent::VisitorMessageCreated => true,
+            AutomationRuleEvent::ConversationCreated => $subject instanceof Conversation
+                && $subject->messages()->where('sender_type', Visitor::class)->exists(),
+            default => false,
+        };
     }
 
     private function accountId(Ticket|Conversation $subject): int

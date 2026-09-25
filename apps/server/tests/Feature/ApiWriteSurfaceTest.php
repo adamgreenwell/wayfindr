@@ -133,11 +133,16 @@ test('a token opens a conversation for a known visitor in its writable scope', f
         ->assertJsonPath('data.status', 'open');
 
     $conversation = Conversation::query()->sole();
+
+    // The API opens an empty conversation: no visitor message arrives with it,
+    // so nobody is waiting and the creation rule's close runs.
+    expect($conversation->messages()->exists())->toBeFalse()
+        ->and($conversation->status)->toBe('closed', 'a creation rule close was withheld from an API conversation nobody is waiting in');
+
     $createdAudit = $conversation->auditEvents()->where('action', 'conversation.created')->sole();
     $automationAudit = $conversation->auditEvents()->where('action', 'conversation.closed')->sole();
 
     expect($conversation->metadata)->toBe(['channel' => 'api'])
-        ->and($conversation->status)->toBe('closed')
         ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($createdAudit->actor_type)->toBe(ApiToken::class)
         ->and($createdAudit->actor_id)->toBe($world['token']->id)

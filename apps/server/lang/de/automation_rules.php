@@ -89,6 +89,7 @@ return [
         'would_run' => 'Aktionen, die ausgeführt würden', 'no_actions' => 'Es würden keine Aktionen ausgeführt, weil nicht alle Bedingungen passen.',
         'withheld' => 'Aktionen, die übersprungen würden',
         'withheld_reason' => 'Eine Regel für „:event“ kann die Unterhaltung nicht schließen: Der Besucher wartet auf eine Antwort.',
+        'withheld_reason_created' => 'Eine Regel für „:event“ kann keine Unterhaltung schließen, die bereits eine Besuchernachricht enthält: Der Besucher wartet auf eine Antwort.',
     ],
     'executions' => [
         'heading' => 'Ausführungsprotokoll', 'lede' => 'Dauerhafte Ergebnisse passender Regeln und manuell angewendeter Makros, einschließlich Fehlern und Aktionen ohne Änderung.',

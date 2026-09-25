@@ -14,6 +14,7 @@ use App\Models\ConversationReplyDelivery;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\ConversationNeedsReply;
 use App\Support\Attachments\AttachmentUploadService;
 use App\Support\Conversations\LegacyOwnerSessionSweep;
 use App\Support\Mail\InboundMailRouter;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
@@ -92,11 +94,53 @@ test('an email becomes a conversation for a visitor nobody had met', function ()
         ->and($visitor->anonymous_id)->toBeNull()
         ->and($conversation->site_id)->toBe($site->id)
         ->and($conversation->subject)->toBe('My order has not arrived')
-        ->and($conversation->status)->toBe('closed')
+        // The creation rule matched and ran, but its close is withheld: the
+        // email arrived with the conversation, so its sender is already waiting.
+        ->and($conversation->status)->toBe('open', 'a creation rule closed an emailed conversation its sender is waiting in')
         ->and($conversation->last_message_at?->equalTo($stored->created_at))->toBeTrue()
         ->and($stored->body)->toBe('It was due on Tuesday.')
         ->and($stored->email_message_id)->toBe('<first@example.test>')
         ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
+});
+
+test('a creation rule cannot close an emailed conversation before its first message alerts anyone', function (): void {
+    // Mail stores the conversation and its first message in one operation, and
+    // announces the creation before the message. Creation rules therefore run
+    // while the sender is already waiting, and a close there left the alert
+    // listener with nothing open to alert about: nobody was told.
+    Notification::fake();
+    $site = mailSite();
+    $account = $site->account()->firstOrFail();
+    $assignee = User::factory()->for($account)->create();
+    $bystander = User::factory()->for($account)->create();
+    $rule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Triage email intake',
+        'event' => AutomationRuleEvent::ConversationCreated,
+        'actions' => [
+            ['type' => 'assign_agent', 'value' => $assignee->id],
+            ['type' => 'set_status', 'value' => 'closed'],
+            ['type' => 'set_priority', 'value' => 'high'],
+        ],
+    ]);
+
+    $stored = deliver(mailPayload());
+    $conversation = $stored->conversation->fresh();
+
+    expect($conversation->status)->toBe('open', 'a creation rule closed the emailed conversation its sender is waiting in')
+        ->and($conversation->auditEvents()->where('action', 'conversation.closed')->exists())->toBeFalse('a creation rule recorded a close no human made on an emailed conversation')
+        ->and(Notification::sent($assignee, ConversationNeedsReply::class))->toHaveCount(1, 'a creation rule close silenced the first emailed message')
+        ->and(Notification::sent($bystander, ConversationNeedsReply::class))->toHaveCount(0, 'creation rules still run before the alert, so their assignee is the one alerted')
+        ->and($conversation->assigned_agent_id)->toBe($assignee->id)
+        ->and($conversation->priority)->toBe('high', 'withholding the close must not stop the rest of the creation rule');
+
+    $execution = AutomationRuleExecution::query()->sole();
+
+    expect($execution->automation_rule_id)->toBe($rule->id)
+        ->and($execution->action_results)->toBe([
+            ['type' => 'assign_agent', 'status' => 'applied', 'detail' => 'agent:'.$assignee->id],
+            ['type' => 'set_status', 'status' => 'skipped', 'detail' => 'visitor_awaiting_reply'],
+            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->high'],
+        ], 'the execution log does not record the withheld close, in stored order, with its reason');
 });
 
 test('a reply lands on the conversation it is replying to, not a new one', function (): void {
@@ -222,6 +266,29 @@ test('a reply reopens a conversation that had been closed', function (): void {
             ->and($accountLock)->toBeLessThan($siteLock)
             ->and($siteLock)->toBeLessThan($conversationUpdate);
     }
+});
+
+test('a reply that reopens a closed conversation reaches the support team', function (): void {
+    // The resolution did not hold, which is the reply that most needs an
+    // answer. The alert used to be decided from a copy of the conversation
+    // read while the reply was being stored, before it was reopened, so it
+    // still said closed and nobody was told.
+    $site = mailSite();
+    $agent = User::factory()->for($site->account()->firstOrFail())->create();
+    $first = deliver(mailPayload());
+    // Handled and closed: the first alert is read, so a new one is owed.
+    $agent->unreadNotifications->markAsRead();
+    $first->conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+    Notification::fake();
+
+    deliver(mailPayload([
+        'text' => 'Still nothing.',
+        'message_id' => '<second@example.test>',
+        'in_reply_to' => '<first@example.test>',
+    ]));
+
+    expect($first->conversation->fresh()->status)->toBe('open')
+        ->and(Notification::sent($agent, ConversationNeedsReply::class))->toHaveCount(1, 'an emailed reply that reopened a closed conversation alerted nobody');
 });
 
 test('a message with no sender is refused', function (): void {

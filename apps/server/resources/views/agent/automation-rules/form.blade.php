@@ -183,13 +183,17 @@
                                 @endforeach
                             </ol>
                         @endif
-                        {{-- An older rule may still hold an action its event now
-                             refuses. The live run skips it and logs why; the dry
-                             run has to say the same, or a close-only rule reads
-                             as "matched, and nothing happens". --}}
+                        {{-- A close is withheld while the visitor waits for a
+                             reply: always on a visitor message, and on a new
+                             conversation that already holds one. The live run
+                             skips it and logs why; the dry run has to say the
+                             same, or a close-only rule reads as "matched, and
+                             nothing happens". --}}
                         @if (($preview['withheld_actions'] ?? []) !== [])
                             <strong>{{ __('automation_rules.preview.withheld') }}</strong>
-                            <p class="lede">{{ __('automation_rules.preview.withheld_reason', ['event' => __('automation_rules.events.conversation_visitor_message_created')]) }}</p>
+                            <p class="lede">{{ $preview['event'] === \App\Enums\AutomationRuleEvent::ConversationCreated->value
+                                ? __('automation_rules.preview.withheld_reason_created', ['event' => __('automation_rules.events.conversation_created')])
+                                : __('automation_rules.preview.withheld_reason', ['event' => __('automation_rules.events.conversation_visitor_message_created')]) }}</p>
                             <ol class="automation-definition-list">
                                 @foreach ($preview['withheld_actions'] as $action)
                                     <li>{{ $presenter->action($action, $preview['event'], $referenceLabels ?? []) }}</li>

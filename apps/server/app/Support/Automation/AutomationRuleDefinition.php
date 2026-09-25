@@ -33,24 +33,40 @@ final class AutomationRuleDefinition
     /**
      * Whether a stored rule action is withheld from its event instead of run.
      *
-     * A visitor message is somebody waiting for a reply. Its rules run before
-     * the reply alert is decided, so that a rule which assigns the
-     * conversation also decides who hears about it. The same ordering means a
-     * rule that closed the conversation there would decide that nobody does:
-     * no alert is stored for a closed conversation, it leaves the default open
-     * queue, and a site that asks for ratings asks the visitor to rate a close
-     * no human made.
+     * A visitor waiting for a reply is somebody the support team has to hear
+     * about. Conversation rules run before the reply alert is decided, so that
+     * a rule which assigns the conversation also decides who hears about it.
+     * The same ordering means a rule that closed the conversation there would
+     * decide that nobody does: no alert is stored for a closed conversation,
+     * it leaves the default open queue, and a site that asks for ratings asks
+     * the visitor to rate a close no human made.
      *
-     * New definitions are refused below. A rule saved before that refusal
-     * existed still runs its other actions; the evaluator leaves this one out
-     * and the engine records it as skipped.
+     * So a close is withheld whenever a visitor is waiting as the rule runs.
+     * A rule on a visitor message always runs with one waiting, and a new
+     * definition of that shape is refused (see refusesAction()). A rule on a
+     * new conversation runs with one waiting only when the conversation
+     * arrived with its first message -- inbound mail stores both in one
+     * operation and announces the creation first -- so its close stays valid
+     * for the widget and the API, which open an empty conversation the visitor
+     * writes into afterwards. The rule's other actions still run; the
+     * evaluator leaves the close out and the engine records it as skipped.
      */
-    public static function withholdsAction(AutomationRuleEvent $event, mixed $action): bool
+    public static function withholdsAction(AutomationRuleEvent $event, mixed $action, bool $visitorAwaitingReply): bool
     {
-        return $event === AutomationRuleEvent::VisitorMessageCreated
+        return $event->isConversationEvent()
+            && ($visitorAwaitingReply || $event === AutomationRuleEvent::VisitorMessageCreated)
             && is_array($action)
             && ($action['type'] ?? null) === AutomationRuleActionType::SetStatus->value
             && ($action['value'] ?? null) === ConversationStatus::Closed->value;
+    }
+
+    /**
+     * Whether a new rule definition may not hold this action at all: it would
+     * be withheld on every run, because its event means a visitor is waiting.
+     */
+    public static function refusesAction(AutomationRuleEvent $event, mixed $action): bool
+    {
+        return self::withholdsAction($event, $action, visitorAwaitingReply: false);
     }
 
     /** @param list<mixed> $actions */
@@ -182,7 +198,7 @@ final class AutomationRuleDefinition
             AutomationRuleActionType::PostInternalNote => self::assertInternalNote($value, "{$path}.value"),
         };
 
-        if ($context instanceof AutomationRuleEvent && self::withholdsAction($context, $action)) {
+        if ($context instanceof AutomationRuleEvent && self::refusesAction($context, $action)) {
             throw new InvalidArgumentException("{$path}.value cannot close the conversation for {$context->value} rules.");
         }
     }
