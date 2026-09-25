@@ -78,6 +78,8 @@ return [
         'save' => 'Save template',
         'archive' => 'Archive',
         'restore' => 'Restore',
+        'archive_named' => 'Archive “:name”',
+        'restore_named' => 'Restore “:name”',
         'archived_note' => 'Archived templates stay out of reply helpers.',
     ],
 

@@ -80,6 +80,8 @@ return [
         'save' => 'Salva modello',
         'archive' => 'Archivia',
         'restore' => 'Ripristina',
+        'archive_named' => 'Archivia «:name»',
+        'restore_named' => 'Ripristina «:name»',
         'archived_note' => 'I modelli archiviati non compaiono tra gli assistenti di risposta.',
     ],
 

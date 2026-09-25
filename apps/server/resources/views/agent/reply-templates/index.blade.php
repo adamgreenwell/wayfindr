@@ -138,13 +138,13 @@
                                             @if ($replyTemplate->is_active)
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.reply-templates.archive', $replyTemplate) }}">
                                                     @csrf
-                                                    <button class="button secondary" type="submit">{{ __('reply_templates.manage.archive') }}</button>
+                                                    <button class="button secondary" type="submit" aria-label="{{ __('reply_templates.manage.archive_named', ['name' => $replyTemplate->name]) }}">{{ __('reply_templates.manage.archive') }}</button>
                                                 </form>
                                             @else
                                                 <span class="lede">{{ __('reply_templates.manage.archived_note') }}</span>
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.reply-templates.restore', $replyTemplate) }}">
                                                     @csrf
-                                                    <button class="button secondary" type="submit">{{ __('reply_templates.manage.restore') }}</button>
+                                                    <button class="button secondary" type="submit" aria-label="{{ __('reply_templates.manage.restore_named', ['name' => $replyTemplate->name]) }}">{{ __('reply_templates.manage.restore') }}</button>
                                                 </form>
                                             @endif
                                         </td>

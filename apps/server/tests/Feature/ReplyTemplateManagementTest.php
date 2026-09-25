@@ -852,3 +852,36 @@ test('each template editor is named for its own row', function (): void {
     expect($summaries)->toEqualCanonicalizing(['Edit “Billing follow-up”', 'Edit “Shipping update”'], 'every row editor has the same accessible name, so a screen reader cannot tell them apart')
         ->and($xpath->query('//td/details/summary/span[@lang=""]')->length)->toBe(2, 'the template name inside the translated label does not keep its own language');
 });
+
+test('archive and restore controls name the template they act on', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $active = ReplyTemplate::factory()->for($account)->create(['name' => 'Billing follow-up']);
+    $archived = ReplyTemplate::factory()->for($account)->archived()->create(['name' => 'Shipping update']);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+    $archive = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.archive', $active).'"]//button');
+    $restore = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.restore', $archived).'"]//button');
+
+    expect($archive->getAttribute('aria-label'))->toBe('Archive “Billing follow-up”', 'every Archive button has the same accessible name')
+        ->and($restore->getAttribute('aria-label'))->toBe('Restore “Shipping update”', 'every Restore button has the same accessible name')
+        // Label in name: the visible word is inside the accessible name, so
+        // voice control still finds the button by what it shows.
+        ->and(str_contains($restore->getAttribute('aria-label'), trim($restore->textContent)))->toBeTrue();
+});
+
+test('a malformed reply template id is a 404, not a database error', function (string $method, string $suffix): void {
+    // Without a numeric constraint the route matches, and PostgreSQL refuses to
+    // compare the string with a bigint key while binding the model.
+    $admin = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($admin)
+        ->call($method, '/dashboard/account/reply-templates/not-a-number'.$suffix, ['name' => 'x', 'body' => 'y'])
+        ->assertNotFound();
+})->with([
+    'update' => ['PUT', ''],
+    'archive' => ['POST', '/archive'],
+    'restore' => ['POST', '/restore'],
+]);

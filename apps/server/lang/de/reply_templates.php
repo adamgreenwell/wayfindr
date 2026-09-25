@@ -80,6 +80,8 @@ return [
         'save' => 'Vorlage speichern',
         'archive' => 'Archivieren',
         'restore' => 'Wiederherstellen',
+        'archive_named' => '„:name“ archivieren',
+        'restore_named' => '„:name“ wiederherstellen',
         'archived_note' => 'Archivierte Vorlagen erscheinen nicht in den Antworthilfen.',
     ],
 
