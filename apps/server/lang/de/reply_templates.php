@@ -74,7 +74,7 @@ return [
     ],
 
     'manage' => [
-        'edit' => 'Vorlage bearbeiten',
+        'edit' => '„:name“ bearbeiten',
         'name' => 'Name',
         'body' => 'Text',
         'save' => 'Vorlage speichern',

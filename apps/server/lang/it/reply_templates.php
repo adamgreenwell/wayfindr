@@ -74,7 +74,7 @@ return [
     ],
 
     'manage' => [
-        'edit' => 'Modifica modello',
+        'edit' => 'Modifica «:name»',
         'name' => 'Nome',
         'body' => 'Testo',
         'save' => 'Salva modello',

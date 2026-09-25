@@ -103,9 +103,13 @@
                                                  stays folded until someone opens this row -- and opens
                                                  itself when this row's save came back with an error. --}}
                                             <x-details-disclosure
-                                                :summary="__('reply_templates.manage.edit')"
                                                 :open="$isEditingTemplate && $errors->hasAny(['name', 'body'])"
                                             >
+                                                {{-- Named for its row, so twenty rows are not twenty
+                                                     identical "Edit template" controls to a screen reader.
+                                                     The name is the account's words, so it keeps its own
+                                                     language inside the translated label. --}}
+                                                <x-slot:summary>{!! __('reply_templates.manage.edit', ['name' => '<span lang="">'.e($replyTemplate->name).'</span>']) !!}</x-slot:summary>
                                                 <form class="section-form" method="POST" action="{{ route('dashboard.account.reply-templates.update', $replyTemplate) }}">
                                                     @csrf
                                                     @method('PUT')

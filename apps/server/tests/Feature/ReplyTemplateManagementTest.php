@@ -537,7 +537,7 @@ test('the row controls reach a German agent in German', function (): void {
     $this->actingAs($admin)
         ->get(route('dashboard.account.reply-templates.index'))
         ->assertOk()
-        ->assertSee('Vorlage bearbeiten')
+        ->assertSeeText('„Rückfrage“ bearbeiten')
         ->assertSee('Archivieren')
         ->assertSee('Wiederherstellen')
         ->assertDontSee('Edit template')
@@ -566,7 +566,7 @@ test('each template row keeps its editor folded behind a disclosure', function (
     $summary = replyTemplateManagementElement($xpath, '//td/details/summary');
 
     expect($disclosure->hasAttribute('open'))->toBeFalse('the row editor is open before anyone asked for it')
-        ->and(trim($summary->textContent))->toBe('Edit template')
+        ->and(trim($summary->textContent))->toBe('Edit “Billing follow-up”')
         // The scannable preview stays.
         ->and($xpath->query('//td[normalize-space(.)="'.trim(Str::limit($template->body, 120)).'"]')->length)
         ->toBe(1, 'the truncated body preview is gone');
@@ -834,4 +834,21 @@ test('a row discriminator sent as an array still lands on the page, not a 500', 
             'body' => '',
         ])
         ->assertOk();
+});
+
+test('each template editor is named for its own row', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    ReplyTemplate::factory()->for($account)->create(['name' => 'Billing follow-up']);
+    ReplyTemplate::factory()->for($account)->create(['name' => 'Shipping update']);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+    $summaries = collect(iterator_to_array($xpath->query('//td/details/summary')))
+        ->map(fn (DOMNode $summary): string => trim($summary->textContent))
+        ->all();
+
+    expect($summaries)->toEqualCanonicalizing(['Edit “Billing follow-up”', 'Edit “Shipping update”'], 'every row editor has the same accessible name, so a screen reader cannot tell them apart')
+        ->and($xpath->query('//td/details/summary/span[@lang=""]')->length)->toBe(2, 'the template name inside the translated label does not keep its own language');
 });

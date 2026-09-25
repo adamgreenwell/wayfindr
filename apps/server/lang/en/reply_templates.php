@@ -72,7 +72,7 @@ return [
     'manage' => [
         // The disclosure each row's editor sits behind. The Body column already
         // shows the text, so the form stays folded until someone asks for it.
-        'edit' => 'Edit template',
+        'edit' => 'Edit “:name”',
         'name' => 'Name',
         'body' => 'Body',
         'save' => 'Save template',
