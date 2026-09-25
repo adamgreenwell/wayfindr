@@ -11,10 +11,20 @@ use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ConversationMessageCreated implements ShouldBroadcastNow
+/**
+ * ShouldRescue because Laravel broadcasts a ShouldBroadcastNow event BEFORE it
+ * runs the listeners. Without it an unreachable Reverb threw past the commit and
+ * skipped NotifyAgentsOfVisitorMessage: the message was stored, nobody was
+ * alerted, and the retry took the idempotent branch that never announces. The
+ * live update is the only thing an outage may cost; the failure is still
+ * reported. AgentAlertStored is deliberately NOT rescued -- its caller relies on
+ * the throw to leave the claim open for a retry.
+ */
+class ConversationMessageCreated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
     use InteractsWithSockets;

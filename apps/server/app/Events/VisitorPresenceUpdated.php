@@ -11,6 +11,7 @@ use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -20,7 +21,7 @@ use Illuminate\Queue\SerializesModels;
  * `ShouldBroadcastNow` like the rest: a board that is a minute behind is a
  * list, and the product already has one of those.
  */
-class VisitorPresenceUpdated implements ShouldBroadcastNow
+class VisitorPresenceUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable, SerializesModels;
 
