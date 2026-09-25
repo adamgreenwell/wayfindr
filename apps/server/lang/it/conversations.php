@@ -187,6 +187,10 @@ return [
             'visitor_read' => 'Letto dal visitatore',
             'seen_by_visitor' => 'Visualizzato da visitatore :elapsed',
             'not_seen' => 'Non ancora visto',
+            'email_sent' => 'Anche via email a',
+            'email_sent_detail' => 'Il visitatore ha scritto fuori orario, quindi le risposte inviate qui arrivano anche a questo indirizzo. L’indirizzo è stato inserito dal visitatore e non è stato verificato.',
+            'email_unsent' => 'Nessuna email',
+            'email_unsent_detail' => 'Il visitatore ha lasciato questo indirizzo fuori orario, ma in questa installazione l’invio di email non è configurato, quindi le risposte inviate qui raggiungono il visitatore solo se torna nella chat.',
         ],
 
         'copilot' => [

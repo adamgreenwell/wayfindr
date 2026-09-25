@@ -12,14 +12,35 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Sends a support-side reply on to a visitor who arrived by email.
+ * Sends a support-side reply on to a visitor by email.
  *
- * Only for conversations that came in that way. A visitor sitting in the widget
+ * Two kinds of conversation get one:
+ *
+ *   - one that ARRIVED by email, which is answered the way it was asked;
+ *   - one opened in the widget while the desk was AWAY. The widget demanded an
+ *     address then because it is the only way back to somebody, and told them
+ *     we would reply when we were back. Without this that promise was kept only
+ *     for somebody who happened to reopen the same browser tab.
+ *
+ * Any other widget conversation is not mailed. A visitor sitting in the widget
  * is already being told in the widget, and mailing them as well would be the
  * product talking over itself.
+ *
+ * Only replies reach this class -- the agent composer and the API reply
+ * endpoint call it with the message they just stored. There is no internal-note
+ * path into it: conversations carry no private messages, and ticket notes live
+ * in ticket activity, which nothing here reads.
  */
 final class ConversationReplyMailer
 {
+    /** Conversation metadata: opened while away, with an address to answer. */
+    public const REPLY_BY_EMAIL = 'reply_by_email';
+
+    /** Conversation metadata: the widget language that promise was made in. */
+    public const REPLY_LOCALE = 'reply_locale';
+
+    public function __construct(private readonly OutboundMail $outboundMail) {}
+
     public function send(ConversationMessage $message): bool
     {
         $delivery = DB::transaction(function () use ($message): ?ConversationReplyDelivery {
@@ -58,14 +79,9 @@ final class ConversationReplyMailer
             $lockedMessage->loadMissing(['attachments', 'conversation.site', 'conversation.visitor']);
             $conversation = $lockedMessage->conversation;
 
-            if (! $this->shouldSend($conversation)) {
-                return null;
-            }
+            $email = $conversation === null ? null : $this->recipient($conversation);
 
-            $site = $conversation->site;
-            $email = $conversation->visitor?->email;
-
-            if ($site?->inbound_address === null || $email === null) {
+            if ($email === null) {
                 return null;
             }
 
@@ -110,12 +126,79 @@ final class ConversationReplyMailer
     }
 
     /**
-     * Only conversations that arrived by email get answered by email.
+     * Where a reply sent now would be emailed, or null when it would not be.
+     *
+     * The one rule, read by send() and by the agent page: an agent told that a
+     * reply is emailed must be told by the same code that emails it.
      */
-    private function shouldSend(?Conversation $conversation): bool
+    public function recipient(Conversation $conversation): ?string
     {
-        return $conversation !== null
-            && ($conversation->metadata['channel'] ?? null) === 'email';
+        $email = $this->visitorEmail($conversation);
+
+        if ($email === null) {
+            return null;
+        }
+
+        if ($this->arrivedByEmail($conversation)) {
+            // Unchanged for this channel: it is answered from the address the
+            // visitor wrote to, and without one there is nothing to answer from.
+            return $conversation->site?->inbound_address === null ? null : $email;
+        }
+
+        if ($this->promisedWhileAway($conversation)) {
+            // No inbound address is needed here. The email then carries no
+            // Reply-To and tells the visitor to come back to the chat instead
+            // (mail/conversation-reply). What IS needed is a transport that
+            // delivers: `log` accepts the message and sends it nowhere, and an
+            // outbox row marked accepted would tell the agent it went.
+            return $this->outboundMail->delivers() ? $email : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * What the agent is told about email on a conversation opened while away.
+     *
+     * Only that case. A conversation that arrived by email says so in every
+     * message it holds; a widget conversation looks like any other unless the
+     * page says otherwise.
+     *
+     * @return array{state: 'emailed'|'not_emailed', address: string}|null
+     */
+    public function awayNotice(Conversation $conversation): ?array
+    {
+        if ($this->arrivedByEmail($conversation) || ! $this->promisedWhileAway($conversation)) {
+            return null;
+        }
+
+        $email = $this->visitorEmail($conversation);
+
+        if ($email === null) {
+            return null;
+        }
+
+        return [
+            'state' => $this->recipient($conversation) === null ? 'not_emailed' : 'emailed',
+            'address' => $email,
+        ];
+    }
+
+    private function arrivedByEmail(Conversation $conversation): bool
+    {
+        return ($conversation->metadata['channel'] ?? null) === 'email';
+    }
+
+    private function promisedWhileAway(Conversation $conversation): bool
+    {
+        return ($conversation->metadata[self::REPLY_BY_EMAIL] ?? null) === true;
+    }
+
+    private function visitorEmail(Conversation $conversation): ?string
+    {
+        $email = $conversation->visitor?->email;
+
+        return is_string($email) && trim($email) !== '' ? trim($email) : null;
     }
 
     /**

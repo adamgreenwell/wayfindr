@@ -219,6 +219,60 @@ the server, not just in the form.
 
 This is what turns a visitor who arrives at 3am from lost into answerable.
 
+### Out of hours, the reply is emailed too
+
+The widget tells an out-of-hours visitor that we will reply when we are back.
+Until this existed that reply reached only the widget, so it was kept for
+nobody who had closed the tab — the address the widget insisted on was never
+used.
+
+A conversation opened while the desk is away is now marked, when it is
+created, to be answered by email as well. Every reply an agent sends to it —
+from the conversation page, or through the API — also goes to the visitor's
+address. A visitor whose address was already known is marked the same way:
+the question is waived for them, but they were told the same thing. A reply
+written from a linked ticket's page is not emailed; that path has never called
+the mailer, for conversations that arrived by email either.
+
+- **The widget reply is not replaced.** The message still appears in the
+  widget; the email is how it reaches somebody who has left.
+- **Only replies.** Nothing else about the conversation is emailed. Ticket
+  notes are written to ticket activity, which nothing on this path reads.
+- **It needs outbound mail.** On an install whose mailer cannot deliver —
+  `log`, `array`, or a failover chain that stops at one of them — nothing is
+  queued. This is the same assessment the operator's send-test makes, so the
+  two cannot disagree about whether mail leaves the server. Until mail is set
+  up, the promise in the default away message is kept only in the widget.
+- **The agent is told either way.** Beside the reply box, a conversation opened
+  while away shows **Also emailed to** with the address, or **Not emailed**
+  with the reason. The address shown is the one the email goes to.
+- **Where the conversation continues.** If the site has an
+  [inbound address](../self-hosting/inbound-mail.md), that is the email's
+  Reply-To, and a reply threads back onto the same conversation. If it has
+  none, the email says that replies to it do not reach the conversation and
+  sends the visitor back to the chat on the site's domain, rather than inviting
+  a reply to an address nobody reads.
+- **It speaks the visitor's language** — the widget language they were reading
+  when they were promised the reply — never the install's or the agent's.
+
+The mark is made once, when the conversation opens. A conversation started
+during open hours is not emailed even if the desk closes before anybody
+answers: that visitor was never told to expect an email, and they are being
+answered where they are.
+
+#### The address is the visitor's word
+
+An anonymous visitor can type anybody's address, and it is not verified before
+it is used. What bounds that is who sends: an email goes out only when an agent
+chooses to reply, and only to the visitor's address shown beside the reply
+box. That is
+the ordinary contract of an offline chat form — the same exposure as a contact
+form that emails its answer — and it is stated here rather than left implied.
+
+The agent is shown the address as unverified for the same reason. Keep account
+details out of a reply unless the visitor has shown who they are some other
+way.
+
 ### Why this cannot ride on visitor context
 
 `VisitorContextSanitizer` strips anything resembling an email from
