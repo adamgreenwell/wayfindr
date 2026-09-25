@@ -106,7 +106,6 @@ Route::middleware('throttle:widget-attachment-upload')->group(function (): void 
     Route::post('/conversations/{supportCode}/attachments', [ConversationAttachmentController::class, 'store'])
         ->name('conversations.attachments.store');
     Route::delete('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'destroy'])
-        ->whereNumber('attachment')
         ->name('conversations.attachments.destroy');
 });
 
@@ -122,11 +121,9 @@ Route::middleware('throttle:widget-attachment')->group(function (): void {
     // differently, and every download would 403 there and nowhere else.
     Route::middleware('signed:relative')
         ->get('/conversations/{supportCode}/attachments/{attachment}/file', [ConversationAttachmentController::class, 'download'])
-        ->whereNumber('attachment')
         ->name('widget.conversations.attachments.download');
 
     Route::get('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'show'])
-        ->whereNumber('attachment')
         ->name('conversations.attachments.show');
 });
 
@@ -176,10 +173,10 @@ Route::prefix('v1')
                 Route::get('/conversations/{supportCode}/messages', [ApiConversationController::class, 'messages'])->name('conversations.messages');
 
                 Route::get('/tickets', [ApiTicketController::class, 'index'])->name('tickets.index');
-                Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->whereNumber('ticket')->name('tickets.show');
+                Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->name('tickets.show');
 
                 Route::get('/visitors', [ApiVisitorController::class, 'index'])->name('visitors.index');
-                Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->whereNumber('visitor')->name('visitors.show');
+                Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->name('visitors.show');
             });
 
         Route::middleware(AuthenticateApiToken::class.':'.ApiToken::ABILITY_WRITE)
@@ -188,6 +185,6 @@ Route::prefix('v1')
                 Route::post('/conversations/{supportCode}/messages', [ApiConversationController::class, 'storeMessage'])->name('conversations.messages.store');
 
                 Route::post('/tickets', [ApiTicketController::class, 'store'])->name('tickets.store');
-                Route::patch('/tickets/{ticket}', [ApiTicketController::class, 'update'])->whereNumber('ticket')->name('tickets.update');
+                Route::patch('/tickets/{ticket}', [ApiTicketController::class, 'update'])->name('tickets.update');
             });
     });

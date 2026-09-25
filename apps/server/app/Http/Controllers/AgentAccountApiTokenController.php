@@ -232,11 +232,11 @@ class AgentAccountApiTokenController extends Controller
         // they get -- including whether the id exists at all.
         abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
-        // Numeric is not the same as a usable key. The route constraint allows
-        // any run of digits, and PostgreSQL raises casting a 30-digit value to
-        // a bigint -- a 500 where the point was an indistinguishable 404. An
-        // id too large to be one is treated exactly like an id that is not
-        // there, because it cannot be.
+        // Numeric is not the same as a usable key. The route now refuses more
+        // than eighteen digits, but this does not lean on it: PostgreSQL raises
+        // casting a 30-digit value to a bigint -- a 500 where the point was an
+        // indistinguishable 404. An id too large to be one is treated exactly
+        // like an id that is not there, because it cannot be.
         $apiToken = DatabaseKey::isValid($apiToken)
             ? ApiToken::query()->whereKey($apiToken)->first()
             : null;
