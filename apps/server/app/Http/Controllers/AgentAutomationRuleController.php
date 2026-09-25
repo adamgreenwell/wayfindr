@@ -16,6 +16,7 @@ use App\Models\Visitor;
 use App\Support\Automation\AutomationRuleEvaluator;
 use App\Support\Automation\AutomationRuleForm;
 use App\Support\Sites\SiteManagerCoverage;
+use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -82,7 +83,7 @@ final class AgentAutomationRuleController extends Controller
     {
         $agent = $this->automationManager($request);
 
-        $rule = DB::transaction(function () use ($agent, $request): AutomationRule {
+        $rule = $this->saveOrLandOnSummary(function () use ($agent, $request): AutomationRule {
             [$agent, $account] = $this->lockedAutomationManager($agent, 403);
             $attributes = $this->form->validated($request, $account);
             $this->ensureUniqueName($account, $attributes['name']);
@@ -125,7 +126,7 @@ final class AgentAutomationRuleController extends Controller
         $agent = $this->automationManager($request);
         $this->authorizeRule($agent, $automationRule);
 
-        DB::transaction(function () use ($agent, $automationRule, $request): void {
+        $this->saveOrLandOnSummary(function () use ($agent, $automationRule, $request): void {
             [$agent, $account] = $this->lockedAutomationManager($agent);
             $automationRule = $this->lockedRule($automationRule, $account);
             $attributes = $this->form->validated($request, $account);
@@ -193,6 +194,27 @@ final class AgentAutomationRuleController extends Controller
             ->withFragment('automation-preview-result')
             ->with('automation_preview', $preview)
             ->with('status', 'automation_rules.flash.previewed');
+    }
+
+    /**
+     * Runs a save in a transaction and sends a refusal to the validation summary.
+     *
+     * The refused save comes back on a full page load, where a live region is
+     * born with its content and announces nothing. The fragment names the
+     * focusable summary, so the browser scrolls to it and moves focus there.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $save
+     * @return TResult
+     */
+    private function saveOrLandOnSummary(Closure $save): mixed
+    {
+        try {
+            return DB::transaction($save);
+        } catch (ValidationException $exception) {
+            throw $exception->redirectTo(url()->previous().'#automation-validation');
+        }
     }
 
     /** @return array<string, mixed> */

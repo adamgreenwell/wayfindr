@@ -188,7 +188,7 @@ test('macro forms reject incompatible vocabulary and cross-account references', 
                 'select_value' => 'label:'.$otherLabel->id,
             ]],
         ]))
-        ->assertRedirect(route('dashboard.account.automation-macros.create'))
+        ->assertRedirect(route('dashboard.account.automation-macros.create').'#automation-validation')
         ->assertSessionHasErrors('definition');
 
     $this->actingAs($admin)
@@ -200,7 +200,7 @@ test('macro forms reject incompatible vocabulary and cross-account references', 
                 'select_value' => 'label:'.$otherLabel->id,
             ]],
         ]))
-        ->assertRedirect(route('dashboard.account.automation-macros.create'))
+        ->assertRedirect(route('dashboard.account.automation-macros.create').'#automation-validation')
         ->assertSessionHasErrors('actions.0.select_value');
 
     expect(AutomationMacro::query()->count())->toBe(0);
@@ -226,7 +226,7 @@ test('enabled macro action targets must be valid for every account site', functi
                 'select_value' => 'agent:'.$target->id,
             ]],
         ]))
-        ->assertRedirect(route('dashboard.account.automation-macros.create'))
+        ->assertRedirect(route('dashboard.account.automation-macros.create').'#automation-validation')
         ->assertSessionHasErrors('actions.0.select_value');
 
     $this->actingAs($admin)

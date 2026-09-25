@@ -19,7 +19,12 @@
     @endif
 
     @if ($errors->any())
-        <section class="section automation-validation" aria-labelledby="automation-validation-heading">
+        {{-- A failed save arrives on a full page load after the redirect, so
+             a live region here would be born with its content and announce
+             nothing. Focus moves to the summary instead, as it does to the
+             dry-run verdict below: the redirect's fragment names it, and
+             autofocus covers browsers that do not focus a fragment target. --}}
+        <section class="section automation-validation" id="automation-validation" tabindex="-1" autofocus aria-labelledby="automation-validation-heading">
             <div class="section-header">
                 <h2 id="automation-validation-heading">{{ __('automation_rules.validation.heading') }}</h2>
             </div>
@@ -284,10 +289,14 @@
                     optgroup.hidden = !visible;
                     optgroup.disabled = !visible;
                 });
-                Array.from(choiceControl.querySelectorAll('[data-ticket-only="true"]')).forEach((option) => {
-                    const ticketEvent = eventSelect.value.startsWith('ticket.');
-                    option.hidden = !ticketEvent;
-                    option.disabled = !ticketEvent;
+                // Pending is a ticket status, and a status the event refuses
+                // (closing while a visitor waits for a reply) is not offered
+                // either. The server still refuses both.
+                Array.from(choiceControl.querySelectorAll('[data-ticket-only="true"], [data-withheld-events]')).forEach((option) => {
+                    const unavailable = (option.dataset.ticketOnly === 'true' && !eventSelect.value.startsWith('ticket.'))
+                        || (option.dataset.withheldEvents || '').split(',').includes(eventSelect.value);
+                    option.hidden = unavailable;
+                    option.disabled = unavailable;
                 });
                 if (!showText) {
                     const selected = choiceControl.selectedOptions[0];

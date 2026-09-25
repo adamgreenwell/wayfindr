@@ -213,7 +213,7 @@ test('rule forms reject incompatible vocabulary and cross-account references', f
                 'select_value' => 'label:'.$otherLabel->id,
             ]],
         ]))
-        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertRedirect(route('dashboard.account.automation-rules.create').'#automation-validation')
         ->assertSessionHasErrors('definition');
 
     $this->actingAs($admin)
@@ -225,7 +225,7 @@ test('rule forms reject incompatible vocabulary and cross-account references', f
                 'select_value' => 'label:'.$otherLabel->id,
             ]],
         ]))
-        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertRedirect(route('dashboard.account.automation-rules.create').'#automation-validation')
         ->assertSessionHasErrors('actions.0.select_value');
 
     expect(AutomationRule::query()->count())->toBe(0);
@@ -260,7 +260,7 @@ test('rule forms refuse a visitor message rule that closes the conversation', fu
     $this->actingAs($admin)
         ->from(route('dashboard.account.automation-rules.create'))
         ->post(route('dashboard.account.automation-rules.store'), $payload)
-        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertRedirect(route('dashboard.account.automation-rules.create').'#automation-validation')
         ->assertSessionHasErrors('actions.1.select_value');
 })->with([
     'en' => ['en', 'Rules for “Visitor message received” cannot close the conversation'],
@@ -289,7 +289,7 @@ test('enabled action targets must cover every site the rule can match', function
             'is_enabled' => '1',
             'actions' => $actions,
         ]))
-        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertRedirect(route('dashboard.account.automation-rules.create').'#automation-validation')
         ->assertSessionHasErrors('actions.0.select_value');
 
     $this->actingAs($admin)

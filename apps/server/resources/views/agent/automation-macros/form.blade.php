@@ -17,7 +17,8 @@
     @endif
 
     @if ($errors->any())
-        <section class="section automation-validation" aria-labelledby="automation-macro-validation-heading">
+        {{-- Focus, not a live region: see the rule form. --}}
+        <section class="section automation-validation" id="automation-validation" tabindex="-1" autofocus aria-labelledby="automation-macro-validation-heading">
             <div class="section-header">
                 <h2 id="automation-macro-validation-heading">{{ __('automation_macros.validation.heading') }}</h2>
             </div>

@@ -3,6 +3,7 @@
 use App\Enums\AccountRole;
 use App\Enums\AutomationExecutionStatus;
 use App\Models\Account;
+use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
 use App\Models\Site;
@@ -10,6 +11,7 @@ use App\Models\Ticket;
 use App\Models\TicketLabel;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -257,6 +259,118 @@ test('a failed automation save is framed as an error on both forms', function (s
     'rule form' => ['dashboard.account.automation-rules.store', 'Review the rule definition'],
     'macro form' => ['dashboard.account.automation-macros.store', 'Review the macro definition'],
 ]);
+
+test('a failed automation save moves focus to the validation summary', function (string $kind, bool $editing): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $prefix = "dashboard.account.automation-{$kind}";
+    $invalid = ['name' => '', 'actions' => []];
+
+    if ($editing) {
+        $saved = $kind === 'rules'
+            ? AutomationRule::factory()->for($account)->create(['actions' => [['type' => 'set_priority', 'value' => 'urgent']]])
+            : AutomationMacro::factory()->for($account)->create();
+        $form = route("{$prefix}.edit", $saved);
+        $response = $this->actingAs($admin)->from($form)->put(route("{$prefix}.update", $saved), $invalid);
+    } else {
+        $form = route("{$prefix}.create");
+        $response = $this->actingAs($admin)->from($form)->post(route("{$prefix}.store"), $invalid);
+    }
+
+    // Not assertSessionHasErrors: it re-marshals the error bag in the test
+    // session, and the next request then renders an empty one.
+    $location = (string) $response->assertRedirect()->headers->get('Location');
+    $fragment = parse_url($location, PHP_URL_FRAGMENT);
+
+    expect(Str::before($location, '#'))->toBe($form, 'a failed save must return to the form it came from');
+    // The summary arrives on a full page load, where a live region is born
+    // with its content and announces nothing: focus has to be moved there.
+    expect($fragment)->toBe('automation-validation', "the failed-save redirect must name the validation summary so the browser focuses it: {$location}");
+
+    $xpath = automationWorkspacePageXPath($this->actingAs($admin)
+        ->get($location)
+        ->assertOk()
+        ->assertSee('The name field is required.'));
+    $summary = $xpath->query('//*[@id="'.$fragment.'"]')->item(0);
+
+    expect($summary)->not->toBeNull("the redirect fragment #{$fragment} must name an element on the form it lands on");
+    expect(str_contains($summary->getAttribute('class'), 'automation-validation'))
+        ->toBeTrue("#{$fragment} must be the validation summary, not some other element");
+    expect($summary->getAttribute('tabindex'))
+        ->toBe('-1', 'the validation summary must be focusable, or fragment navigation only scrolls');
+    expect($summary->hasAttribute('autofocus'))
+        ->toBeTrue('the validation summary must autofocus where the browser does not focus a fragment target');
+    expect($xpath->query('//*[@autofocus]')->length)
+        ->toBe(1, 'only the first autofocus candidate is honoured, so the summary must be the only one');
+    expect($summary->hasAttribute('aria-live') || in_array($summary->getAttribute('role'), ['alert', 'status'], true))
+        ->toBeFalse('a live region born with its content never announces it; it must not stand in for focus');
+})->with([
+    'new rule' => ['rules', false],
+    'saved rule' => ['rules', true],
+    'new macro' => ['macros', false],
+    'saved macro' => ['macros', true],
+]);
+
+test('the rule builder does not offer closing the conversation on a visitor message', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $response = $this->actingAs($admin)
+        ->get(route('dashboard.account.automation-rules.create'))
+        ->assertOk();
+    $xpath = automationWorkspacePageXPath($response);
+
+    // The rendered action row and the template new rows are cloned from.
+    $withheld = [];
+    foreach ($xpath->query('//*[@data-rule-row][.//*[@data-action-type]]//option[starts-with(@value, "status:")]') as $option) {
+        $withheld[$option->getAttribute('value')][] = $option->getAttribute('data-withheld-events');
+    }
+
+    expect($withheld)->toBe([
+        'status:open' => ['', ''],
+        'status:pending' => ['', ''],
+        'status:closed' => ['conversation.visitor_message_created', 'conversation.visitor_message_created'],
+    ], 'every action row must mark "Closed" as refused on a visitor message, and nothing else as refused');
+
+    // "Status is closed" is still a fair condition; only the action is refused.
+    expect($xpath->query('//*[@data-rule-row][.//*[@data-condition-field]]//option[@data-withheld-events]')->length)
+        ->toBe(0, 'condition rows must keep offering every status');
+
+    // The builder re-syncs every row when the event changes, so the check
+    // belongs in the per-row choice sync, and it has to hide AND disable.
+    $sync = Str::between((string) $response->getContent(), 'function syncChoice(', 'function syncCondition(');
+
+    expect(str_contains($sync, '[data-withheld-events]'))
+        ->toBeTrue('the choice sync must visit the options an event refuses');
+    expect(str_contains($sync, "(option.dataset.withheldEvents || '').split(',').includes(eventSelect.value)"))
+        ->toBeTrue('an option must be unavailable exactly when the selected event is one that refuses it');
+    expect(str_contains($sync, 'option.hidden = unavailable;') && str_contains($sync, 'option.disabled = unavailable;'))
+        ->toBeTrue('a refused status must be both hidden and disabled, so a stale selection is cleared');
+});
+
+test('the proactive messages page leads back to the proactive tab', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+
+    $xpath = automationWorkspacePageXPath($this->actingAs($admin)
+        ->get(route('dashboard.sites.proactive-messages.index', $site))
+        ->assertOk());
+    $href = (string) $xpath->query('//a[contains(@class, "page-header__back")]')->item(0)?->getAttribute('href');
+
+    expect(Str::before($href, '#'))->toBe(route('dashboard.account.automation-rules.index'));
+    // Without it the index opens on Rules wherever the tab strip's memory
+    // (sessionStorage) is unavailable.
+    expect(parse_url($href, PHP_URL_FRAGMENT))
+        ->toBe('tab-proactive', "Back to automations must reopen the proactive tab, not land on rules: {$href}");
+
+    $index = automationWorkspacePageXPath($this->actingAs($admin)
+        ->get(route('dashboard.account.automation-rules.index'))
+        ->assertOk());
+
+    expect($index->query('//*[@data-tabs]//*[@data-tab-panel="proactive"]')->length)
+        ->toBe(1, '#tab-proactive must name a panel the index actually has');
+});
 
 test('account-authored names in the automation builders reset the page language', function (string $page): void {
     $account = Account::factory()->create();
