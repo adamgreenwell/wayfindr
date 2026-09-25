@@ -24,7 +24,6 @@
 return [
     'title' => 'Artikel',
     'subtitle' => 'Antworten, die Besuchende finden, ohne zu fragen.',
-    'back_to_account' => 'Zurück zum Konto',
     'back_to_articles' => 'Zurück zu den Artikeln',
 
     'flash' => [

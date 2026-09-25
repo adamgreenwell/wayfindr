@@ -5,7 +5,6 @@ return [
     'document_title' => 'Besucherattribute',
     'heading' => 'Besucherattribute',
     'subtitle' => 'Ausgewählte Host-Kontextdaten werden zu benannten, typisierten Kontaktdetails, die Agenten verstehen und filtern können.',
-    'back' => 'Zurück zum Konto',
     'boundary' => [
         'heading' => 'Datengrenze',
         'lede' => 'Definitionen erfassen keine neuen Daten',

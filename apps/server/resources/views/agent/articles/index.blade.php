@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('articles.title')" :agent="$agent" :account="$account">
-            <x-page-header :title="__('articles.title')" :subtitle="__('articles.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('articles.back_to_account')" />
+<x-layouts.account :title="__('articles.title')">
+            <x-page-header :title="__('articles.title')" :subtitle="__('articles.subtitle')" />
 
             @if (session('status'))
                 {{-- A catalogue key rather than a sentence -- see AgentArticleController. --}}
@@ -135,4 +135,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.account>

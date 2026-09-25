@@ -13,7 +13,6 @@ return [
     'document_title' => 'Kontoprotokoll',
     'title' => 'Kontoprotokoll',
     'subtitle' => 'Durchsuchen Sie Aktivitäten auf Kontoebene, ohne rohe Ereignismetadaten offenzulegen.',
-    'back' => 'Zurück zum Konto',
     'shown' => '{1} :count angezeigt|[2,*] :count angezeigt',
     'export_csv' => 'CSV exportieren',
 

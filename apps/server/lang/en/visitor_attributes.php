@@ -4,7 +4,6 @@ return [
     'document_title' => 'Visitor attributes',
     'heading' => 'Visitor attributes',
     'subtitle' => 'Turn selected host context into named, typed contact details agents can understand and filter.',
-    'back' => 'Back to account',
     'boundary' => [
         'heading' => 'Data boundary',
         'lede' => 'Definitions do not collect new data',

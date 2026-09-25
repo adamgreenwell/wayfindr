@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('account.document_title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="__('account.document_title')">
             @php
                 $unknownLanguage = static fn (mixed $value, string $element = 'span'): string => '<'.$element.' lang="">'.e((string) $value).'</'.$element.'>';
             @endphp
@@ -26,74 +26,6 @@
                 </section>
             @endif
 
-            @php
-                $accountMapItems = [
-                    [
-                        'key' => 'account',
-                        'href' => '#account-context-heading',
-                    ],
-                    [
-                        'key' => 'role',
-                        'href' => '#role-boundary-heading',
-                    ],
-                    [
-                        'key' => 'sites',
-                        'href' => '#site-access-matrix',
-                    ],
-                ];
-
-                if ($canViewExternalIssueReadiness && $externalIssueReadiness) {
-                    $accountMapItems[] = [
-                        'key' => 'external',
-                        'href' => '#external-issue-readiness-heading',
-                    ];
-                }
-
-                $accountMapItems[] = [
-                    'key' => 'activity',
-                    'href' => '#account-activity-heading',
-                ];
-
-                if ($canCreateAgents) {
-                    $accountMapItems[] = [
-                        'key' => 'add_agent',
-                        'href' => '#add-agent-heading',
-                    ];
-                }
-
-                if ($canViewAlertDelivery && $agentAlertReadinessSummary) {
-                    $accountMapItems[] = [
-                        'key' => 'alerts',
-                        'href' => '#team-alert-readiness-heading',
-                    ];
-                }
-
-                $accountMapItems[] = [
-                    'key' => 'agents',
-                    'href' => '#agents',
-                ];
-            @endphp
-
-            <section class="section" aria-labelledby="account-map-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="account-map-heading">{{ __('account.map.heading') }}</h2>
-                    </div>
-                    <span class="lede">{{ trans_choice('account.map.count', count($accountMapItems), ['count' => \App\Support\ReaderNumber::count(count($accountMapItems))]) }}</span>
-                </div>
-                <div class="management-list">
-                    @foreach ($accountMapItems as $accountMapItem)
-                        <a class="management-link" href="{{ $accountMapItem['href'] }}">
-                            <span>
-                                <strong>{{ __('account.map.items.'.$accountMapItem['key'].'.label') }}</strong>
-                                <span class="lede">{{ __('account.map.items.'.$accountMapItem['key'].'.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.map.open') }}</span>
-                        </a>
-                    @endforeach
-                </div>
-            </section>
-
             <section class="section" aria-labelledby="account-context-heading">
                 <div class="section-header">
                     <h2 id="account-context-heading" lang="">{{ $account->name }}</h2>
@@ -117,23 +49,6 @@
                         <span class="meta-value">{{ trans_choice('account.context.assignment_count', $supportAssignmentCount, ['count' => \App\Support\ReaderNumber::count($supportAssignmentCount)]) }}</span>
                     </div>
                 </div>
-            </section>
-
-            <section class="section" aria-labelledby="role-boundary-heading">
-                <div class="section-header">
-                    <h2 id="role-boundary-heading">{{ __('account.role_boundary.heading') }}</h2>
-                    <span class="lede">{{ $canManageRoles ? __('account.role_boundary.owner_enabled') : __('account.role_boundary.read_only') }}</span>
-                </div>
-                <div class="notice-copy">
-                    <p>{{ __('account.role_boundary.authority') }}</p>
-                    <p>{{ __('account.role_boundary.changes') }}</p>
-                    <p>{{ __('account.role_boundary.suspension') }}</p>
-                </div>
-                @if ($canManageRoles)
-                    <div class="section-actions">
-                        <a class="button secondary" href="{{ route('dashboard.account.roles.index') }}">{{ __('account.role_boundary.manage_custom_roles') }}</a>
-                    </div>
-                @endif
             </section>
 
             <section id="site-access-matrix" class="section" aria-labelledby="site-access-matrix-heading">
@@ -325,123 +240,10 @@
                 </section>
             @endif
 
-            <section class="section" aria-labelledby="account-management-heading">
-                <div class="section-header">
-                    <h2 id="account-management-heading">{{ __('account.management.heading') }}</h2>
-                    <span class="lede">{{ __('account.management.lede') }}</span>
-                </div>
-                <div class="management-list">
-                    <a class="management-link" href="{{ route('dashboard.account.integrations') }}">
-                        <span>
-                            <strong>{{ __('account.management.items.integrations.label') }}</strong>
-                            <span class="lede">{{ __('account.management.items.integrations.detail') }}</span>
-                        </span>
-                        <span class="management-action">{{ $canManageIntegrations ? __('account.management.actions.manage') : __('account.management.actions.view') }}</span>
-                    </a>
-                    @if ($canViewSites)
-                        <a class="management-link" href="{{ route('dashboard.sites.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.sites.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.sites.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.open') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageSecurity)
-                        <a class="management-link" href="{{ route('dashboard.account.security.show') }}">
-                            <span>
-                                <strong>{{ __('two_factor.policy.link_label') }}</strong>
-                                <span class="lede">{{ __('two_factor.policy.link_detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageSlaPolicies)
-                        <a class="management-link" href="{{ route('dashboard.account.sla-policies.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.sla.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.sla.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageContacts)
-                        <a class="management-link" href="{{ route('dashboard.account.visitor-attributes.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.visitor_attributes.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.visitor_attributes.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageKnowledge)
-                        <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.articles.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.articles.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                        <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.replies.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.replies.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                        <a class="management-link" href="{{ route('dashboard.account.labels.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.labels.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.labels.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageAutomations)
-                        <a class="management-link" href="{{ route('dashboard.account.automation-rules.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.automations.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.automations.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canViewAudit)
-                        <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.audit.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.audit.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.open') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageIntegrations)
-                        <a class="management-link" href="{{ route('dashboard.account.api-tokens.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.tokens.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.tokens.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
-                        </a>
-                    @endif
-                    @if ($canManageOperatorAccess)
-                        <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
-                            <span>
-                                <strong>{{ __('account.management.items.operator_access.label') }}</strong>
-                                <span class="lede">{{ __('account.management.items.operator_access.detail') }}</span>
-                            </span>
-                            <span class="management-action">{{ __('account.management.actions.review') }}</span>
-                        </a>
-                    @endif
-                </div>
-            </section>
-
-            <section class="section" aria-labelledby="data-responsibility-heading">
-                <div class="section-header">
-                    <h2 id="data-responsibility-heading">{{ __('account.data_responsibility.heading') }}</h2>
-                    <span class="lede">{{ __('account.data_responsibility.label') }}</span>
-                </div>
-
+            {{-- A standing reminder, not account state: it was a full card
+                 weighted the same as the roster and the access matrix. Closed
+                 by default, one line until someone wants it. --}}
+            <x-details-disclosure class="section" :summary="__('account.data_responsibility.heading')">
                 <div class="notice-copy">
                     <p>{{ __('account.data_responsibility.message') }}</p>
                     <p>{{ __('account.data_responsibility.guidance') }}</p>
@@ -451,7 +253,7 @@
                         </a>
                     </p>
                 </div>
-            </section>
+            </x-details-disclosure>
 
             <section class="section" aria-labelledby="account-activity-heading">
                 <div class="section-header">
@@ -719,4 +521,4 @@
                     </table>
                 </div>
             </section>
-</x-layouts.app>
+</x-layouts.account>

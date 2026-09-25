@@ -1,7 +1,7 @@
 {{-- The document title is the article's, so the tab and every navigation
      announcement carry the account's words rather than the agent's language --
      the same reset the heading below already had. --}}
-<x-layouts.app title="{{ $article->title }}" title-lang="" :agent="$agent" :account="$account">
+<x-layouts.account title="{{ $article->title }}" title-lang="">
             {{-- `title-lang=""` is HTML's "unknown". The article is written for
                  VISITORS, so its language is whatever the account writes in --
                  not the language this admin reads the dashboard in. Without
@@ -118,4 +118,4 @@
                     <button class="button danger" type="submit">{{ __('articles.detail.delete') }}</button>
                 </form>
             </section>
-</x-layouts.app>
+</x-layouts.account>

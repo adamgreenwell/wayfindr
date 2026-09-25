@@ -1,9 +1,5 @@
-<x-layouts.app :title="__('visitor_attributes.document_title')" :agent="$agent" :account="$account">
-    <x-page-header :title="__('visitor_attributes.heading')" :subtitle="__('visitor_attributes.subtitle')">
-        <x-slot:actions>
-            <a class="button secondary" href="{{ route('dashboard.account.show') }}">{{ __('visitor_attributes.back') }}</a>
-        </x-slot:actions>
-    </x-page-header>
+<x-layouts.account :title="__('visitor_attributes.document_title')">
+    <x-page-header :title="__('visitor_attributes.heading')" :subtitle="__('visitor_attributes.subtitle')" />
 
     @if (session('status'))
         <p class="status-message" role="status">{{ __(session('status')) }}</p>
@@ -116,4 +112,4 @@
             @endforeach
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.account>

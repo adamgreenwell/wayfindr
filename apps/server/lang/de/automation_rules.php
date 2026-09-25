@@ -3,7 +3,6 @@
 return [
     'title' => 'Automatisierungen',
     'subtitle' => 'Eindeutige Folgen von Supportaktionen durch passende Ereignisse oder einen Agentenklick ausführen.',
-    'back' => 'Zurück zum Konto',
     'status' => ['enabled' => 'Aktiviert', 'draft' => 'Entwurf'],
     'flash' => [
         'created' => 'Entwurf der Automatisierungsregel erstellt.',

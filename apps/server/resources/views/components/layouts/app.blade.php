@@ -1385,6 +1385,12 @@
             gap: 1px;
             position: sticky;
             top: calc(52px + var(--wf-space-5));
+            /* Its own scroll area once it is taller than the window below the
+               top bar. Sticky alone kept the last groups under a short window
+               for the whole length of a long page -- and the account sidebar
+               is the only way to those pages. */
+            max-height: calc(100vh - 52px - 2 * var(--wf-space-5));
+            overflow-y: auto;
         }
 
         .wf-context-heading {
@@ -1396,6 +1402,13 @@
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: var(--wf-muted);
+        }
+
+        /* The account sidebar groups its destinations; a group's heading
+           needs air above it to read as the start of the next run of links,
+           not the end of the previous one. */
+        .wf-context-link + .wf-context-heading {
+            margin-top: var(--wf-space-4);
         }
 
         .wf-context-link {
@@ -1626,6 +1639,7 @@
 
             .wf-context-nav {
                 position: static;
+                max-height: none;
                 flex-direction: row;
                 gap: var(--wf-space-1);
                 overflow-x: auto;
@@ -3569,6 +3583,11 @@
             // rail is extracted.
             $commandNavigationItems = collect($workItems)->concat($manageItems)->values();
             $currentLabel = $commandNavigationItems->firstWhere('active')['label'] ?? $title;
+            // Where the middle crumb goes when a surface has sections of its
+            // own. It was hard-coded to the operator console while that was
+            // the only such surface, which would have sent the account's
+            // "Account" crumb -- for agents who are not operators -- to a 403.
+            $currentHref = $commandNavigationItems->firstWhere('active')['href'] ?? route('dashboard');
         @endphp
 
         <div class="wf-app">
@@ -3621,7 +3640,7 @@
                         <a href="{{ route('dashboard') }}" lang="">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
                         @if ($crumb)
-                            <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
+                            <a href="{{ $currentHref }}">{{ $currentLabel }}</a>
                             <x-icon name="chevron-right" :size="13" />
                             <span class="wf-crumb-current">{{ $crumb }}</span>
                         @else

@@ -55,8 +55,6 @@ return [
         'save' => 'Save security policy',
         'admin_must_enrol' => 'Enroll your own authenticator before requiring two-factor authentication.',
         'enrol_required' => 'Your account requires two-factor authentication. Finish setup here to continue.',
-        'link_label' => 'Account security',
-        'link_detail' => 'Two-factor enrollment readiness and the account-wide sign-in requirement.',
     ],
     'flash' => [
         'enrolment_started' => 'Two-factor setup started.',

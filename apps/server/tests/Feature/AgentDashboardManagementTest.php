@@ -214,13 +214,13 @@ test('the account page is the management hub; the home stays queue-focused', fun
         ->assertDontSee('id="realtime-heading"', false);
 
     // Everything the command center pointed at is reachable from the
-    // Account management hub instead.
+    // account sidebar instead -- and Sites from the rail beside it.
     $this->actingAs($admin)
         ->get('/dashboard/account')
         ->assertOk()
-        ->assertSee('Management')
+        ->assertSee('aria-label="Account sections"', false)
         ->assertSee('Integrations')
-        ->assertSee('Sites')
+        ->assertSee('href="'.route('dashboard.sites.index').'"', false)
         ->assertSee('Reply templates')
         ->assertSee('Ticket labels')
         ->assertDontSee('Readiness checks')

@@ -25,7 +25,6 @@
 return [
     'title' => 'Ticket-Labels',
     'subtitle' => 'Kontoweite Labels für die Ticket-Triage und Dashboard-Filter verwalten.',
-    'back' => 'Zurück zum Konto',
 
     'flash' => [
         'created' => 'Ticket-Label erstellt.',

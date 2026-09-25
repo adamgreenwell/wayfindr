@@ -17,7 +17,6 @@
 return [
     'title' => 'Ticket labels',
     'subtitle' => 'Manage account-wide labels used for ticket triage and dashboard filters.',
-    'back' => 'Back to account',
 
     'flash' => [
         'created' => 'Ticket label created.',

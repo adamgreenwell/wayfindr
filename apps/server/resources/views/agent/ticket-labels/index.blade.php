@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('ticket_labels.title')" :agent="$agent" :account="$account">
-            <x-page-header :title="__('ticket_labels.title')" :subtitle="__('ticket_labels.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('ticket_labels.back')" />
+<x-layouts.account :title="__('ticket_labels.title')">
+            <x-page-header :title="__('ticket_labels.title')" :subtitle="__('ticket_labels.subtitle')" />
 
             @if (session('status'))
                 {{-- A catalogue key rather than a sentence -- see AgentTicketLabelController. --}}
@@ -126,4 +126,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.account>

@@ -3,7 +3,6 @@
 return [
     'title' => 'Automations',
     'subtitle' => 'Run explicit support-action sequences from matching events or an agent click.',
-    'back' => 'Back to account',
     'status' => ['enabled' => 'Enabled', 'draft' => 'Draft'],
     'flash' => [
         'created' => 'Draft automation rule created.',

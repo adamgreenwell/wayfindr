@@ -17,7 +17,6 @@
 return [
     'title' => 'Articles',
     'subtitle' => 'Answers a visitor can find without asking.',
-    'back_to_account' => 'Back to account',
     'back_to_articles' => 'Back to articles',
 
     'flash' => [

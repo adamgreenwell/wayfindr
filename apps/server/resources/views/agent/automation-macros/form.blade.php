@@ -4,7 +4,7 @@
     $isEditing = $automationMacro !== null;
 @endphp
 
-<x-layouts.app :title="$isEditing ? __('automation_macros.edit.title') : __('automation_macros.create.title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="$isEditing ? __('automation_macros.edit.title') : __('automation_macros.create.title')">
     <x-page-header
         :title="$isEditing ? __('automation_macros.edit.title_named', ['name' => $automationMacro->name]) : __('automation_macros.create.title')"
         :subtitle="$isEditing ? __('automation_macros.edit.subtitle') : __('automation_macros.create.subtitle')"
@@ -241,4 +241,4 @@
             syncAll();
         })();
     </script>
-</x-layouts.app>
+</x-layouts.account>

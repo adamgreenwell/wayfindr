@@ -4,7 +4,10 @@ return [
     'document_title' => 'Ruoli personalizzati',
     'heading' => 'Ruoli personalizzati',
     'subtitle' => 'Combini solo i permessi dell’account necessari a ogni persona. Le assegnazioni ai siti decidono ancora dove il lavoro di assistenza è visibile.',
-    'back' => 'Torna all’account',
+    'boundary' => [
+        'changes' => 'Le modifiche dei ruoli sono riservate ai titolari dell’account. I titolari non possono cambiare il proprio ruolo e ogni modifica viene registrata.',
+        'suspension' => 'Titolari e amministratori possono sospendere l’accesso senza eliminare la cronologia dell’account. Gli amministratori possono sospendere solo gli agenti; i titolari possono gestire qualsiasi altra persona dello stesso account.',
+    ],
     'fields' => ['name' => 'Nome del ruolo'],
     'groups' => ['team' => 'Accesso del team', 'support' => 'Lavoro di assistenza', 'content' => 'Conoscenza', 'account' => 'Impostazioni account'],
     'create' => ['heading' => 'Crea un ruolo', 'lede' => 'I permessi non selezionati vengono negati', 'submit' => 'Crea ruolo'],

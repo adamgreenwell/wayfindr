@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('operator_access.document_title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="__('operator_access.document_title')">
             @php
                 // Scope identifiers, people and reasons belong to the account,
                 // not to this catalogue. Each replacement is escaped before it
@@ -23,7 +23,7 @@
                     : e($status['label']);
             @endphp
 
-            <x-page-header :title="__('operator_access.title')" :subtitle="__('operator_access.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('operator_access.back')">
+            <x-page-header :title="__('operator_access.title')" :subtitle="__('operator_access.subtitle')">
                 <x-slot:actions>
                     <span class="lede">{{ trans_choice('operator_access.counts.active', $activeGrants->count(), ['count' => \App\Support\ReaderNumber::count($activeGrants->count())]) }}</span>
                 </x-slot:actions>
@@ -165,4 +165,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.account>

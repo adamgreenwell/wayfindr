@@ -16,7 +16,6 @@
 return [
     'title' => 'Integrazioni',
     'subtitle' => 'Connessioni provider per l’intero account e destinazione delle segnalazioni esterne per ogni sito.',
-    'back' => 'Torna all’account',
 
     'flash' => [
         'connection_saved' => 'Connessione provider salvata.',

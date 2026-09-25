@@ -26,7 +26,6 @@
 return [
     'title' => 'Etichette dei ticket',
     'subtitle' => 'Gestione delle etichette condivise usate per il triage dei ticket e i filtri della dashboard.',
-    'back' => 'Torna all\'account',
 
     'flash' => [
         'created' => 'Etichetta del ticket creata.',

@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('api_tokens.title')" :agent="$agent" :account="$account">
-    <x-page-header :title="__('api_tokens.title')" :subtitle="__('api_tokens.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('api_tokens.back')">
+<x-layouts.account :title="__('api_tokens.title')">
+    <x-page-header :title="__('api_tokens.title')" :subtitle="__('api_tokens.subtitle')">
         <x-slot:actions>
             {{-- Usable, not merely un-revoked. A token past its expiry is refused
                  at authentication and labelled Expired in the table below, so
@@ -475,4 +475,4 @@
             <p class="lede">{{ __('outbound_webhooks.deliveries.scope') }}</p>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.account>

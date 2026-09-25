@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('sla.document_title')" :agent="$agent" :account="$account">
-    <x-page-header :title="__('sla.title')" :subtitle="__('sla.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('sla.back')" />
+<x-layouts.account :title="__('sla.document_title')">
+    <x-page-header :title="__('sla.title')" :subtitle="__('sla.subtitle')" />
 
     @if (session('status'))
         <p class="status-message">{{ __(session('status')) }}</p>
@@ -88,4 +88,4 @@
             <button class="button" type="submit">{{ __('sla.policy.save') }}</button>
         </form>
     </section>
-</x-layouts.app>
+</x-layouts.account>

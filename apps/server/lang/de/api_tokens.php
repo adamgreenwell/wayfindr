@@ -35,7 +35,6 @@
 return [
     'title' => 'API und Webhooks',
     'subtitle' => 'Begrenzter API-Zugriff und signierte Ereigniszustellung für die Integrationen dieses Kontos.',
-    'back' => 'Zurück zum Konto',
 
     // The token noun matters now that this page also counts webhook endpoints.
     'active' => '{1} :count aktives Token|[2,*] :count aktive Token',

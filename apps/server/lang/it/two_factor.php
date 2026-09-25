@@ -55,8 +55,6 @@ return [
         'save' => 'Salva la politica di sicurezza',
         'admin_must_enrol' => 'È necessario configurare il proprio autenticatore prima di richiedere l’autenticazione a due fattori.',
         'enrol_required' => 'L’account richiede l’autenticazione a due fattori. Completare qui la configurazione per continuare.',
-        'link_label' => 'Sicurezza dell’account',
-        'link_detail' => 'Preparazione alla configurazione a due fattori e requisito di accesso per tutto l’account.',
     ],
     'flash' => [
         'enrolment_started' => 'Configurazione a due fattori avviata.',

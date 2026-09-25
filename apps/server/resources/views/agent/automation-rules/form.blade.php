@@ -6,7 +6,7 @@
     $isEditing = $automationRule !== null;
 @endphp
 
-<x-layouts.app :title="$isEditing ? __('automation_rules.edit.title') : __('automation_rules.create.title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="$isEditing ? __('automation_rules.edit.title') : __('automation_rules.create.title')">
     <x-page-header
         :title="$isEditing ? __('automation_rules.edit.title_named', ['name' => $automationRule->name]) : __('automation_rules.create.title')"
         :subtitle="$isEditing ? __('automation_rules.edit.subtitle') : __('automation_rules.create.subtitle')"
@@ -384,4 +384,4 @@
             syncAll();
         })();
     </script>
-</x-layouts.app>
+</x-layouts.account>

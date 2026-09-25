@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('account_audit.document_title')" :agent="$agent" :account="$account">
-            <x-page-header :title="__('account_audit.title')" :subtitle="__('account_audit.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('account_audit.back')">
+<x-layouts.account :title="__('account_audit.document_title')">
+            <x-page-header :title="__('account_audit.title')" :subtitle="__('account_audit.subtitle')">
                 <x-slot:actions>
                     <span class="lede">{{ trans_choice('account_audit.shown', $auditEvents->count(), ['count' => \App\Support\ReaderNumber::count($auditEvents->count())]) }}</span>
                     <a class="button secondary" href="{{ route('dashboard.account.audit.export', $auditQuery) }}">{{ __('account_audit.export_csv') }}</a>
@@ -116,4 +116,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.account>

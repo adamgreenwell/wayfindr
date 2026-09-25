@@ -17,7 +17,6 @@ return [
     'document_title' => 'Operator access',
     'title' => 'Operator access',
     'subtitle' => 'When a platform operator needs to see this account’s support data, they have to ask. Approve, refuse, or end access here.',
-    'back' => 'Back to account',
 
     'banner' => [
         'title' => 'Platform operator access is active',
