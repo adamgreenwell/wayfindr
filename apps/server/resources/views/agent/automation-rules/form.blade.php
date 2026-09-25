@@ -118,7 +118,6 @@
                     <h2 id="automation-preview-heading">{{ __('automation_rules.preview.heading') }}</h2>
                     <p class="lede">{{ __('automation_rules.preview.lede') }}</p>
                 </div>
-                <span class="readiness-status" data-status="manual">{{ __('automation_rules.preview.no_changes') }}</span>
             </div>
 
             @if ($previewOptions->isEmpty())
@@ -140,7 +139,14 @@
             @endif
 
             @if ($preview)
-                <div class="automation-preview-result" aria-live="polite">
+                {{-- The result arrives on a full page load after the preview
+                     redirect, so a live region would be born with its content
+                     and never announce it. Focus moves to the verdict instead:
+                     the redirect's fragment names this focusable element, and
+                     autofocus makes the same move where fragment focus is not
+                     implemented. The two never compete -- autofocus stands
+                     down when a fragment already targets an element. --}}
+                <div class="automation-preview-result" id="automation-preview-result" tabindex="-1" autofocus>
                     <div class="section-header">
                         <div>
                             <h3>{{ __('automation_rules.preview.result') }}</h3>

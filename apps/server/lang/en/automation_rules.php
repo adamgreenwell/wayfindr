@@ -13,10 +13,17 @@ return [
     ],
     'safety' => [
         'heading' => 'Automation safety',
-        'lede' => 'Account-wide support changes',
         'drafts' => 'New rules and macros start as drafts. Preview rules before enabling them; macros appear only after they are enabled.',
-        'order' => 'Lower run-order numbers execute first. Conditions and actions run from top to bottom.',
-        'visitor' => 'This action set never sends a visitor-facing message. Internal notes stay private to the support team.',
+        // Scoped to rules and macros on purpose: proactive messages share this
+        // page, and they are the automations that do reach visitors.
+        'visitor' => 'Rules and macros never send a visitor-facing message; only proactive messages do. Internal notes stay private to the support team.',
+    ],
+    'tabs' => [
+        'label' => 'Automation sections',
+        'rules' => 'Rules',
+        'macros' => 'Macros',
+        'proactive' => 'Proactive messages',
+        'executions' => 'Execution log',
     ],
     'list' => [
         'heading' => 'Rules',
@@ -46,7 +53,7 @@ return [
         'title' => 'Edit automation rule',
         'title_named' => 'Edit :name',
         'subtitle' => 'Save the ordered definition, preview the saved version, and enable it when the result is right.',
-        'back' => 'Back to automation rules',
+        'back' => 'Back to automations',
         'save' => 'Save rule',
     ],
     'fields' => [
@@ -128,7 +135,6 @@ return [
     'preview' => [
         'heading' => 'Dry-run preview',
         'lede' => 'Evaluate the last saved definition against recent work. No actions, alerts, notes, or lifecycle changes run.',
-        'no_changes' => 'No changes',
         'no_subjects' => 'No compatible recent work is visible to you. The matching conversation or ticket permission is also required for a preview.',
         'subject' => 'Recent support work',
         'choose' => 'Choose work to test',

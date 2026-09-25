@@ -337,7 +337,7 @@ test('preview evaluates a saved draft without changing work or recording an exec
         ->post(route('dashboard.account.automation-rules.preview', $rule), [
             'preview_subject' => 'ticket:'.$ticket->id,
         ])
-        ->assertRedirect(route('dashboard.account.automation-rules.edit', $rule))
+        ->assertRedirect(route('dashboard.account.automation-rules.edit', $rule).'#automation-preview-result')
         ->assertSessionHas('status', 'automation_rules.flash.previewed')
         ->assertSessionHas('automation_preview', fn (array $preview): bool => $preview['matched'] === true
             && $preview['actions'] === [['type' => 'set_priority', 'value' => 'urgent']]);
