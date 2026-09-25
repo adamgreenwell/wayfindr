@@ -396,7 +396,7 @@ test('preview of a saved visitor message close rule shows only what would run', 
 
     expect($response->status())->toBe(302, 'previewing a rule saved before the refusal existed crashed');
 
-    $response->assertRedirect(route('dashboard.account.automation-rules.edit', $rule))
+    $response->assertRedirect(route('dashboard.account.automation-rules.edit', $rule).'#automation-preview-result')
         ->assertSessionHas('automation_preview');
 
     $preview = session('automation_preview');
