@@ -2,6 +2,17 @@
     $typeValue = (string) ($row['type'] ?? 'set_priority');
     $textValue = (string) ($row['text_value'] ?? '');
     $selectValue = (string) ($row['select_value'] ?? '');
+    // The rule events that refuse "set status" to each value -- today, closing
+    // on a visitor message. Asked of the definition itself, so the builder
+    // stops offering exactly what the server would refuse.
+    $withheldStatusEvents = collect(\App\Enums\TicketStatus::cases())
+        ->mapWithKeys(fn ($status) => [$status->value => collect(\App\Enums\AutomationRuleEvent::cases())
+            ->filter(fn ($event) => \App\Support\Automation\AutomationRuleDefinition::withholdsAction($event, [
+                'type' => \App\Enums\AutomationRuleActionType::SetStatus->value,
+                'value' => $status->value,
+            ]))
+            ->pluck('value')
+            ->implode(',')]);
 @endphp
 
 <div class="automation-builder-row" data-rule-row>
@@ -45,7 +56,7 @@
             </optgroup>
             <optgroup label="{{ __('automation_rules.value_groups.statuses') }}" data-choice-group="status">
                 @foreach (\App\Enums\TicketStatus::cases() as $status)
-                    <option value="status:{{ $status->value }}" data-ticket-only="{{ $status === \App\Enums\TicketStatus::Pending ? 'true' : 'false' }}" @selected($selectValue === 'status:'.$status->value)>{{ __('tickets.statuses.'.$status->value) }}</option>
+                    <option value="status:{{ $status->value }}" data-ticket-only="{{ $status === \App\Enums\TicketStatus::Pending ? 'true' : 'false' }}" @if ($withheldStatusEvents[$status->value] !== '') data-withheld-events="{{ $withheldStatusEvents[$status->value] }}" @endif @selected($selectValue === 'status:'.$status->value)>{{ __('tickets.statuses.'.$status->value) }}</option>
                 @endforeach
             </optgroup>
         </select>

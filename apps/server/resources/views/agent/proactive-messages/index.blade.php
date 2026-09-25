@@ -1,5 +1,7 @@
 <x-layouts.app :title="__('proactive_messages.title')" :agent="$agent" :account="$account">
-    <x-page-header :back-href="route('dashboard.account.automation-rules.index')" :back-label="__('proactive_messages.back')">
+    {{-- Back to the proactive tab, not the rules tab the index opens on:
+         the tab strip only remembers a choice where sessionStorage works. --}}
+    <x-page-header :back-href="route('dashboard.account.automation-rules.index').'#tab-proactive'" :back-label="__('proactive_messages.back')">
         <x-slot:titleContent>{{ __('proactive_messages.title_for') }} <span lang="">{{ $site->name }}</span></x-slot:titleContent>
         <x-slot:subtitleContent>{{ __('proactive_messages.subtitle') }}</x-slot:subtitleContent>
         <x-slot:actions>

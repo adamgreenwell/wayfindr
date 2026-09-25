@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\Automation\AutomationMacroForm;
 use App\Support\Automation\AutomationRuleForm;
 use App\Support\Sites\SiteManagerCoverage;
+use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -44,7 +45,7 @@ final class AgentAutomationMacroController extends Controller
     {
         $agent = $this->automationManager($request);
 
-        $macro = DB::transaction(function () use ($agent, $request): AutomationMacro {
+        $macro = $this->saveOrLandOnSummary(function () use ($agent, $request): AutomationMacro {
             [$agent, $account] = $this->lockedAutomationManager($agent, 403);
             $attributes = $this->form->validated($request, $account);
             $this->ensureUniqueName($account, $attributes['name']);
@@ -83,7 +84,7 @@ final class AgentAutomationMacroController extends Controller
         $agent = $this->automationManager($request);
         $this->authorizeMacro($agent, $automationMacro);
 
-        DB::transaction(function () use ($agent, $automationMacro, $request): void {
+        $this->saveOrLandOnSummary(function () use ($agent, $automationMacro, $request): void {
             [$agent, $account] = $this->lockedAutomationManager($agent);
             $automationMacro = $this->lockedMacro($automationMacro, $account);
             $attributes = $this->form->validated($request, $account);
@@ -127,6 +128,24 @@ final class AgentAutomationMacroController extends Controller
         return redirect()
             ->route('dashboard.account.automation-rules.index')
             ->with('status', 'automation_macros.flash.deleted');
+    }
+
+    /**
+     * Runs a save in a transaction and sends a refusal to the validation
+     * summary; see the rule controller.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $save
+     * @return TResult
+     */
+    private function saveOrLandOnSummary(Closure $save): mixed
+    {
+        try {
+            return DB::transaction($save);
+        } catch (ValidationException $exception) {
+            throw $exception->redirectTo(url()->previous().'#automation-validation');
+        }
     }
 
     /** @return array<string, mixed> */
