@@ -798,3 +798,22 @@ function replyTemplateManagementElement(DOMXPath $xpath, string $query): DOMElem
 
     return $nodes->item(0);
 }
+
+test('restoring a reply template stays inside the same boundaries as archiving it', function (): void {
+    $account = Account::factory()->create();
+    $otherAccount = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $outsider = User::factory()->for($otherAccount)->create(['account_role' => AccountRole::Admin]);
+    $archived = ReplyTemplate::factory()->for($account)->create(['is_active' => false]);
+
+    $this->actingAs($outsider)
+        ->post(route('dashboard.account.reply-templates.restore', $archived))
+        ->assertNotFound();
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.account.reply-templates.restore', $archived))
+        ->assertNotFound();
+
+    expect($archived->fresh()->is_active)
+        ->toBeFalse('A reply template was restored by someone who cannot manage this account\'s knowledge.');
+});
