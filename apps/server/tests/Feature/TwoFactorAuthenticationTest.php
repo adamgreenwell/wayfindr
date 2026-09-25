@@ -387,6 +387,47 @@ test('only an enrolled admin can require two factor for an account', function ()
         ->toMatchArray(['required' => true]);
 });
 
+test('the two-factor readiness figures follow the reader number format, as the lede beside them does', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin, 'locale' => 'de']);
+
+    // A thousand is the smallest count where the grouping separator shows,
+    // so seed past it on both sides: 1,000 enrolled, and 1,000 plus the admin
+    // not. Inserted in bulk; nothing here needs a model event.
+    $now = now();
+
+    foreach (['enrolled' => $now, 'missing' => null] as $group => $confirmedAt) {
+        foreach (array_chunk(range(1, 1000), 100) as $chunk) {
+            User::query()->insert(array_map(fn (int $i): array => [
+                'account_id' => $account->id,
+                'name' => "Agent {$group} {$i}",
+                'email' => "{$group}{$i}@example.test",
+                'password' => 'not-a-password-hash',
+                'account_role' => AccountRole::Agent->value,
+                'two_factor_confirmed_at' => $confirmedAt,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $chunk));
+        }
+    }
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertSee('<html lang="de">', false)
+        ->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $figures = [];
+
+    foreach ((new DOMXPath($document))->query('//section[@aria-labelledby="two-factor-readiness-heading"]//span[@class="meta-value"]') ?? [] as $value) {
+        $figures[] = trim($value->textContent);
+    }
+
+    // German groups thousands with a full stop. `1000` beside a lede reading
+    // `2.001` is the same section speaking two number conventions.
+    expect($figures)->toBe(['1.000', '1.001'], 'the enrolled and missing counts print raw integers beside a lede that formats its count for the reader');
+});
+
 test('a plain agent cannot manage the account security policy', function (): void {
     $agent = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Agent]);
 

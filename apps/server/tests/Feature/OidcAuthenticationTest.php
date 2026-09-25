@@ -276,6 +276,43 @@ test('only an owner can configure deny-by-default OIDC role mappings', function 
         ->and(AuditEvent::query()->where('action', 'account.oidc_role_mapping_deleted')->count())->toBe(1);
 });
 
+test('custom role names on the sso mapping screen are account data, not the reader language', function (): void {
+    $world = oidcWorld();
+    $world['owner']->forceFill(['locale' => 'de'])->save();
+    $customRole = CustomRole::factory()->for($world['account'])->create(['name' => 'Support lead', 'name_key' => 'support lead']);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'support-leads',
+        'custom_role_id' => $customRole->id,
+        'built_in_role' => null,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'admins',
+        'custom_role_id' => null,
+        'built_in_role' => AccountRole::Admin,
+    ]);
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $this->actingAs($world['owner'])
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertSee('<html lang="de">', false)
+        ->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+    $roleCell = fn (string $claim, string $lang): int => (int) $xpath->query('//tr[td/code[normalize-space(.)="'.$claim.'"]]/td[2]['.$lang.']')?->length;
+
+    // A screen reader reads an unmarked English role name with German
+    // phonetics. The translated built-in labels are German and keep the page's
+    // language -- marking them would be the opposite mistake.
+    expect($roleCell('support-leads', '@lang=""'))
+        ->toBe(1, 'a custom role name in the mappings table inherits the page language')
+        ->and($roleCell('admins', 'not(@lang)'))
+        ->toBe(1, 'a translated built-in role label is marked as language-neutral')
+        ->and($xpath->query('//select[@id="role_target"]/option[@value="custom:'.$customRole->id.'" and @lang=""]')?->length)
+        ->toBe(1, 'a custom role name in the mapping target list inherits the page language')
+        ->and($xpath->query('//select[@id="role_target"]/option[starts-with(@value, "built_in:") and not(@lang)]')?->length)
+        ->toBe(2, 'a translated built-in role option is marked as language-neutral');
+});
+
 test('OIDC provisioning rejects owner targets duplicates and enabling without mappings', function (): void {
     $world = oidcWorld();
     $owner = $world['owner'];
