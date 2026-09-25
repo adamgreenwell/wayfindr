@@ -31,6 +31,7 @@ use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
 use App\Support\Routing\AssignmentAuditTrail;
 use App\Support\Sites\SiteManagerCoverage;
@@ -477,6 +478,14 @@ class AgentTicketController extends Controller
         $conversation->markReadFor($agent);
 
         event(new ConversationMessageCreated($message));
+
+        // The same reply the conversation page sends, so it reaches the visitor
+        // the same way. Without this a reply written here went to the widget
+        // and nowhere else -- never to somebody who wrote in by email, nor to
+        // one promised an email while the desk was away. After the commit, as
+        // on that page: the shipped queues set after_commit to false, and a
+        // worker must not see a reply a rollback could still remove.
+        app(ConversationReplyMailer::class)->send($message);
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.reply_sent');
     }

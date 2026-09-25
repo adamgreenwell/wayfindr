@@ -66,7 +66,7 @@
                     <div class="reply-context-item" data-reply-by-email="{{ $replyByEmail['state'] }}">
                         <span class="meta-label">{{ __('conversations.detail.reply.'.($replyByEmail['state'] === 'emailed' ? 'email_sent' : 'email_unsent')) }}</span>
                         <span class="meta-value" lang="">{{ $replyByEmail['address'] }}</span>
-                        <span class="lede">{{ __('conversations.detail.reply.'.($replyByEmail['state'] === 'emailed' ? 'email_sent_detail' : 'email_unsent_detail')) }}</span>
+                        <span class="lede">{{ __('conversations.detail.reply.'.($replyByEmail['state'] === 'emailed' ? 'email_sent_detail' : ($replyByEmail['origin'] === 'email' ? 'email_channel_unsent_detail' : 'email_unsent_detail'))) }}</span>
                     </div>
                 @endif
             </div>

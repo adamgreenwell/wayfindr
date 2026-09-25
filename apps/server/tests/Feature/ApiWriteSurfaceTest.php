@@ -73,6 +73,15 @@ function apiWriteHeaders(array $world, ?string $key = 'request-1'): array
     return $headers;
 }
 
+/**
+ * An install whose mailer can deliver, as the reply rule reads it: the suite's
+ * own `array` mailer delivers nothing, and no reply is emailed through it.
+ */
+function apiWriteDeliveringMailer(): void
+{
+    config()->set('mail.default', 'smtp');
+}
+
 function apiWriteVisitorToken($test, array $world): string
 {
     return $test->postJson('/api/widget/bootstrap', [
@@ -372,6 +381,7 @@ test('an API reply records mail transport acceptance and a replay does not resen
     ]);
     $payload = ['body' => 'Your replacement is on its way.'];
 
+    apiWriteDeliveringMailer();
     $this->postJson(
         '/api/v1/conversations/WF-APIEMAIL/messages',
         $payload,
@@ -411,6 +421,7 @@ test('an idempotent replay retries an email reply whose first delivery attempt f
         ->with('visitor@example.test')
         ->andThrow(new RuntimeException('Mail transport unavailable.'));
 
+    apiWriteDeliveringMailer();
     $this->postJson(
         '/api/v1/conversations/WF-APIRETRY/messages',
         $payload,
@@ -458,6 +469,8 @@ test('the scheduler recovers an API reply when the Redis handoff fails', functio
     Queue::shouldReceive('connection')
         ->once()
         ->andThrow(new RuntimeException('Redis unavailable.'));
+
+    apiWriteDeliveringMailer();
 
     try {
         $this->postJson(

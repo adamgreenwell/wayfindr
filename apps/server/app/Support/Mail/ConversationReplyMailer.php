@@ -26,10 +26,15 @@ use Throwable;
  * is already being told in the widget, and mailing them as well would be the
  * product talking over itself.
  *
- * Only replies reach this class -- the agent composer and the API reply
- * endpoint call it with the message they just stored. There is no internal-note
- * path into it: conversations carry no private messages, and ticket notes live
- * in ticket activity, which nothing here reads.
+ * Both kinds need a transport that delivers (OutboundMail). `log` accepts a
+ * message and sends it nowhere, so without that check an outbox row is marked
+ * accepted for a reply nobody received, and the agent is told nothing.
+ *
+ * Only replies reach this class -- the agent composer, the reply form on a
+ * linked ticket's page, and the API reply endpoint call it with the message
+ * they just stored. There is no internal-note path into it: conversations
+ * carry no private messages, and ticket notes live in ticket activity, which
+ * nothing here reads.
  */
 final class ConversationReplyMailer
 {
@@ -139,48 +144,59 @@ final class ConversationReplyMailer
             return null;
         }
 
-        if ($this->arrivedByEmail($conversation)) {
-            // Unchanged for this channel: it is answered from the address the
-            // visitor wrote to, and without one there is nothing to answer from.
-            return $conversation->site?->inbound_address === null ? null : $email;
-        }
-
-        if ($this->promisedWhileAway($conversation)) {
+        $answerable = $this->arrivedByEmail($conversation)
+            // This channel is answered from the address the visitor wrote to,
+            // and without one there is nothing to answer from.
+            ? $conversation->site?->inbound_address !== null
             // No inbound address is needed here. The email then carries no
             // Reply-To and tells the visitor to come back to the chat instead
-            // (mail/conversation-reply). What IS needed is a transport that
-            // delivers: `log` accepts the message and sends it nowhere, and an
-            // outbox row marked accepted would tell the agent it went.
-            return $this->outboundMail->delivers() ? $email : null;
-        }
+            // (mail/conversation-reply).
+            : $this->promisedWhileAway($conversation);
 
-        return null;
-    }
-
-    /**
-     * What the agent is told about email on a conversation opened while away.
-     *
-     * Only that case. A conversation that arrived by email says so in every
-     * message it holds; a widget conversation looks like any other unless the
-     * page says otherwise.
-     *
-     * @return array{state: 'emailed'|'not_emailed', address: string}|null
-     */
-    public function awayNotice(Conversation $conversation): ?array
-    {
-        if ($this->arrivedByEmail($conversation) || ! $this->promisedWhileAway($conversation)) {
+        if (! $answerable) {
             return null;
         }
 
+        // Both need a transport that delivers: `log` accepts the message and
+        // sends it nowhere, and an outbox row marked accepted would say it went.
+        return $this->outboundMail->delivers() ? $email : null;
+    }
+
+    /**
+     * What the agent is told, beside the reply box, about email.
+     *
+     * On a conversation opened while away: either way, because it looks like
+     * any other widget conversation unless the page says otherwise.
+     *
+     * On one that arrived by email: only when replies are NOT emailed. That
+     * they are needs no saying -- every message the visitor sent arrived that
+     * way. That they are not does: email is the only way this visitor sees a
+     * reply, and "Reply sent" would otherwise be all the agent heard.
+     *
+     * @return array{state: 'emailed'|'not_emailed', address: string, origin: 'away'|'email'}|null
+     */
+    public function replyNotice(Conversation $conversation): ?array
+    {
         $email = $this->visitorEmail($conversation);
 
         if ($email === null) {
             return null;
         }
 
+        if ($this->arrivedByEmail($conversation)) {
+            return $this->outboundMail->delivers()
+                ? null
+                : ['state' => 'not_emailed', 'address' => $email, 'origin' => 'email'];
+        }
+
+        if (! $this->promisedWhileAway($conversation)) {
+            return null;
+        }
+
         return [
             'state' => $this->recipient($conversation) === null ? 'not_emailed' : 'emailed',
             'address' => $email,
+            'origin' => 'away',
         ];
     }
 
