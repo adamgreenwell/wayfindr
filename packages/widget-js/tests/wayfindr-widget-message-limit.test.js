@@ -256,3 +256,30 @@ test('sendFirstMessage measures the body the server will measure', async () => {
     'a body within the limit once trimmed was refused',
   );
 });
+
+test('sendFirstMessage sends the body it measured', async () => {
+  // JavaScript's trim() and the server's are different functions with
+  // different whitespace sets. NBSP and U+2028 are whitespace to one and were
+  // not to Laravel 10's trim(), so a body measured trimmed but sent as typed
+  // could pass here at exactly the limit and be refused after its
+  // conversation had been opened -- the empty conversation this guard exists
+  // to prevent.
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_limit',
+    anonymousId: 'anon-limit',
+    fetch: acceptingFetch(calls),
+  });
+
+  await client.sendFirstMessage(' ' + 'x'.repeat(LIMIT) + ' ');
+
+  const posted = calls.find((call) => call.url.endsWith('/messages') && call.method === 'POST');
+
+  assert.ok(posted, 'the first message was never sent');
+  assert.equal(
+    posted.body.body,
+    'x'.repeat(LIMIT),
+    'sendFirstMessage sent a body other than the one it measured, so the server can refuse what the guard passed',
+  );
+});

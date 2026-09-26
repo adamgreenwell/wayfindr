@@ -1656,6 +1656,15 @@
       sendFirstMessage: async function (body, details) {
         details = details || {};
 
+        // Send the string that is measured below. The server trims too, but
+        // with its own whitespace set (Laravel 10 and earlier trimmed ASCII
+        // only, keeping a pasted NBSP), so measuring a trimmed copy while
+        // sending the original made the guard depend on the two agreeing. The
+        // server trims before storing either way, so nothing stored changes.
+        if (typeof body === 'string') {
+          body = body.trim();
+        }
+
         // Before anything goes out. The conversation is created by its own
         // request, so a body the server will refuse would otherwise leave an
         // empty open conversation behind -- one no agent is ever alerted to,
