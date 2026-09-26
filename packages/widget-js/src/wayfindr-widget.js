@@ -94,6 +94,7 @@
       'composer.rejected.unscannable': 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
       'composer.rejected.unavailable': 'One or more attachments are unavailable.',
       'composer.rejected.too_long': 'A message can be at most {max} characters long.',
+      'composer.rejected.empty': 'Enter a message or attach a file.',
       'intake.pending': 'Please answer the questions above first. Your message is still here.',
       'intake.submit': 'Continue',
       'help.label': 'Find an answer',
@@ -196,6 +197,7 @@
       'composer.rejected.unscannable': 'Diese Datei konnte nicht auf Schadsoftware geprüft und daher nicht angenommen werden. Bitte versuchen Sie es in Kürze erneut.',
       'composer.rejected.unavailable': 'Ein oder mehrere Anhänge sind nicht verfügbar.',
       'composer.rejected.too_long': 'Eine Nachricht darf höchstens {max} Zeichen lang sein.',
+      'composer.rejected.empty': 'Geben Sie eine Nachricht ein oder hängen Sie eine Datei an.',
       'intake.pending': 'Bitte beantworten Sie zuerst die Fragen oben. Ihre Nachricht bleibt erhalten.',
       'intake.submit': 'Weiter',
       'help.label': 'Antwort finden',
@@ -442,14 +444,14 @@
     return count > MESSAGE_BODY_MAX_CHARACTERS;
   }
 
-  // What a too-long body is refused with, before anything is sent: the same
-  // key the server answers with, so a caller reads one failure whichever side
-  // noticed. No `status`, because no request was made.
-  function messageBodyTooLongError() {
-    var params = { max: MESSAGE_BODY_MAX_CHARACTERS };
-    var error = new Error(createTranslator(DEFAULT_LOCALE)('composer.rejected.too_long', params));
+  // What a body refused before sending is thrown as: a key a caller can
+  // translate, beside the English sentence the server would have answered
+  // with, so one failure reads the same whichever side noticed it. No
+  // `status`, because no request was made.
+  function messageRefusal(key, params) {
+    var error = new Error(createTranslator(DEFAULT_LOCALE)(key, params));
 
-    error.wayfindrKey = 'composer.rejected.too_long';
+    error.wayfindrKey = key;
     error.wayfindrParams = params;
 
     return error;
@@ -1669,8 +1671,18 @@
         // request, so a body the server will refuse would otherwise leave an
         // empty open conversation behind -- one no agent is ever alerted to,
         // because alerts start from a visitor message that never arrives.
+        //
+        // Nothing to say is one such body: a first message cannot carry a
+        // file, so without text the server refuses it. So is a body that is
+        // not a string at all, which fails the server's `string` rule -- and
+        // is not coerced, because a caller passing 42 has made a mistake that
+        // sending "42" would hide.
+        if (typeof body !== 'string' || body === '') {
+          throw messageRefusal('composer.rejected.empty', {});
+        }
+
         if (messageBodyTooLong(body)) {
-          throw messageBodyTooLongError();
+          throw messageRefusal('composer.rejected.too_long', { max: MESSAGE_BODY_MAX_CHARACTERS });
         }
 
         if (!visitorToken) {
