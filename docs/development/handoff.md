@@ -21,7 +21,9 @@ differentiator.
 - **Server app**: `apps/server` (Laravel 13, PHP). This is where almost
   everything lives.
 - **Widget**: `packages/widget-js/src/wayfindr-widget.js` (vanilla JS, no build
-  framework — it is embedded on customer sites).
+  framework — it is embedded on customer sites). The server serves its
+  committed minified build, `dist/wayfindr-widget.min.js`: run `npm run build`
+  in `packages/widget-js` after editing the source, or CI fails the PR.
 - **Deploy target**: Laravel Forge (first-class). Stage:
   `https://wayfindr.on-forge.com`. Treat every stage or fork observation in this
   file as dated evidence, not proof of the current deployed state.

@@ -22,7 +22,10 @@ class WidgetScriptController extends Controller
      */
     public function __invoke(Request $request): Response
     {
-        $scriptPath = base_path('../../packages/widget-js/src/wayfindr-widget.js');
+        // The minified build of src/wayfindr-widget.js, committed and checked
+        // in CI against the source (packages/widget-js/build.mjs). Every visitor
+        // of every page downloads this, and the source is half comments.
+        $scriptPath = base_path('../../packages/widget-js/dist/wayfindr-widget.min.js');
 
         abort_unless(is_file($scriptPath), 404);
 
@@ -81,7 +84,7 @@ class WidgetScriptController extends Controller
             report(new \RuntimeException(
                 "Realtime is configured but the bundled client is missing at {$vendorPath}. "
                 .'The widget will load without realtime. This is a packaging fault: '
-                .'packages/widget-js/vendor must ship alongside packages/widget-js/src.'
+                .'packages/widget-js/vendor must ship alongside packages/widget-js/dist.'
             ));
 
             return $widget;
