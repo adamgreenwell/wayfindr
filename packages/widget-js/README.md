@@ -311,12 +311,27 @@ do not — is recorded in
 
 ## Development
 
+Edit `src/wayfindr-widget.js`. The server does not serve that file: it serves
+`dist/wayfindr-widget.min.js`, a minified build of it, so after changing the
+source rebuild and commit both:
+
 ```bash
-npm test
+npm run build
 ```
 
+The build is committed so that no Wayfindr install needs Node to serve the
+widget. CI fails a pull request whose committed build does not match its
+source (`npm run check:build` runs the same check locally).
+
+```bash
+npm test
+npm run test:dist
+```
+
+`npm test` runs the suite against the source; `npm run test:dist` runs the
+same suite against the minified build, which is what visitors actually get.
+
 The script attaches `window.Wayfindr` for classic script tags and also exports
-the same API through CommonJS so the package can be tested without a browser
-build step.
+the same API through CommonJS, so the source can be tested without a browser.
 
 License: MIT.

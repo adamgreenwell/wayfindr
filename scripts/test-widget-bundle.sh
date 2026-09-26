@@ -35,8 +35,8 @@ if [ "$recorded" != "$actual" ]; then
 Update the file and the table together, or restore the reviewed bytes."
 fi
 
-# The image must stage vendor/ as well as src/. Omitting it does not fail a
-# build: the widget is simply served without realtime on an install whose
+# The image must stage vendor/ as well as the widget build. Omitting it does not
+# fail a build: the widget is simply served without realtime on an install whose
 # configuration says realtime is on, which is the silent degradation this
 # bundle exists to end.
 grep -q 'COPY packages/widget-js/vendor' "$DOCKERFILE" \
@@ -103,71 +103,30 @@ fi
 # These ceilings are deliberately close to today's figures. Raising one is a fine
 # thing to do -- it just has to be a decision somebody took, rather than a drift
 # nobody saw.
-WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
-# Raised from 85000 for the visitor-session refresh lifecycle (#1002), which
-# adds about 6.5KB gzipped of genuine behaviour: the rotation scheduler, the
-# deadline bookkeeping, and the storage compatibility it needs.
+WIDGET_BUILD="$ROOT_DIR/packages/widget-js/dist/wayfindr-widget.min.js"
+# The budget is on the MINIFIED build, because that is the file a visitor
+# downloads: WidgetScriptController serves dist/, not src/ (Sept 2026).
 #
-# Raised only after trimming, not instead of it. That branch first came in 329
-# bytes over, and the cause was prose rather than code -- 63% of its added
-# lines were comments against a 22% house norm -- so 54 lines of narrative were
-# cut before this number was touched. What is left is the feature.
+# The source budget before it was raised four times in a month (85000 -> 90000
+# -> 92500 -> 93500), and the note on the last raise said the next change that
+# needed room should minify instead -- the source is written to be read, and
+# about half of it is comments. The widget-length-limit change needed room, the
+# owner chose to minify, and the same source went from 93087 bytes gzipped to
+# 31895 for the build. That headroom is the point of having done it; the
+# ceiling below keeps the old discipline -- about 10% over today's figure, and
+# raising it is a decision someone writes down, not a drift.
 #
-# 90000 was chosen to put roughly 5KB back; #1002 had left 69 bytes, which is
-# not a budget but a tripwire for whoever edits the widget next.
-#
-# When 85000 was set at a9cde76b the source measured 77368 by this yardstick, so
-# that guard sat about 10% above the file. At 90000 against today's 85585 this
-# one carries about 5%, so it is TIGHTER than it began rather than restored to
-# it -- a deliberate choice, not a restoration. Raise it again if a widget change
-# trips it for no reason of its own.
-#
-# Those figures are quotable now only because the compressor is pinned. Earlier
-# versions of this comment quoted local gzip output to four digits and were wrong
-# in CI twice.
-#
-# Raised to 92000 for session ownership (#1017), which binds a conversation to the
-# session that opened it and coordinates that across tabs. The source measures
-# 90120 by this yardstick at the raise, so this guard now carries about 2% -- the
-# tightest it has been, continuing the direction above rather than restoring the
-# 5% or the original 10%.
-#
-# The change earned only part of that. Of 402 lines it added, 248 were comment
-# against 126 of code, and those comments were cut roughly in half TWICE before
-# this number moved: first from 16264 bytes to 9193, then again. What is left is
-# the rule at each decision point and the trap a reader would otherwise fall into,
-# which is the house style this file is written in -- retrospective "why" comments
-# are everywhere in it. Squeezing further was deleting reasoning to save twenty
-# bytes a time.
-#
-# The real headroom is still minification, which nothing here does yet. A change
-# that needs more than this 2% should do that rather than move this number again.
-#
-# Raised again to 92500 for visitor identity verification, which adds an option
-# the widget carries beside `visitorExternalId` and the pairing rule that keeps
-# a hash from following an id it does not vouch for. That is 0.1%, not the 2%
-# the paragraph above is about, and the comments were tightened first -- what
-# remains is the rule a reader needs to not reintroduce the bug the pairing
-# prevents. The minification point still stands for the next change that wants
-# real room.
-#
-# And to 93500 for the single-instance guard (#1032), which stops a page that
-# uses BOTH entry points -- the snippet's data attributes and `init()` -- from
-# building two widgets that then race on one set of per-site storage keys.
-#
-# THIS IS THE SECOND RAISE IN ONE DAY, 1500 bytes between them, and that is the
-# signal the paragraph above was describing rather than a licence to keep
-# going. The next change that needs room should minify instead: the source ships
-# unminified, so the headroom is real and nobody has spent it yet. Both raises
-# were measured after tightening the new prose and the new code, not before.
-#
-# Note this guard REDUCES what an affected page transfers: two widgets meant two
-# appearance fetches, two bootstraps and two polling loops for every visitor on
-# it. The budget measures the script, which is the right thing to measure, but
-# the net effect on wayfindr.cc is less traffic, not more.
-WIDGET_SRC_GZIP_BUDGET=93500
+# The source itself is no longer budgeted: comments cost a visitor nothing now.
+# Keeping the build honest about the source is `npm run check:build` in CI,
+# which rebuilds and fails on any difference.
+WIDGET_BUILD_GZIP_BUDGET=35000
 
-[ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
+[ -f "$WIDGET_BUILD" ] || fail "The minified widget is missing: $WIDGET_BUILD
+Run \`npm run build\` in packages/widget-js and commit dist/."
+
+# The image must stage the build, since that is what the controller reads.
+grep -q 'COPY packages/widget-js/dist' "$DOCKERFILE" \
+    || fail "server.Dockerfile does not stage packages/widget-js/dist, so the released image has no widget to serve."
 
 command -v php >/dev/null 2>&1 || fail "php is required to measure the widget bundle.
 This script pins the compressor to PHP's gzencode so the figure is the same on
@@ -179,15 +138,15 @@ php-cli' on Debian or Ubuntu. This measurement needs only PHP with zlib, which
 is on by default; the wider suite needs 8.4.1 or newer, which
 docs/self-hosting/runtime-requirements.md covers."
 
-src_raw="$(wc -c < "$WIDGET_SRC" | tr -d ' ')"
-src_gzip="$(php -r 'echo strlen(gzencode(file_get_contents($argv[1]), 9));' "$WIDGET_SRC")"
+build_raw="$(wc -c < "$WIDGET_BUILD" | tr -d ' ')"
+build_gzip="$(php -r 'echo strlen(gzencode(file_get_contents($argv[1]), 9));' "$WIDGET_BUILD")"
 
-if [ "$src_gzip" -gt "$WIDGET_SRC_GZIP_BUDGET" ]; then
-    fail "The widget source is over its size budget.
-  gzipped: $src_gzip bytes (budget $WIDGET_SRC_GZIP_BUDGET, raw $src_raw)
+if [ "$build_gzip" -gt "$WIDGET_BUILD_GZIP_BUDGET" ]; then
+    fail "The minified widget is over its size budget.
+  gzipped: $build_gzip bytes (budget $WIDGET_BUILD_GZIP_BUDGET, raw $build_raw)
 Every visitor of every page of every install downloads this. Either bring it back
-under the budget, or raise WIDGET_SRC_GZIP_BUDGET in this script deliberately and
-say why in the commit message. The source is unminified today, so there is room."
+under the budget, or raise WIDGET_BUILD_GZIP_BUDGET in this script deliberately
+and say why in the commit message."
 fi
 
 # The SERVED payload is budgeted in PHP, not here -- see
@@ -199,5 +158,5 @@ fi
 # invisible. Near a ceiling that is the difference between a guard and a
 # decoration, so the measurement was moved to where the bytes actually exist.
 
-echo "Widget source within budget: ${src_gzip}B gzipped (raw ${src_raw}B)."
+echo "Minified widget within budget: ${build_gzip}B gzipped (raw ${build_raw}B)."
 echo "Widget bundles its realtime client, with recorded provenance, and the image ships it."
