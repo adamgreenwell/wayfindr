@@ -154,7 +154,9 @@ RUN cp /app/releases/history.json /etc/wayfindr/release-history.json \
         --out=/etc/wayfindr/release.json \
         --history=/etc/wayfindr/release-history.json \
     && rm -rf /app/release.json /app/releases /app/scripts
-COPY packages/widget-js/src /app/packages/widget-js/src
+# The widget is served from its minified build (WidgetScriptController); the
+# source is for people, not for the image.
+COPY packages/widget-js/dist /app/packages/widget-js/dist
 # The realtime library ships INSIDE the image. Omitting it would not fail the
 # build: the widget would simply be served without realtime, on an install
 # whose config says realtime is on -- the exact silent degradation issue #714

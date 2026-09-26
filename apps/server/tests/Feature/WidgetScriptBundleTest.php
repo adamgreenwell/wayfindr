@@ -27,8 +27,13 @@ test('widget.js carries the realtime library instead of pointing at a CDN', func
     // matters is that neither can be reached from our configuration, which the
     // next assertions pin. The install snippet and tester page are covered
     // separately -- those are where a CDN <script> tag would actually appear.
+    //
+    // The body is the minified build, which spells `false` as `!1`, so this
+    // accepts either spelling. The behaviour itself -- the options the widget
+    // actually hands Pusher -- is asserted by the widget suite, which CI runs
+    // against the same build (`npm run test:dist`).
     expect($body)->toContain('enabledTransports');
-    expect($body)->toContain('enableStats: false');
+    expect($body)->toMatch('/enableStats\s*:\s*(?:false|!1)\b/');
 });
 
 test('the bundled library leaves the host page Pusher untouched', function (): void {
@@ -86,18 +91,17 @@ test('the served widget payload stays within its size budget', function (): void
     // a property of whoever ran it.
     $gzipped = strlen((string) gzencode($body, 9));
 
-    // Raised from 105_000 for the visitor-session refresh lifecycle that #1002
-    // added to the widget. This is the budget that matters: it counts what a
-    // browser actually downloads, wrapper and vendored realtime client
-    // included, where the shell script counts only the source.
+    // This is the budget that matters: it counts what a browser actually
+    // downloads, wrapper and vendored realtime client included, where the shell
+    // script counts only the widget build.
     //
-    // The figure restores the margin this guard shipped with. When 105_000 was
-    // set the served payload measured 95_725 by this same gzencode yardstick,
-    // leaving 9_275 bytes -- 9.7%.
-    // Today it is 103_955, leaving 1_045, which is not a budget but a tripwire
-    // for whoever edits the widget next. 114_000 puts roughly ten thousand
-    // back, the same proportion it began with.
-    expect($gzipped)->toBeLessThanOrEqual(114_000);
+    // Lowered from 114_000 when the widget began to be served minified
+    // (packages/widget-js/dist). The served payload fell from 111_474 -- two and
+    // a half kilobytes under the old ceiling -- to 49_922 by this same gzencode
+    // yardstick. 55_000 keeps the roughly ten per cent of headroom this guard
+    // has always shipped with, rather than leaving the old ceiling in place as
+    // sixty kilobytes of room nobody would notice filling.
+    expect($gzipped)->toBeLessThanOrEqual(55_000);
 
     // The wrapper is the part the shell script cannot see, so pin that it is
     // actually present in what was just measured. Without this the test would

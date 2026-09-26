@@ -1376,6 +1376,9 @@ test('authorizes built-in Pusher subscriptions through the widget endpoint', asy
   assert.equal(pusherOptions.wssPort, 8080);
   assert.equal(pusherOptions.forceTLS, false);
   assert.deepEqual(pusherOptions.enabledTransports, ['ws', 'wss']);
+  // The library's stats_host is pusher.com; a self-hosted widget never reports
+  // to it.
+  assert.equal(pusherOptions.enableStats, false);
   assert.equal(calls[0].url, 'http://127.0.0.1:8000/api/widget/broadcasting/auth');
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     site_public_key: 'site_public_docs',

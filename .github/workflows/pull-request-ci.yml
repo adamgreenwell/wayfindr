@@ -155,8 +155,16 @@ jobs:
       - name: Install widget dependencies
         run: npm ci --prefix packages/widget-js --ignore-scripts
 
+      - name: Check the committed widget build matches its source
+        run: npm run check:build --prefix packages/widget-js
+
       - name: Test the widget
         run: npm test --prefix packages/widget-js
+
+      # The server serves the minified build, not the source, so the build is
+      # the thing visitors run -- the same suite, pointed at dist.
+      - name: Test the widget's minified build
+        run: npm run test:dist --prefix packages/widget-js
 
       - name: Test the concurrent-agent capacity harness guards
         run: make reverb-capacity-test

@@ -69,6 +69,11 @@ php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
   Run from anywhere else, `node --test` discovers no test files, prints
   `tests 0`, and **exits 0** — a green run that silently skipped all 22 widget
   test files and 327 assertions. `npm test` in that package is the same command.
+- **The server serves the widget's minified build, not its source.** After
+  editing `src/wayfindr-widget.js`, run `npm run build` from
+  `packages/widget-js` and commit `dist/` alongside the source; CI fails a PR
+  whose committed build is stale. `npm run test:dist` runs the widget suite
+  against the build.
 - For inline Blade `<script>` edits, extract the block and `node --check` it.
 - **Run the whole suite, not the file you touched**, before pushing anything
   that touches a shared helper or a Blade view. A view-level parse error only
