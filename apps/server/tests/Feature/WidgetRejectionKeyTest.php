@@ -129,3 +129,73 @@ test('a validation failure that is not a rejection carries no key', function ():
 
     expect($response->json('error_key'))->toBeNull();
 });
+
+function rejectionKeyMessageSend(array $f, string $body): TestResponse
+{
+    return test()->postJson(
+        "/api/conversations/{$f['conversation']->support_code}/messages",
+        [
+            'site_public_key' => $f['site']->public_key,
+            'anonymous_id' => $f['visitor']->anonymous_id,
+            'visitor_token' => $f['token'],
+            'body' => $body,
+        ]
+    );
+}
+
+test('a message over the length limit is a keyed rejection that names the limit', function (): void {
+    // The one body rejection a visitor can correct. Answered by the framework's
+    // `max:` rule it carried no key, so the widget showed its generic "could
+    // not be sent" and a Retry that resent the same text into the same 422 --
+    // for ever, never saying the message was too long.
+    $f = rejectionFixture();
+
+    $response = rejectionKeyMessageSend($f, str_repeat('a', 4001))->assertStatus(422);
+
+    expect($response->json('error_key'))->toBe('composer.rejected.too_long',
+        'the length rejection reached the widget without a key it can translate');
+    expect($response->json('error_params.max'))->toBe(4000,
+        'the widget cannot name the limit unless the rejection carries it');
+
+    // The sentence stays for any client that is not the widget, and it is
+    // attached to the field that was wrong.
+    expect(str_contains((string) $response->json('message'), '4000'))->toBeTrue(
+        'the server sentence does not name the limit: '.$response->json('message'));
+    expect($response->json('errors.body'))->toBeArray()->not->toBeEmpty();
+
+    expect($f['conversation']->messages()->count())->toBe(0);
+});
+
+test('the length limit is answered in a pinned site language', function (): void {
+    $f = rejectionFixture(['settings' => ['locale' => 'de']]);
+
+    $response = rejectionKeyMessageSend($f, str_repeat('a', 4001))->assertStatus(422);
+
+    expect((string) $response->json('message'))->toBe(__('composer.rejected.too_long', ['max' => 4000], 'de'));
+    expect($response->json('error_key'))->toBe('composer.rejected.too_long');
+});
+
+test('the length limit counts characters, as the widget does, not bytes', function (): void {
+    // The widget refuses an over-long draft before a first send, so it has to
+    // count the way this endpoint counts. Four thousand emoji are four thousand
+    // characters here (and sixteen thousand bytes); the widget's own test sends
+    // the same draft and expects it to go out, so a message the widget lets
+    // through is not one the server then refuses after the conversation exists.
+    $f = rejectionFixture();
+
+    $response = rejectionKeyMessageSend($f, str_repeat('😀', 4000));
+
+    expect($response->status())->toBe(201,
+        'four thousand emoji were refused as too long, so the server is not counting characters: '.$response->json('message'));
+    expect($f['conversation']->messages()->count())->toBe(1);
+});
+
+test('the body limit is measured after trimming, the same as the widget measures it', function (): void {
+    // The widget checks a trimmed copy before a first send. The server must
+    // measure the same thing -- TrimStrings is global middleware -- or padding
+    // would pass the widget's check and then be refused after the conversation
+    // was created, leaving it empty and unalerted.
+    $f = rejectionFixture();
+
+    rejectionKeyMessageSend($f, ' '.str_repeat('a', 4000)."\n")->assertCreated();
+});

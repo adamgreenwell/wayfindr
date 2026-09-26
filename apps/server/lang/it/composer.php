@@ -35,5 +35,6 @@ return [
         'infected' => 'Questo file è stato rifiutato da una scansione di sicurezza.',
         'unscannable' => 'Questo file non può essere analizzato per la presenza di malware e non è stato accettato. Riprovi tra poco.',
         'unavailable' => 'Uno o più allegati non sono disponibili.',
+        'too_long' => 'Un messaggio può contenere al massimo :max caratteri.',
     ],
 ];
