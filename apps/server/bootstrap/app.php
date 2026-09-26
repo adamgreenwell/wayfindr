@@ -21,6 +21,7 @@ use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
+use App\Http\Middleware\RefuseUnreadableJson;
 use App\Http\Middleware\SerializeAgentBroadcastAuthorization;
 use App\Http\Middleware\SetDashboardLocale;
 use Illuminate\Foundation\Application;
@@ -94,6 +95,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // catalogue and the public API answers machines, neither of which has
         // a signed-in person to have a preference.
         $middleware->web(append: SetDashboardLocale::class);
+
+        // Before any widget controller reads its input: an undecodable JSON
+        // body otherwise arrives as an empty one and is answered as whatever
+        // its missing fields imply -- 404 "Site not found." for the widget.
+        $middleware->api(append: RefuseUnreadableJson::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // The public API answers in JSON whether or not the caller asked for

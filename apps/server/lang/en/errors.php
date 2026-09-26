@@ -17,4 +17,8 @@ return [
         'back_dashboard' => 'Back to the dashboard',
         'back_sign_in' => 'Back to sign in',
     ],
+    // Answered before the visitor's language is known: it is inside the body
+    // that could not be read, so this is said in the install's language and
+    // the widget translates it by key (error.unreadableRequest).
+    'unreadable_request' => 'The request could not be read.',
 ];

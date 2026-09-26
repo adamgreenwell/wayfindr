@@ -11,4 +11,5 @@ return [
         'back_dashboard' => 'Torna al pannello',
         'back_sign_in' => 'Torna all’accesso',
     ],
+    'unreadable_request' => 'Impossibile leggere la richiesta.',
 ];

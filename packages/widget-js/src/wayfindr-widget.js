@@ -81,6 +81,7 @@
       'error.refresh': 'Messages could not be refreshed. Your current chat is still visible.',
       'error.attachment': 'That file could not be attached.',
       'error.requestFailed': 'Wayfindr request failed with status {status}.',
+      'error.unreadableRequest': 'The request could not be read. Please try again.',
       // The server's own rejection keys. It sends the key alongside its
       // sentence because on an unpinned site it cannot know what language this
       // widget is speaking -- that follows the visitor's browser, which the
@@ -188,6 +189,7 @@
       'error.refresh': 'Die Nachrichten konnten nicht aktualisiert werden. Ihr Chat ist weiterhin sichtbar.',
       'error.attachment': 'Diese Datei konnte nicht angehängt werden.',
       'error.requestFailed': 'Wayfindr-Anfrage fehlgeschlagen mit Status {status}.',
+      'error.unreadableRequest': 'Die Anfrage konnte nicht gelesen werden. Bitte versuchen Sie es erneut.',
       'composer.rejected.too_many': 'Eine Nachricht darf höchstens {max} Anhänge enthalten.',
       'composer.rejected.unreadable': 'Die Datei konnte nicht gelesen werden.',
       'composer.rejected.too_large': 'Die Datei ist größer als das Limit von {limit}.',
@@ -8175,15 +8177,44 @@
     return { Authorization: 'Bearer ' + requireVisitorToken(token) };
   }
 
-  function postJson(fetcher, url, payload) {
-    return fetcher(url, Object.assign({
+  // JSON.stringify writes half a surrogate pair as a "\udXXX" escape: valid
+  // JSON to a browser, and refused outright by PHP's decoder -- the whole
+  // request, not the one field. Such a half can arrive in anything the widget
+  // sends (a pasted message, a host's visitorContext), so every string is made
+  // well formed here, the way a UTF-8 encoder does it: U+FFFD for the half.
+  function wellFormedJson(payload) {
+    return JSON.stringify(payload, function (key, value) {
+      return typeof value === 'string' ? wellFormedString(value) : value;
+    });
+  }
+
+  function wellFormedString(text) {
+    if (typeof text.toWellFormed === 'function') {
+      return text.toWellFormed();
+    }
+
+    // A whole pair matches first and is kept; only a lone half is replaced.
+    return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, function (match) {
+      return match.length === 2 ? match : '\ufffd';
+    });
+  }
+
+  // One request shape for every JSON POST, so the well-formed body cannot be
+  // present on one path and forgotten on the other; the two below differ only
+  // in how they read the answer.
+  function jsonPostInit(payload) {
+    return Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
-    }, REQUEST_PRIVACY)).then(readJsonResponse);
+      body: wellFormedJson(payload),
+    }, REQUEST_PRIVACY);
+  }
+
+  function postJson(fetcher, url, payload) {
+    return fetcher(url, jsonPostInit(payload)).then(readJsonResponse);
   }
 
   // Multipart POST for file uploads. Deliberately does NOT set Content-Type —
@@ -8199,14 +8230,7 @@
   }
 
   function postJsonRaw(fetcher, url, payload) {
-    return fetcher(url, Object.assign({
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    }, REQUEST_PRIVACY)).then(readRawJsonResponse);
+    return fetcher(url, jsonPostInit(payload)).then(readRawJsonResponse);
   }
 
   async function readJsonResponse(response) {
