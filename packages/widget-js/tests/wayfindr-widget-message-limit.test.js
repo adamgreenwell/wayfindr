@@ -335,3 +335,45 @@ test('sendFirstMessage sends the body it measured', async () => {
     'sendFirstMessage sent a body other than the one it measured, so the server can refuse what the guard passed',
   );
 });
+
+test('sendFirstMessage refuses a body with nothing to send before making any request', async () => {
+  // A first message cannot carry a file, so with no text the server refuses
+  // it -- but only after the conversation it opens has been created, leaving
+  // it empty and alerting nobody. The same for a body that is not a string,
+  // which fails the server's `string` rule.
+  const cases = [
+    ['an empty string', ''],
+    ['only whitespace', '  \n\t '],
+    ['only a no-break space', ' '],
+    ['null', null],
+    ['undefined', undefined],
+    ['a number', 42],
+  ];
+
+  for (const [name, body] of cases) {
+    const calls = [];
+    const client = Wayfindr.createClient({
+      apiBaseUrl: 'http://127.0.0.1:8000',
+      sitePublicKey: 'site_public_limit',
+      anonymousId: 'anon-limit',
+      fetch: acceptingFetch(calls),
+    });
+
+    let thrown = null;
+
+    try {
+      await client.sendFirstMessage(body);
+    } catch (error) {
+      thrown = error;
+    }
+
+    assert.deepEqual(
+      calls.map((call) => call.url),
+      [],
+      `sendFirstMessage made requests for ${name}, which the server refuses after the conversation it opens is created`,
+    );
+    assert.ok(thrown, `${name} was not refused`);
+    assert.equal(thrown.wayfindrKey, 'composer.rejected.empty', `${name} was refused without the key a caller translates`);
+    assert.equal(thrown.message, 'Enter a message or attach a file.');
+  }
+});
