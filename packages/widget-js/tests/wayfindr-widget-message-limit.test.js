@@ -121,15 +121,39 @@ function messageLimitPosts(calls) {
   return calls.filter((call) => call.method === 'POST' && (call.url.endsWith('/api/conversations') || call.url.includes('/messages')));
 }
 
-test('the composer cannot be typed or pasted past the server limit', (t) => {
-  const { widget } = messageLimitWidget({ calls: [] });
+test('a paste over the limit is kept whole, and the visitor is told at once', async (t) => {
+  // A browser enforces `maxlength` by silently cutting a paste to fit: a
+  // pasted log reached the agent truncated mid-line and neither side knew.
+  // jsdom does not enforce the attribute, so its absence is what is pinned;
+  // what it would do was measured in Chromium.
+  const { dom, widget } = messageLimitWidget({ calls: [] });
   t.after(() => widget.destroy());
 
-  assert.equal(
-    widget.root.querySelector('.wayfindr-widget__textarea').getAttribute('maxlength'),
-    String(LIMIT),
-    'the composer accepts more than the server will take',
-  );
+  await widget.open();
+  await settle();
+
+  const textarea = widget.root.querySelector('.wayfindr-widget__textarea');
+  const status = widget.root.querySelector('.wayfindr-widget__status');
+  const paste = 'x'.repeat(LIMIT + 200);
+
+  assert.equal(textarea.hasAttribute('maxlength'), false, 'the composer has a maxlength, which browsers enforce by silently discarding the end of a paste');
+
+  textarea.value = paste;
+  textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+  assert.equal(status.textContent, 'A message can be at most 4000 characters long.', 'an over-long draft was not flagged until Send');
+  assert.equal(textarea.value, paste, 'the draft was cut, so the part over the limit is lost');
+
+  textarea.value = 'x'.repeat(LIMIT);
+  textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+  assert.equal(status.textContent, '', 'the length notice stayed after the draft was shortened to fit');
+
+  // Only its own notice is cleared: other news on the status line stays.
+  status.textContent = 'Message sent.';
+  textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+  assert.equal(status.textContent, 'Message sent.', 'typing within the limit wiped an unrelated status');
 });
 
 test('an over-long first message creates no conversation and says what the limit is', async (t) => {
@@ -172,7 +196,35 @@ test('the limit is counted in characters, as the server counts them', async (t) 
     2,
     `four thousand emoji were refused as too long, so the widget is not counting characters: ${widget.root.querySelector('.wayfindr-widget__status').textContent}`,
   );
+  // This fake parses with JSON.parse, which accepts half a surrogate pair;
+  // PHP's decoder refuses the whole request for one. So the conversation
+  // request is checked for what the real server would reject.
+  assert.ok(posts[0].body.subject.isWellFormed(), 'the conversation subject ends in half an emoji, which the server refuses outright');
   assert.equal(posts[1].body.body, '😀'.repeat(LIMIT));
+});
+
+test('a first message with an emoji at the subject cut still opens its conversation', async () => {
+  // The subject is the message cut to the server's 255 characters. Cut by
+  // UTF-16 unit, an emoji straddling the cut left a lone surrogate, the server
+  // answered "Site not found." -- its decoder had dropped the whole body --
+  // and Retry sent the same bytes forever.
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_limit',
+    anonymousId: 'anon-limit',
+    fetch: acceptingFetch(calls),
+  });
+
+  await client.sendFirstMessage('a'.repeat(254) + '😀 thanks');
+
+  const created = calls.find((call) => call.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    created.body.subject,
+    'a'.repeat(254) + '😀',
+    'the subject was not cut to 255 whole characters',
+  );
 });
 
 test('the server’s own length rejection is said in the widget’s language', async (t) => {

@@ -1854,7 +1854,7 @@
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">' + escapeHtml(t('form.label')) + '</label>',
-      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" maxlength="' + MESSAGE_BODY_MAX_CHARACTERS + '" placeholder="' + escapeHtml(options.placeholder || t('form.placeholder')) + '"></textarea>',
+      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" placeholder="' + escapeHtml(options.placeholder || t('form.placeholder')) + '"></textarea>',
       '    <ul class="wayfindr-widget__attachments" aria-label="' + escapeHtml(t('attachments.aria')) + '" hidden></ul>',
       '    <input class="wayfindr-widget__file-input" type="file" accept="' + escapeHtml(ATTACHMENT_ACCEPT) + '" multiple hidden aria-hidden="true" tabindex="-1">',
       '    <div class="wayfindr-widget__actions">',
@@ -5790,9 +5790,25 @@
     cobrowseDecline.addEventListener('click', function () {
       updateCobrowseConsent(false);
     });
+    // The composer has no `maxlength`: browsers enforce it by silently cutting
+    // a paste to fit, so a pasted log reached the agent truncated mid-line and
+    // neither side knew. The whole text stays here instead, and the visitor
+    // is told the moment it is over the limit rather than at Send. Written
+    // only when it changes, because the status line is a live region.
     textarea.addEventListener('input', function () {
       if (textarea.value.trim()) {
         reportTyping(true);
+      }
+
+      // Translated per event: the panel's language can be settled after mount.
+      var tooLongNotice = t('composer.rejected.too_long', { max: MESSAGE_BODY_MAX_CHARACTERS });
+
+      if (messageBodyTooLong(textarea.value)) {
+        if (status.textContent !== tooLongNotice) {
+          status.textContent = tooLongNotice;
+        }
+      } else if (status.textContent === tooLongNotice) {
+        status.textContent = '';
       }
     });
     attachButton.addEventListener('click', function () {
@@ -5885,7 +5901,6 @@
         return;
       }
 
-      // `maxlength` stops typing and pasting, but not a value set by script.
       // Refused here, before anything is sent: on a first send the
       // conversation is created by a request of its own, and a body the
       // server then rejects leaves an empty conversation nobody is alerted to.
@@ -8263,8 +8278,14 @@
     return 'private-conversations.' + supportCode;
   }
 
+  // Cut by character, not by UTF-16 unit, to the server's 255. A cut through
+  // an emoji leaves half a surrogate pair, and PHP's JSON decoder refuses the
+  // WHOLE request for it: the site key goes with it, the conversation is
+  // answered "Site not found.", and every Retry sends the same bytes.
   function summarize(body) {
-    return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 255) || null;
+    var text = String(body || '').replace(/\s+/g, ' ').trim();
+
+    return Array.from(text).slice(0, 255).join('') || null;
   }
 
   function normalizeVisitorExternalId(value) {
