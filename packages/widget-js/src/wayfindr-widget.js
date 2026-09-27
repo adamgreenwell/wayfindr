@@ -8177,48 +8177,23 @@
     return { Authorization: 'Bearer ' + requireVisitorToken(token) };
   }
 
-  // JSON.stringify writes half a surrogate pair as a "\udXXX" escape: valid
-  // JSON to a browser, and refused outright by PHP's decoder -- the whole
-  // request, not the one field. Such a half can arrive in anything the widget
-  // sends (a pasted message, a host's visitorContext), so every string is made
-  // well formed here, the way a UTF-8 encoder does it: U+FFFD for the half.
-  //
-  // Property NAMES too: a host chooses visitorContext's keys. A replacer can
-  // only change values, so an object is swapped for a copy with its keys
-  // repaired, and stringify then descends into the copy, repairing its values
-  // -- and its own objects' keys -- in turn.
+  // JSON.stringify writes a lone surrogate half as a "\udXXX" escape -- and
+  // only a lone half, since a whole pair is written as itself. That is valid
+  // JSON to a browser and refused outright by PHP's decoder, the whole
+  // request with it. A half can sit anywhere the widget sends, in a value or
+  // in a key a host chose, so the FINISHED JSON is repaired: each such escape
+  // becomes U+FFFD, as a UTF-8 encoder writes it, and everything else is
+  // exactly what JSON.stringify made -- boxed values, __proto__, toJSON and
+  // all. An escaped backslash is consumed as a pair, so a visitor who types
+  // "\ud83d" keeps it.
   function wellFormedJson(payload) {
-    return JSON.stringify(payload, function (key, value) {
-      if (typeof value === 'string') {
-        return wellFormedString(value);
-      }
+    var json = JSON.stringify(payload);
 
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        // No prototype, so every name is an ordinary property: on a plain
-        // object, assigning `__proto__` sets the prototype instead, and a
-        // host's own `__proto__` entry would silently vanish.
-        var copy = Object.create(null);
-
-        Object.keys(value).forEach(function (name) {
-          copy[wellFormedString(name)] = value[name];
-        });
-
-        return copy;
-      }
-
-      return value;
-    });
-  }
-
-  function wellFormedString(text) {
-    if (typeof text.toWellFormed === 'function') {
-      return text.toWellFormed();
-    }
-
-    // A whole pair matches first and is kept; only a lone half is replaced.
-    return text.replace(/[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g, function (match) {
-      return match.length === 2 ? match : '\ufffd';
-    });
+    return typeof json === 'string'
+      ? json.replace(/\\(?:\\|u(d[89a-f][0-9a-f]{2}))/g, function (escape, half) {
+        return half ? '\\ufffd' : escape;
+      })
+      : json;
   }
 
   // One request shape for every JSON POST, so the well-formed body cannot be

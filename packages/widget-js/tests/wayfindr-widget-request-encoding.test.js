@@ -51,24 +51,36 @@ test('a whole emoji is sent untouched', async () => {
   assert.equal(JSON.parse(sent[0]).body, 'thanks 😀', 'a valid surrogate pair was altered');
 });
 
-test('browsers without toWellFormed get the same repair', async (t) => {
-  // String.prototype.toWellFormed is ES2024. Older browsers take the fallback,
-  // which must keep whole pairs and replace only a lone half.
-  const native = String.prototype.toWellFormed;
-  delete String.prototype.toWellFormed;
-  t.after(() => {
-    String.prototype.toWellFormed = native;
-  });
-
+test('a visitor who types a backslash-u sequence keeps it', async () => {
+  // The repair rewrites "\udXXX" ESCAPES in the finished JSON. A visitor's own
+  // backslash is written as "\\", so their typed "\ud83d" must not be taken
+  // for one -- it has to arrive exactly as typed.
   const sent = [];
+  const typed = 'the log said \\ud83d and \\\\ud83d';
 
-  await encodingClient(sent).sendMessage('WF-ENC', '\udc00 lone low, 😀 whole, lone high \ud83d');
+  await encodingClient(sent).sendMessage('WF-ENC', typed);
 
-  assert.doesNotMatch(sent[0], /\\ud[89a-f][0-9a-f]{2}/i, `the fallback sent a lone half as an escape PHP refuses: ${sent[0]}`);
-  assert.equal(
-    JSON.parse(sent[0]).body,
-    '� lone low, 😀 whole, lone high �',
-    'the fallback did not replace exactly the lone halves',
+  assert.equal(JSON.parse(sent[0]).body, typed, 'a typed backslash sequence was rewritten as if it were a broken character');
+});
+
+test('boxed values are sent as the values they hold', async () => {
+  // JSON.stringify unwraps new String('Team') to "Team". A repair that copied
+  // objects before stringify saw the box instead and sent {"0":"T",...},
+  // which the server drops as a non-scalar context value.
+  const sent = [];
+  const client = encodingClient(sent, () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { site: { public_key: 'site_public_encoding', settings: {} }, visitor: { anonymous_id: 'anon-encoding', token: 'visitor-token-encoding' } } }),
+  }));
+
+  // eslint-disable-next-line no-new-wrappers
+  await client.bootstrap('https://shop.example.test/', { plan: new String('Team \ud83d'), active: new Boolean(true), seats: new Number(3) });
+
+  assert.deepEqual(
+    JSON.parse(sent[0]).context,
+    { plan: 'Team �', active: true, seats: 3 },
+    'a boxed context value was not sent as the value it holds',
   );
 });
 
