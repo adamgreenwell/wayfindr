@@ -11,4 +11,5 @@ return [
         'back_dashboard' => 'Zurück zum Dashboard',
         'back_sign_in' => 'Zurück zur Anmeldung',
     ],
+    'unreadable_request' => 'Die Anfrage konnte nicht gelesen werden.',
 ];
