@@ -119,7 +119,7 @@
             --wf-surface-2: #E9E9E4;
             --wf-ink: #16181A;
             --wf-ink-invert: var(--wf-brand-ink-configured,#F1F1EE);
-            --wf-muted: #6A6E71;
+            --wf-muted: #63676A;
             --wf-rule: #DCDCD6;
             --wf-rule-firm: #C4C4BD;
             --wf-brand: var(--wf-brand-configured,#0D6F68);
