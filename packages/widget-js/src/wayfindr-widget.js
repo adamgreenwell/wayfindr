@@ -8194,7 +8194,10 @@
       }
 
       if (value && typeof value === 'object' && !Array.isArray(value)) {
-        var copy = {};
+        // No prototype, so every name is an ordinary property: on a plain
+        // object, assigning `__proto__` sets the prototype instead, and a
+        // host's own `__proto__` entry would silently vanish.
+        var copy = Object.create(null);
 
         Object.keys(value).forEach(function (name) {
           copy[wellFormedString(name)] = value[name];

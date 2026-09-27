@@ -121,3 +121,25 @@ test('a host’s context keys are made well formed too, at every depth', async (
     nested: { 'region�': 'EU �', list: ['a�', 'whole 😀'] },
   });
 });
+
+test('a context entry named __proto__ is sent, not swallowed by the repair', async () => {
+  // JSON.parse (or a computed name) gives a host an OWN property called
+  // __proto__. Copied onto a plain object, that assignment sets the copy's
+  // prototype instead of a property, and the entry disappeared from the
+  // request -- where plain JSON.stringify had always sent it.
+  const sent = [];
+  const client = encodingClient(sent, () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { site: { public_key: 'site_public_encoding', settings: {} }, visitor: { anonymous_id: 'anon-encoding', token: 'visitor-token-encoding' } } }),
+  }));
+
+  await client.bootstrap('https://shop.example.test/', JSON.parse('{"__proto__":"kept","nested":{"__proto__":{"plan":"Team"}}}'));
+
+  const context = JSON.parse(sent[0]).context;
+  const own = (object, name) => Object.getOwnPropertyDescriptor(object, name);
+
+  assert.ok(own(context, '__proto__'), `a host's __proto__ entry was dropped from the request: ${sent[0]}`);
+  assert.equal(own(context, '__proto__').value, 'kept');
+  assert.deepEqual(own(own(context, 'nested').value, '__proto__').value, { plan: 'Team' }, 'a nested __proto__ entry was dropped');
+});
