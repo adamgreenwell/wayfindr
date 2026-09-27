@@ -91,3 +91,33 @@ test('the server’s unreadable-request refusal reaches the caller as a key the 
   assert.ok(thrown, 'a 400 was not raised as an error');
   assert.equal(thrown.wayfindrKey, 'error.unreadableRequest', 'the widget does not carry the key the server answers with, so it cannot translate it');
 });
+
+test('a host’s context keys are made well formed too, at every depth', async () => {
+  // A replacer can only change values, and visitorContext's KEYS are the
+  // host's to choose. One lone half in a key refused the whole bootstrap.
+  const sent = [];
+  const client = encodingClient(sent, () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        site: { public_key: 'site_public_encoding', settings: {} },
+        visitor: { anonymous_id: 'anon-encoding', token: 'visitor-token-encoding' },
+      },
+    }),
+  }));
+
+  await client.bootstrap('https://shop.example.test/', {
+    ['plan\ud83d']: 'Team',
+    nested: { ['region\udc00']: 'EU \ud83d', list: ['a\ud83d', 'whole 😀'] },
+  });
+
+  assert.doesNotMatch(sent[0], /\\ud[89a-f][0-9a-f]{2}/i, `a context key was sent as an escape PHP refuses: ${sent[0]}`);
+
+  const context = JSON.parse(sent[0]).context;
+
+  assert.deepEqual(context, {
+    'plan�': 'Team',
+    nested: { 'region�': 'EU �', list: ['a�', 'whole 😀'] },
+  });
+});

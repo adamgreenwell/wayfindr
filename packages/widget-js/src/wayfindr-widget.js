@@ -8182,9 +8182,28 @@
   // request, not the one field. Such a half can arrive in anything the widget
   // sends (a pasted message, a host's visitorContext), so every string is made
   // well formed here, the way a UTF-8 encoder does it: U+FFFD for the half.
+  //
+  // Property NAMES too: a host chooses visitorContext's keys. A replacer can
+  // only change values, so an object is swapped for a copy with its keys
+  // repaired, and stringify then descends into the copy, repairing its values
+  // -- and its own objects' keys -- in turn.
   function wellFormedJson(payload) {
     return JSON.stringify(payload, function (key, value) {
-      return typeof value === 'string' ? wellFormedString(value) : value;
+      if (typeof value === 'string') {
+        return wellFormedString(value);
+      }
+
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        var copy = {};
+
+        Object.keys(value).forEach(function (name) {
+          copy[wellFormedString(name)] = value[name];
+        });
+
+        return copy;
+      }
+
+      return value;
     });
   }
 
