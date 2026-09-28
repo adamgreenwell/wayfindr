@@ -1,12 +1,12 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 24, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 28, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§16](#16-published-090-and-the-next-cycle--september-24-2026)**
+**Taking the baton? Start at [§17](#17-published-0100--september-28-2026)**
 for the current release and acceptance boundary. Then §5 (conventions) and §7
-(gotchas). Sections 8–15 are dated snapshots, kept for their evidence rather
+(gotchas). Sections 8–16 are dated snapshots, kept for their evidence rather
 than their currency.
 
 ---
@@ -41,9 +41,10 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v0.9.0` published September 24 at tag
-`b9ae8bcc`, with the manifest and multi-architecture image at
-`sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`.
+**Release truth comes first.** Public `v0.10.0` published September 28 at tag
+`665faf09`, with the manifest and multi-architecture image at
+`sha256:fa8c0449d516f6fade3eff556c3887111e202e09165ea4959b8d34d49741affe`
+(§17). The previous release, `v0.9.0`, published September 24 at `b9ae8bcc`.
 Current `main` begins `1.0.0-dev`; it is not a 1.0.0 release.
 
 The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
@@ -374,12 +375,12 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Use the published `v0.9.0` artifact as the release baseline.** The guarded
-   tag, public release, manifest, and image digest are verified. The September 24
-   hosted-runner clean-install and upgrade checks are linked in §16; keep their
-   proof distinct from the older `v0.3.2` bare-metal matrix and `v0.7.0` cold
-   sandbox run. Host-managed PHP upgrades have a scoped runtime action in the
-   `v0.9.0` manifest; the published image is exempt.
+1. **Use the published `v0.10.0` artifact as the release baseline.** The guarded
+   tag, public release, manifest, and image digest are verified (§17), and so
+   were `v0.9.0`'s (§16); keep hosted-runner proof distinct from the older
+   `v0.3.2` bare-metal matrix and `v0.7.0` cold sandbox run. Host-managed PHP
+   upgrades from before `v0.9.0` still owe that release's scoped runtime action,
+   carried in `v0.10.0`'s history; the published image is exempt.
 
 2. **Finish the account area for 1.0.0.** #994 records the measured scope.
    #985's site-settings work and #970's guarded-tag gates have closed. Keep
@@ -1176,3 +1177,60 @@ that tester and defines the account-area work planned for 1.0.0.
 The canonical release does not itself deploy Forge, sync the staging fork, or
 update the separate public site and GitHub Wiki mirrors. Verify each surface
 separately before claiming its runtime or documentation has advanced.
+
+## 17. Published 0.10.0 — September 28, 2026
+
+[`v0.10.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.10.0) is
+public at tag `665faf090a1d18fcda274f6fb83bbe9fbc174261`, published by the
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36460298707). The image digest is
+`sha256:fa8c0449d516f6fade3eff556c3887111e202e09165ea4959b8d34d49741affe`. It needs no operator action and has no migrations. It carries
+all 28 PRs merged after `v0.9.0`, because the guarded publisher only tags a
+`main` commit whose `VERSION` matches. A release cannot cherry-pick, so decide
+the number from everything on `main`, not from the fixes that prompted the cut.
+
+The public artifact then passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
+and a [`v0.2.0 → v0.10.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977).
+Both resolved the published digest, passed the support loop, backup/restore and
+restart, and read `v0.10.0` from authenticated `/operator` after restore. The
+tag itself was pushed by the owner: a cloud agent session's tag push was
+refused with HTTP 403, and the `v*` ruleset gives tag-creation bypass to the
+owner alone. Expect an agent to prepare and verify everything up to the tag,
+then hand the owner the exact commands.
+
+**It was nearly 0.9.1.** The owner first approved a patch framed as "#1060,
+#1067, #1068 and optional fixes". Codex flagged on the release PR (#1080) that
+#1063, which emails replies to visitors who wrote while the desk was away, is a
+feature. RELEASING.md §1 makes that a minor, and the owner renumbered. The
+machine contract did not catch it: it refuses only an `### Added` heading on a
+patch line, so a feature filed under `Changed` passes. Read §1 as the rule and
+the contract as a backstop.
+
+**The email backlog was sent on purpose.** No reply to an email conversation
+ever rendered before #1060, so a 0.9.0 install that answered one from the
+conversation page or the API holds unaccepted outbox rows (ticket-page replies
+were never queued, so there is nothing of theirs to send). The outbox retries
+without an age limit, so 0.10.0 sends those rows within about an hour, however
+old. The owner chose to let them send and to say so at the top
+of the release notes, which include a read-only count one-liner. #1079 made the
+delivery job check `OutboundMail` itself. Before that, #1067's gate ran only
+when a reply was written, so on a `log` mailer the backlog would have been
+written into the application log, visitor addresses included, and marked
+accepted. Held rows wait on the cooling-off marker until mail can deliver.
+
+**Owner decisions recorded that day:** release 0.10.0 (after 0.9.1 was
+withdrawn); send the backlog, with a release note; collapse the account and
+operator context sidebar at 1100px rather than with the rail at 900px (#1079).
+
+**Not done by the release, and not implied by it:** the Forge stage deploy, the
+`northcoastmedia/wayfindr` fork sync, the public site, the published wiki
+mirror, and #797's human non-author install. `VERSION` returned to `1.0.0` in
+the follow-up that carries this section.
+
+**Test-harness gotcha.** The reply delivery job now refuses the suite's own
+`array` mailer. A test that reads the rendered email must call
+`replyDeliveryCapturingMailer()` from `tests/Pest.php`, an in-memory transport
+under a name OutboundMail does not classify as a sink. Also, the first queued
+job in a test fixes the operator-settings baseline (`JobProcessing` →
+`applyOverrides`). A sync-queue job run after an upload or similar will see
+`mail.default` reset to that baseline, not to what the test set just before.

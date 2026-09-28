@@ -2,7 +2,7 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. The latest public release is `v0.9.0` (September 24, 2026).
+Wayfindr is pre-1.0. The latest public release is `v0.10.0` (September 28, 2026).
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
@@ -12,7 +12,7 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests. The newest public-artifact
-hosted runs cover a `v0.9.0` clean install and `v0.2.0 → v0.9.0` upgrade with a
+hosted runs cover a `v0.10.0` clean install and `v0.2.0 → v0.10.0` upgrade with a
 custom backup queue. The newest owner-operated bare-metal guest evidence still
 covers `v0.3.2`; see [Releases](Releases).
 
@@ -29,17 +29,26 @@ before `v0.9.0` published; they do not satisfy #797. The next work toward
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v0.9.0`
+## What's in `v0.10.0`
 
-This section describes public `v0.9.0`. Some foundation was available in older
+This section describes public `v0.10.0`. Some foundation was available in older
 releases; consult the release notes when operating one of those artifacts.
+
+`v0.10.0` changes, relative to `v0.9.0`: replies to email conversations are
+delivered (their email never rendered before, and the replies `v0.9.0` queued
+from the conversation page or the API send after the upgrade); a visitor who
+left an address while the desk was away gets the
+reply by email; replies written on a linked ticket's page are emailed too; the
+account area has a context sidebar; and the widget is served minified. The
+[release notes](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
+list the rest.
 
 - Widget install, visitor identity, live chat, agent replies, and durable
   tickets.
 - **Email as a second channel**: mail opens and continues conversations, so a
   customer replying to a notification is no longer replying into nothing.
-  `v0.9.0` verifies Mailgun and Postmark directly and retains the original
-  Wayfindr-signed proxy contract for existing integrations.
+  `v0.9.0` and later verify Mailgun and Postmark directly and retain the
+  original Wayfindr-signed proxy contract for existing integrations.
 - **A help centre**: articles written in the dashboard and searchable from
   inside the widget, so a visitor can find the answer before asking.
 - **A public API and outbound webhooks**: scoped tokens provide read and narrow
@@ -266,17 +275,24 @@ sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
 performed by an AI agent rather than a human non-author.
 
-The `v0.9.0` tag at `b9ae8bcc` and its
-[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
+The `v0.10.0` tag at `665faf09` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36460298707)
 verify the published manifest, multi-architecture image and digest, GitHub
-Release, and stable aliases. Separate hosted runs now verify a
-[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+Release, and stable aliases. Separate hosted runs verify a
+[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
 and a
-[`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
-A separate [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
-matched the published image digest and read `Wayfindr version: v0.9.0` from
-rendered authenticated `/operator` after install and after restore. Those
-synthetic runs do not satisfy the human non-author install required by
+[`v0.2.0 → v0.10.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977).
+Both matched the published image digest and read `Wayfindr version: v0.10.0`
+from rendered authenticated `/operator` after install and after restore.
+
+Before it, the `v0.9.0` tag at `b9ae8bcc` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
+verified that release the same way, with a
+[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661),
+a [`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
+and a [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+that read `Wayfindr version: v0.9.0`. None of these
+synthetic runs satisfies the human non-author install required by
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797). Record that run's
 stops and fix what it surfaces before claiming `1.0.0` acceptance.
 

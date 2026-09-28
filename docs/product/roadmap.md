@@ -3,13 +3,18 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is
-[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0)
-(September 24, 2026). Current `main` identifies the next development line as
+[`v0.10.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.10.0)
+(September 28, 2026). Current `main` identifies the next development line as
 `1.0.0-dev`; no 1.0.0 artifact has been published.
 
-The first guarded release passed its tag ruleset and old-run gates, published
-the manifest and multi-architecture image, and verified stable image aliases.
-The public artifact then passed a
+`v0.10.0` repeated both hosted-runner paths on September 28: a
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
+and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977),
+each reading `v0.10.0` from authenticated `/operator`.
+
+The first guarded release, `v0.9.0`, passed its tag ruleset and old-run gates,
+published the manifest and multi-architecture image, and verified stable image
+aliases. That public artifact then passed a
 [hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
 and an [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
 with a custom backup queue. An additional
@@ -27,10 +32,18 @@ The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issue
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v0.9.0
+## Implemented in v0.10.0
 
-This section describes the public `v0.9.0` artifact. Some foundation also
+This section describes the public `v0.10.0` artifact. Some foundation also
 exists in older releases; the release notes define each version's boundary.
+
+`v0.10.0` changes, relative to `v0.9.0`: replies to email conversations are
+delivered (their email never rendered before, and the replies `v0.9.0` queued
+from the conversation page or the API send after the upgrade); a visitor who
+left an address while the desk was away gets the reply by email; replies
+written on a linked ticket's page are emailed too; the account area has a
+context sidebar; and the widget is served minified. Everything below shipped in
+`v0.9.0` and remains.
 
 The product has moved past a spine. Both competitive-gap tiers behind it —
 [#741](https://github.com/adamgreenwell/wayfindr/issues/741) (Tier 1) and
@@ -181,8 +194,9 @@ Underneath that, the original foundation:
 
 ## Before 1.0.0
 
-The support feature gaps, v0.9.0 publication, and guarded-tag preconditions are
-complete. The next work is the account area and independent installation and
+The support feature gaps, the v0.9.0 and v0.10.0 publications, and the
+guarded-tag preconditions are complete. The next work is the account area and
+independent installation and
 upgrade acceptance; other polish stays demand-gated.
 
 - **Finish the account experience:** use the measured account-area scope in
@@ -192,7 +206,7 @@ upgrade acceptance; other polish stays demand-gated.
   [#797](https://github.com/adamgreenwell/wayfindr/issues/797) needs a person
   who is not the author to install Wayfindr using the public docs, then record
   where they had to guess. #994's 1.0.0 scope also asks that tester to upgrade.
-  The hosted-runner v0.9.0 clean install,
+  The hosted-runner v0.10.0 and v0.9.0 clean install,
   upgrade, support-loop, and backup/restore checks are useful reproducible
   evidence, but scripted runs cannot satisfy that human gate. A prior cold
   Claude sandbox run against `v0.7.0` also found real widget and installer
@@ -201,9 +215,9 @@ upgrade acceptance; other polish stays demand-gated.
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
   for future release candidates. The August 12 bare-metal matrix remains
-  specific to `v0.3.2`; the September 24 public-artifact hosted-runner checks
-  cover the narrower `v0.9.0` paths linked above. Neither proves a production
-  restore posture.
+  specific to `v0.3.2`; the September 28 and September 24 public-artifact
+  hosted-runner checks cover the narrower `v0.10.0` and `v0.9.0` paths linked
+  above. Neither proves a production restore posture.
 - MVP dogfood operation: the Forge stage has been the owner-approved initial
   dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
