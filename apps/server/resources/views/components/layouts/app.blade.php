@@ -1448,6 +1448,40 @@
             margin-top: var(--wf-space-4);
         }
 
+        /* Collapses before the rail does. Beside the 236px rail, 188px of
+           sidebar left a page body of ~600px at 1100px wide and under 400px
+           just above the rail's own 900px breakpoint -- a phone's width for
+           the forms and tables these pages hold. The sections become a
+           scrolling row above the body instead. */
+        @media (max-width: 1100px) {
+            .wf-context {
+                grid-template-columns: minmax(0, 1fr);
+                gap: var(--wf-space-4);
+            }
+
+            .wf-context-nav {
+                position: static;
+                max-height: none;
+                flex-direction: row;
+                gap: var(--wf-space-1);
+                overflow-x: auto;
+                border-bottom: var(--wf-border) solid var(--wf-rule);
+                padding-bottom: var(--wf-space-2);
+            }
+
+            .wf-context-heading {
+                display: none;
+            }
+
+            .wf-context-link {
+                white-space: nowrap;
+            }
+
+            .wf-context-link[aria-current="page"] {
+                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
+            }
+        }
+
         /* ── Queue switcher (ADR 0014) ────────────────────────────────────
            The reference platforms put this in the breadcrumb; here it sits with
            the page title, which is the same affordance without threading a slot
@@ -1634,35 +1668,6 @@
 
             .page {
                 padding: var(--wf-space-4) var(--wf-space-4) var(--wf-space-6);
-            }
-
-            /* 188px of sidebar beside the content leaves ~130px for a form on a
-               375px phone. The sections become a scrolling row above the body. */
-            .wf-context {
-                grid-template-columns: minmax(0, 1fr);
-                gap: var(--wf-space-4);
-            }
-
-            .wf-context-nav {
-                position: static;
-                max-height: none;
-                flex-direction: row;
-                gap: var(--wf-space-1);
-                overflow-x: auto;
-                border-bottom: var(--wf-border) solid var(--wf-rule);
-                padding-bottom: var(--wf-space-2);
-            }
-
-            .wf-context-heading {
-                display: none;
-            }
-
-            .wf-context-link {
-                white-space: nowrap;
-            }
-
-            .wf-context-link[aria-current="page"] {
-                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
             }
 
             .wf-topbar-search input {

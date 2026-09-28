@@ -372,3 +372,52 @@ test('the desktop sidebar scrolls on its own when it is taller than the window',
         ->and(str_contains($rule[1], 'max-height: calc(100vh') && str_contains($rule[1], 'overflow-y: auto'))
         ->toBeTrue('the sticky sidebar has no bounded height of its own, so its last links can sit below a short window');
 });
+
+/**
+ * The rules inside every `@media (<condition>)` block of the page's stylesheet,
+ * joined, comments stripped and whitespace collapsed. Braces are counted rather
+ * than matched by a pattern: each block holds nested rules.
+ */
+function accountSidebarMediaCss(string $html, string $condition): string
+{
+    preg_match_all('#<style>(.*?)</style>#s', $html, $styles);
+    $css = preg_replace('#/\*.*?\*/#s', '', implode("\n", $styles[1]));
+    $blocks = [];
+    $offset = 0;
+
+    while (($start = strpos($css, '@media ('.$condition.')', $offset)) !== false) {
+        $open = strpos($css, '{', $start);
+        $depth = 1;
+        $cursor = $open + 1;
+
+        while ($depth > 0 && $cursor < strlen($css)) {
+            $depth += match ($css[$cursor]) {
+                '{' => 1,
+                '}' => -1,
+                default => 0,
+            };
+            $cursor++;
+        }
+
+        $blocks[] = substr($css, $open + 1, $cursor - $open - 2);
+        $offset = $cursor;
+    }
+
+    return (string) preg_replace('/\s+/', ' ', implode(' ', $blocks));
+}
+
+test('the sidebar becomes a row above the page before the rail collapses', function (): void {
+    // Keyed to the rail's 900px breakpoint, the 188px sidebar stayed beside the
+    // 236px rail down to 901px, leaving the page body under 400px -- a phone's
+    // width for the forms and tables these pages hold.
+    $owner = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Owner]);
+    $html = (string) $this->actingAs($owner)->get(route('dashboard.account.show'))->assertOk()->getContent();
+
+    $midWidth = accountSidebarMediaCss($html, 'max-width: 1100px');
+
+    expect($midWidth)->not->toBe('', 'no 1100px media block rendered; this guard is checking nothing')
+        ->and(str_contains($midWidth, '.wf-context { grid-template-columns: minmax(0, 1fr);'))
+        ->toBeTrue('the context sidebar still sits beside the page between 900px and 1100px')
+        ->and(str_contains($midWidth, '.wf-context-nav { position: static;'))
+        ->toBeTrue('the collapsed sidebar row still sticks to the window instead of scrolling with the page');
+});
