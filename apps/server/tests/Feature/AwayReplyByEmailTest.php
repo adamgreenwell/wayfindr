@@ -230,7 +230,7 @@ test('the emailed reply renders in the visitor language and sends them back to t
     awayReplyByEmailReply($conversation, $agent, "We've found it & it ships <today>.");
 
     $delivery = ConversationReplyDelivery::query()->sole();
-    config()->set('mail.default', 'array');
+    $sent = replyDeliveryCapturingMailer();
     $thrown = null;
 
     try {
@@ -242,7 +242,7 @@ test('the emailed reply renders in the visitor language and sends them back to t
     expect($thrown)->toBeNull('the reply email could not be built: '.$thrown);
 
     /** @var Email $email */
-    $email = Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+    $email = $sent->messages()->sole()->getOriginalMessage();
     $body = (string) $email->getTextBody();
 
     expect($email->getTo()[0]->getAddress())->toBe('ada@example.test')
@@ -267,10 +267,10 @@ test('with an inbound address the email invites a reply, and that reply threads 
     awayReplyByEmailReply($conversation, $agent);
 
     $delivery = ConversationReplyDelivery::query()->sole();
-    config()->set('mail.default', 'array');
+    $sent = replyDeliveryCapturingMailer();
     (new SendConversationReplyDelivery($delivery->id))->handle();
 
-    $email = Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+    $email = $sent->messages()->sole()->getOriginalMessage();
 
     expect($email->getReplyTo()[0]->getAddress())->toBe('support@northwind.test')
         ->and(str_contains((string) $email->getTextBody(), 'Reply to this email and it will reach the same conversation.'))->toBeTrue();

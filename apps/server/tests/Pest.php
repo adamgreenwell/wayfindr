@@ -3,6 +3,8 @@
 use App\Models\Conversation;
 use App\Support\Settings\OperatorSettings;
 use App\Support\VisitorSessionToken;
+use Illuminate\Mail\Transport\ArrayTransport;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 pest()->extend(TestCase::class)
@@ -51,4 +53,25 @@ function conversationOwnedBySession(
     $conversation->forceFill(['owner_session_id' => $sessionId])->save();
 
     return $conversation->refresh();
+}
+
+/**
+ * Make the install's mailer one that delivers, and hand back what it sent.
+ *
+ * The reply delivery job refuses to send through `log` or `array`, which accept
+ * a message and deliver none, so a test can no longer read the rendered email
+ * off the suite's own `array` mailer. This registers an in-memory transport
+ * under a name OutboundMail does not know to be a sink -- as it would a real
+ * provider -- and makes it the default.
+ */
+function replyDeliveryCapturingMailer(): ArrayTransport
+{
+    $transport = new ArrayTransport;
+
+    Mail::extend('capturing', fn (): ArrayTransport => $transport);
+    Mail::purge('capturing');
+    config()->set('mail.mailers.capturing', ['transport' => 'capturing']);
+    config()->set('mail.default', 'capturing');
+
+    return $transport;
 }
