@@ -16,7 +16,6 @@ use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Mime\Email;
 
@@ -29,7 +28,7 @@ uses(RefreshDatabase::class);
  * somebody who wrote in by email, and not somebody the widget had promised an
  * email while the desk was away.
  *
- * Delivered through the real job and the real `array` transport rather than
+ * Delivered through the real job and a real in-memory transport rather than
  * Mail::fake(). A fake records a mailable without rendering it, and a reply
  * email that threw on every send once went unnoticed behind one.
  */
@@ -51,14 +50,14 @@ function ticketReplyByEmailTicket(Conversation $conversation): Ticket
 
 /**
  * Replies from the ticket page, then runs the delivery job production queues
- * against the real `array` transport. Null when nothing was put in the outbox.
+ * against a real in-memory transport. Null when nothing was put in the outbox.
  */
 function ticketReplyByEmailSend(Ticket $ticket, User $agent, string $body): ?Email
 {
     Queue::fake();
     // The reply rule asks whether the install's mailer delivers; the suite's
     // own `array` mailer does not. So the reply is decided on a real transport
-    // and sent, below, through the array one.
+    // and sent, below, through one the test can read back.
     config()->set('mail.default', 'smtp');
 
     test()->actingAs($agent)
@@ -77,7 +76,7 @@ function ticketReplyByEmailSend(Ticket $ticket, User $agent, string $body): ?Ema
         fn (SendConversationReplyDelivery $job): bool => $job->uniqueId() === (string) $delivery->id,
     );
 
-    config()->set('mail.default', 'array');
+    $sent = replyDeliveryCapturingMailer();
     $thrown = null;
 
     try {
@@ -88,7 +87,7 @@ function ticketReplyByEmailSend(Ticket $ticket, User $agent, string $body): ?Ema
 
     expect($thrown)->toBeNull('the ticket-page reply email could not be built: '.$thrown);
 
-    return Mail::mailer('array')->getSymfonyTransport()->messages()->sole()->getOriginalMessage();
+    return $sent->messages()->sole()->getOriginalMessage();
 }
 
 test('a reply written on a linked ticket answers an email conversation by email', function (): void {

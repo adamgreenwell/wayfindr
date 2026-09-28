@@ -430,7 +430,7 @@ test('an agent reply to an email conversation is actually delivered, not only ha
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
     // Decided on a mailer that delivers, then sent by the job production
-    // queues -- run here against the real `array` transport.
+    // queues -- run here against a real in-memory transport.
     Queue::fake();
     inboundMailDeliveringMailer();
     $this->actingAs($agent)
@@ -439,7 +439,7 @@ test('an agent reply to an email conversation is actually delivered, not only ha
         ])
         ->assertRedirect();
 
-    config()->set('mail.default', 'array');
+    $transport = replyDeliveryCapturingMailer();
     $thrown = null;
 
     try {
@@ -452,7 +452,7 @@ test('an agent reply to an email conversation is actually delivered, not only ha
 
     expect($thrown)->toBeNull('The agent reply was never delivered: rendering the reply email failed: '.$thrown);
 
-    $sent = Mail::mailer('array')->getSymfonyTransport()->messages();
+    $sent = $transport->messages();
 
     expect($sent)->toHaveCount(1, 'The agent reply was never delivered: rendering the reply email failed.');
 
@@ -508,6 +508,47 @@ test('a queue outage does not turn a durably stored agent reply into a resubmit-
         ->withArgs(fn (string $message, array $context): bool => $message === 'Conversation reply stored, but its immediate queue handoff failed.'
             && $context['conversation_reply_delivery_id'] === $delivery->id);
 });
+
+test('a stranded reply is held while the mailer cannot deliver, and sent once it can', function (string $mailer): void {
+    // The reply rule asks whether mail leaves the server only when a reply is
+    // written. A reply already in the outbox -- written by a release that never
+    // asked, or before the operator switched mailers -- reached the job anyway,
+    // and `log` wrote the visitor's address and the reply into the application
+    // log and marked it sent.
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    Queue::fake();
+    inboundMailDeliveringMailer();
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), ['body' => 'It ships today.'])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $delivery = ConversationReplyDelivery::query()->sole();
+
+    config()->set('mail.default', $mailer);
+    (new SendConversationReplyDelivery($delivery->id))->handle();
+
+    expect($delivery->fresh()->accepted_at)
+        ->toBeNull("a stranded reply was handed to the non-delivering {$mailer} mailer and recorded as sent");
+    expect($delivery->fresh()->failed_at)
+        ->not->toBeNull('a held reply is not on the cooling-off marker, so the scheduler requeues it every minute');
+
+    // Held, not dropped: after the cooling-off the scheduler picks it up again.
+    $this->travel(ConversationReplyDelivery::FAILED_RETRY_AFTER_MINUTES + 1)->minutes();
+
+    expect(ConversationReplyDelivery::query()->awaitingDispatch()->pluck('id')->all())
+        ->toBe([$delivery->id], 'a held reply was dropped instead of returned to the scheduler');
+
+    $sent = replyDeliveryCapturingMailer();
+    (new SendConversationReplyDelivery($delivery->id))->handle();
+
+    expect($sent->messages())->toHaveCount(1, 'a held reply was not sent once the mailer could deliver')
+        ->and($delivery->fresh()->accepted_at)->not->toBeNull();
+})->with(['log', 'array']);
 
 test('an email conversation is not answered through a mailer that cannot deliver, and the agent is told so', function (string $mailer): void {
     // `log` and `array` accept every message and deliver none. The out-of-hours
@@ -722,6 +763,10 @@ test('the files an agent attaches travel with the emailed reply', function (): v
         $agent,
     );
 
+    // Queued, then run here: the upload above already ran a job, which fixed
+    // the settings baseline at the suite's `array` mailer, so a job run by the
+    // sync queue would find mail undeliverable and hold the reply.
+    Queue::fake();
     inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
@@ -729,6 +774,8 @@ test('the files an agent attaches travel with the emailed reply', function (): v
             'attachment_ids' => [$attachment->id],
         ])
         ->assertRedirect();
+
+    (new SendConversationReplyDelivery(ConversationReplyDelivery::query()->sole()->id))->handle();
 
     Mail::assertSent(
         ConversationReplyMessage::class,

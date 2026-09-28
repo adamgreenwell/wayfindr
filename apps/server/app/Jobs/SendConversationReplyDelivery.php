@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Mail\ConversationReplyMessage;
 use App\Models\ConversationReplyDelivery;
+use App\Support\Mail\OutboundMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -71,6 +72,21 @@ class SendConversationReplyDelivery implements ShouldBeUnique, ShouldQueue
 
     public function handle(): void
     {
+        // The mailer decides at reply time whether mail leaves the server, but
+        // a row written earlier -- before that rule shipped, or before the
+        // operator switched to `log` -- still reaches this job. `log` would write
+        // the visitor's address and the reply into the application log and mark
+        // it accepted. Hold it on the cooling-off marker instead, so the
+        // scheduler sends it once a transport that delivers is configured.
+        if (! app(OutboundMail::class)->delivers()) {
+            ConversationReplyDelivery::query()
+                ->whereKey($this->deliveryId)
+                ->whereNull('accepted_at')
+                ->update(['failed_at' => now()]);
+
+            return;
+        }
+
         try {
             DB::transaction(function (): void {
                 $delivery = ConversationReplyDelivery::query()
