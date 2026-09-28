@@ -49,8 +49,10 @@ final readonly class LaravelAgentCopilotProvider implements AgentCopilotProvider
             // the actual processor rather than our internal alias.
             provider: $provider,
             model: $response->meta->model ?? $assessment['model'],
-            promptTokens: $response->usage->promptTokens,
-            completionTokens: $response->usage->completionTokens,
+            // The SDK's 1.0 names; Wayfindr keeps prompt/completion in its own
+            // contract and stored columns. Input includes any cached tokens.
+            promptTokens: $response->usage->inputTokens,
+            completionTokens: $response->usage->outputTokens,
         );
     }
 

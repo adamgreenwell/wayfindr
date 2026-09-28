@@ -77,6 +77,11 @@ test('openrouter calls require zero retention and stay on one upstream provider'
         ->and($result->provider)->toBe('openrouter/amazon-bedrock')
         ->and($result->model)->toBe('anthropic/claude-sonnet-4.5');
 
+    // Recorded on every copilot artifact. Read through the real SDK driver, so
+    // a renamed or swapped usage field fails here rather than at runtime.
+    expect($result->promptTokens)->toBe(12, 'the prompt token count was not read from the provider response')
+        ->and($result->completionTokens)->toBe(4, 'the completion token count was not read from the provider response');
+
     Http::assertSent(function (Request $request): bool {
         return $request->url() === 'https://openrouter.ai/api/v1/chat/completions'
             && $request['model'] === 'anthropic/claude-sonnet-4.5'
