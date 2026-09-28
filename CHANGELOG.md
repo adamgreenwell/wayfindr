@@ -30,6 +30,149 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-28
+
+**No operator action required.** Pull and restart. This release has no
+migrations.
+
+**Replies to email conversations start arriving — including replies written
+before you upgraded.** Until this release no reply by email was ever delivered.
+The reply email failed while rendering on every send, from the day email
+conversations shipped in 0.7.0, while the agent was told "Reply sent." 0.9.0
+kept each of those replies in its delivery outbox and kept retrying it without
+success. On 0.9.1 the retries succeed. Every reply an agent wrote to an email
+conversation from the conversation page or the API while you ran 0.9.0 is sent
+within about an hour of upgrading, however old it is, threaded into the
+visitor's original email. Nothing was sent the first time, so nobody gets a
+copy twice.
+
+To see how many are waiting, run this before upgrading, from `apps/server` on a
+host install or as `docker compose exec web php artisan …` from an image
+install's directory:
+
+```bash
+php artisan tinker --execute="echo App\Models\ConversationReplyDelivery::whereNull('accepted_at')->count(), PHP_EOL;"
+```
+
+Three cases behave differently:
+
+- **A mailer that cannot deliver.** On `log`, `array` or `null` — a host
+  install's default until mail is configured — nothing is sent or written to
+  the log. The replies wait and go out once you configure a transport that
+  delivers under **Operator console → Mail**, however much later that is.
+- **Replies written on a linked ticket's page** before this release were never
+  queued for email at all, so there is nothing to send.
+- **Replies written on 0.7.x** were never in the outbox. They are failed queue
+  jobs, if you keep those, and nothing resends them. `php artisan queue:retry`
+  would now deliver them, weeks late, so do not retry all failed jobs to clear
+  some other failure without looking at what they are first.
+
+### Changed
+
+- **The account area has a sidebar.** Every page under Account opens with its
+  sections beside it: Overview, Roles and Security; Articles, Reply templates,
+  Ticket labels and Visitor attributes; Automations and SLA policies;
+  Integrations and API and webhooks; Audit log and Operator access. Each viewer
+  sees only the pages they can open. It replaces the overview's "Account map"
+  and its directory of management pages, and the three different ways those
+  pages used to link back. Below 1100px wide, this sidebar and the operator
+  console's become a scrolling row above the page, so the page keeps its width.
+- **Replies reach a visitor by email when the desk was away.** Out of hours the
+  widget asks for an email address and says you will reply when you are back.
+  That reply went only to the widget, so a visitor who had closed the tab never
+  saw it. A conversation opened out of hours, from a visitor with an address,
+  now has agent and API replies emailed to that address, in the language the
+  widget used, when mail can deliver. The agent sees "Also emailed to" and the
+  address, marked unverified, beside the reply box, or "Not emailed" and the
+  reason. Without an inbound address on the site the email has no Reply-To and
+  sends the visitor back to the chat on your site. Conversations opened before
+  you upgrade are not emailed.
+- **The widget downloads less than half as much.** `/widget.js` is now a
+  minified build: 49,922 bytes gzipped, realtime client included, down from
+  111,474. The URL and the install snippet are unchanged. A host install serves
+  the committed build and needs no Node.
+- **Proactive openers are labelled "Automated"** in the widget, so a canned
+  invitation no longer reads like a reply somebody typed. Messages posted
+  through the API stay unlabelled, because an integration may relay a person.
+- **The automations index is tabbed** — Rules, Macros, Proactive messages,
+  Execution log — and opens on Rules, instead of five stacked sections. A dry
+  run lands on its verdict.
+
+### Fixed
+
+- **Replies by email are delivered, from every place they are written.**
+  Besides the rendering failure above, a reply written on a linked ticket's
+  page was never emailed at all; it is now, through the same outbox as the
+  conversation page and the API. An email conversation was also "answered"
+  through a mailer that cannot deliver: on `log` the reply was written into
+  the application log with the visitor's address and marked sent. The agent
+  now sees "Not emailed" and why, and nothing is handed to such a mailer. The
+  text email keeps an apostrophe as an apostrophe rather than `&#039;`.
+- **A visitor's message always reaches an agent who can be alerted.**
+  - When the assignee cannot be alerted — in quiet mode, or in a role without
+    alert or conversation access — the site's roster (or the account, for a
+    site without one) is alerted instead. SLA warnings and breaches do the
+    same. Before, nobody was told, and the unattended escalation had nothing to
+    escalate.
+  - An automation rule can no longer close a conversation while a visitor waits
+    in it. A "Visitor message received" rule cannot save a close, and the rule
+    builder stops offering one. A close in an older rule of that kind, or in a
+    "Conversation created" rule on an emailed conversation, is skipped; the
+    execution log and the dry run both say the visitor is waiting for a reply.
+    The rule's other actions still run.
+  - A visitor reply that reopens a closed conversation alerts the team. It
+    used to be judged by the conversation's state before it reopened, and
+    alerted nobody.
+  - An unreachable Reverb no longer answers the visitor's message with a 500
+    and skips the alert. Realtime updates are best-effort; the message and the
+    alert are not.
+- **The widget stops telling visitors untrue things.**
+  - A message over 4,000 characters is refused before sending, with the limit
+    named and the text kept. Before, the visitor saw "could not be sent" and a
+    Retry that failed forever, and an over-long first message left an empty
+    conversation nobody was alerted to. The agent's reply box stops at the same
+    4,000.
+  - A request the server cannot read — a pasted message with half of an emoji,
+    for one — was answered "Site not found." on every Retry. The widget now
+    repairs such a character before sending, and the server answers anything
+    else unreadable on the widget's routes with a 400 that says so. The public
+    API, inbound mail and integration webhooks answer as before.
+  - `sendFirstMessage` in the JavaScript SDK refuses an empty or non-text body
+    before it opens a conversation, instead of leaving an empty one behind.
+- **A mistyped or truncated id in a URL is a 404, not a server error**, on every
+  route that takes one, including the GitHub, GitLab and Jira webhook URLs and
+  attachment downloads. PostgreSQL, which every documented install runs,
+  refused to compare the text with the numeric key.
+- **The installer reads itself whole before running any of it.** Piped from
+  `curl`, an early stop (Docker missing, a mistyped flag) printed curl's
+  `(23) Failure writing output` beneath the real error, and a download cut off
+  midway could run the part that arrived.
+- **Dashboard pages no longer scroll sideways on phones.** At 375px every page
+  was wider than the screen: 478px on most, up to 1,631px on the account
+  overview.
+- **Secondary text meets WCAG AA contrast** on every background in the light
+  theme, in the dashboard and the widget, including against any brand colour.
+- **Account-area forms keep what you typed and say what failed where it
+  failed.**
+  - A refused save shows its error at the field that failed, where a screen
+    reader announces it, on articles, ticket labels, reply templates, custom
+    roles and a site's inbound address. On labels, templates, custom roles and
+    automation rules and macros the reloaded page opens on the error. On labels
+    and templates, a refused save on one row no longer copies the rejected
+    value into every other row, where a Save would have sent it.
+  - A refused new article keeps its body.
+  - Articles keep the space between two formatted runs (`**First** **second**`
+    showed "Firstsecond" in the widget), and one made only of empty formatting
+    can no longer be saved.
+  - Archiving a reply template can be undone.
+  - A ticket label that cannot be deleted says why on its own row, rather
+    than at the top of the page without naming the label.
+  - The shown-once API token and webhook signing secret stand out from the
+    notices around them.
+  - A custom role's permissions sit behind a disclosure rather than printing
+    every checkbox of every role, and the audit log uses the same filter bar
+    as the rest of the dashboard.
+
 ## [0.9.0] - 2026-09-22
 
 **Requires operator action when upgrading a host-managed PHP install, including
