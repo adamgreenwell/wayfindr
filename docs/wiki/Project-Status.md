@@ -2,7 +2,7 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. The latest public release is `v0.9.0` (September 24, 2026).
+Wayfindr is pre-1.0. The latest public release is `v0.10.0` (September 28, 2026).
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
@@ -12,7 +12,7 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests. The newest public-artifact
-hosted runs cover a `v0.9.0` clean install and `v0.2.0 → v0.9.0` upgrade with a
+hosted runs cover a `v0.10.0` clean install and `v0.2.0 → v0.10.0` upgrade with a
 custom backup queue. The newest owner-operated bare-metal guest evidence still
 covers `v0.3.2`; see [Releases](Releases).
 

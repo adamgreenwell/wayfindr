@@ -7,8 +7,8 @@ working support desk rather than a spine, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.
 
-Inbound email depends on which version you are running. Public `v0.9.0` lets
-Mailgun and Postmark post straight to `POST /api/mail/inbound` once
+Inbound email depends on which version you are running. Public `v0.9.0` and
+later let Mailgun and Postmark post straight to `POST /api/mail/inbound` once
 `WAYFINDR_INBOUND_MAIL_PROVIDER` names the matching verification scheme. The
 original Wayfindr-signed proxy contract still verifies, so an install that
 built one can keep it. On `v0.7.0`, direct provider webhooks are not supported:

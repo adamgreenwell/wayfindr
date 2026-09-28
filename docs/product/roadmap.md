@@ -3,13 +3,18 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is
-[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0)
-(September 24, 2026). Current `main` identifies the next development line as
+[`v0.10.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.10.0)
+(September 28, 2026). Current `main` identifies the next development line as
 `1.0.0-dev`; no 1.0.0 artifact has been published.
 
-The first guarded release passed its tag ruleset and old-run gates, published
-the manifest and multi-architecture image, and verified stable image aliases.
-The public artifact then passed a
+`v0.10.0` repeated both hosted-runner paths on September 28: a
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
+and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977),
+each reading `v0.10.0` from authenticated `/operator`.
+
+The first guarded release, `v0.9.0`, passed its tag ruleset and old-run gates,
+published the manifest and multi-architecture image, and verified stable image
+aliases. That public artifact then passed a
 [hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
 and an [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
 with a custom backup queue. An additional
