@@ -30,7 +30,7 @@ missed while skimming.
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-09-28
+## [0.10.0] - 2026-09-28
 
 **No operator action required.** Pull and restart. This release has no
 migrations.
@@ -40,7 +40,7 @@ before you upgraded.** Until this release no reply by email was ever delivered.
 The reply email failed while rendering on every send, from the day email
 conversations shipped in 0.7.0, while the agent was told "Reply sent." 0.9.0
 kept each of those replies in its delivery outbox and kept retrying it without
-success. On 0.9.1 the retries succeed. Every reply an agent wrote to an email
+success. On 0.10.0 the retries succeed. Every reply an agent wrote to an email
 conversation from the conversation page or the API while you ran 0.9.0 is sent
 within about an hour of upgrading, however old it is, threaded into the
 visitor's original email. Nothing was sent the first time, so nobody gets a
@@ -67,16 +67,8 @@ Three cases behave differently:
   would now deliver them, weeks late, so do not retry all failed jobs to clear
   some other failure without looking at what they are first.
 
-### Changed
+### Added
 
-- **The account area has a sidebar.** Every page under Account opens with its
-  sections beside it: Overview, Roles and Security; Articles, Reply templates,
-  Ticket labels and Visitor attributes; Automations and SLA policies;
-  Integrations and API and webhooks; Audit log and Operator access. Each viewer
-  sees only the pages they can open. It replaces the overview's "Account map"
-  and its directory of management pages, and the three different ways those
-  pages used to link back. Below 1100px wide, this sidebar and the operator
-  console's become a scrolling row above the page, so the page keeps its width.
 - **Replies reach a visitor by email when the desk was away.** Out of hours the
   widget asks for an email address and says you will reply when you are back.
   That reply went only to the widget, so a visitor who had closed the tab never
@@ -87,6 +79,17 @@ Three cases behave differently:
   reason. Without an inbound address on the site the email has no Reply-To and
   sends the visitor back to the chat on your site. Conversations opened before
   you upgrade are not emailed.
+
+### Changed
+
+- **The account area has a sidebar.** Every page under Account opens with its
+  sections beside it: Overview, Roles and Security; Articles, Reply templates,
+  Ticket labels and Visitor attributes; Automations and SLA policies;
+  Integrations and API and webhooks; Audit log and Operator access. Each viewer
+  sees only the pages they can open. It replaces the overview's "Account map"
+  and its directory of management pages, and the three different ways those
+  pages used to link back. Below 1100px wide, this sidebar and the operator
+  console's become a scrolling row above the page, so the page keeps its width.
 - **The widget downloads less than half as much.** `/widget.js` is now a
   minified build: 49,922 bytes gzipped, realtime client included, down from
   111,474. The URL and the install snippet are unchanged. A host install serves
