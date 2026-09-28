@@ -5,10 +5,11 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
-The latest public release is `v0.9.0`. Its hosted public-artifact clean-install
-and upgrade results are recorded on [Releases](Releases). The August 2026
-`v0.3.2` hosted and bare-metal matrix below remains evidence for that artifact;
-it does not establish a `v0.9.0` bare-metal reboot or rollback path.
+The latest public release is `v0.10.0`. Its hosted public-artifact clean-install
+and upgrade results are recorded on [Releases](Releases), alongside the earlier
+`v0.9.0` runs. The August 2026 `v0.3.2` hosted and bare-metal matrix below
+remains evidence for that artifact; it does not establish a `v0.10.0`
+bare-metal reboot or rollback path.
 
 The authoritative contract lives in
 [Disposable VM Evidence Contract](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/disposable-vm-evidence.md).

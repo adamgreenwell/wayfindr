@@ -47,7 +47,7 @@ queues rendered every matching row. What an operator should know:
 
 - **The conversation queue is capped now.** Its closed lane went from 187 MB and
   twenty-three seconds to 1 MB and 161 ms.
-- **The ticket queue is capped in `v0.9.0`.** Its attention and external-issue
+- **The ticket queue is capped from `v0.9.0`.** Its attention and external-issue
   filters moved into portable SQL, which is what the cap was waiting on, and the
   all lane went from 62.8 MB and 7,052 ms to 1.1 MB and 227 ms. Both queues
   render at most 200 ordered rows while keeping lane and filter totals uncapped,
