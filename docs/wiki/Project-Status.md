@@ -35,8 +35,9 @@ This section describes public `v0.10.0`. Some foundation was available in older
 releases; consult the release notes when operating one of those artifacts.
 
 `v0.10.0` changes, relative to `v0.9.0`: replies to email conversations are
-delivered (their email never rendered before, and `v0.9.0`'s backlog sends after
-the upgrade); a visitor who left an address while the desk was away gets the
+delivered (their email never rendered before, and the replies `v0.9.0` queued
+from the conversation page or the API send after the upgrade); a visitor who
+left an address while the desk was away gets the
 reply by email; replies written on a linked ticket's page are emailed too; the
 account area has a context sidebar; and the widget is served minified. The
 [release notes](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)

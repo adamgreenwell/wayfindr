@@ -155,8 +155,10 @@ published multi-architecture image resolves to
 `sha256:fa8c0449d516f6fade3eff556c3887111e202e09165ea4959b8d34d49741affe`.
 It needs no operator action, but read its
 [release notes](CHANGELOG.md) before upgrading: replies to email conversations
-written on `v0.9.0` never sent, and they send within about an hour of the
-upgrade, or once mail is configured on an install that cannot yet deliver it.
+written on `v0.9.0` from the conversation page or the API never sent, and they
+send within about an hour of the upgrade, or once mail is configured on an
+install that cannot yet deliver it. Replies written on a linked ticket's page
+were never queued, so they do not.
 Current `main` identifies its next development line as `1.0.0-dev`;
 there is no public 1.0.0 release.
 

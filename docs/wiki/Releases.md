@@ -11,10 +11,11 @@ Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
 and stable image aliases on September 28, 2026. It needs no operator action,
 but its release notes open with one behaviour to expect: replies to email
-conversations written on `v0.9.0` never sent, and they send within about an
-hour of upgrading, or once mail is configured on an install that cannot yet
-deliver it. Separate public-artifact install and upgrade runs are recorded
-below.
+conversations written on `v0.9.0` from the conversation page or the API never
+sent, and they send within about an hour of upgrading, or once mail is
+configured on an install that cannot yet deliver it. Replies written on a
+linked ticket's page were never queued, so they do not. Separate
+public-artifact install and upgrade runs are recorded below.
 
 ## Where to Look
 

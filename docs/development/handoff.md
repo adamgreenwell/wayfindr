@@ -1207,9 +1207,11 @@ patch line, so a feature filed under `Changed` passes. Read §1 as the rule and
 the contract as a backstop.
 
 **The email backlog was sent on purpose.** No reply to an email conversation
-ever rendered before #1060, so every 0.9.0 install holds unaccepted outbox rows.
-The outbox retries without an age limit, so 0.10.0 sends them all within about
-an hour, however old. The owner chose to let them send and to say so at the top
+ever rendered before #1060, so a 0.9.0 install that answered one from the
+conversation page or the API holds unaccepted outbox rows (ticket-page replies
+were never queued, so there is nothing of theirs to send). The outbox retries
+without an age limit, so 0.10.0 sends those rows within about an hour, however
+old. The owner chose to let them send and to say so at the top
 of the release notes, which include a read-only count one-liner. #1079 made the
 delivery job check `OutboundMail` itself. Before that, #1067's gate ran only
 when a reply was written, so on a `log` mailer the backlog would have been
