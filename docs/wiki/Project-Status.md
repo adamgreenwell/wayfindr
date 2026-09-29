@@ -16,13 +16,15 @@ hosted runs cover a `v0.11.0` clean install and `v0.2.0 → v0.11.0` upgrade wit
 custom backup queue. The newest owner-operated bare-metal guest evidence still
 covers `v0.3.2`; see [Releases](Releases).
 
-The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The remaining
-independent-install acceptance criterion is
-[#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
-published-artifact install by somebody who is not the author. The tag
-preconditions recorded in
+The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The
+independent-install acceptance criterion,
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797), closed on
+September 29, 2026: somebody who is not the author installed Wayfindr on a
+clean Ubuntu VM using only the public documentation and got it running. No
+person has yet observed a non-author upgrade, which #994's `1.0.0` scope also
+names. The tag preconditions recorded in
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970) were satisfied
-before `v0.9.0` published; they do not satisfy #797. The account area that
+before `v0.9.0` published. The account area that
 [#994](https://github.com/adamgreenwell/wayfindr/issues/994) scoped for `1.0.0`
 finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 [#985](https://github.com/adamgreenwell/wayfindr/issues/985), the site-settings
@@ -309,9 +311,9 @@ verified that release the same way, with a
 a [`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
 and a [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
 that read `Wayfindr version: v0.9.0`. None of these
-synthetic runs satisfies the human non-author install required by
-[#797](https://github.com/adamgreenwell/wayfindr/issues/797). Record that run's
-stops and fix what it surfaces before claiming `1.0.0` acceptance.
+synthetic runs was the human non-author install that
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797) required; that
+install happened separately, on September 29, 2026, on a clean Ubuntu VM.
 
 Publication, an install from the public artifact, and human acceptance are
 separate claims.

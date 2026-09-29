@@ -26,10 +26,11 @@ bare-metal operation, public TLS/origin behavior, or independent human use.
 
 `1.0.0` is scoped to an account experience a self-hoster can administer
 ([#994](https://github.com/adamgreenwell/wayfindr/issues/994)) and the hard
-acceptance gate in [#797](https://github.com/adamgreenwell/wayfindr/issues/797):
-somebody who is not the author must install a published artifact using the
-public instructions, recording where they need to guess or get stuck. #994's
-1.0.0 scope also calls for an upgrade by that tester.
+acceptance gate in [#797](https://github.com/adamgreenwell/wayfindr/issues/797),
+which closed on September 29, 2026: somebody who is not the author installed
+Wayfindr on a clean Ubuntu VM using only the public documentation. #994's
+1.0.0 scope also names an upgrade by a non-author, which no person has observed
+yet.
 The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issues/985)
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
@@ -204,9 +205,10 @@ Underneath that, the original foundation:
 ## Before 1.0.0
 
 The support feature gaps, the v0.9.0, v0.10.0 and v0.11.0 publications, the
-guarded-tag preconditions, and the account area's restructure are complete. The
-next work is independent installation and upgrade acceptance; other polish
-stays demand-gated.
+guarded-tag preconditions, the account area's restructure, and the
+independent-install gate are complete. What remains is the owner's decision on
+cutting 1.0.0, including whether #994's non-author upgrade is still required
+first; other polish stays demand-gated.
 
 - **The account experience:** the structural work in
   [#994](https://github.com/adamgreenwell/wayfindr/issues/994) shipped across
@@ -214,13 +216,16 @@ stays demand-gated.
   tabs, folded Integrations).
   Take further account work from real use rather than from a feature-parity
   list.
-- **Run independent acceptance against a published artifact:**
-  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) needs a person
-  who is not the author to install Wayfindr using the public docs, then record
-  where they had to guess. #994's 1.0.0 scope also asks that tester to upgrade.
+- **Independent acceptance:**
+  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) closed on
+  September 29, 2026. A person who is not the author installed Wayfindr on a
+  clean Ubuntu VM using only the public docs and got it running. The exact
+  release, timings and any friction were not recorded; the issue's closing
+  comment says what was and was not observed. No person has yet observed a
+  non-author upgrade, which #994's 1.0.0 scope also names.
   The hosted-runner v0.11.0, v0.10.0 and v0.9.0 clean install,
-  upgrade, support-loop, and backup/restore checks are useful reproducible
-  evidence, but scripted runs cannot satisfy that human gate. A prior cold
+  upgrade, support-loop, and backup/restore checks remain the reproducible
+  evidence for those paths, including upgrades from `v0.2.0`. A prior cold
   Claude sandbox run against `v0.7.0` also found real widget and installer
   defects later fixed in v0.9.0, but it was not a real-environment acceptance
   run.

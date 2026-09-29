@@ -194,12 +194,13 @@ contains those requirements. The guarded-release preconditions in
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970) are complete.
 The [account area](https://github.com/adamgreenwell/wayfindr/issues/994) that
 1.0.0 is scoped to finished its restructure in `v0.11.0`, after the sidebar in
-`v0.10.0`. The remaining gate is
-[#797](https://github.com/adamgreenwell/wayfindr/issues/797): a person who
-is not the author must install a published artifact using the public
-instructions, recording where they need to guess or get stuck. #994's 1.0.0
-scope also calls for that person to test an upgrade. Publication and scripted
-evidence do not satisfy the human install gate.
+`v0.10.0`. The independent-install gate,
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797), closed on
+September 29, 2026: a person who is not the author installed Wayfindr on a clean
+Ubuntu VM using only the public documentation and got it running. #994's 1.0.0
+scope also names an upgrade by a non-author, and no person has observed one yet;
+the scripted runs above upgrade from `v0.2.0`. No 1.0.0 release has been cut,
+and cutting one is a separate release decision.
 
 The deferred autonomous-answer capability is tracked separately in
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762), outside the 1.0.0
@@ -279,6 +280,6 @@ loop after working around two defects. Those defects were fixed in `v0.9.0` by
 [#929](https://github.com/adamgreenwell/wayfindr/pull/929) and
 [#931](https://github.com/adamgreenwell/wayfindr/pull/931), but that run did not
 exercise a real VM, public TLS/origin, local-CA trust, or an unwarmed image pull,
-and an agent is not the human non-author required by #797. Product expansion
+and an agent is not the human non-author #797 required. Product expansion
 remains demand-gated around ticket workflow comfort, external integration field
 mapping, and any future cobrowse replay work.
