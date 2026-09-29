@@ -28,6 +28,14 @@ return [
     'title' => 'API and webhooks',
     'subtitle' => "Scoped API access and signed event delivery for this account's integrations.",
 
+    // The page's two panels. Short, because they are tab labels; the sidebar
+    // entry and page title already say "API and webhooks".
+    'tabs' => [
+        'label' => 'API and webhook sections',
+        'tokens' => 'API tokens',
+        'webhooks' => 'Outbound webhooks',
+    ],
+
     // Usable rather than merely un-revoked: a token past its expiry is refused
     // at authentication and labelled Expired in the table, so counting it as
     // active would contradict the same page.

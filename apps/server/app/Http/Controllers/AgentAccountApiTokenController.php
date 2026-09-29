@@ -15,6 +15,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -81,6 +82,7 @@ class AgentAccountApiTokenController extends Controller
                 ->limit(50)
                 ->get(),
             'issuedWebhookSecret' => $this->issuedWebhookSecret($request),
+            'activeTab' => $this->activeTab($request),
         ]);
     }
 
@@ -164,6 +166,7 @@ class AgentAccountApiTokenController extends Controller
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
+            ->withFragment('tab-tokens')
             // Flashed rather than rendered from the model, because the model
             // does not have it: this is the only moment the plaintext exists.
             //
@@ -301,6 +304,7 @@ class AgentAccountApiTokenController extends Controller
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
+            ->withFragment('tab-tokens')
             ->with('status', $alreadyRevoked
                 ? 'api_tokens.flash.already_revoked'
                 : 'api_tokens.flash.revoked');
@@ -323,6 +327,29 @@ class AgentAccountApiTokenController extends Controller
             'metadata' => $metadata,
             'occurred_at' => now(),
         ]);
+    }
+
+    /**
+     * The panel this page opens on: the one the last write belonged to.
+     *
+     * Every write also redirects to its panel's `#tab-` fragment, which the
+     * tabs script honours before anything else. This is the same answer for
+     * the first paint and for a browser running no script, where a one-time
+     * signing secret issued into a hidden panel would be a secret nobody saw.
+     * A failed webhook form counts too: its errors are keyed `webhook.*`.
+     */
+    private function activeTab(Request $request): string
+    {
+        $session = $request->session();
+        $status = $session->get('status');
+        $errors = $session->get('errors');
+
+        $webhooks = $session->has('issued_webhook_secret')
+            || (is_string($status) && str_starts_with($status, 'outbound_webhooks.'))
+            || ($errors instanceof ViewErrorBag && collect($errors->getBag('default')->keys())
+                ->contains(fn (string $key): bool => str_starts_with($key, 'webhook.')));
+
+        return $webhooks ? 'webhooks' : 'tokens';
     }
 
     /**

@@ -2,7 +2,14 @@
     'id' => 'tabs',
     'label' => 'Workspace sections',
     'tabs' => [],
+    // The tab selected before any script runs: the first unless a page says
+    // otherwise, which it does only when the request itself decides the panel
+    // (API and webhooks opens on whichever one its last write belongs to).
+    // The matching `x-tab-panel` must be the one given `active`.
+    'active' => null,
 ])
+
+@php($selectedTab = $active ?? ($tabs[0]['id'] ?? null))
 
 <div class="tabs" data-tabs id="{{ $id }}">
     <div class="tabs__list" role="tablist" aria-label="{{ $label }}">
@@ -13,8 +20,8 @@
                 role="tab"
                 id="tab-{{ $tab['id'] }}"
                 aria-controls="tab-panel-{{ $tab['id'] }}"
-                aria-selected="{{ $loop->first ? 'true' : 'false' }}"
-                tabindex="{{ $loop->first ? '0' : '-1' }}"
+                aria-selected="{{ $tab['id'] === $selectedTab ? 'true' : 'false' }}"
+                tabindex="{{ $tab['id'] === $selectedTab ? '0' : '-1' }}"
                 data-tab="{{ $tab['id'] }}"
             >
                 {{ $tab['label'] }}

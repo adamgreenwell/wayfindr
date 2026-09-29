@@ -63,7 +63,7 @@ replayed when an endpoint is added.
 
 ## Getting a token
 
-**Account → API and webhooks → Issue a token.** Requires the
+**Account → API and webhooks → API tokens → Issue a token.** Requires the
 `manage_integrations` account permission.
 
 The token is shown **once**, immediately after creation. Wayfindr stores a
