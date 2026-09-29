@@ -21,18 +21,18 @@ test('account owners can change another same-account agent role from the account
     ]);
 
     $this->actingAs($owner)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertSee('Manage role')
         ->assertSee("/dashboard/account/agents/{$agent->id}/role", false)
         ->assertDontSee("/dashboard/account/agents/{$owner->id}/role", false);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->put("/dashboard/account/agents/{$agent->id}/role", [
             'account_role' => AccountRole::Admin->value,
         ])
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.role_updated');
 
     $auditEvent = AuditEvent::query()
@@ -55,13 +55,13 @@ test('admins and agents cannot use the account role management endpoint', functi
     $target = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
 
     $this->actingAs($actor)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertDontSee('Manage role')
         ->assertDontSee("/dashboard/account/agents/{$target->id}/role", false);
 
     $this->actingAs($actor)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->put("/dashboard/account/agents/{$target->id}/role", [
             'account_role' => AccountRole::Admin->value,
         ])
@@ -81,7 +81,7 @@ test('owners cannot change roles for agents outside their account from the dashb
     $outsideAgent = User::factory()->for($otherAccount)->create(['account_role' => AccountRole::Agent]);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->put("/dashboard/account/agents/{$outsideAgent->id}/role", [
             'account_role' => AccountRole::Admin->value,
         ])
@@ -100,9 +100,9 @@ test('role validation and completion answer in the account page language', funct
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
 
     $this->actingAs($owner)
-        ->from(route('dashboard.account.show'))
+        ->from(route('dashboard.account.team.show'))
         ->put(route('dashboard.account.agents.role.update', $agent), ['account_role' => 'captain'])
-        ->assertRedirect(route('dashboard.account.show'))
+        ->assertRedirect(route('dashboard.account.team.show'))
         ->assertSessionHasErrors('account_role');
 
     expect((string) session('errors')->first('account_role'))->toBe($validation);

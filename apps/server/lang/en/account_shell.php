@@ -23,6 +23,7 @@ return [
 
     'sections' => [
         'overview' => 'Overview',
+        'team' => 'Team',
         'roles' => 'Roles',
         'security' => 'Security',
         'articles' => 'Articles',

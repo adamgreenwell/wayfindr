@@ -20,15 +20,15 @@ test('owners can deactivate and reactivate another same-account agent', function
     ]);
 
     $this->actingAs($owner)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertSee('Manage access')
         ->assertSee("/dashboard/account/agents/{$agent->id}/deactivate", false);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$agent->id}/deactivate")
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.deactivated');
 
     $deactivatedEvent = AuditEvent::query()
@@ -41,15 +41,15 @@ test('owners can deactivate and reactivate another same-account agent', function
         ->and($deactivatedEvent->subject->is($agent))->toBeTrue();
 
     $this->actingAs($owner)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertSee('Deactivated')
         ->assertSee("/dashboard/account/agents/{$agent->id}/reactivate", false);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$agent->id}/reactivate")
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.reactivated');
 
     $reactivatedEvent = AuditEvent::query()
@@ -74,22 +74,22 @@ test('admins can deactivate and reactivate custom-role agents', function (): voi
     ]);
 
     $this->actingAs($admin)
-        ->get(route('dashboard.account.show'))
+        ->get(route('dashboard.account.team.show'))
         ->assertOk()
         ->assertSee(route('dashboard.account.agents.deactivate', $agent), false);
 
     $this->actingAs($admin)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$agent->id}/deactivate")
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.deactivated');
 
     expect($agent->fresh()->deactivated_at)->not->toBeNull();
 
     $this->actingAs($admin)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$agent->id}/reactivate")
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.reactivated');
 
     expect($agent->fresh()->deactivated_at)->toBeNull();
@@ -103,7 +103,7 @@ test('admins cannot deactivate owners and agents cannot manage access', function
     $target = $actorRole === AccountRole::Admin ? $owner : $agent;
 
     $this->actingAs($actor)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$target->id}/deactivate")
         ->assertForbidden();
 
@@ -121,7 +121,7 @@ test('agent access changes stay inside the current account', function (): void {
     $outsideAgent = User::factory()->for($otherAccount)->create(['account_role' => AccountRole::Agent]);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$outsideAgent->id}/deactivate")
         ->assertForbidden();
 
@@ -160,7 +160,7 @@ test('custom agent managers can suspend only teammates in the same role', functi
     ]);
 
     $this->actingAs($manager)
-        ->get(route('dashboard.account.show'))
+        ->get(route('dashboard.account.team.show'))
         ->assertOk()
         ->assertSee(route('dashboard.account.agents.deactivate', $teammate), false)
         ->assertDontSee(route('dashboard.account.agents.deactivate', $other), false)
@@ -169,11 +169,11 @@ test('custom agent managers can suspend only teammates in the same role', functi
 
     $this->actingAs($manager)
         ->post(route('dashboard.account.agents.deactivate', $teammate))
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     $this->actingAs($manager)
         ->post(route('dashboard.account.agents.reactivate', $teammate))
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     $this->actingAs($manager)
         ->post(route('dashboard.account.agents.deactivate', $other))
@@ -197,7 +197,7 @@ test('owners cannot deactivate themselves', function (): void {
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post("/dashboard/account/agents/{$owner->id}/deactivate")
         ->assertForbidden();
 

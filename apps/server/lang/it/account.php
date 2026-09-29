@@ -11,8 +11,13 @@
 return [
     'document_title' => 'Account',
     'title' => 'Account',
-    'subtitle' => 'Il suo ruolo, l’elenco del team e l’ambito di supporto visibile.',
+    'subtitle' => 'Il suo ruolo e l’ambito di supporto visibile.',
     'agent_count' => '{1} :count agente|[2,*] :count agenti',
+    'team' => [
+        'document_title' => 'Team',
+        'title' => 'Team',
+        'subtitle' => 'Gli agenti, i loro ruoli e i siti che seguono.',
+    ],
     'flash' => [
         'created_and_welcome_sent' => 'Agente creato ed email di benvenuto inviata.',
         'created_welcome_failed' => 'Agente creato, ma non è stato possibile inviare l’email di benvenuto. Condivida la password temporanea in modo sicuro.',

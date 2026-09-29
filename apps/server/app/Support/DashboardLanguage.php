@@ -328,11 +328,12 @@ final class DashboardLanguage
         'dashboard.external-issue-provider-connections.webhook-secret.update',
         'dashboard.external-issue-provider-connections.capabilities.update',
 
-        // The account overview and its roster actions. The page combines
-        // role/access boundaries, readiness summaries, recent activity and
-        // team management; extracting only the GET would put English
-        // validation or lifecycle results back into the translated page.
+        // The account overview, the Team page, and the Team page's roster
+        // actions. Every roster write redirects back onto the Team page;
+        // extracting only the GET would put English validation or lifecycle
+        // results back into the translated page.
         'dashboard.account.show',
+        'dashboard.account.team.show',
         'dashboard.account.agents.store',
         'dashboard.account.agents.role.update',
         'dashboard.account.agents.deactivate',

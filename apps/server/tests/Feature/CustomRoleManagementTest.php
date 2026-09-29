@@ -256,7 +256,7 @@ test('owners can assign custom roles and permission changes take effect immediat
         ->put(route('dashboard.account.agents.role.update', $agent), [
             'account_role' => 'custom:'.$role->id,
         ])
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     $assigned = $agent->fresh();
     expect($assigned->account_role)->toBe(AccountRole::Agent)
@@ -328,11 +328,11 @@ test('a custom role cannot cross account boundaries or be deleted while assigned
     $outsideRole = CustomRole::factory()->for($otherAccount)->create();
 
     $this->actingAs($owner)
-        ->from(route('dashboard.account.show'))
+        ->from(route('dashboard.account.team.show'))
         ->put(route('dashboard.account.agents.role.update', $agent), [
             'account_role' => 'custom:'.$outsideRole->id,
         ])
-        ->assertRedirect(route('dashboard.account.show'))
+        ->assertRedirect(route('dashboard.account.team.show'))
         ->assertSessionHasErrors('account_role');
 
     $assignedRole = CustomRole::factory()->for($account)->create();
@@ -561,11 +561,11 @@ test('a sites only assigned manager cannot be moved to a role without site manag
     $site->supportAgents()->attach($manager);
 
     $this->actingAs($owner)
-        ->from(route('dashboard.account.show'))
+        ->from(route('dashboard.account.team.show'))
         ->put(route('dashboard.account.agents.role.update', $manager), [
             'account_role' => AccountRole::Agent->value,
         ])
-        ->assertRedirect(route('dashboard.account.show'))
+        ->assertRedirect(route('dashboard.account.team.show'))
         ->assertSessionHasErrors('account_role');
 
     expect($manager->fresh()->custom_role_id)->toBe($role->id);
@@ -576,7 +576,7 @@ test('a sites only assigned manager cannot be moved to a role without site manag
         ->put(route('dashboard.account.agents.role.update', $manager), [
             'account_role' => AccountRole::Agent->value,
         ])
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     expect($manager->fresh()->custom_role_id)->toBeNull()
         ->and($manager->fresh()->account_role)->toBe(AccountRole::Agent);
@@ -596,9 +596,9 @@ test('a sites only assigned manager cannot be deactivated', function (): void {
     $site->supportAgents()->attach($manager);
 
     $this->actingAs($owner)
-        ->from(route('dashboard.account.show'))
+        ->from(route('dashboard.account.team.show'))
         ->post(route('dashboard.account.agents.deactivate', $manager))
-        ->assertRedirect(route('dashboard.account.show'))
+        ->assertRedirect(route('dashboard.account.team.show'))
         ->assertSessionHasErrors('agent');
 
     expect($manager->fresh()->isDeactivated())->toBeFalse();
@@ -607,7 +607,7 @@ test('a sites only assigned manager cannot be deactivated', function (): void {
 
     $this->actingAs($owner)
         ->post(route('dashboard.account.agents.deactivate', $manager))
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     expect($manager->fresh()->isDeactivated())->toBeTrue();
 });
