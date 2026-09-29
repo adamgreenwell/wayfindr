@@ -1,13 +1,14 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 28, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 29, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§17](#17-published-0100--september-28-2026)**
-for the current release and acceptance boundary. Then §5 (conventions) and §7
-(gotchas). Sections 8–16 are dated snapshots, kept for their evidence rather
-than their currency.
+**Taking the baton? Start at [§19](#19-published-0110--september-29-2026)**
+for the current release and acceptance boundary, and
+[§18](#18-the-account-area-restructured--september-29-2026) for the account
+work it shipped. Then §5 (conventions) and §7 (gotchas). Sections 8–17 are
+dated snapshots, kept for their evidence rather than their currency.
 
 ---
 
