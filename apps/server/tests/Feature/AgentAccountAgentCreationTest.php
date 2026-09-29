@@ -19,21 +19,21 @@ test('owners and admins can create a new default agent from the account page', f
     Mail::fake();
 
     $this->actingAs($actor)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertSee('Add agent')
         ->assertSee('New agents start with the Agent role')
         ->assertSee('/dashboard/account/agents', false);
 
     $response = $this->actingAs($actor)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'bea@example.test',
         ]);
 
     $response
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.created')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
@@ -70,7 +70,7 @@ test('owners and admins can email the generated welcome credentials when creatin
     Mail::fake();
 
     $response = $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'Bea@Example.test',
@@ -78,7 +78,7 @@ test('owners and admins can email the generated welcome credentials when creatin
         ]);
 
     $response
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.created_and_welcome_sent')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
@@ -123,7 +123,7 @@ test('agent creation keeps the temporary password fallback when welcome email de
         });
 
     $response = $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'bea@example.test',
@@ -131,7 +131,7 @@ test('agent creation keeps the temporary password fallback when welcome email de
         ]);
 
     $response
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHas('status', 'account.flash.created_welcome_failed')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
@@ -152,13 +152,13 @@ test('agents cannot create account agents', function (): void {
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
 
     $this->actingAs($agent)
-        ->get('/dashboard/account')
+        ->get('/dashboard/account/team')
         ->assertOk()
         ->assertDontSee('Add agent')
         ->assertDontSee('/dashboard/account/agents', false);
 
     $this->actingAs($agent)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'bea@example.test',
@@ -182,7 +182,7 @@ test('a custom agent manager creates teammates inside their own role boundary', 
     ]);
 
     $this->actingAs($manager)
-        ->get(route('dashboard.account.show'))
+        ->get(route('dashboard.account.team.show'))
         ->assertOk()
         ->assertSee('New agents start with the Team coordinator role');
 
@@ -191,7 +191,7 @@ test('a custom agent manager creates teammates inside their own role boundary', 
             'name' => 'Bounded teammate',
             'email' => 'bounded@example.test',
         ])
-        ->assertRedirect(route('dashboard.account.show'));
+        ->assertRedirect(route('dashboard.account.team.show'));
 
     $created = User::query()->where('email', 'bounded@example.test')->firstOrFail();
     $audit = AuditEvent::query()->where('action', 'agent.created')->sole();
@@ -243,12 +243,12 @@ test('account agent creation rejects duplicate emails without updating an existi
     ]);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'bea@example.test',
         ])
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHasErrors('email');
 
     expect($existingAgent->fresh()->name)->toBe('Existing Bea')
@@ -263,12 +263,12 @@ test('account agent creation rejects duplicate emails after normalizing casing',
     User::factory()->for($account)->create(['email' => 'bea@example.test']);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'BEA@example.test',
         ])
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHasErrors('email');
 
     expect(User::query()->where('email', 'bea@example.test')->count())->toBe(1)
@@ -282,12 +282,12 @@ test('account agent creation rejects emails already used by another account', fu
     User::factory()->for($otherAccount)->create(['email' => 'bea@example.test']);
 
     $this->actingAs($owner)
-        ->from('/dashboard/account')
+        ->from('/dashboard/account/team')
         ->post('/dashboard/account/agents', [
             'name' => 'Bea Builder',
             'email' => 'bea@example.test',
         ])
-        ->assertRedirect('/dashboard/account')
+        ->assertRedirect('/dashboard/account/team')
         ->assertSessionHasErrors('email');
 
     expect(User::query()->where('email', 'bea@example.test')->count())->toBe(1)
@@ -303,12 +303,12 @@ test('agent creation validation and completion answer in the account page langua
     Mail::fake();
 
     $this->actingAs($owner)
-        ->from(route('dashboard.account.show'))
+        ->from(route('dashboard.account.team.show'))
         ->post(route('dashboard.account.agents.store'), [
             'name' => 'Bea Datenpunkt',
             'email' => 'not-an-email',
         ])
-        ->assertRedirect(route('dashboard.account.show'))
+        ->assertRedirect(route('dashboard.account.team.show'))
         ->assertSessionHasErrors('email');
 
     expect((string) session('errors')->first('email'))->toBe($validation);

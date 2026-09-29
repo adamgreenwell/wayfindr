@@ -21,6 +21,7 @@ return [
 
     'sections' => [
         'overview' => 'Übersicht',
+        'team' => 'Team',
         'roles' => 'Rollen',
         'security' => 'Sicherheit',
         'articles' => 'Artikel',

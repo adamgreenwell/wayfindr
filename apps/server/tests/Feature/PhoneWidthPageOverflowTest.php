@@ -156,7 +156,7 @@ test('a table wrapper contains the hidden labels in its cells', function (): voi
     User::factory()->for($owner->account)->create(['account_role' => AccountRole::Agent, 'name' => 'Ari Agent']);
 
     $html = (string) $this->actingAs($owner)
-        ->get(route('dashboard.account.show'))->assertOk()->getContent();
+        ->get(route('dashboard.account.team.show'))->assertOk()->getContent();
     $labels = phoneWidthPageOverflowXpath($html)->query(
         '//div['.phoneWidthPageOverflowClass('table-wrap').']//td//label['.phoneWidthPageOverflowClass('sr-only').']'
     );

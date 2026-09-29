@@ -30,6 +30,16 @@ missed while skimming.
 
 ## [Unreleased]
 
+### Changed
+
+- **The account's people have a page of their own.** A new **Team** entry in
+  the account sidebar holds the agent roster, adding an agent, team alert
+  readiness, the site access matrix, and recent account activity, which used to
+  fill most of the account overview. The overview keeps your role, the account's
+  site and assignment counts, external issue readiness, and the data
+  responsibility reminder. Adding an agent, changing a role, and deactivating or
+  reactivating an agent now return to the Team page.
+
 ## [0.10.0] - 2026-09-28
 
 **No operator action required.** Pull and restart. This release has no

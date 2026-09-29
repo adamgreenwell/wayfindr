@@ -17,7 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('agent can inspect their account role and same-account roster', function (): void {
+test('agent can inspect their account role and visible support scope', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $owner = User::factory()->for($account)->create([
         'account_role' => AccountRole::Owner,
@@ -52,6 +52,14 @@ test('agent can inspect their account role and same-account roster', function ()
         'status' => 'open',
     ]);
 
+    // Neither is a support assignment: one is deactivated, the other belongs
+    // to another account. The overview counts them no more than the Team
+    // page's access matrix lists them.
+    $visibleSite->supportAgents()->attach([
+        User::factory()->for($account)->create(['deactivated_at' => now()])->id,
+        User::query()->where('email', 'mallory@example.test')->value('id'),
+    ]);
+
     $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
     $restrictedSite->supportAgents()->attach($admin);
     $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create();
@@ -70,26 +78,23 @@ test('agent can inspect their account role and same-account roster', function ()
         // The role rules live on the Roles page now, which this agent cannot
         // open -- see `the role rules are the roles page's lede`.
         ->assertDontSee('Role changes are limited to account owners')
-        ->assertSee('Olive Owner')
-        ->assertSee('olive@example.test')
-        ->assertSee('Owner')
-        ->assertSee('Ada Admin')
-        ->assertSee('Admin')
-        ->assertSee('Bea Builder')
-        ->assertSee('1 open conversation')
-        ->assertSee('1 open ticket')
+        ->assertSee('4 agents')
         ->assertSee('3 support assignments')
         ->assertSee('2 sites')
+        // The people are the Team page's (AgentAccountTeamTest).
+        ->assertDontSee('olive@example.test')
+        ->assertDontSee('1 open conversation')
         ->assertDontSee('Mallory Elsewhere')
         ->assertDontSee('Other Support')
         ->assertDontSee('Restricted Store');
 });
 
-test('account overview leaves navigation to the account sidebar and keeps every admin section', function (): void {
+test('account overview leaves navigation to the account sidebar and the people to the team page', function (): void {
     // The overview used to open with an in-page "Account map" of jump links
     // and carry a second directory of management pages further down. The
     // account sidebar replaces both (AccountContextSidebarTest); what stays is
-    // the account's own state.
+    // the account's own state. The roster and everything about the people on
+    // it moved to the Team page (AgentAccountTeamTest).
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -107,12 +112,12 @@ test('account overview leaves navigation to the account sidebar and keeps every 
         ->assertDontSee('class="management-list"', false)
         ->assertDontSee('id="role-boundary-heading"', false)
         ->assertSee('id="account-context-heading"', false)
-        ->assertSee('id="site-access-matrix"', false)
         ->assertSee('id="external-issue-readiness-heading"', false)
-        ->assertSee('id="account-activity-heading"', false)
-        ->assertSee('id="add-agent-heading"', false)
-        ->assertSee('id="team-alert-readiness-heading"', false)
-        ->assertSee('id="agents"', false);
+        ->assertDontSee('id="add-agent-heading"', false)
+        ->assertDontSee('id="team-alert-readiness-heading"', false)
+        ->assertDontSee('id="agents"', false)
+        ->assertDontSee('id="site-access-matrix"', false)
+        ->assertDontSee('id="account-activity-heading"', false);
 });
 
 test('account overview hides admin only sections from regular agents', function (): void {
@@ -127,12 +132,7 @@ test('account overview hides admin only sections from regular agents', function 
         ->get('/dashboard/account')
         ->assertOk()
         ->assertSee('id="account-context-heading"', false)
-        ->assertSee('id="site-access-matrix"', false)
-        ->assertSee('id="account-activity-heading"', false)
-        ->assertSee('id="agents"', false)
-        ->assertDontSee('id="external-issue-readiness-heading"', false)
-        ->assertDontSee('id="add-agent-heading"', false)
-        ->assertDontSee('id="team-alert-readiness-heading"', false);
+        ->assertDontSee('id="external-issue-readiness-heading"', false);
 });
 
 test('the data responsibility reminder is a closed disclosure on the overview', function (): void {
@@ -176,324 +176,6 @@ test('the role rules are the roles page\'s lede, not an overview card', function
             'Owners and admins can suspend access without deleting account history.',
             'id="create-role-heading"',
         ], false);
-});
-
-test('agent can inspect visible site access from the account overview', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $owner = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Owner,
-        'name' => 'Olive Owner',
-        'email' => 'olive@example.test',
-    ]);
-    $admin = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Admin,
-        'name' => 'Ada Admin',
-        'email' => 'ada@example.test',
-    ]);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-        'email' => 'bea@example.test',
-    ]);
-    $deactivatedAgent = User::factory()->for($account)->create([
-        'name' => 'Doug Dormant',
-        'email' => 'doug@example.test',
-        'deactivated_at' => now(),
-    ]);
-
-    $fallbackSite = Site::factory()->for($account)->create([
-        'name' => 'Public Docs',
-        'domain' => 'docs.example.test',
-    ]);
-    $explicitSite = Site::factory()->for($account)->create([
-        'name' => 'VIP Portal',
-        'domain' => 'vip.example.test',
-    ]);
-    $explicitSite->supportAgents()->attach([$owner->id, $agent->id, $deactivatedAgent->id]);
-
-    $restrictedSite = Site::factory()->for($account)->create([
-        'name' => 'Restricted Store',
-        'domain' => 'store.example.test',
-    ]);
-    $restrictedSite->supportAgents()->attach($admin);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Site access matrix')
-        ->assertSee('Public Docs')
-        ->assertSee('docs.example.test')
-        ->assertSee('Account-wide fallback')
-        ->assertSee('All active account agents')
-        ->assertSee('VIP Portal')
-        ->assertSee('vip.example.test')
-        ->assertSee('Explicit access')
-        ->assertSee('2 assigned active agents')
-        ->assertSee('Olive Owner')
-        ->assertSee('Bea Builder')
-        ->assertSee(route('dashboard.sites.show', $fallbackSite), false)
-        ->assertSee(route('dashboard.sites.show', $explicitSite), false)
-        ->assertDontSee('Restricted Store');
-});
-
-test('agent roster summarizes explicit and fallback site scope', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $owner = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Owner,
-        'name' => 'Olive Owner',
-        'email' => 'olive@example.test',
-    ]);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-        'email' => 'bea@example.test',
-    ]);
-    $deactivatedAgent = User::factory()->for($account)->create([
-        'name' => 'Doug Dormant',
-        'email' => 'doug@example.test',
-        'deactivated_at' => now(),
-    ]);
-
-    $fallbackSite = Site::factory()->for($account)->create(['name' => 'Public Docs']);
-    $explicitSite = Site::factory()->for($account)->create(['name' => 'VIP Portal']);
-    $explicitSite->supportAgents()->attach([$owner->id, $agent->id, $deactivatedAgent->id]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Support scope')
-        ->assertSeeInOrder([
-            'Bea Builder',
-            'bea@example.test',
-            'Explicit:',
-            'VIP Portal',
-            'Fallback:',
-            'Public Docs',
-        ])
-        ->assertSeeInOrder([
-            'Doug Dormant',
-            'doug@example.test',
-            'No active support scope',
-        ])
-        ->assertSee(route('dashboard.sites.show', $fallbackSite), false)
-        ->assertSee(route('dashboard.sites.show', $explicitSite), false);
-});
-
-test('agent roster keeps multi-site support scope summaries scannable', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-        'email' => 'bea@example.test',
-    ]);
-
-    $explicitSites = collect(['Alpha Docs', 'Beta Store', 'Gamma Portal'])
-        ->map(fn (string $name): Site => tap(
-            Site::factory()->for($account)->create(['name' => $name]),
-            function (Site $site) use ($agent): void {
-                $site->supportAgents()->attach($agent);
-            },
-        ));
-
-    collect(['Public Docs', 'Knowledge Base', 'Marketing Site'])
-        ->each(fn (string $name) => Site::factory()->for($account)->create(['name' => $name]));
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSeeInOrder([
-            'Bea Builder',
-            '3 explicit sites',
-            'Explicit:',
-            'Alpha Docs',
-            'Beta Store',
-            '+ 1 more',
-            '3 fallback sites',
-            'Fallback:',
-            'Knowledge Base',
-            'Marketing Site',
-            '+ 1 more',
-            'Review site access',
-        ])
-        ->assertSee(route('dashboard.sites.show', $explicitSites->first()), false);
-});
-
-test('agent roster summarizes visible assigned workload without leaking restricted site work', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $viewer = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-        'email' => 'bea@example.test',
-    ]);
-    $teammate = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Quinn Queue',
-        'email' => 'quinn@example.test',
-    ]);
-
-    $visibleSite = Site::factory()->for($account)->create(['name' => 'Public Docs']);
-    $visibleSite->supportAgents()->attach([$viewer->id, $teammate->id]);
-    $visibleVisitor = Visitor::factory()->for($visibleSite)->create();
-
-    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
-        'assigned_agent_id' => $viewer->id,
-        'status' => 'open',
-    ]);
-    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
-        'assigned_agent_id' => $viewer->id,
-        'status' => 'open',
-    ]);
-    Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create([
-        'assigned_agent_id' => $viewer->id,
-        'status' => 'closed',
-    ]);
-    Ticket::factory()->for($account)->for($visibleSite)->create([
-        'assignee_id' => $viewer->id,
-        'status' => 'open',
-    ]);
-
-    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
-    $restrictedSite->supportAgents()->attach($teammate);
-    $restrictedVisitor = Visitor::factory()->for($restrictedSite)->create();
-    Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create([
-        'assigned_agent_id' => $teammate->id,
-        'status' => 'open',
-    ]);
-    Ticket::factory()->for($account)->for($restrictedSite)->create([
-        'assignee_id' => $teammate->id,
-        'status' => 'open',
-    ]);
-
-    $this->actingAs($viewer)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Workload')
-        ->assertSeeInOrder([
-            'Bea Builder',
-            'bea@example.test',
-            '2 open conversations',
-            '1 open ticket',
-        ])
-        ->assertSeeInOrder([
-            'Quinn Queue',
-            'quinn@example.test',
-            'No assigned open work',
-        ])
-        ->assertDontSee('Restricted Store');
-});
-
-test('account roster hides support workloads from settings only custom roles', function (): void {
-    $account = Account::factory()->create();
-    $role = CustomRole::factory()->for($account)->create([
-        'permissions' => [AccountPermission::ManagePrivacySettings->value],
-    ]);
-    $privacyManager = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'custom_role_id' => $role->id,
-    ]);
-    $teammate = User::factory()->for($account)->create(['name' => 'Private workload owner']);
-    $site = Site::factory()->for($account)->create();
-    $site->supportAgents()->attach([$privacyManager->id, $teammate->id]);
-    $visitor = Visitor::factory()->for($site)->create();
-    Conversation::factory()->for($site)->for($visitor)->create([
-        'assigned_agent_id' => $teammate->id,
-        'status' => 'open',
-    ]);
-    Ticket::factory()->for($account)->for($site)->create([
-        'assignee_id' => $teammate->id,
-        'status' => 'open',
-    ]);
-
-    $this->actingAs($privacyManager)
-        ->get(route('dashboard.account.show'))
-        ->assertOk()
-        ->assertSee('Private workload owner')
-        ->assertDontSee('Workload')
-        ->assertDontSee('1 open conversation')
-        ->assertDontSee('1 open ticket');
-});
-
-test('account overview shows agent alert digest delivery status without raw provider errors', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $admin = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Admin,
-        'name' => 'Ada Admin',
-        'email' => 'ada@example.test',
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Quinn Queued',
-        'email' => 'queued@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
-                'candidate_count' => 2,
-                'message' => User::digestQueuedMessage(2),
-                'last_attempted_at' => now()->subMinutes(5)->toISOString(),
-            ],
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Faye Failed',
-        'email' => 'failed@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
-                'candidate_count' => 1,
-                'message' => 'Digest email could not be queued.',
-                'error' => 'SMTP provider secret stack trace should not render',
-                'last_attempted_at' => now()->subMinutes(9)->toISOString(),
-            ],
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Ivy Immediate',
-        'email' => 'immediate@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for(Account::factory())->create([
-        'name' => 'Outside Digest',
-        'email' => 'outside@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
-                'message' => 'Outside failure should not render.',
-            ],
-        ],
-    ]);
-
-    $this->actingAs($admin)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Alert delivery')
-        ->assertSee('Quinn Queued')
-        ->assertSee('Digest')
-        ->assertSee('Queued digest email')
-        ->assertSee('Queued digest email with 2 alerts.')
-        ->assertSee('Faye Failed')
-        ->assertSee('Digest delivery failed')
-        ->assertSee('Digest email could not be queued.')
-        ->assertSee('Ivy Immediate')
-        ->assertSee('Immediate')
-        ->assertDontSee('SMTP provider secret stack trace should not render')
-        ->assertDontSee('Outside Digest')
-        ->assertDontSee('Outside failure should not render.');
 });
 
 test('account admins can inspect external issue readiness without raw provider details', function (): void {
@@ -1027,342 +709,6 @@ test('account external issue readiness labels project handoff states', function 
         ]);
 });
 
-test('account admins can inspect team alert readiness without leaking provider details', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $admin = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Admin,
-        'name' => 'Ada Admin',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Ivy Immediate',
-        'email' => 'immediate@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Quinn Digest',
-        'email' => 'digest@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
-                'candidate_count' => 3,
-                'message' => User::digestQueuedMessage(3),
-            ],
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Nora New Digest',
-        'email' => 'not-run@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Faye Failed',
-        'email' => 'failed@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
-                'message' => 'Digest email could not be queued.',
-                'error' => 'SMTP provider secret stack trace should not render',
-            ],
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Quinn Quiet',
-        'email' => 'quiet@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_QUIET,
-            'email' => false,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Ash Dashboard',
-        'email' => 'dashboard@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ASSIGNED,
-            'email' => false,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Doug Dormant',
-        'email' => 'dormant@example.test',
-        'deactivated_at' => now(),
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for(Account::factory())->create([
-        'name' => 'Outside Failed',
-        'email' => 'outside@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
-                'message' => 'Outside failure should not render.',
-            ],
-        ],
-    ]);
-
-    $this->actingAs($admin)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Team alert readiness')
-        ->assertSee('7 active')
-        ->assertSee('2 immediate email')
-        ->assertSee('1 digest ready')
-        ->assertSee('1 digest needs baseline')
-        ->assertSee('1 needs attention')
-        ->assertSee('2 dashboard only or quiet')
-        ->assertSee('1 deactivated')
-        ->assertSee('Faye Failed')
-        ->assertDontSee('SMTP provider secret stack trace should not render')
-        ->assertDontSee('Outside Failed')
-        ->assertDontSee('Outside failure should not render.');
-});
-
-test('regular agents do not see team alert readiness rollups', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Faye Failed',
-        'email' => 'failed@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_DIGEST,
-            'digest_delivery' => [
-                'status' => User::ALERT_DIGEST_DELIVERY_FAILED,
-                'message' => 'Digest email could not be queued.',
-                'error' => 'SMTP provider secret stack trace should not render',
-            ],
-        ],
-    ]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertDontSee('Team alert readiness')
-        ->assertDontSee('needs attention')
-        ->assertDontSee('SMTP provider secret stack trace should not render');
-});
-
-test('account overview clarifies agent alert scope and quiet delivery state', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $admin = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Admin,
-        'name' => 'Ada Admin',
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Quinn Quiet',
-        'email' => 'quiet@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_QUIET,
-            'email' => false,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Ash Assigned',
-        'email' => 'assigned@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ASSIGNED,
-            'email' => false,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    User::factory()->for($account)->create([
-        'name' => 'Ivy Immediate',
-        'email' => 'immediate@example.test',
-        'alert_preferences' => [
-            'mode' => User::ALERT_MODE_ALL,
-            'email' => true,
-            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
-        ],
-    ]);
-
-    $this->actingAs($admin)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Quinn Quiet')
-        ->assertSee('Quiet mode')
-        ->assertSee('New dashboard and email alerts are paused.')
-        ->assertSee('Ash Assigned')
-        ->assertSee('Assigned-only')
-        ->assertSee('Dashboard alerts only for assigned conversations and tickets.')
-        ->assertSee('Ivy Immediate')
-        ->assertSee('All support work')
-        ->assertSee('Email alerts as they happen.');
-});
-
-test('agent can review recent account access activity from the account overview', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $owner = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Owner,
-        'name' => 'Olive Owner',
-    ]);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-        'name' => 'Bea Builder',
-    ]);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
-    $restrictedSite = Site::factory()->for($account)->create(['name' => 'Restricted Store']);
-    $restrictedSite->supportAgents()->attach($owner);
-    $otherAccount = Account::factory()->create(['name' => 'Other Support']);
-    $outsideAgent = User::factory()->for($otherAccount)->create(['name' => 'Mallory Elsewhere']);
-
-    AuditEvent::factory()->for($account)->create([
-        'actor_type' => $owner->getMorphClass(),
-        'actor_id' => $owner->id,
-        'subject_type' => $agent->getMorphClass(),
-        'subject_id' => $agent->id,
-        'action' => 'agent.created',
-        'metadata' => ['role' => AccountRole::Agent->value],
-        'occurred_at' => now()->subMinutes(12),
-    ]);
-
-    AuditEvent::factory()->for($account)->for($site)->create([
-        'actor_type' => $owner->getMorphClass(),
-        'actor_id' => $owner->id,
-        'subject_type' => $site->getMorphClass(),
-        'subject_id' => $site->id,
-        'action' => 'site_access.updated',
-        'metadata' => [
-            'before_agent_ids' => [],
-            'after_agent_ids' => [$owner->id, $agent->id],
-            'added_agent_ids' => [$owner->id, $agent->id],
-            'removed_agent_ids' => [],
-            'token' => 'should-not-render',
-        ],
-        'occurred_at' => now()->subMinutes(8),
-    ]);
-
-    AuditEvent::factory()->for($account)->create([
-        'actor_type' => $owner->getMorphClass(),
-        'actor_id' => $owner->id,
-        'subject_type' => $agent->getMorphClass(),
-        'subject_id' => $agent->id,
-        'action' => 'agent.role_changed',
-        'metadata' => [
-            'old_role' => AccountRole::Agent->value,
-            'new_role' => AccountRole::Admin->value,
-            'password' => 'should-not-render',
-        ],
-        'occurred_at' => now()->subMinutes(4),
-    ]);
-
-    AuditEvent::factory()->for($account)->create([
-        'actor_type' => $owner->getMorphClass(),
-        'actor_id' => $owner->id,
-        'subject_type' => $agent->getMorphClass(),
-        'subject_id' => $agent->id,
-        'action' => 'agent.password_updated',
-        'metadata' => [],
-        'occurred_at' => now()->subMinutes(2),
-    ]);
-
-    AuditEvent::factory()->for($account)->for($restrictedSite)->create([
-        'actor_type' => $owner->getMorphClass(),
-        'actor_id' => $owner->id,
-        'subject_type' => $restrictedSite->getMorphClass(),
-        'subject_id' => $restrictedSite->id,
-        'action' => 'site_access.updated',
-        'metadata' => [
-            'before_agent_ids' => [],
-            'after_agent_ids' => [$owner->id],
-            'added_agent_ids' => [$owner->id],
-            'removed_agent_ids' => [],
-        ],
-        'occurred_at' => now()->subMinute(),
-    ]);
-
-    AuditEvent::factory()->for($otherAccount)->create([
-        'actor_type' => $outsideAgent->getMorphClass(),
-        'actor_id' => $outsideAgent->id,
-        'subject_type' => $outsideAgent->getMorphClass(),
-        'subject_id' => $outsideAgent->id,
-        'action' => 'agent.created',
-        'metadata' => [],
-        'occurred_at' => now(),
-    ]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Recent account activity')
-        ->assertSee('4 shown')
-        ->assertSee('Password changed')
-        ->assertSee('Agent role changed')
-        ->assertSee('Changed role from Agent to Admin')
-        ->assertSee('Site access updated')
-        ->assertSee('Updated support access')
-        ->assertSee('Agent created')
-        ->assertSee('Created agent account')
-        ->assertSee('Olive Owner')
-        ->assertSee('Bea Builder')
-        ->assertSee('Acme Docs')
-        ->assertSeeInOrder([
-            'Password changed',
-            'Agent role changed',
-            'Site access updated',
-            'Agent created',
-        ])
-        ->assertDontSee('Other Support')
-        ->assertDontSee('Mallory Elsewhere')
-        ->assertDontSee('Restricted Store')
-        ->assertDontSee('should-not-render');
-});
-
-test('account overview explains when there is no account activity yet', function (): void {
-    $account = Account::factory()->create(['name' => 'Acme Support']);
-    $agent = User::factory()->for($account)->create([
-        'account_role' => AccountRole::Agent,
-    ]);
-
-    $this->actingAs($agent)
-        ->get('/dashboard/account')
-        ->assertOk()
-        ->assertSee('Recent account activity')
-        ->assertSee('No account activity yet.');
-});
-
 test('account overview follows the reader language through populated management states', function (string $locale, array $copy): void {
     $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
     $owner = User::factory()->for($account)->create([
@@ -1423,21 +769,11 @@ test('account overview follows the reader language through populated management 
     $response->assertOk()
         ->assertSee('<html lang="'.$locale.'">', false)
         ->assertSee('aria-label="'.$copy['sections'].'"', false)
-        ->assertSee($copy['sites'])
         ->assertSee($copy['external'])
         ->assertSee($copy['attention'])
         ->assertSee($copy['handoff'])
-        ->assertSee($copy['activity'])
-        ->assertSee($copy['role_change'])
-        ->assertSee($copy['create'])
-        ->assertSee($copy['alerts'])
-        ->assertSee($copy['workload'])
         ->assertDontSee('Account sections')
-        ->assertDontSee('Site access matrix')
         ->assertDontSee('External issue readiness')
-        ->assertDontSee('Recent account activity')
-        ->assertDontSee('Add agent')
-        ->assertDontSee('Team alert readiness')
         ->assertDontSee('Provider secret must not render.');
 
     $document = new DOMDocument;
@@ -1447,48 +783,31 @@ test('account overview follows the reader language through populated management 
     foreach ([
         'Datenpunkt Account',
         'Datenpunkt Docs',
-        'docs.datenpunkt.example',
         'Datenpunkt GitHub',
         'GitHub',
         'datenpunkt/project',
         'Datenpunkt Project',
         '503',
-        'Ada Datenpunkt',
-        'ada@datenpunkt.example',
-        'Bea Datenpunkt',
-        'bea@datenpunkt.example',
     ] as $value) {
         expect($xpath->query('//*[@lang="" and normalize-space(.)="'.$value.'"]')->length)
             ->toBeGreaterThan(0, "{$value} is not marked as language-neutral account data");
     }
 
-    $heading = $xpath->query('//*[@id="site-access-matrix-heading"]')->item(0);
+    $heading = $xpath->query('//*[@id="external-issue-readiness-heading"]')->item(0);
 
     expect($heading)->toBeInstanceOf(DOMElement::class)
         ->and($heading->hasAttribute('lang'))->toBeFalse('translated account copy was reset to an unknown language');
 })->with([
     'German' => ['de', [
         'sections' => 'Kontobereiche',
-        'sites' => 'Matrix für Website-Zugriff',
         'external' => 'Bereitschaft für externe Issues',
         'attention' => 'Erfordert Aufmerksamkeit',
         'handoff' => 'Übergabe bereit',
-        'activity' => 'Letzte Kontoaktivität',
-        'role_change' => 'Rolle von Agent zu Administrator geändert',
-        'create' => 'Agent hinzufügen',
-        'alerts' => 'Benachrichtigungsbereitschaft des Teams',
-        'workload' => 'Arbeitslast',
     ]],
     'Italian' => ['it', [
         'sections' => 'Sezioni dell’account',
-        'sites' => 'Matrice di accesso ai siti',
         'external' => 'Prontezza delle segnalazioni esterne',
         'attention' => 'Richiede attenzione',
         'handoff' => 'Passaggio pronto',
-        'activity' => 'Attività recente dell’account',
-        'role_change' => 'Ruolo modificato da Agente a Admin',
-        'create' => 'Aggiungi agente',
-        'alerts' => 'Prontezza degli avvisi del team',
-        'workload' => 'Carico di lavoro',
     ]],
 ]);

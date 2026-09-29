@@ -27,6 +27,9 @@
             'sections' => [
                 // AgentAccountController: any member of the account.
                 ['label' => __('account_shell.sections.overview'), 'href' => route('dashboard.account.show'), 'visible' => $accountMember, 'active' => request()->routeIs('dashboard.account.show')],
+                // AgentAccountTeamController: the same. Its actions are gated
+                // row by row; the roster itself is every member's to read.
+                ['label' => __('account_shell.sections.team'), 'href' => route('dashboard.account.team.show'), 'visible' => $accountMember, 'active' => request()->routeIs('dashboard.account.team.*')],
                 ['label' => __('account_shell.sections.roles'), 'href' => route('dashboard.account.roles.index'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageRoles), 'active' => request()->routeIs('dashboard.account.roles.*')],
                 ['label' => __('account_shell.sections.security'), 'href' => route('dashboard.account.security.show'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageSecurity), 'active' => request()->routeIs('dashboard.account.security.*')],
             ],

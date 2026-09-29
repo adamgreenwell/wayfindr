@@ -93,9 +93,9 @@ Within that support boundary, mixed visitor and account views query and render c
 
 `manage_site_access` requires that permission plus support access to the site, matching the current site settings screen. A later metadata-only account administration surface may allow authorized roles to assign agents to sites they do not personally support, but that should be a separate product decision with tests for cross-account denial, cross-site denial, self-assignment behavior, and attempts to assign agents outside the account.
 
-The account overview now provides a read-only site access matrix for the signed-in agent's visible sites. This keeps current fallback-versus-explicit support scope easy to inspect without adding an elevated site-access bypass or exposing support content from sites the agent cannot work.
+The account's Team page provides a read-only site access matrix for the signed-in agent's visible sites. This keeps current fallback-versus-explicit support scope easy to inspect without adding an elevated site-access bypass or exposing support content from sites the agent cannot work.
 
-The account overview also exposes a small recent account activity feed for access-related audit events. It should stay curated and metadata-only: show who acted, which agent or site was affected, and a plain-language summary, but do not dump raw audit payloads into the UI. Site-backed activity still follows the signed-in agent's visible site boundary.
+The Team page also exposes a small recent account activity feed for access-related audit events. It should stay curated and metadata-only: show who acted, which agent or site was affected, and a plain-language summary, but do not dump raw audit payloads into the UI. Site-backed activity still follows the signed-in agent's visible site boundary.
 
 Site privacy settings require `manage_privacy_settings` plus site access. Built-in agents can still view install and public masking context for sites they support, but they cannot edit privacy configuration.
 
@@ -152,7 +152,7 @@ Audit-worthy RBAC actions include:
 - cobrowse consent lifecycle events,
 - ticket assignment changes.
 
-Account-level audit visibility should start narrow. The account overview can show recent access/account events, but broader audit search, export, retention, and customer-data access logs should be separate product surfaces with their own authorization and privacy review.
+Account-level audit visibility should start narrow. The account's Team page can show recent access/account events, but broader audit search, export, retention, and customer-data access logs should be separate product surfaces with their own authorization and privacy review.
 
 ## Bootstrap Rules
 
@@ -204,7 +204,7 @@ Every RBAC implementation slice should include tests for:
 
 ## Role Management Guardrails
 
-Role management stays owner-only and is exposed from the account overview. Wayfindr has explicit tests and product rules for:
+Role management stays owner-only and is exposed from the account's Roles page and the Team page's roster. Wayfindr has explicit tests and product rules for:
 
 - preventing self-promotion,
 - preventing owner transfer without owner approval,

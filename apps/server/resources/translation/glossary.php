@@ -95,6 +95,10 @@ return [
             // credential-backed actor shown in these support records.
             'Integration',
             'Integration · :name',
+            // The account's people, as a page and its sidebar entry. The
+            // catalogue already builds on the German noun (`Teamliste`,
+            // `des Teams`); `Mannschaft` is a sports side.
+            'Team',
             ':count ms',
             'Status: :value',
             'Label: :value',
@@ -143,6 +147,10 @@ return [
             'Viewport',
             // The URL-safe identifier; Italian technical writing borrows it.
             'Slug',
+            // The account's people, as a page and its sidebar entry. The
+            // catalogue already says `l’elenco del team` and `avvisi del
+            // team`; `squadra` would be a second word for the same people.
+            'Team',
 
             // The DOM/keyboard sense, which Italian borrows. `Messa a
             // fuoco` is the OPTICAL sense and would be wrong here -- this

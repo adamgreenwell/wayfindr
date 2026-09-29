@@ -14,7 +14,7 @@ class AgentAccountAgentAccessController extends Controller
         $updateAgentAccess->deactivate($request->user(), $agent);
 
         return redirect()
-            ->route('dashboard.account.show')
+            ->route('dashboard.account.team.show')
             ->with('status', 'account.flash.deactivated');
     }
 
@@ -23,7 +23,7 @@ class AgentAccountAgentAccessController extends Controller
         $updateAgentAccess->reactivate($request->user(), $agent);
 
         return redirect()
-            ->route('dashboard.account.show')
+            ->route('dashboard.account.team.show')
             ->with('status', 'account.flash.reactivated');
     }
 }

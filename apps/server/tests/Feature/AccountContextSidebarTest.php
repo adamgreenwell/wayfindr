@@ -33,6 +33,7 @@ function accountSidebarDestinations(): array
 {
     return [
         'dashboard.account.show',
+        'dashboard.account.team.show',
         'dashboard.account.roles.index',
         'dashboard.account.security.show',
         'dashboard.account.articles.index',
@@ -57,6 +58,7 @@ function accountSidebarCurrentEntries(): array
 {
     return [
         'dashboard.account.show' => 'Overview',
+        'dashboard.account.team.show' => 'Team',
         'dashboard.account.roles.index' => 'Roles',
         'dashboard.account.security.show' => 'Security',
         'dashboard.account.articles.index' => 'Articles',
@@ -192,7 +194,7 @@ test('a group heading is shown only when the group has a destination for the rea
 
     expect($headings)->toBe(['Account', 'Workflow', 'Connections'], 'a group with nothing in it for this reader still shows its heading')
         ->and(array_column(accountSidebarLinks($html, 'the overview'), 'label'))
-        ->toBe(['Overview', 'SLA policies', 'Integrations']);
+        ->toBe(['Overview', 'Team', 'SLA policies', 'Integrations']);
 });
 
 test('each account page marks its own sidebar entry, and only that one', function (string $routeName, string $entry): void {
@@ -282,11 +284,11 @@ test('the sidebar renders in the reader\'s language', function (string $locale, 
 })->with([
     'German' => ['de', 'Kontobereiche',
         ['Konto', 'Support-Inhalte', 'Arbeitsabläufe', 'Verbindungen', 'Aufsicht'],
-        ['Übersicht', 'Rollen', 'Sicherheit', 'Artikel', 'Antwortvorlagen', 'Ticket-Labels', 'Besucherattribute', 'Automatisierungen', 'SLA-Richtlinien', 'Integrationen', 'API und Webhooks', 'Audit-Protokoll', 'Betreiberzugriff'],
+        ['Übersicht', 'Team', 'Rollen', 'Sicherheit', 'Artikel', 'Antwortvorlagen', 'Ticket-Labels', 'Besucherattribute', 'Automatisierungen', 'SLA-Richtlinien', 'Integrationen', 'API und Webhooks', 'Audit-Protokoll', 'Betreiberzugriff'],
     ],
     'Italian' => ['it', 'Sezioni dell’account',
         ['Account', 'Contenuti di supporto', 'Flussi di lavoro', 'Connessioni', 'Supervisione'],
-        ['Panoramica', 'Ruoli', 'Sicurezza', 'Articoli', 'Modelli di risposta', 'Etichette dei ticket', 'Attributi dei visitatori', 'Automazioni', 'Criteri SLA', 'Integrazioni', 'API e webhook', 'Registro di audit', 'Accesso del gestore'],
+        ['Panoramica', 'Team', 'Ruoli', 'Sicurezza', 'Articoli', 'Modelli di risposta', 'Etichette dei ticket', 'Attributi dei visitatori', 'Automazioni', 'Criteri SLA', 'Integrazioni', 'API e webhook', 'Registro di audit', 'Accesso del gestore'],
     ],
 ]);
 

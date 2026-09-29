@@ -110,7 +110,7 @@ class AgentAccountAgentController extends Controller
         };
 
         return redirect()
-            ->route('dashboard.account.show')
+            ->route('dashboard.account.team.show')
             ->with('status', $status)
             ->with('created_agent_email', $agent->email)
             ->with('created_agent_password', $password);

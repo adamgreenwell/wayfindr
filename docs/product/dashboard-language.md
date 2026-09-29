@@ -7,12 +7,12 @@ write, partial, or data endpoint would make a hard-coded count stale.
 
 The extracted slice currently includes the app shell; profile, alerts, reports,
 conversation, ticket, site, tester, visitor, and live-presence workflows;
-account overview, security, SLA, automation, macros, proactive messages, reply
-templates, labels, articles, API tokens, outbound webhooks, audit, operator
-access, **Integrations**, and visitor-attribute management; plus the complete
-operator console, including onboarding, break-glass viewers, language and
-region, scanning, mail, Web Push, agent-copilot, attachment storage, and backup
-surfaces.
+account overview and Team page, security, SLA, automation, macros, proactive
+messages, reply templates, labels, articles, API tokens, outbound webhooks,
+audit, operator access, **Integrations**, and visitor-attribute management; plus
+the complete operator console, including onboarding, break-glass viewers,
+language and region, scanning, mail, Web Push, agent-copilot, attachment
+storage, and backup surfaces.
 
 The ordinary dashboard pages still intentionally rendered in English are the
 agent home and support-code lookup. Custom-role management was on

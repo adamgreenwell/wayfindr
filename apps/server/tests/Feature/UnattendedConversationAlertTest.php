@@ -866,7 +866,7 @@ test('the alert center and account roster name the unattended cadence, not Immed
         ->assertDontSee('Immediate email');
 
     $this->actingAs($agent)
-        ->get(route('dashboard.account.show'))
+        ->get(route('dashboard.account.team.show'))
         ->assertOk()
         ->assertSee('Unattended only');
 });

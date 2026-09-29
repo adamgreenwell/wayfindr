@@ -14,6 +14,7 @@ use App\Http\Controllers\AgentAccountOidcProvisioningController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
+use App\Http\Controllers\AgentAccountTeamController;
 use App\Http\Controllers\AgentAccountVisitorAttributeController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentAlertRealtimeReceiptController;
@@ -158,6 +159,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/team', AgentAccountTeamController::class)
+        ->name('dashboard.account.team.show');
     Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])
         ->name('dashboard.account.roles.index');
     Route::post('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'store'])

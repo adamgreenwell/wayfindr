@@ -3297,7 +3297,7 @@ test('the account roster lists agents with active workload counts', function ():
         ->create(['status' => 'open']);
 
     $this->actingAs($agent)
-        ->get('/dashboard/account')
+        ->get(route('dashboard.account.team.show'))
         ->assertOk()
         ->assertSee('Agents')
         ->assertSeeInOrder(['Ada Agent', 'ada@example.test', '1 open conversation', '1 open ticket'])

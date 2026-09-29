@@ -3,8 +3,16 @@
 return [
     'document_title' => 'Account',
     'title' => 'Account',
-    'subtitle' => 'Your role, team roster, and visible support scope.',
+    'subtitle' => 'Your role and visible support scope.',
     'agent_count' => '{1} :count agent|[2,*] :count agents',
+
+    // The Team page: the roster, site access and team alerts that were the
+    // lower half of this overview. Its sections keep their keys below.
+    'team' => [
+        'document_title' => 'Team',
+        'title' => 'Team',
+        'subtitle' => 'Agents, their roles, and the sites they answer.',
+    ],
 
     'flash' => [
         'created_and_welcome_sent' => 'Agent created and welcome email sent.',

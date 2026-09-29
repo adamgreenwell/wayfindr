@@ -34,7 +34,7 @@ class AgentAccountAgentRoleController extends Controller
         $updateAgentRole->handle($actor, $agent, $role);
 
         return redirect()
-            ->route('dashboard.account.show')
+            ->route('dashboard.account.team.show')
             ->with('status', 'account.flash.role_updated');
     }
 }

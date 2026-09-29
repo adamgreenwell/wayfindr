@@ -3,8 +3,14 @@
 return [
     'document_title' => 'Konto',
     'title' => 'Konto',
-    'subtitle' => 'Ihre Rolle, die Teamliste und der sichtbare Support-Umfang.',
+    'subtitle' => 'Ihre Rolle und der sichtbare Support-Umfang.',
     'agent_count' => '{1} :count Agent|[2,*] :count Agenten',
+
+    'team' => [
+        'document_title' => 'Team',
+        'title' => 'Team',
+        'subtitle' => 'Agenten, ihre Rollen und die Websites, die sie betreuen.',
+    ],
     'flash' => [
         'created_and_welcome_sent' => 'Agent erstellt und Willkommens-E-Mail gesendet.',
         'created_welcome_failed' => 'Agent erstellt, aber die Willkommens-E-Mail konnte nicht gesendet werden. Teilen Sie das temporäre Passwort sicher.',
