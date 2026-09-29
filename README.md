@@ -7,13 +7,13 @@ they ask, or by email. An agent works the queue, replies, cobrowses with
 consent, and turns any of it into a durable ticket. An owner can see whether the
 desk is actually working.
 
-Published `v0.10.0` accepts Mailgun and Postmark deliveries directly at
+Published `v0.11.0` accepts Mailgun and Postmark deliveries directly at
 `POST /api/mail/inbound` when the matching provider verification is configured,
 and still accepts the original Wayfindr-signed proxy format for existing
 integrations. Older `v0.7.0` predates that direct-provider support. See the
 [inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
 
-The capability list below describes the public `v0.10.0` release. The Status
+The capability list below describes the public `v0.11.0` release. The Status
 section separates published evidence from the work still needed for 1.0.0.
 
 - install a small widget on a site, themed to match it and speaking the
@@ -29,6 +29,8 @@ section separates published evidence from the work still needed for 1.0.0.
 - create a durable ticket from the support session;
 - route and automate support work with SLA policies, assignment rules, macros,
   bulk actions, shortcuts, alerts, quiet hours, and de-duplicated delivery;
+- administer the account from one sidebar: the team and its site access, roles,
+  security, API tokens and outbound webhooks, and issue-tracker integrations;
 - manage contacts and typed visitor attributes, and send conservative,
   operator-enabled proactive messages;
 - optionally give agents summaries and editable drafts through the assistive
@@ -149,25 +151,28 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 ## Status
 
 Pre-1.0. The latest public release is
-[`v0.10.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.10.0)
-(September 28, 2026). Its protected tag resolves to `665faf09`, and the
+[`v0.11.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.11.0)
+(September 29, 2026). Its protected tag resolves to `2bb7d5e3`, and the
 published multi-architecture image resolves to
-`sha256:fa8c0449d516f6fade3eff556c3887111e202e09165ea4959b8d34d49741affe`.
-It needs no operator action, but read its
-[release notes](CHANGELOG.md) before upgrading: replies to email conversations
-written on `v0.9.0` from the conversation page or the API never sent, and they
-send within about an hour of the upgrade, or once mail is configured on an
-install that cannot yet deliver it. Replies written on a linked ticket's page
-were never queued, so they do not.
+`sha256:6b19e4c2529c86b291b25c09dbfe579c12df167e70a2473ce2f4a8b6da9b7ff5`.
+It needs no operator action. It reorganises the account area and carries a
+security fix: a provider connection form that failed validation stored its API
+token and webhook secret in the session. See the [release notes](CHANGELOG.md).
+Anyone upgrading from `v0.9.0` should also read `v0.10.0`'s notes, whose email
+reply backlog sends after the upgrade.
 Current `main` identifies its next development line as `1.0.0-dev`;
 there is no public 1.0.0 release.
 
-The public `v0.10.0` artifact passed a
-[fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
-and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977).
+The public `v0.11.0` artifact passed a
+[fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205)
+and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014).
 Both resolved the published image digest, completed the support loop, passed
-backup/restore and restart checks, and read `v0.10.0` from the authenticated
+backup/restore and restart checks, and read `v0.11.0` from the authenticated
 `/operator` console, including after restore.
+
+The earlier public `v0.10.0` artifact passed the same two paths: a
+[fresh install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
+and an [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977).
 
 The earlier public `v0.9.0` artifact passed a
 [fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
@@ -187,8 +192,10 @@ The feature gaps tracked in Tier 1
 documented in the [release notes](CHANGELOG.md); the published image already
 contains those requirements. The guarded-release preconditions in
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970) are complete.
-Work toward 1.0.0 includes the [account area](https://github.com/adamgreenwell/wayfindr/issues/994)
-and [#797](https://github.com/adamgreenwell/wayfindr/issues/797): a person who
+The [account area](https://github.com/adamgreenwell/wayfindr/issues/994) that
+1.0.0 is scoped to finished its restructure in `v0.11.0`, after the sidebar in
+`v0.10.0`. The remaining gate is
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797): a person who
 is not the author must install a published artifact using the public
 instructions, recording where they need to guess or get stuck. #994's 1.0.0
 scope also calls for that person to test an upgrade. Publication and scripted
@@ -213,7 +220,7 @@ That is point-in-time variability—not long-term drift resistance,
 model-revision evidence, provider or runtime approval, or authority to change
 ADR 0004.
 
-The list below describes the published `v0.10.0` capability set.
+The list below describes the published `v0.11.0` capability set.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -263,9 +270,9 @@ The list below describes the published `v0.10.0` capability set.
   state reflection, and comment relay foundations.
 
 The full disposable bare-metal recovery matrix remains specific to `v0.3.2`.
-The newer `v0.10.0` and `v0.9.0` public-artifact hosted-runner paths above
-prove clean install, an upgrade from `v0.2.0`, support-loop health, and
-backup/restore within that environment. See [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md)
+The newer `v0.11.0`, `v0.10.0` and `v0.9.0` public-artifact hosted-runner
+paths above prove clean install, an upgrade from `v0.2.0`, support-loop health,
+and backup/restore within that environment. See [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md)
 for the evidence contract. A prior cold, no-context Claude sandbox run matched
 the `v0.7.0` release, commit, and image digest and completed a synthetic support
 loop after working around two defects. Those defects were fixed in `v0.9.0` by
