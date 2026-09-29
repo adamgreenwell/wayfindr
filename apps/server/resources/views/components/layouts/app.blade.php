@@ -2551,6 +2551,31 @@
                 border-bottom: 0;
             }
 
+            /* A provider connection on the integrations page: the row, then its
+               sync status and settings inset to the row's own padding. The
+               divider belongs under the whole connection, so the row gives
+               its border up to the group. */
+            .connection-item {
+                border-bottom: 1px solid var(--border);
+                display: grid;
+                gap: 10px;
+                padding-bottom: 18px;
+            }
+
+            .connection-item:last-child {
+                border-bottom: 0;
+            }
+
+            .connection-item > .management-link {
+                border-bottom: 0;
+                padding-bottom: 0;
+            }
+
+            .connection-item > .connection-sync-status,
+            .connection-item > .connection-settings {
+                margin: 0 20px;
+            }
+
             /* Only a row that navigates answers the pointer. The same grid
                also lays out read-only rows (a provider connection, a grant, a
                transcript message) as <div>s, and a hover background on those

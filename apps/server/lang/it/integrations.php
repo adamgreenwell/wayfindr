@@ -33,6 +33,8 @@ return [
         'empty_admin' => 'Colleghi :providers qui sotto con un token API per consentire agli agenti di trasferire i ticket come segnalazioni esterne.',
         'enabled' => 'Abilitata',
         'disabled' => 'Disabilitata',
+        'settings' => 'Funzioni e sincronizzazione in ingresso',
+        'settings_capabilities' => 'Funzioni',
 
         'setup' => [
             'heading' => 'Ordine di configurazione della connessione',
