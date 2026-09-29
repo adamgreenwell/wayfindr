@@ -30,6 +30,8 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Pull and restart.
+
 ### Changed
 
 - **The account's people have a page of their own.** A new **Team** entry in
