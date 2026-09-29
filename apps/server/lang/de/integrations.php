@@ -33,6 +33,8 @@ return [
         'empty_admin' => 'Verbinden Sie unten :providers mit einem API-Token, damit Agenten Tickets als externe Issues übergeben können.',
         'enabled' => 'Aktiviert',
         'disabled' => 'Deaktiviert',
+        'settings' => 'Funktionen und eingehender Abgleich',
+        'settings_capabilities' => 'Funktionen',
 
         'setup' => [
             'heading' => 'Reihenfolge der Verbindungseinrichtung',

@@ -46,6 +46,26 @@ missed while skimming.
   to add one, and recent deliveries. Every write returns to its own tab, and
   the page opens on the tab where a one-time token or signing secret was just
   shown, so it is never issued into a hidden panel.
+- **Integrations folds each provider connection under its row.** A connection
+  shows its name, provider, state and inbound-sync status; its capabilities and
+  webhook setup sit in a collapsed panel beneath. The panel opens for the
+  connection you just added or changed, for one whose form failed, and for one
+  halfway through inbound setup (secret saved, no signed delivery yet).
+
+### Fixed
+
+- **A webhook secret error on Integrations shows under its own connection.**
+  It rendered under every connection's secret field, and under the
+  add-connection form's, because all of them share the field name.
+
+### Security
+
+- **A failed provider connection form no longer writes its secrets to the
+  session.** Laravel keeps a failed form's input for the next page, and the
+  provider API token and webhook secret were missing from the list of fields
+  it must leave out, so a typo in a new connection's base URL stored both in
+  plaintext in the session store (the database, by default). A test now holds
+  every password field in the dashboard to that list.
 
 ## [0.10.0] - 2026-09-28
 

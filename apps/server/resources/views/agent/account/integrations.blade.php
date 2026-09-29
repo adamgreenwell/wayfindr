@@ -81,130 +81,158 @@
                             ->filter(fn (array $capability, string $value): bool => $connection->hasCapability($value))
                             ->pluck('label')
                             ->all();
+
+                        $inboundSync = $connection->inboundWebhookUrl() && $connection->is_enabled;
+                        // The connection the last write was for: named by the
+                        // hidden field of a form that failed validation, or
+                        // flashed by the controller after one that saved.
+                        $connectionFocused = (string) (old('connection_id') ?? session('integrations_connection')) === (string) $connection->id;
+                        // Closed by default: a connection's settings are
+                        // reference once it works. Open for the one just
+                        // written, and for one half set up -- a secret saved
+                        // here that no signed delivery has proved yet.
+                        $settingsOpen = $connectionFocused
+                            || ($inboundSync && $connection->hasWebhookSecret() && ! $connection->hasVerifiedInboundWebhook());
                     @endphp
 
-                    <div class="management-link">
-                        <span>
-                            <strong id="connection_{{ $connection->id }}_name" lang="">{{ $connection->name }}</strong>
-                            <span class="lede">
-                                {!! $providerHtml($provider) !!}
-                                @if ($connection->base_url)
-                                    · <span lang="">{{ $connection->base_url }}</span>
-                                @endif
-                                @if ($capabilityLabels !== [])
-                                    · {{ implode(', ', $capabilityLabels) }}
-                                @endif
+                    {{-- One connection: its row, its sync status, and its settings,
+                         with the divider under all three rather than between the
+                         row and the rest. The id is what a write returns to. --}}
+                    <div class="connection-item" id="connection-{{ $connection->id }}">
+                        <div class="management-link">
+                            <span>
+                                <strong id="connection_{{ $connection->id }}_name" lang="">{{ $connection->name }}</strong>
+                                <span class="lede">
+                                    {!! $providerHtml($provider) !!}
+                                    @if ($connection->base_url)
+                                        · <span lang="">{{ $connection->base_url }}</span>
+                                    @endif
+                                    @if ($capabilityLabels !== [])
+                                        · {{ implode(', ', $capabilityLabels) }}
+                                    @endif
+                                </span>
                             </span>
-                        </span>
-                        {{-- A state, not a destination. `.management-action` is the
-                             accent-coloured verb of a row that navigates, and this
-                             row does not. --}}
-                        <span class="readiness-status" data-status="{{ $connection->is_enabled ? 'ready' : 'manual' }}">{{ $connection->is_enabled
-                            ? __('integrations.connections.enabled')
-                            : __('integrations.connections.disabled') }}</span>
-                    </div>
+                            {{-- A state, not a destination. `.management-action` is the
+                                 accent-coloured verb of a row that navigates, and this
+                                 row does not. --}}
+                            <span class="readiness-status" data-status="{{ $connection->is_enabled ? 'ready' : 'manual' }}">{{ $connection->is_enabled
+                                ? __('integrations.connections.enabled')
+                                : __('integrations.connections.disabled') }}</span>
+                        </div>
 
-                    @if ($canManageIntegrations)
-                        <div class="notice-copy notice-copy-bordered">
-                            <p><strong id="connection_{{ $connection->id }}_capabilities_heading">{{ __('integrations.capabilities.heading') }}</strong></p>
-                            <p class="lede">{{ __('integrations.capabilities.help') }}</p>
-                            <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.capabilities.update', $connection) }}">
-                                @csrf
-                                @method('PUT')
-                                <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_capabilities_heading connection_{{ $connection->id }}_name">
-                                    @foreach ($externalIssueCapabilities as $value => $capability)
-                                        <label class="check-row" for="connection_{{ $connection->id }}_capability_{{ $value }}">
-                                            <input
-                                                id="connection_{{ $connection->id }}_capability_{{ $value }}"
-                                                name="capabilities[]"
-                                                type="checkbox"
-                                                value="{{ $value }}"
-                                                @checked($connection->hasCapability($value))
-                                            >
-                                            <span>{{ $capability['permission'] }}</span>
-                                        </label>
-                                    @endforeach
+                        {{-- Status, for every reader, above the settings that change it. --}}
+                        @if ($inboundSync)
+                            <div class="connection-sync-status">
+                                @if ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())
+                                    <p class="lede"><strong>{{ __('integrations.webhook.verified_title') }}</strong> {{ __('integrations.webhook.verified_body', ['elapsed' => $connection->last_checked_at->diffForHumans()]) }}</p>
+                                    @php
+                                        $event = data_get($connection->settings, 'inbound_webhook.event');
+                                        $statusCode = data_get($connection->settings, 'inbound_webhook.status_code');
+                                    @endphp
+                                    <p class="lede">{!! __('integrations.webhook.latest', [
+                                        'event' => is_scalar($event) && (string) $event !== ''
+                                            ? $unknownLanguage($event, 'code')
+                                            : e(__('integrations.webhook.unknown')),
+                                        'status' => is_scalar($statusCode) && (string) $statusCode !== ''
+                                            ? $unknownLanguage($statusCode)
+                                            : e(__('integrations.webhook.unknown')),
+                                    ]) !!}</p>
+                                @elseif ($connection->hasWebhookSecret())
+                                    <p class="lede"><strong>{{ __('integrations.webhook.configured_title') }}</strong> {{ __('integrations.webhook.configured_body') }}</p>
+                                @else
+                                    <p class="lede"><strong>{{ __('integrations.webhook.missing_title') }}</strong> {{ __('integrations.webhook.missing_body') }}</p>
+                                @endif
+                            </div>
+                        @endif
+
+                        @if ($canManageIntegrations)
+                            <x-details-disclosure class="connection-settings" :open="$settingsOpen">
+                                <x-slot:summary>{{ $inboundSync ? __('integrations.connections.settings') : __('integrations.connections.settings_capabilities') }} <span class="sr-only" lang="">{{ $connection->name }}</span></x-slot:summary>
+                                <div class="notice-copy notice-copy-bordered">
+                                    <p><strong id="connection_{{ $connection->id }}_capabilities_heading">{{ __('integrations.capabilities.heading') }}</strong></p>
+                                    <p class="lede">{{ __('integrations.capabilities.help') }}</p>
+                                    <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.capabilities.update', $connection) }}">
+                                        @csrf
+                                        @method('PUT')
+                                        <input type="hidden" name="connection_id" value="{{ $connection->id }}">
+                                        <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_capabilities_heading connection_{{ $connection->id }}_name">
+                                            @foreach ($externalIssueCapabilities as $value => $capability)
+                                                <label class="check-row" for="connection_{{ $connection->id }}_capability_{{ $value }}">
+                                                    <input
+                                                        id="connection_{{ $connection->id }}_capability_{{ $value }}"
+                                                        name="capabilities[]"
+                                                        type="checkbox"
+                                                        value="{{ $value }}"
+                                                        @checked($connection->hasCapability($value))
+                                                    >
+                                                    <span>{{ $capability['permission'] }}</span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                        @if ($connectionFocused && ($errors->has('capabilities') || $errors->has('capabilities.*')))
+                                            <p class="field-error">{{ $errors->first('capabilities') ?: $errors->first('capabilities.*') }}</p>
+                                        @endif
+                                        <button class="button secondary" type="submit">{{ __('integrations.capabilities.update') }}</button>
+                                    </form>
                                 </div>
-                                <button class="button secondary" type="submit">{{ __('integrations.capabilities.update') }}</button>
-                            </form>
-                        </div>
-                    @endif
 
-                    @if ($connection->inboundWebhookUrl() && $connection->is_enabled)
-                        <div class="notice-copy notice-copy-bordered">
-                            @if ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())
-                                <p class="lede"><strong>{{ __('integrations.webhook.verified_title') }}</strong> {{ __('integrations.webhook.verified_body', ['elapsed' => $connection->last_checked_at->diffForHumans()]) }}</p>
-                                @php
-                                    $event = data_get($connection->settings, 'inbound_webhook.event');
-                                    $statusCode = data_get($connection->settings, 'inbound_webhook.status_code');
-                                @endphp
-                                <p class="lede">{!! __('integrations.webhook.latest', [
-                                    'event' => is_scalar($event) && (string) $event !== ''
-                                        ? $unknownLanguage($event, 'code')
-                                        : e(__('integrations.webhook.unknown')),
-                                    'status' => is_scalar($statusCode) && (string) $statusCode !== ''
-                                        ? $unknownLanguage($statusCode)
-                                        : e(__('integrations.webhook.unknown')),
-                                ]) !!}</p>
-                            @elseif ($connection->hasWebhookSecret())
-                                <p class="lede"><strong>{{ __('integrations.webhook.configured_title') }}</strong> {{ __('integrations.webhook.configured_body') }}</p>
-                            @else
-                                <p class="lede"><strong>{{ __('integrations.webhook.missing_title') }}</strong> {{ __('integrations.webhook.missing_body') }}</p>
-                            @endif
-
-                            @if ($canManageIntegrations)
-                                <p class="lede"><strong>{{ __('integrations.webhook.generated_url') }}</strong></p>
-                                <p class="lede"><code lang="">{{ $connection->inboundWebhookUrl() }}</code></p>
-                                {{-- Instructions for the provider's side, needed until a
-                                     signed delivery proves that side is configured and
-                                     reference afterwards. The URL above and the secret
-                                     form below stay outside it: they are the values,
-                                     not the instructions. --}}
-                                <x-details-disclosure :open="! ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())">
-                                    <x-slot:summary><span id="connection_{{ $connection->id }}_webhook_settings_label">{{ __('integrations.webhook.settings_aria') }}</span></x-slot:summary>
-                                    <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_webhook_settings_label connection_{{ $connection->id }}_name">
-                                        <p><strong>{{ __('integrations.webhook.provider_destination_title') }}</strong> {{ __('integrations.webhook.provider_destination_body') }}</p>
-                                        @switch($connection->provider)
-                                            @case('github')
-                                                <p><strong>{{ __('integrations.webhook.github_title') }}</strong> {!! __('integrations.webhook.github_body', [
-                                                    'content_type' => $unknownLanguage('application/json', 'code'),
-                                                    'issues' => $unknownLanguage('Issues', 'strong'),
-                                                    'comments' => $unknownLanguage('Issue comments', 'strong'),
-                                                ]) !!}</p>
-                                                @break
-                                            @case('gitlab')
-                                                <p><strong>{{ __('integrations.webhook.gitlab_title') }}</strong> {!! __('integrations.webhook.gitlab_body', [
-                                                    'secret_token' => $unknownLanguage('Secret token'),
-                                                    'issues' => $unknownLanguage('Issues events', 'strong'),
-                                                    'comments' => $unknownLanguage('Comments', 'strong'),
-                                                ]) !!}</p>
-                                                @break
-                                            @case('jira')
-                                                <p><strong>{{ __('integrations.webhook.jira_title') }}</strong> {{ __('integrations.webhook.jira_body') }}</p>
-                                                @break
-                                        @endswitch
-                                        <p><strong>{{ __('integrations.webhook.shared_secret_title') }}</strong> {{ __('integrations.webhook.shared_secret_body') }}</p>
+                                @if ($inboundSync)
+                                    <div class="notice-copy notice-copy-bordered">
+                                        <p class="lede"><strong>{{ __('integrations.webhook.generated_url') }}</strong></p>
+                                        <p class="lede"><code lang="">{{ $connection->inboundWebhookUrl() }}</code></p>
+                                        {{-- Instructions for the provider's side, needed until a
+                                             signed delivery proves that side is configured and
+                                             reference afterwards. The URL above and the secret
+                                             form below stay outside it: they are the values,
+                                             not the instructions. --}}
+                                        <x-details-disclosure :open="! ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())">
+                                            <x-slot:summary><span id="connection_{{ $connection->id }}_webhook_settings_label">{{ __('integrations.webhook.settings_aria') }}</span></x-slot:summary>
+                                            <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_webhook_settings_label connection_{{ $connection->id }}_name">
+                                                <p><strong>{{ __('integrations.webhook.provider_destination_title') }}</strong> {{ __('integrations.webhook.provider_destination_body') }}</p>
+                                                @switch($connection->provider)
+                                                    @case('github')
+                                                        <p><strong>{{ __('integrations.webhook.github_title') }}</strong> {!! __('integrations.webhook.github_body', [
+                                                            'content_type' => $unknownLanguage('application/json', 'code'),
+                                                            'issues' => $unknownLanguage('Issues', 'strong'),
+                                                            'comments' => $unknownLanguage('Issue comments', 'strong'),
+                                                        ]) !!}</p>
+                                                        @break
+                                                    @case('gitlab')
+                                                        <p><strong>{{ __('integrations.webhook.gitlab_title') }}</strong> {!! __('integrations.webhook.gitlab_body', [
+                                                            'secret_token' => $unknownLanguage('Secret token'),
+                                                            'issues' => $unknownLanguage('Issues events', 'strong'),
+                                                            'comments' => $unknownLanguage('Comments', 'strong'),
+                                                        ]) !!}</p>
+                                                        @break
+                                                    @case('jira')
+                                                        <p><strong>{{ __('integrations.webhook.jira_title') }}</strong> {{ __('integrations.webhook.jira_body') }}</p>
+                                                        @break
+                                                @endswitch
+                                                <p><strong>{{ __('integrations.webhook.shared_secret_title') }}</strong> {{ __('integrations.webhook.shared_secret_body') }}</p>
+                                            </div>
+                                        </x-details-disclosure>
+                                        <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection) }}">
+                                            @csrf
+                                            @method('PUT')
+                                            <input type="hidden" name="connection_id" value="{{ $connection->id }}">
+                                            <div class="field">
+                                                <label for="webhook_secret_{{ $connection->id }}">{{ $connection->hasWebhookSecret()
+                                                    ? __('integrations.webhook.replace_secret')
+                                                    : __('integrations.webhook.set_secret') }}</label>
+                                                <input id="webhook_secret_{{ $connection->id }}" name="webhook_secret" type="password" value="" autocomplete="new-password">
+                                                @if ($connectionFocused && $errors->has('webhook_secret'))
+                                                    <p class="field-error">{{ $errors->first('webhook_secret') }}</p>
+                                                @endif
+                                            </div>
+                                            <button class="button secondary" type="submit">{{ $connection->hasWebhookSecret()
+                                                ? __('integrations.webhook.update_secret')
+                                                : __('integrations.webhook.enable') }}</button>
+                                        </form>
                                     </div>
-                                </x-details-disclosure>
-                                <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection) }}">
-                                    @csrf
-                                    @method('PUT')
-                                    <div class="field">
-                                        <label for="webhook_secret_{{ $connection->id }}">{{ $connection->hasWebhookSecret()
-                                            ? __('integrations.webhook.replace_secret')
-                                            : __('integrations.webhook.set_secret') }}</label>
-                                        <input id="webhook_secret_{{ $connection->id }}" name="webhook_secret" type="password" value="" autocomplete="new-password">
-                                        @error('webhook_secret')
-                                            <p class="field-error">{{ $message }}</p>
-                                        @enderror
-                                    </div>
-                                    <button class="button secondary" type="submit">{{ $connection->hasWebhookSecret()
-                                        ? __('integrations.webhook.update_secret')
-                                        : __('integrations.webhook.enable') }}</button>
-                                </form>
-                            @endif
-                        </div>
-                    @endif
+                                @endif
+                            </x-details-disclosure>
+                        @endif
+                    </div>
                 @endforeach
             </div>
         @endif
@@ -271,9 +299,13 @@
                         'gitlab' => $unknownLanguage('GitLab'),
                         'gitlab_header' => $unknownLanguage('X-Gitlab-Token', 'code'),
                     ]) !!}</span>
-                    @error('webhook_secret')
-                        <p class="field-error">{{ $message }}</p>
-                    @enderror
+                    {{-- Only this form's own failure: a connection's secret form
+                         fails under the same key and names its connection. --}}
+                    @if (old('connection_id') === null)
+                        @error('webhook_secret')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    @endif
                 </div>
 
                 <div class="notice-list">
@@ -291,12 +323,14 @@
                     @endforeach
                 </div>
 
-                @error('capabilities')
-                    <p class="field-error">{{ $message }}</p>
-                @enderror
-                @error('capabilities.*')
-                    <p class="field-error">{{ $message }}</p>
-                @enderror
+                @if (old('connection_id') === null)
+                    @error('capabilities')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                    @error('capabilities.*')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                @endif
 
                 <button class="button" type="submit">{{ __('integrations.create.submit') }}</button>
             </form>

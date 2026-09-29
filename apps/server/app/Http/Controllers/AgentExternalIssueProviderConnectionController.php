@@ -38,10 +38,10 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'capabilities.*' => ['string', Rule::in(ExternalIssueCapability::values())],
         ]);
 
-        DB::transaction(function () use ($account, $agent, $validated): void {
+        $connection = DB::transaction(function () use ($account, $agent, $validated): ExternalIssueProviderConnection {
             $this->lockedIntegrationManager($agent, (int) $account->id);
 
-            $account->externalIssueProviderConnections()->create([
+            return $account->externalIssueProviderConnections()->create([
                 'provider' => $validated['provider'],
                 'name' => trim($validated['name']),
                 'base_url' => $this->blankToNull($validated['base_url'] ?? null),
@@ -52,7 +52,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
             ]);
         });
 
-        return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, $validated['return_to'] ?? null);
+        return $this->redirectAfterUpdate($account, $connection, $validated['site_id'] ?? null, $validated['return_to'] ?? null);
     }
 
     /**
@@ -97,8 +97,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
             ])->save();
         });
 
-        return redirect()
-            ->route('dashboard.account.integrations')
+        return $this->backToConnection($connection)
             ->with('status', $secret === ''
                 ? 'integrations.flash.secret_cleared'
                 : 'integrations.flash.secret_saved');
@@ -127,16 +126,31 @@ class AgentExternalIssueProviderConnectionController extends Controller
             ])->save();
         });
 
-        return redirect()
-            ->route('dashboard.account.integrations')
+        return $this->backToConnection($connection)
             ->with('status', 'integrations.flash.capabilities_updated');
     }
 
-    private function redirectAfterUpdate(Account $account, mixed $siteId, ?string $returnTo = null): RedirectResponse
+    /**
+     * The integrations page, opened at the connection just written.
+     *
+     * Each connection's settings are collapsed on that page; the flashed id
+     * renders this one open and the fragment scrolls to it, so a saved change
+     * is shown where it was made rather than folded away.
+     */
+    private function backToConnection(ExternalIssueProviderConnection $connection): RedirectResponse
     {
+        return redirect()
+            ->route('dashboard.account.integrations')
+            ->withFragment('connection-'.$connection->id)
+            ->with('integrations_connection', $connection->id);
+    }
+
+    private function redirectAfterUpdate(Account $account, ExternalIssueProviderConnection $connection, mixed $siteId, ?string $returnTo = null): RedirectResponse
+    {
+        // A new connection's next step is its generated webhook URL, which is
+        // inside its settings.
         if ($returnTo === 'integrations') {
-            return redirect()
-                ->route('dashboard.account.integrations')
+            return $this->backToConnection($connection)
                 ->with('status', 'integrations.flash.connection_saved');
         }
 

@@ -33,6 +33,11 @@ return [
         'empty_admin' => 'Connect :providers below with an API token to let agents hand tickets off as external issues.',
         'enabled' => 'Enabled',
         'disabled' => 'Disabled',
+        // The summary of a connection's collapsed settings. The connection's
+        // name follows for screen readers, so the summary is not a list of
+        // identical labels read one after another.
+        'settings' => 'Capabilities and inbound sync',
+        'settings_capabilities' => 'Capabilities',
 
         'setup' => [
             'heading' => 'Connection setup order',

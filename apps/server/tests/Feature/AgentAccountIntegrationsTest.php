@@ -350,7 +350,7 @@ test('integration writes answer in the language of the page they return to', fun
             'name' => 'Datenpunkt connection',
             'capabilities' => ['create_issue'],
         ])
-        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertRedirectContains(route('dashboard.account.integrations').'#connection-')
         ->assertSessionHas('status', 'integrations.flash.connection_saved');
 
     $this->get(route('dashboard.account.integrations'))
@@ -451,7 +451,7 @@ test('saving a connection from the integrations home returns to it', function ()
             'credential_token' => 'token-123',
             'capabilities' => ['create_issue'],
         ])
-        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertRedirectContains(route('dashboard.account.integrations').'#connection-')
         ->assertSessionHas('status', 'integrations.flash.connection_saved');
 
     expect($fixture['account']->externalIssueProviderConnections()->count())->toBe(1);
@@ -597,7 +597,7 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
         ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
             'webhook_secret' => 'whsec_new',
         ])
-        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertRedirect(route('dashboard.account.integrations').'#connection-'.$connection->id)
         ->assertSessionHas('status', 'integrations.flash.secret_saved');
 
     $connection->refresh();
@@ -613,7 +613,7 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
         ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
             'webhook_secret' => '',
         ])
-        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertRedirect(route('dashboard.account.integrations').'#connection-'.$connection->id)
         ->assertSessionHas('status', 'integrations.flash.secret_cleared');
 
     $connection->refresh();
@@ -633,7 +633,7 @@ test('an admin can update saved connection capabilities without replacing creden
         ->put(route('dashboard.external-issue-provider-connections.capabilities.update', $connection), [
             'capabilities' => ['create_issue', 'add_comment', 'sync_status'],
         ])
-        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertRedirect(route('dashboard.account.integrations').'#connection-'.$connection->id)
         ->assertSessionHas('status', 'integrations.flash.capabilities_updated');
 
     $connection->refresh();
@@ -991,4 +991,160 @@ test('setup guidance is open only while it is needed', function (): void {
     expect(str_contains($details->textContent, __('integrations.webhook.github_title')))->toBeTrue('the GitHub instructions left the disclosure')
         ->and(str_contains($details->textContent, $unverified->inboundWebhookUrl()))->toBeFalse('the generated URL is hidden inside the disclosure')
         ->and($xpath->query('.//form', $details)->length)->toBe(0, 'the webhook secret form is hidden inside the disclosure');
+});
+
+/**
+ * A connection's collapsed settings on the integrations page, or null.
+ */
+function accountIntegrationsSettings(DOMXPath $xpath, ExternalIssueProviderConnection $connection): ?DOMElement
+{
+    $details = $xpath->query('//div[@id="connection-'.$connection->id.'"]/details[contains(@class, "connection-settings")]')->item(0);
+
+    return $details instanceof DOMElement ? $details : null;
+}
+
+test('each connection folds its forms under its row, and keeps its status in view', function (): void {
+    // Every connection printed two full forms, one for capabilities and one
+    // for the webhook secret, so three connections were a wall of forms above
+    // the add-connection form and the site mappings.
+    $fixture = integrationsAccount();
+    $unconfigured = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Engineering GitHub', 'provider' => 'github']);
+    $verified = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Ops Jira',
+        'provider' => 'jira',
+        'credentials' => ['token' => 'token', 'webhook_secret' => 'secret'],
+        'settings' => ['inbound_webhook' => ['verified' => true, 'event' => 'jira:issue_updated', 'status_code' => 202]],
+        'last_checked_at' => now()->subMinutes(3),
+    ]);
+    $disabled = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Legacy tracker', 'provider' => 'github', 'is_enabled' => false]);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    foreach ([$unconfigured, $verified, $disabled] as $connection) {
+        $settings = accountIntegrationsSettings($xpath, $connection);
+
+        expect($settings)->not->toBeNull("{$connection->name} has no collapsed settings under its row")
+            ->and($settings->hasAttribute('open'))->toBeFalse("{$connection->name}'s settings are open with nothing to finish")
+            ->and($xpath->query('.//form[contains(@action, "/capabilities")]', $settings)->length)->toBe(1, "{$connection->name}'s capability form is not inside its settings");
+
+        // The summary names the connection for a reader who hears a list of
+        // them; the visible text alone is the same on every row.
+        expect(str_contains($xpath->query('./summary', $settings)->item(0)->textContent, $connection->name))
+            ->toBeTrue("{$connection->name}'s settings summary does not name it");
+    }
+
+    // The sync state is status, not a setting: outside the fold, for everyone.
+    foreach ([[$unconfigured, 'Inbound sync not configured.'], [$verified, 'Inbound sync verified.']] as [$connection, $status]) {
+        $item = $xpath->query('//div[@id="connection-'.$connection->id.'"]')->item(0);
+        $settings = accountIntegrationsSettings($xpath, $connection);
+
+        // Both forms name their connection, which is how a failed one reopens
+        // it. The tests below post the field as the page does; this is what
+        // holds the page to posting it.
+        foreach (['/capabilities', '/webhook-secret'] as $action) {
+            expect($xpath->query('.//form[contains(@action, "'.$action.'")]//input[@type="hidden" and @name="connection_id" and @value="'.$connection->id.'"]', $settings)->length)
+                ->toBe(1, "{$connection->name}'s {$action} form does not say which connection it belongs to");
+        }
+
+        expect(str_contains($item->textContent, $status))->toBeTrue("{$connection->name} no longer shows \"{$status}\"")
+            ->and(str_contains($settings->textContent, $status))->toBeFalse("{$connection->name}'s sync status is folded away with its settings")
+            ->and($xpath->query('.//form[contains(@action, "/webhook-secret")]', $settings)->length)->toBe(1, "{$connection->name}'s secret form is not inside its settings");
+    }
+
+    // A disabled connection has no inbound sync to set up, and says so.
+    expect(trim(preg_replace('/\s+/', ' ', $xpath->query('./summary', accountIntegrationsSettings($xpath, $disabled))->item(0)->textContent)))
+        ->toBe('Capabilities Legacy tracker');
+
+    // Readers who cannot change a connection get its status and no settings.
+    $readOnly = accountIntegrationsPageXpath((string) $this->actingAs($fixture['agent'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    expect(accountIntegrationsSettings($readOnly, $unconfigured))->toBeNull('a reader without manage_integrations is offered settings');
+});
+
+test('a connection half set up keeps its settings open', function (): void {
+    // A secret saved here that no signed delivery has proved yet: the admin is
+    // between the two halves of setup, and the provider instructions inside
+    // are the next thing they need.
+    $fixture = integrationsAccount();
+    $halfway = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Platform GitLab',
+        'provider' => 'gitlab',
+        'credentials' => ['token' => 'token', 'webhook_secret' => 'secret'],
+    ]);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    expect(accountIntegrationsSettings($xpath, $halfway)->hasAttribute('open'))
+        ->toBeTrue('a connection between saving its secret and its first signed delivery hides its setup');
+});
+
+test('a saved change reopens its own connection and no other', function (string $write): void {
+    $fixture = integrationsAccount();
+    $first = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Engineering GitHub', 'provider' => 'github']);
+    $second = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Ops GitHub', 'provider' => 'github']);
+
+    $request = $write === 'capabilities'
+        ? fn () => $this->actingAs($fixture['admin'])->put(route('dashboard.external-issue-provider-connections.capabilities.update', $second), ['capabilities' => ['create_issue'], 'connection_id' => $second->id])
+        : fn () => $this->actingAs($fixture['admin'])->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $second), ['webhook_secret' => 'whsec_new', 'connection_id' => $second->id]);
+
+    $request()->assertRedirect(route('dashboard.account.integrations').'#connection-'.$second->id);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    expect(accountIntegrationsSettings($xpath, $second)->hasAttribute('open'))->toBeTrue("the connection whose {$write} were just saved is folded away")
+        ->and(accountIntegrationsSettings($xpath, $first)->hasAttribute('open'))->toBeFalse("saving another connection's {$write} opened this one");
+})->with(['capabilities', 'webhook secret']);
+
+test('a new connection opens at its generated webhook URL', function (): void {
+    $fixture = integrationsAccount();
+
+    $response = $this->actingAs($fixture['admin'])->post(route('dashboard.external-issue-provider-connections.store'), [
+        'return_to' => 'integrations',
+        'provider' => 'github',
+        'name' => 'Engineering GitHub',
+        'capabilities' => ['create_issue'],
+    ]);
+    $connection = $fixture['account']->externalIssueProviderConnections()->sole();
+
+    $response->assertRedirect(route('dashboard.account.integrations').'#connection-'.$connection->id);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+    $settings = accountIntegrationsSettings($xpath, $connection);
+
+    expect($settings->hasAttribute('open'))->toBeTrue('a connection just added opens folded, hiding the webhook URL that is its next setup step')
+        ->and(str_contains($settings->textContent, $connection->inboundWebhookUrl()))->toBeTrue('the new connection\'s webhook URL is not in its settings');
+});
+
+test('a failed secret opens its own connection and shows its error there only', function (): void {
+    // The secret error used to render under every connection's secret field,
+    // and under the add-connection form's, because all three share the key.
+    // The failing form names its connection in a hidden field, and old input
+    // carries it back.
+    //
+    // No assertSessionHasErrors() between the two requests: with JSON session
+    // serialization, starting the session to read it leaves the next request
+    // an empty error bag. The rendered errors are the stronger check.
+    $fixture = integrationsAccount();
+    $first = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Engineering GitHub', 'provider' => 'github']);
+    $second = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Ops GitHub', 'provider' => 'github']);
+
+    $this->actingAs($fixture['admin'])
+        ->from(route('dashboard.account.integrations'))
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $second), [
+            'webhook_secret' => str_repeat('x', 4097),
+            'connection_id' => $second->id,
+        ])
+        ->assertRedirect(route('dashboard.account.integrations'));
+
+    $xpath = accountIntegrationsPageXpath((string) $this->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+    $errorsIn = fn (?DOMNode $node): int => $node === null ? 0 : $xpath->query('.//p[contains(@class, "field-error")]', $node)->length;
+
+    expect(accountIntegrationsSettings($xpath, $second)->hasAttribute('open'))->toBeTrue('the connection whose secret failed opens folded, hiding why')
+        ->and($errorsIn(accountIntegrationsSettings($xpath, $second)))->toBe(1, 'the failed secret shows no error under its own field')
+        ->and(accountIntegrationsSettings($xpath, $first)->hasAttribute('open'))->toBeFalse('another connection opened for a failure that was not its own')
+        ->and($errorsIn(accountIntegrationsSettings($xpath, $first)))->toBe(0, 'another connection shows the failed secret\'s error')
+        ->and($errorsIn($xpath->query('//form[@aria-labelledby="integration-create-heading"]')->item(0)))->toBe(0, 'the add-connection form shows a connection\'s secret error');
 });

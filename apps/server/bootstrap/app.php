@@ -117,5 +117,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // and Web Push private keys) out of
         // that plaintext flash, alongside the framework's password defaults —
         // they are encrypted at rest and must never land in the session store.
-        $exceptions->dontFlash(['s3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key']);
+        // `credential_token` and `webhook_secret` are the provider connection
+        // form's: a typo in its base URL used to flash both. Every password
+        // field in a view is held to this list by SecretInputFlashTest.
+        $exceptions->dontFlash(['s3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key', 'credential_token', 'webhook_secret']);
     })->create();
