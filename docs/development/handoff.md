@@ -1325,12 +1325,19 @@ tag after an agent prepared the release and verified the exact-SHA `main` CI.
 **The security fix went out in the open.** #1085's `dontFlash` fix (a failed
 provider connection form wrote its API token and webhook secret to the session
 in plaintext) was reviewed and merged in a public PR, and the release notes
-describe it under `### Security`, including how long a session written before
-the upgrade survives (`SESSION_LIFETIME`) and that a backup taken meanwhile
-keeps what it captured. The owner merged it as-is rather than routing it
-through a private advisory. Exposure needed a connection form to fail
-validation while it carried a secret; the secret then sat in the session store,
-and in any backup of it, until the session expired.
+describe it under `### Security`: when a session written before the upgrade
+expires (`SESSION_LIFETIME`), that expired rows are swept as requests come in,
+and that a backup taken meanwhile keeps what it captured. The owner merged it
+as-is rather than routing it through a private advisory. Exposure needed a
+connection form to fail validation while it carried a secret. Laravel drops
+flashed input when the next request in the session saves, normally the
+redirect straight back to the form, so in the usual case the plaintext sat in
+the sessions row only between those two writes. A session whose follow-up
+request never arrived (the tab closed mid-redirect) keeps it after expiry,
+because expiry only ends the session's use: the row stays until the sweep
+deletes it, a 2-in-100 request lottery on the database driver
+(`config/session.php`), so possibly well after `SESSION_LIFETIME`. A backup that
+captured the row keeps it for as long as the backup is kept.
 
 **Not done by the release, and not implied by it:** the Forge stage deploy, the
 `northcoastmedia/wayfindr` fork sync, the public site, the published wiki
