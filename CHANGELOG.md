@@ -30,6 +30,37 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-29
+
+**No operator action required.** Pull and restart. This release has no
+migrations, and its application code is the same as 0.11.0's.
+
+**1.0.0 changes what the version number promises, not what the software does.**
+Before 1.0, the minor digit had to do two jobs, and only the release notes could
+tell you whether an upgrade needed you. From 1.0.0 the number tells you first,
+as ADR 0012 defines it:
+
+- a new **major** version (2.0.0) is the only kind that can ask you to do
+  something beyond pulling and restarting: run a new process, set a config key,
+  migrate data by hand, move off a dropped dependency version, or adapt to a
+  breaking change in the widget or public API;
+- a **minor** version (1.1.0) adds features, and any schema it adds migrates
+  itself;
+- a **patch** (1.0.1) only fixes things.
+
+Every release still opens with a verdict line like this one's, and the upgrade
+guard still enforces any action a release declares.
+
+1.0.0 also marks the bar the project set for itself. Somebody who has not
+worked on Wayfindr installed it on a clean Ubuntu VM using only the public
+documentation. The account area was also reorganised, across 0.10.0 and 0.11.0,
+for the person administering their own install.
+
+If you are coming from before 0.9.0 on host-managed PHP (Forge and similar),
+0.9.0's PHP runtime action still applies to you. The upgrade guard asks for it,
+and the steps are in that release's notes. The official image already
+satisfies it.
+
 ## [0.11.0] - 2026-09-29
 
 **No operator action required.** Pull and restart. This release has no
