@@ -65,8 +65,9 @@ artifact, matched the image digest, and passed support-loop and backup/restore
 drills. A fresh-install probe also read `v0.9.0` from authenticated `/operator`.
 Neither a hosted-runner script nor the earlier cold Claude agent's `v0.7.0`
 sandbox run met #797. A human non-author did: #797 closed on September 29 after
-an install on a clean Ubuntu VM from the public docs alone (§20). #994's 1.0.0
-scope also names a non-author upgrade, which no person has observed yet.
+an install on a clean Ubuntu VM from the public docs alone (§20). The owner
+decided that is enough for 1.0.0, without the non-author upgrade #994 also
+named.
 The older sandbox run found widget auto-init and installer-discovery defects
 fixed in `v0.9.0` by PRs #929/#931, but skipped a real VM, unwarmed pull,
 public TLS/origin, and local-CA trust.
@@ -394,13 +395,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
    count.
 
 3. **#797 is closed (§20).** A human non-author installed Wayfindr on a clean
-   Ubuntu VM from the public docs alone. Two things are the owner's:
-   - whether #994's non-author *upgrade* still has to be observed before
-     1.0.0;
-   - when to cut 1.0.0, which needs its own release authorization.
-
-   If the upgrade leg is wanted, the Part B steps in #797's last brief still
-   apply as written while v0.11.0 is the newest release.
+   Ubuntu VM from the public docs alone. The owner decided that is enough:
+   #994's non-author *upgrade* is not required for 1.0.0. Nothing else gates
+   1.0.0; cutting it follows RELEASING.md like any release.
 
 4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -1367,6 +1364,6 @@ No defects were reported, so none were filed.
 
 For 1.0.0: #994 named #797 as the only hard blocker, and its account-area half
 is done (§18). Its body also says "installed and upgraded", and no person has
-yet observed an upgrade; scripted runs cover `v0.2.0 → v0.11.0`. Whether that
-still gates 1.0.0 is the owner's call, as is cutting 1.0.0, which needs its own
-release authorization per RELEASING.md.
+yet observed an upgrade; scripted runs cover `v0.2.0 → v0.11.0`. The owner
+decided the same day that the install is enough, so the upgrade is not a 1.0.0
+requirement, and asked for 1.0.0 to be prepared.

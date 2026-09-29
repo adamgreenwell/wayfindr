@@ -28,9 +28,9 @@ bare-metal operation, public TLS/origin behavior, or independent human use.
 ([#994](https://github.com/adamgreenwell/wayfindr/issues/994)) and the hard
 acceptance gate in [#797](https://github.com/adamgreenwell/wayfindr/issues/797),
 which closed on September 29, 2026: somebody who is not the author installed
-Wayfindr on a clean Ubuntu VM using only the public documentation. #994's
-1.0.0 scope also names an upgrade by a non-author, which no person has observed
-yet.
+Wayfindr on a clean Ubuntu VM using only the public documentation. The owner
+decided that install is enough; the non-author upgrade #994's scope also named
+is not required for 1.0.0.
 The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issues/985)
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
@@ -206,9 +206,9 @@ Underneath that, the original foundation:
 
 The support feature gaps, the v0.9.0, v0.10.0 and v0.11.0 publications, the
 guarded-tag preconditions, the account area's restructure, and the
-independent-install gate are complete. What remains is the owner's decision on
-cutting 1.0.0, including whether #994's non-author upgrade is still required
-first; other polish stays demand-gated.
+independent-install gate are complete, and the owner decided on September 29
+that the install is enough without a non-author upgrade. Nothing else gates
+1.0.0; other polish stays demand-gated.
 
 - **The account experience:** the structural work in
   [#994](https://github.com/adamgreenwell/wayfindr/issues/994) shipped across
@@ -221,8 +221,8 @@ first; other polish stays demand-gated.
   September 29, 2026. A person who is not the author installed Wayfindr on a
   clean Ubuntu VM using only the public docs and got it running. The exact
   release, timings and any friction were not recorded; the issue's closing
-  comment says what was and was not observed. No person has yet observed a
-  non-author upgrade, which #994's 1.0.0 scope also names.
+  comment says what was and was not observed. No person has observed a
+  non-author upgrade, and the owner decided 1.0.0 does not require one.
   The hosted-runner v0.11.0, v0.10.0 and v0.9.0 clean install,
   upgrade, support-loop, and backup/restore checks remain the reproducible
   evidence for those paths, including upgrades from `v0.2.0`. A prior cold

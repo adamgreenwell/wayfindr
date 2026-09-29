@@ -20,9 +20,9 @@ The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The
 independent-install acceptance criterion,
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), closed on
 September 29, 2026: somebody who is not the author installed Wayfindr on a
-clean Ubuntu VM using only the public documentation and got it running. No
-person has yet observed a non-author upgrade, which #994's `1.0.0` scope also
-names. The tag preconditions recorded in
+clean Ubuntu VM using only the public documentation and got it running. The
+owner decided that install is enough for `1.0.0`; the non-author upgrade #994's
+scope also named is not required. The tag preconditions recorded in
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970) were satisfied
 before `v0.9.0` published. The account area that
 [#994](https://github.com/adamgreenwell/wayfindr/issues/994) scoped for `1.0.0`

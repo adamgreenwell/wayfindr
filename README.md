@@ -197,10 +197,10 @@ The [account area](https://github.com/adamgreenwell/wayfindr/issues/994) that
 `v0.10.0`. The independent-install gate,
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), closed on
 September 29, 2026: a person who is not the author installed Wayfindr on a clean
-Ubuntu VM using only the public documentation and got it running. #994's 1.0.0
-scope also names an upgrade by a non-author, and no person has observed one yet;
-the scripted runs above upgrade from `v0.2.0`. No 1.0.0 release has been cut,
-and cutting one is a separate release decision.
+Ubuntu VM using only the public documentation and got it running. The owner
+decided that install is enough for 1.0.0: #994's scope also named an upgrade by
+a non-author, which is not required, and no person has observed one (the
+scripted runs above upgrade from `v0.2.0`). No 1.0.0 release has been cut yet.
 
 The deferred autonomous-answer capability is tracked separately in
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762), outside the 1.0.0
