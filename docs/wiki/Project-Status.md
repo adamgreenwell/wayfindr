@@ -2,7 +2,7 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. The latest public release is `v0.10.0` (September 28, 2026).
+Wayfindr is pre-1.0. The latest public release is `v0.11.0` (September 29, 2026).
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
@@ -12,7 +12,7 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests. The newest public-artifact
-hosted runs cover a `v0.10.0` clean install and `v0.2.0 → v0.10.0` upgrade with a
+hosted runs cover a `v0.11.0` clean install and `v0.2.0 → v0.11.0` upgrade with a
 custom backup queue. The newest owner-operated bare-metal guest evidence still
 covers `v0.3.2`; see [Releases](Releases).
 
@@ -22,17 +22,24 @@ independent-install acceptance criterion is
 published-artifact install by somebody who is not the author. The tag
 preconditions recorded in
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970) were satisfied
-before `v0.9.0` published; they do not satisfy #797. The next work toward
-`1.0.0` also includes the account area described in
-[#994](https://github.com/adamgreenwell/wayfindr/issues/994).
+before `v0.9.0` published; they do not satisfy #797. The account area that
+[#994](https://github.com/adamgreenwell/wayfindr/issues/994) scoped for `1.0.0`
+finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 [#985](https://github.com/adamgreenwell/wayfindr/issues/985), the site-settings
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v0.10.0`
+## What's in `v0.11.0`
 
-This section describes public `v0.10.0`. Some foundation was available in older
+This section describes public `v0.11.0`. Some foundation was available in older
 releases; consult the release notes when operating one of those artifacts.
+
+`v0.11.0` changes, relative to `v0.10.0`: the account area is reorganised, with
+a Team page for the roster, site access and team alerts, API tokens and
+outbound webhooks as two tabs, and each Integrations connection's settings
+folded under its row; a failed provider connection form no longer stores its
+API token or webhook secret in the session; and dependencies are refreshed,
+including the Laravel AI SDK 1.0.
 
 `v0.10.0` changes, relative to `v0.9.0`: replies to email conversations are
 delivered (their email never rendered before, and the replies `v0.9.0` queued
@@ -275,10 +282,20 @@ sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
 performed by an AI agent rather than a human non-author.
 
-The `v0.10.0` tag at `665faf09` and its
-[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36460298707)
+The `v0.11.0` tag at `2bb7d5e3` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36610124239)
 verify the published manifest, multi-architecture image and digest, GitHub
 Release, and stable aliases. Separate hosted runs verify a
+[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205)
+and a
+[`v0.2.0 → v0.11.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014).
+Both matched the published image digest and read `Wayfindr version: v0.11.0`
+from rendered authenticated `/operator` after install and after restore.
+
+Before it, the `v0.10.0` tag at `665faf09` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36460298707)
+verified the published manifest, multi-architecture image and digest, GitHub
+Release, and stable aliases. Separate hosted runs verified a
 [public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869)
 and a
 [`v0.2.0 → v0.10.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977).
