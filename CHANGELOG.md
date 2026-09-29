@@ -41,6 +41,11 @@ missed while skimming.
   site and assignment counts, external issue readiness, and the data
   responsibility reminder. Adding an agent, changing a role, and deactivating or
   reactivating an agent now return to the Team page.
+- **API and webhooks is two tabs.** **API tokens** holds the token list and
+  the form to issue one; **Outbound webhooks** holds the endpoints, the form
+  to add one, and recent deliveries. Every write returns to its own tab, and
+  the page opens on the tab where a one-time token or signing secret was just
+  shown, so it is never issued into a hidden panel.
 
 ## [0.10.0] - 2026-09-28
 

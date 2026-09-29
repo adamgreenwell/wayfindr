@@ -92,6 +92,7 @@ class AgentAccountOutboundWebhookController extends Controller
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
+            ->withFragment('tab-webhooks')
             // The signer must retain this reversibly, but the UI still shows
             // it once. Encrypt before database-backed session flash, matching
             // the token boundary on this page.
@@ -150,6 +151,7 @@ class AgentAccountOutboundWebhookController extends Controller
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
+            ->withFragment('tab-webhooks')
             ->with('status', $alreadyDisabled
                 ? 'outbound_webhooks.flash.already_disabled'
                 : 'outbound_webhooks.flash.disabled');
@@ -239,6 +241,7 @@ class AgentAccountOutboundWebhookController extends Controller
         if ($retryId === null) {
             return redirect()
                 ->route('dashboard.account.api-tokens.index')
+                ->withFragment('tab-webhooks')
                 ->with('status', 'outbound_webhooks.flash.not_retryable');
         }
 
@@ -253,6 +256,7 @@ class AgentAccountOutboundWebhookController extends Controller
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')
+            ->withFragment('tab-webhooks')
             ->with('status', 'outbound_webhooks.flash.retrying');
     }
 

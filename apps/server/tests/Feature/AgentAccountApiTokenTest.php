@@ -46,7 +46,7 @@ test('an admin issues a token and is shown it exactly once', function (): void {
             'name' => 'Reporting sync',
             'abilities' => ['read'],
         ])
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     $plain = issuedPlaintext($response->getSession()->get('issued_api_token'));
 
@@ -102,7 +102,7 @@ test('an admin grants write independently from read', function (): void {
             'name' => 'Write-only bridge',
             'abilities' => ['write'],
         ])
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     expect(ApiToken::query()->sole()->abilities)->toBe(['write']);
 });
@@ -145,7 +145,7 @@ test('revoking keeps the row and stops the token', function (): void {
 
     $this->actingAs($w['admin'])
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->assertStatus(401);
 
@@ -232,7 +232,7 @@ test('a custom integration manager may issue a read token when they hold every b
             'name' => 'Bounded reporting',
             'abilities' => [ApiToken::ABILITY_READ],
         ])
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     expect(ApiToken::query()->sole()->abilities)->toBe([ApiToken::ABILITY_READ]);
 });
@@ -672,7 +672,7 @@ test('revoking twice keeps the moment it was actually disabled', function (): vo
 
     $this->actingAs($w['admin'])
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     expect($token->fresh()->revoked_at->timestamp)->toBe($revokedAt->timestamp)
         ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
@@ -790,7 +790,7 @@ test('a revocation decides from the locked row, not the one read before it', fun
 
     $this->actingAs($admin)
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
-        ->assertRedirect(route('dashboard.account.api-tokens.index'))
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens')
         ->assertSessionHas('status', 'api_tokens.flash.already_revoked');
 
     // The moment it was actually disabled survives, rather than being stamped
@@ -928,7 +928,7 @@ test('the issued credential is announced as characters, not as words', function 
 
     $this->actingAs($admin)
         ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-tokens');
 
     $html = (string) $this->actingAs($admin)
         ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();

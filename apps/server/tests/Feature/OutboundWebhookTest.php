@@ -60,7 +60,7 @@ test('an admin creates a scoped endpoint and sees its encrypted signing secret o
         ],
     ]);
 
-    $response->assertRedirect(route('dashboard.account.api-tokens.index'));
+    $response->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-webhooks');
 
     $endpoint = OutboundWebhookEndpoint::query()->sole();
     $plainSecret = $endpoint->secret;
@@ -161,7 +161,7 @@ test('custom integration managers can export only events from their granted supp
                 'events' => [OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED],
             ],
         ])
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-webhooks');
 
     $created = OutboundWebhookEndpoint::query()->where('created_by_id', $manager->id)->sole();
 
@@ -561,7 +561,7 @@ test('disabling keeps history, cancels pending rows, and stops new events', func
 
     $this->actingAs($world['admin'])
         ->delete(route('dashboard.account.outbound-webhooks.destroy', $endpoint))
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-webhooks');
 
     Ticket::factory()->for($world['site'])->create();
 
@@ -583,7 +583,7 @@ test('an admin can requeue a visible failed delivery but not another account del
 
     $this->actingAs($world['admin'])
         ->post(route('dashboard.account.outbound-webhooks.retry', $failed))
-        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+        ->assertRedirect(route('dashboard.account.api-tokens.index').'#tab-webhooks');
 
     expect($failed->fresh()->failed_at)->toBeNull()
         ->and(AuditEvent::query()->where('action', 'outbound_webhook.delivery_retried')->count())->toBe(1);

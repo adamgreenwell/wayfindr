@@ -32,6 +32,12 @@ return [
     'title' => 'API e webhook',
     'subtitle' => 'Accesso API con ambito limitato e consegna firmata degli eventi per le integrazioni di questo account.',
 
+    'tabs' => [
+        'label' => 'Sezioni API e webhook',
+        'tokens' => 'Token API',
+        'webhooks' => 'Webhook in uscita',
+    ],
+
     // Italian DOES inflect it, and this was `:count attivi` flat -- which read
     // `1 attivi` for an admin with one usable token.
     'active' => '{1} :count token attivo|[2,*] :count token attivi',
