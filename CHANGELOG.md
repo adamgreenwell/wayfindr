@@ -30,7 +30,18 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart.
+## [0.11.0] - 2026-09-29
+
+**No operator action required.** Pull and restart. This release has no
+migrations.
+
+**The account area is reorganised, and one Integrations form stopped writing
+secrets to the session.** The account overview had become the roster's page
+with a summary on top; the people on the account now have a Team page of their
+own, API and webhooks is two tabs, and Integrations folds each connection's
+settings under its row. Nothing about who may do what has changed. Separately,
+a provider connection form that failed validation used to store its API token
+and webhook secret in the session in plaintext; see Security below.
 
 ### Changed
 
@@ -51,6 +62,12 @@ missed while skimming.
   webhook setup sit in a collapsed panel beneath. The panel opens for the
   connection you just added or changed, for one whose form failed, and for one
   halfway through inbound setup (secret saved, no signed delivery yet).
+- **Dependencies refreshed.** Laravel 13.32 → 13.33, Reverb 1.11.1 → 1.12.0,
+  the OpenID Connect sign-in provider 1.0.0 → 1.0.1, and the Laravel AI SDK
+  0.11 → 1.0. The agent copilot reads the SDK's renamed usage fields, so its
+  prompt and completion token counts are recorded exactly as before. Official
+  images carry the new set; source and Forge installs get it from
+  `composer install` against the lock file, as with any update.
 
 ### Fixed
 
@@ -65,7 +82,10 @@ missed while skimming.
   provider API token and webhook secret were missing from the list of fields
   it must leave out, so a typo in a new connection's base URL stored both in
   plaintext in the session store (the database, by default). A test now holds
-  every password field in the dashboard to that list.
+  every password field in the dashboard to that list. A session written before
+  you upgrade expires after `SESSION_LIFETIME` (120 minutes by default), and
+  Laravel deletes expired session rows as requests come in; a database backup
+  taken in the meantime keeps whatever it captured.
 
 ## [0.10.0] - 2026-09-28
 
