@@ -4,8 +4,9 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§19](#19-published-0110--september-29-2026)**
-for the current release and acceptance boundary, and
+**Taking the baton? Start at [§20](#20-797-closed--september-29-2026)** for
+the acceptance boundary, [§19](#19-published-0110--september-29-2026) for the
+current release, and
 [§18](#18-the-account-area-restructured--september-29-2026) for the account
 work it shipped. Then §5 (conventions) and §7 (gotchas). Sections 8–17 are
 dated snapshots, kept for their evidence rather than their currency.
@@ -63,9 +64,10 @@ September 24 hosted-runner checks installed and upgraded the public `v0.9.0`
 artifact, matched the image digest, and passed support-loop and backup/restore
 drills. A fresh-install probe also read `v0.9.0` from authenticated `/operator`.
 Neither a hosted-runner script nor the earlier cold Claude agent's `v0.7.0`
-sandbox run meets #797: a human who did not write Wayfindr still needs to
-install from a published artifact using only public instructions. #994's 1.0.0
-scope also asks that human to test an upgrade.
+sandbox run met #797. A human non-author did: #797 closed on September 29 after
+an install on a clean Ubuntu VM from the public docs alone (§20). The owner
+decided that is enough for 1.0.0, without the non-author upgrade #994 also
+named.
 The older sandbox run found widget auto-init and installer-discovery defects
 fixed in `v0.9.0` by PRs #929/#931, but skipped a real VM, unwarmed pull,
 public TLS/origin, and local-CA trust.
@@ -392,12 +394,10 @@ Ordered by real dogfood value and dependency, not feature novelty.
    burn down; take further account work from real use, not from the audit's
    count.
 
-3. **Run #797 with a human non-author.** The acceptance brief should name the
-   verified public artifact and repaired widget/installer path. The person must
-   install using the public docs, recording where they stop or need to guess.
-   #994's 1.0.0 scope also asks that tester to upgrade. Hosted-runner scripts
-   and the older AI sandbox run do not meet the human, real-environment install
-   gate.
+3. **#797 is closed (§20).** A human non-author installed Wayfindr on a clean
+   Ubuntu VM from the public docs alone. The owner decided that is enough:
+   #994's non-author *upgrade* is not required for 1.0.0. Nothing else gates
+   1.0.0; cutting it follows RELEASING.md like any release.
 
 4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -1344,3 +1344,26 @@ captured the row keeps it for as long as the backup is kept.
 mirror, and #797's human non-author install. `VERSION` returned to `1.0.0` in
 the follow-up that carries this section, and `CHANGELOG.md`'s Unreleased
 section starts empty.
+
+## 20. #797 closed — September 29, 2026
+
+#797, the independent-install gate, closed on the owner's report that the
+owner's wife installed Wayfindr on a clean Ubuntu VM by following the project's
+public documentation alone, and got it running. She has not written Wayfindr or
+worked on its installer or test machines.
+
+What was reported is exactly that. The issue's closing comment lists what was
+not recorded and must not be claimed:
+- which release and image digest ran (the default install resolves to the
+  latest, `v0.11.0` since that day);
+- timings, a friction log, and the `/operator` readiness items;
+- whether a support loop was exercised;
+- the brief's upgrade leg.
+
+No defects were reported, so none were filed.
+
+For 1.0.0: #994 named #797 as the only hard blocker, and its account-area half
+is done (§18). Its body also says "installed and upgraded", and no person has
+yet observed an upgrade; scripted runs cover `v0.2.0 → v0.11.0`. The owner
+decided the same day that the install is enough, so the upgrade is not a 1.0.0
+requirement, and asked for 1.0.0 to be prepared.
