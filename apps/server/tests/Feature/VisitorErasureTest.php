@@ -10,6 +10,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\AutomationRuleEvent;
 use App\Events\VisitorPresenceUpdated;
+use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Jobs\DeliverTicketExternalComment;
 use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
 use App\Jobs\GenerateConversationCopilotReplyDraft;
@@ -598,6 +599,22 @@ test('an alert mail refused after its check leaves no send on record', function 
 
     expect(fn () => app(MarkSlaMailTransportStarted::class)->handle(new MessageSending($email)))->toThrow(LogicException::class)
         ->and(DB::table('alert_mail_sends')->count())->toBe(0, 'a mail that never left kept holding erasure');
+});
+
+test('an attachment download recorded just after an erasure keeps no filename', function (): void {
+    $f = erasureFixture();
+    // The download resolved these before the erasure, and audits after serving.
+    $conversation = Conversation::query()->with('site')->findOrFail($f['conversation']->id);
+    $attachment = ConversationMessageAttachment::query()->findOrFail($f['attachment']->id);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+    $events = AuditEvent::query()->count();
+
+    (new ReflectionMethod(AgentConversationAttachmentController::class, 'recordAgentAccess'))
+        ->invoke(app(AgentConversationAttachmentController::class), $conversation, $attachment, $f['admin']);
+
+    expect(AuditEvent::query()->count())->toBe($events, 'a download from the erased conversation was recorded after it')
+        ->and(erasureTablesContaining(ERASURE_MARKER))->toBe([], 'the late download record kept the file\'s name');
 });
 
 test('a cobrowse answer recorded just after an erasure does not name the person', function (): void {
