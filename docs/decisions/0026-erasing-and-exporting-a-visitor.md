@@ -83,7 +83,8 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   a ticket stripped under §3. A ticket's alerts (assignment, SLA, automation)
   store its subject, which may be the person's words;
 - **SLA clocks and automation executions** whose subject is an erased
-  conversation or ticket;
+  conversation. A ticket stripped under §3 keeps its own: they are the work
+  item's history and hold no content;
 - **pending outbound webhook deliveries** for erased resources, which are
   cancelled. Delivered rows keep only identifiers (ADR 0020) and stay as
   delivery history.
@@ -161,9 +162,11 @@ conversation gets the same treatment.
   - what will be stripped: the tickets, by number;
   - what Wayfindr cannot reach: linked external issues by URL, and the note
     that backups taken before now still hold the data (§6).
-- **The operator confirms** by typing `ERASE`, and re-enters their password
-  (Laravel's password confirmation) if they have not done so recently. Visitors
-  have no public reference, so there is nothing more specific to type back.
+- **The operator confirms** by typing `ERASE` and their current password, the
+  way the dashboard's other sensitive actions ask for it. Visitors have no
+  public reference, so there is nothing more specific to type back. An agent
+  who signs in only through single sign-on has no password they know, and sets
+  one through the password reset link first.
 - **The erasure runs in one transaction,** with the lock order the contact
   merge already uses: account, actor, site (exclusive, so widget writes for
   the site wait), then the visitor and its aliases. The permission and site
