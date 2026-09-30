@@ -78,9 +78,12 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   locks those rows and refuses while one started within twice that timeout,
   as it does for a note post (§3). A request that started earlier has ended,
   and whatever reached the provider is out of reach (§6);
-- **the attachment binaries**. Their disks and keys are collected before the
-  delete and removed after commit, the pattern `SitePurge` already uses, with
-  the orphan sweep as the backstop if storage is unavailable;
+- **the attachment binaries**. Their disks and keys are written onto the
+  erasure's ledger row inside the transaction, then removed after the commit,
+  which is the pattern `SitePurge` uses, so no live row points at a missing
+  file. Each is struck off as it goes. A crash after the commit, or storage
+  that will not delete, leaves them listed, and a scheduled
+  `wayfindr:finish-erasures` retries until none remain;
 - **proactive message deliveries**: rows naming the visitor, and detached rows
   whose `visitor_key` matches the key derived from the browser IDs being erased.
   The keys can be computed before the row goes;
@@ -296,6 +299,15 @@ anything their law lets them withhold. The export writes an audit event with
 counts only, and it is capped and streamed so a large history cannot exhaust
 memory.
 
+**One consistent moment.** The export reads its rows in a single read-only
+transaction at repeatable read, so every file in the ZIP describes the same
+moment. It holds a shared lock on the site row throughout. Erasure takes that
+lock exclusively, so it waits for the export to end and cannot remove rows or
+binaries mid-download. Widget writes take the lock shared, so conversations
+carry on. Binaries are read inside the same window. One that retention prunes
+between the snapshot and its read is listed in `README.txt` as pruned, not
+silently left out.
+
 ### 8. Erasures survive a restore
 
 Restoring an archive taken before an erasure would silently undo it, and an
@@ -392,7 +404,9 @@ operator to erase those people again.
 Every erasure produces a receipt reference, and an audit event
 `visitor.erased` with counts only. The operator can quote the reference in
 their reply to the requester. It proves the erasure happened without the record
-holding who was erased.
+holding who was erased. The database side is complete when the receipt is
+issued. Until its ledger row lists no binaries left to remove (§1), the
+storage side is not, and the scheduled run says how many remain.
 
 ## Consequences
 
