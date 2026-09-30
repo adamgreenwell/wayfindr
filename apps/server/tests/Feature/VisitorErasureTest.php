@@ -503,12 +503,25 @@ test('a break-glass view recorded just after an erasure does not name the conver
 
     eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
 
+    app(BreakGlassGrants::class)->recordOpened($grant, $operator);
     app(BreakGlassGrants::class)->recordResourceViewed($grant, $operator, 'conversation', (int) $f['conversation']->id, 'Conversation '.$code);
 
+    $opened = AuditEvent::query()->where('action', 'break_glass.opened')->sole();
     $viewed = AuditEvent::query()->where('action', 'break_glass.resource_viewed')->sole();
 
-    expect($viewed->metadata['resource_label'])->toBe('Conversation (deleted)', 'the late view named the erased conversation')
+    expect($opened->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late opened event named the erased conversation')
+        ->and($viewed->metadata['resource_label'])->toBe('Conversation (deleted)', 'the late view named the erased conversation')
         ->and($viewed->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late view kept the stale scope label');
+});
+
+test('a stripped ticket takes the install language, not the erasing agent\'s', function (): void {
+    $f = erasureFixture();
+    $f['admin']->forceFill(['locale' => 'de'])->save();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(Ticket::query()->findOrFail($f['ticket']->id)->subject)
+        ->toBe('Ticket #'.$f['ticket']->id.' (requester erased)', 'the shared subject was stored in the erasing agent\'s language');
 });
 
 test('the in-flight window outlasts every job whose timeout bounds a call to an outside service', function (string $job): void {

@@ -291,10 +291,6 @@ class BreakGlassGrants
                 return;
             }
 
-            // Re-read, so the scope label reflects a conversation erased since
-            // the grant was loaded.
-            $current = $grant->fresh() ?? $grant;
-
             $grant->auditEvents()->create([
                 'account_id' => $grant->account_id,
                 // Account-homed like every break_glass.* event: the trail must
@@ -304,8 +300,8 @@ class BreakGlassGrants
                 'actor_id' => $actor->getKey(),
                 'action' => 'break_glass.resource_viewed',
                 'metadata' => [
-                    'scope_type' => $current->scope_type,
-                    'scope_label' => $current->scopeLabel(),
+                    'scope_type' => $grant->scope_type,
+                    'scope_label' => $this->scopeLabelUnderLock($grant),
                     'resource_type' => $resourceType,
                     'resource_id' => $resourceId,
                     'resource_label' => $resourceLabel,
@@ -343,25 +339,48 @@ class BreakGlassGrants
 
     private function audit(BreakGlassGrant $grant, ?User $actor, string $action): void
     {
-        $grant->auditEvents()->create([
-            'account_id' => $grant->account_id,
-            // Deliberately not site-homed: audit_events.site_id cascades on
-            // site deletion, and the break-glass trail must outlive the
-            // content it records. The scope is named in metadata instead.
-            'site_id' => null,
-            'actor_type' => $actor?->getMorphClass(),
-            'actor_id' => $actor?->getKey(),
-            'action' => $action,
-            'metadata' => [
-                'scope_type' => $grant->scope_type,
-                'scope_label' => $grant->scopeLabel(),
-                'reason' => $grant->reason,
-                'requested_minutes' => $grant->requested_minutes,
-                'requester' => $grant->requester()->value('name'),
-                'self_approved' => $grant->self_approved,
-                'expires_at' => $grant->expires_at?->toJSON(),
-            ],
-            'occurred_at' => now(),
-        ]);
+        DB::transaction(function () use ($grant, $actor, $action): void {
+            $grant->auditEvents()->create([
+                'account_id' => $grant->account_id,
+                // Deliberately not site-homed: audit_events.site_id cascades on
+                // site deletion, and the break-glass trail must outlive the
+                // content it records. The scope is named in metadata instead.
+                'site_id' => null,
+                'actor_type' => $actor?->getMorphClass(),
+                'actor_id' => $actor?->getKey(),
+                'action' => $action,
+                'metadata' => [
+                    'scope_type' => $grant->scope_type,
+                    'scope_label' => $this->scopeLabelUnderLock($grant),
+                    'reason' => $grant->reason,
+                    'requested_minutes' => $grant->requested_minutes,
+                    'requester' => $grant->requester()->value('name'),
+                    'self_approved' => $grant->self_approved,
+                    'expires_at' => $grant->expires_at?->toJSON(),
+                ],
+                'occurred_at' => now(),
+            ]);
+        });
+    }
+
+    /**
+     * A conversation-scoped grant's label is the conversation's support code,
+     * which erasing the contact removes from the trail (ADR 0026 §4). Read
+     * under a shared lock on the conversation, inside the caller's
+     * transaction, so the event lands before the erasure, which relabels it,
+     * or after, when the conversation is gone and the label says so, as the
+     * grant's own does once its conversation is deleted.
+     */
+    private function scopeLabelUnderLock(BreakGlassGrant $grant): string
+    {
+        if ($grant->scope_type === BreakGlassGrant::SCOPE_CONVERSATION
+            && $grant->conversation_id !== null
+            && ! Conversation::query()->whereKey($grant->conversation_id)->sharedLock()->exists()) {
+            return 'Conversation (deleted)';
+        }
+
+        $grant->unsetRelation('conversation');
+
+        return $grant->scopeLabel();
     }
 }

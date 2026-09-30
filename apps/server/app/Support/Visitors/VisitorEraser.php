@@ -24,6 +24,7 @@ use App\Models\Visitor;
 use App\Models\VisitorErasure;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Support\DashboardLanguage;
 use App\Support\LiteralLike;
 use App\Support\ProactiveMessages\ProactiveVisitorKey;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -452,7 +453,9 @@ final class VisitorEraser
         }
 
         $tickets = Ticket::query()->whereIn('id', $ticketIds)->lockForUpdate()->get(['id', 'metadata']);
-        $subjectLocale = (string) config('app.locale');
+        // Stored content, seen by every agent and API consumer: the install's
+        // language, not that of the agent who happens to erase.
+        $subjectLocale = DashboardLanguage::forStoredContent();
 
         foreach ($tickets as $ticket) {
             $metadata = is_array($ticket->metadata) ? $ticket->metadata : [];
