@@ -270,33 +270,49 @@ class BreakGlassGrants
      */
     public function recordResourceViewed(BreakGlassGrant $grant, User $actor, string $resourceType, int $resourceId, string $resourceLabel): void
     {
-        $alreadyRecorded = $grant->auditEvents()
-            ->where('action', 'break_glass.resource_viewed')
-            ->where('metadata->resource_type', $resourceType)
-            ->where('metadata->resource_id', $resourceId)
-            ->exists();
+        // A conversation label is its support code. Erasing the contact
+        // relabels the trail (ADR 0026 §4), so the view is recorded under a
+        // shared lock on the conversation: before the erasure, which then
+        // relabels it, or after, when the conversation is gone and the label
+        // says so, as the grant's own does.
+        DB::transaction(function () use ($grant, $actor, $resourceType, $resourceId, $resourceLabel): void {
+            if ($resourceType === 'conversation'
+                && ! Conversation::query()->whereKey($resourceId)->sharedLock()->exists()) {
+                $resourceLabel = 'Conversation (deleted)';
+            }
 
-        if ($alreadyRecorded) {
-            return;
-        }
+            $alreadyRecorded = $grant->auditEvents()
+                ->where('action', 'break_glass.resource_viewed')
+                ->where('metadata->resource_type', $resourceType)
+                ->where('metadata->resource_id', $resourceId)
+                ->exists();
 
-        $grant->auditEvents()->create([
-            'account_id' => $grant->account_id,
-            // Account-homed like every break_glass.* event: the trail must
-            // outlive the content it records.
-            'site_id' => null,
-            'actor_type' => $actor->getMorphClass(),
-            'actor_id' => $actor->getKey(),
-            'action' => 'break_glass.resource_viewed',
-            'metadata' => [
-                'scope_type' => $grant->scope_type,
-                'scope_label' => $grant->scopeLabel(),
-                'resource_type' => $resourceType,
-                'resource_id' => $resourceId,
-                'resource_label' => $resourceLabel,
-            ],
-            'occurred_at' => now(),
-        ]);
+            if ($alreadyRecorded) {
+                return;
+            }
+
+            // Re-read, so the scope label reflects a conversation erased since
+            // the grant was loaded.
+            $current = $grant->fresh() ?? $grant;
+
+            $grant->auditEvents()->create([
+                'account_id' => $grant->account_id,
+                // Account-homed like every break_glass.* event: the trail must
+                // outlive the content it records.
+                'site_id' => null,
+                'actor_type' => $actor->getMorphClass(),
+                'actor_id' => $actor->getKey(),
+                'action' => 'break_glass.resource_viewed',
+                'metadata' => [
+                    'scope_type' => $current->scope_type,
+                    'scope_label' => $current->scopeLabel(),
+                    'resource_type' => $resourceType,
+                    'resource_id' => $resourceId,
+                    'resource_label' => $resourceLabel,
+                ],
+                'occurred_at' => now(),
+            ]);
+        });
     }
 
     /**

@@ -37,7 +37,10 @@ use App\Models\Visitor;
 use App\Models\VisitorErasure;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Notifications\Channels\ErasureAwareDatabaseChannel;
+use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
+use App\Notifications\TicketAssigned;
 use App\Support\BreakGlass\BreakGlassGrants;
 use App\Support\ExternalIssues\InboundCommentSync;
 use App\Support\ProactiveMessages\ProactiveVisitorKey;
@@ -45,6 +48,7 @@ use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorIdentityMerger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -453,6 +457,58 @@ test('an SLA alert a mail worker already holds for a stripped ticket is stopped 
         ->toThrow(LogicException::class)
         ->and(DB::table('sla_alert_deliveries')->where('public_id', $sent)->value('cancelled_at'))
         ->toBeNull('a send already handed to the mail server was rewritten');
+});
+
+test('an alert raised just before an erasure cannot land after it quoting the person', function (): void {
+    $f = erasureFixture();
+
+    // A request that committed its change just before the erasure still holds
+    // these in memory. Queued alerts re-read their models first, which leaves
+    // only the moment between that read and the insert; the database channel
+    // is sent them at exactly that point.
+    $assigned = new TicketAssigned(Ticket::query()->findOrFail($f['ticket']->id), $f['admin']);
+    $needsReply = new ConversationNeedsReply(ConversationMessage::query()->where('conversation_id', $f['conversation']->id)->firstOrFail());
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $channel = app(ChannelManager::class)->driver('database');
+    expect($channel)->toBeInstanceOf(ErasureAwareDatabaseChannel::class, 'notify() does not store alerts through the guarded channel');
+
+    // The sender stamps each alert with its id before any channel sees it.
+    $assigned->id = (string) Str::uuid();
+    $needsReply->id = (string) Str::uuid();
+    $channel->send($f['admin'], $assigned);
+    $channel->send($f['admin'], $needsReply);
+
+    $alerts = DB::table('notifications')->get(['type', 'data']);
+
+    expect(erasureTablesContaining(ERASURE_MARKER))->toBe([], 'a late alert wrote the person back')
+        ->and($alerts->where('type', ConversationNeedsReply::class))->toHaveCount(0, 'an alert about an erased conversation was stored')
+        ->and(json_decode((string) $alerts->firstWhere('type', TicketAssigned::class)?->data, true)['subject'] ?? null)
+        ->toBe('Ticket #'.$f['ticket']->id.' (requester erased)', 'the stripped ticket stopped alerting, or alerted under its old subject');
+});
+
+test('a break-glass view recorded just after an erasure does not name the conversation', function (): void {
+    $f = erasureFixture();
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+    $grant = BreakGlassGrant::factory()->create([
+        'account_id' => $f['account']->id,
+        'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+        'conversation_id' => $f['conversation']->id,
+        'requester_id' => $operator->id,
+    ]);
+    // The viewer loaded the grant and the conversation before the erasure.
+    $grant->load('conversation');
+    $code = (string) $f['conversation']->support_code;
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    app(BreakGlassGrants::class)->recordResourceViewed($grant, $operator, 'conversation', (int) $f['conversation']->id, 'Conversation '.$code);
+
+    $viewed = AuditEvent::query()->where('action', 'break_glass.resource_viewed')->sole();
+
+    expect($viewed->metadata['resource_label'])->toBe('Conversation (deleted)', 'the late view named the erased conversation')
+        ->and($viewed->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late view kept the stale scope label');
 });
 
 test('the in-flight window outlasts every job whose timeout bounds a call to an outside service', function (string $job): void {

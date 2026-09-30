@@ -178,6 +178,22 @@ final class VisitorEraser
             $scope = $this->scope($visitor);
             // Before the scrub, which replaces the metadata that holds it.
             $mergedIds = $this->mergedVisitorIds($visitor);
+            // Before anything that scans for what names them: an alert or a
+            // break-glass view stored under a shared lock on one of these rows
+            // now lands either before this point, and is found, or after the
+            // commit, when it can see the erasure.
+            $this->whereInChunks(
+                DB::table('conversations'),
+                'id',
+                $scope['conversation_ids'],
+                fn (Builder $query) => $query->lockForUpdate()->get(['id']),
+            );
+            $breakGlassGrants = $this->idsIn(
+                BreakGlassGrant::query()->where('account_id', $accountId),
+                'conversation_id',
+                $scope['conversation_ids'],
+            );
+
             $this->refuseWhileNotesArePosting($scope['ticket_ids']);
             $this->refuseWhileCopilotIsRunning($scope['conversation_ids']);
 
@@ -207,7 +223,6 @@ final class VisitorEraser
             $notifications = $this->deleteNotifications($accountId, $scope);
             $this->clearTicketAutomationErrors($scope['ticket_ids']);
             $this->clearBulkRunSearches($accountId, $scope['conversation_ids'], $scope['ticket_ids']);
-            $this->relabelBreakGlassTrail($accountId, $scope['conversation_ids']);
             $cancelled = $this->cancelPendingWebhooks((int) $site->id, $scope['support_codes']);
             $this->clearWebhookResponses((int) $site->id, $scope['support_codes'], $scope['ticket_ids']);
             $proactive = $this->deleteProactiveDeliveries((int) $site->id, (int) $visitor->id, $scope['anonymous_ids']);
@@ -224,6 +239,11 @@ final class VisitorEraser
                 $scope['conversation_ids'],
                 fn (Builder $query) => $query->delete(),
             );
+
+            // After the conversations go, so a view recorded while they were
+            // locked is relabelled too; the grants were collected before the
+            // delete nulled their conversation.
+            $this->relabelBreakGlassTrail($accountId, $scope['conversation_ids'], $breakGlassGrants);
 
             $erasedId = (int) $visitor->id;
             DB::table('visitors')->where('id', $erasedId)->delete();
@@ -742,19 +762,16 @@ final class VisitorEraser
      * conversation only inside JSON, so it is read in PHP.
      *
      * @param  list<int>  $conversationIds
+     * @param  list<int>  $grantIds  grants scoped to those conversations
      */
-    private function relabelBreakGlassTrail(int $accountId, array $conversationIds): void
+    private function relabelBreakGlassTrail(int $accountId, array $conversationIds, array $grantIds): void
     {
         if ($conversationIds === []) {
             return;
         }
 
         $erased = array_flip($conversationIds);
-        $grants = array_flip($this->idsIn(
-            BreakGlassGrant::query()->where('account_id', $accountId),
-            'conversation_id',
-            $conversationIds,
-        ));
+        $grants = array_flip($grantIds);
         $label = 'Conversation (deleted)';
 
         DB::table('audit_events')
