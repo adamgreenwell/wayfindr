@@ -1008,23 +1008,30 @@ final class VisitorEraser
         }
 
         // LIKE finds the candidates on any database; the whole-token check
-        // that decides is made here, the same for every store.
-        $query = $connection->table($table);
-        $grammar = $query->getGrammar();
-        $query->where(function (Builder $query) use ($grammar, $identifiers): void {
-            foreach ($identifiers as $identifier) {
-                foreach (['payload', 'exception'] as $column) {
-                    $query->orWhereRaw('LOWER('.$grammar->wrap($column).') LIKE LOWER(?) ESCAPE ?', [LiteralLike::pattern($identifier), '\\']);
+        // that decides is made here, the same for every store. In chunks: a
+        // long history has a support code per conversation, and each adds
+        // terms and bindings to the statement.
+        $doomed = [];
+
+        foreach (array_chunk($identifiers, 50) as $chunk) {
+            $query = $connection->table($table);
+            $grammar = $query->getGrammar();
+            $query->where(function (Builder $query) use ($grammar, $chunk): void {
+                foreach ($chunk as $identifier) {
+                    foreach (['payload', 'exception'] as $column) {
+                        $query->orWhereRaw('LOWER('.$grammar->wrap($column).') LIKE LOWER(?) ESCAPE ?', [LiteralLike::pattern($identifier), '\\']);
+                    }
+                }
+            });
+
+            foreach ($query->get(['id', 'payload', 'exception']) as $job) {
+                if ($this->namesAny($job->payload.' '.$job->exception, $chunk)) {
+                    $doomed[(int) $job->id] = true;
                 }
             }
-        });
+        }
 
-        $doomed = $query->get(['id', 'payload', 'exception'])
-            ->filter(fn (object $job): bool => $this->namesAny($job->payload.' '.$job->exception, $identifiers))
-            ->pluck('id')
-            ->all();
-
-        foreach (array_chunk($doomed, 500) as $ids) {
+        foreach (array_chunk(array_keys($doomed), 500) as $ids) {
             $connection->table($table)->whereIn('id', $ids)->delete();
         }
     }

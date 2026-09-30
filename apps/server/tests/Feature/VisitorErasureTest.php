@@ -826,6 +826,14 @@ test('a long history is summarized and erased in chunks the database can bind', 
     $f = erasureFixture();
     $now = now();
 
+    // Nor are a person's conversations, and each has a support code.
+    foreach (array_chunk(range(1, 600), 200) as $batch) {
+        DB::table('conversations')->insert(array_map(fn (int $n): array => [
+            'site_id' => $f['site']->id, 'visitor_id' => $f['visitor']->id, 'support_code' => 'WF-LONG'.str_pad((string) $n, 5, '0', STR_PAD_LEFT),
+            'status' => 'closed', 'created_at' => $now, 'updated_at' => $now,
+        ], $batch));
+    }
+
     // An account's agents are not bounded either.
     foreach (User::factory()->count(600)->for($f['account'])->make()->chunk(200) as $agents) {
         DB::table('users')->insert($agents->map(fn (User $agent): array => [...$agent->getAttributes(), 'created_at' => $now, 'updated_at' => $now])->values()->all());
