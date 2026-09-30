@@ -93,9 +93,13 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   alert email that a worker has claimed but not yet sent. Every alert mail
   checks, immediately before SMTP, that its alert still exists and its
   delivery is still live. A stripped ticket keeps its SLA clocks, so erasure
-  cancels their unsent SLA deliveries for that check to refuse. A message
-  already past the check has reached the mail server, which is mail already
-  sent (§6);
+  cancels their unsent SLA deliveries for that check to refuse. The same
+  check re-reads the ticket or conversation each alert mail names: mail about
+  a deleted conversation, or built from a ticket before it was stripped, is
+  refused even when its alert was never claimed, and a retry builds it again
+  from what is left. A stripped ticket goes on alerting, under its stripped
+  subject. A message already past the check has reached the mail server,
+  which is mail already sent (§6);
 - **SLA clocks and automation executions** whose subject is an erased
   conversation. A ticket stripped under §3 keeps its own as the work item's
   history: identifiers, outcomes and a copy of the rule's own text. The

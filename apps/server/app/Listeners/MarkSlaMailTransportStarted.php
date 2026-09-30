@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Models\SlaAlertDelivery;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\AgentAlertDeliveryCoordinator;
+use App\Support\Visitors\AlertMailErasureGuard;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Str;
 use LogicException;
@@ -16,6 +17,13 @@ class MarkSlaMailTransportStarted
 
     public function handle(MessageSending $event): void
     {
+        // Before any boundary moves: mail built from work an erasure has
+        // since deleted or stripped does not reach SMTP (ADR 0026 §1). A retry
+        // builds it again from what is left, if anything is.
+        if (! AlertMailErasureGuard::allows($event->message)) {
+            throw new LogicException('The alert mail was built from support work that has since been erased.');
+        }
+
         $agentAlertClaim = $this->agentAlertClaim($event);
         $batchClaim = $this->batchClaim($event);
         $header = $event->message->getHeaders()->get(SlaDeadlineAlert::DELIVERY_HEADER);

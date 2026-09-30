@@ -43,6 +43,7 @@ use App\Models\Visitor;
 use App\Models\VisitorErasure;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\Channels\ErasureAwareDatabaseChannel;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
@@ -51,6 +52,7 @@ use App\Support\Automation\AutomationMacroRunFailed;
 use App\Support\Automation\AutomationMacroRunner;
 use App\Support\Automation\AutomationRuleEngine;
 use App\Support\BreakGlass\BreakGlassGrants;
+use App\Support\CobrowseAuditTrail;
 use App\Support\ExternalIssues\InboundCommentSync;
 use App\Support\ProactiveMessages\ProactiveVisitorKey;
 use App\Support\Visitors\VisitorEraser;
@@ -59,6 +61,7 @@ use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\ChannelManager;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
@@ -499,6 +502,63 @@ test('an alert raised just before an erasure cannot land after it quoting the pe
         ->and($alerts->where('type', ConversationNeedsReply::class))->toHaveCount(0, 'an alert about an erased conversation was stored')
         ->and(json_decode((string) $alerts->firstWhere('type', TicketAssigned::class)?->data, true)['subject'] ?? null)
         ->toBe('Ticket #'.$f['ticket']->id.' (requester erased)', 'the stripped ticket stopped alerting, or alerted under its old subject');
+});
+
+test('alert mail built before an erasure is stopped before SMTP, and a stripped ticket still alerts', function (): void {
+    $f = erasureFixture();
+    $build = function (MailMessage $message): Email {
+        $email = (new Email)->to('agent@example.test')->text('alert');
+
+        foreach ($message->callbacks as $callback) {
+            $callback($email);
+        }
+
+        return $email;
+    };
+    $reachesSmtp = function (Email $email): bool {
+        try {
+            app(MarkSlaMailTransportStarted::class)->handle(new MessageSending($email));
+
+            return true;
+        } catch (LogicException) {
+            return false;
+        }
+    };
+    $ticket = Ticket::query()->with('site')->findOrFail($f['ticket']->id);
+    $message = ConversationMessage::query()->where('conversation_id', $f['conversation']->id)->firstOrFail();
+
+    // Workers that read the work before the erasure and reach SMTP after it.
+    $early = [
+        'ticket assigned' => $build((new TicketAssigned($ticket, $f['admin']))->toMail($f['admin'])),
+        'automation matched' => $build((new AutomationRuleMatched($ticket, 'Tag refunds'))->toMail($f['admin'])),
+        'reply needed' => $build((new ConversationNeedsReply($message))->toMail($f['admin'])),
+    ];
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $sent = array_keys(array_filter($early, $reachesSmtp));
+    $stripped = Ticket::query()->with('site')->findOrFail($f['ticket']->id);
+
+    expect($sent)->toBe([], 'alert mail built before the erasure reached SMTP after it')
+        ->and($reachesSmtp($build((new TicketAssigned($stripped, $f['admin']))->toMail($f['admin']))))
+        ->toBeTrue('a stripped ticket stopped alerting by mail');
+});
+
+test('a cobrowse answer recorded just after an erasure does not name the person', function (): void {
+    $f = erasureFixture();
+    // The consent controller commits a decline, then audits it: the erasure
+    // lands in between, with the session and visitor still in its hands.
+    $session = CobrowseSession::query()->with('conversation')->where('conversation_id', $f['conversation']->id)->firstOrFail();
+    $visitor = Visitor::query()->findOrFail($f['visitor']->id);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+    $events = AuditEvent::query()->count();
+
+    app(CobrowseAuditTrail::class)->consentAnswered($session, $visitor, 'granted', false);
+
+    expect(AuditEvent::query()->count())->toBe($events, 'a cobrowse answer about the erased conversation was recorded after it')
+        ->and(AuditEvent::query()->where('actor_type', $visitor->getMorphClass())->where('actor_id', $visitor->id)->exists())
+        ->toBeFalse('an audit event named the erased visitor as its actor');
 });
 
 test('a break-glass view recorded just after an erasure does not name the conversation', function (): void {

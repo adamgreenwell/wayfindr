@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\Concerns\CoordinatesAgentAlertMail;
+use App\Support\Visitors\AlertMailErasureGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -81,7 +82,7 @@ class AutomationRuleMatched extends Notification implements ShouldQueue
                 ->line('Site: '.$this->subject->site->name)
                 ->action('Open support work', url($this->subjectUrl()));
 
-        return $this->coordinateAgentAlertMail($message);
+        return AlertMailErasureGuard::stamp($this->coordinateAgentAlertMail($message), $this->subject);
     }
 
     /** @return array<string, mixed> */

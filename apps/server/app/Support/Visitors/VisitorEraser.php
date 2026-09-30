@@ -99,7 +99,7 @@ final class VisitorEraser
         'ticket_external_links' => 'kept with the ticket: the external issue is out of reach (§6)',
         'ticket_external_comment_deliveries' => 'deleted for stripped tickets: they hold note bodies',
         'audit_events' => 'kept with metadata replaced and any visitor actor cleared (§2)',
-        'notifications' => 'deleted when they name an erased conversation or stripped ticket',
+        'notifications' => 'deleted when they name an erased conversation or stripped ticket; alert mail built before the erasure is refused before SMTP',
         'agent_alert_deliveries' => 'deleted by cascade from the notification',
         'sla_clocks' => 'deleted for erased conversations; kept for stripped tickets',
         'sla_alert_deliveries' => 'deleted by cascade from the clock; unsent ones for stripped tickets cancelled',
