@@ -1124,6 +1124,26 @@ test('a receipt the erasure cannot shorten afterwards still reports the erasure 
     Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'the database went away');
 });
 
+test('the scheduled run reaches every receipt with files left, however many there are', function (): void {
+    $f = erasureFixture();
+    Storage::fake('attachments-offline');
+    $now = now();
+
+    // More than one page of receipts, each waiting on a file storage now has.
+    foreach (array_chunk(range(1, 1001), 200) as $batch) {
+        DB::table('visitor_erasures')->insert(array_map(fn (int $n): array => [
+            'public_id' => (string) Str::uuid(), 'account_id' => $f['account']->id, 'site_id' => $f['site']->id,
+            'erased_visitor_id' => 100000 + $n, 'merged_visitor_ids' => '[]', 'actor_id' => $f['admin']->id,
+            'counts' => '{}', 'pending_files' => json_encode([['disk' => 'attachments-offline', 'key' => "erased/{$n}.png"]]),
+            'erased_at' => $now, 'created_at' => $now, 'updated_at' => $now,
+        ], $batch));
+    }
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(VisitorErasure::query()->whereNotNull('pending_files')->count())->toBe(0, 'the run stepped over receipts that still list files');
+});
+
 test('a file storage would not remove stays on the receipt until the scheduled run removes it', function (): void {
     $f = erasureFixture();
     // The binary lives on a disk that is unreachable at erasure time.

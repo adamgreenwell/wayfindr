@@ -23,9 +23,11 @@ class FinishErasuresCommand extends Command
     {
         $remaining = 0;
 
+        // By ID, not by page: each receipt that finishes leaves this query,
+        // and offset pages would step over the ones that moved up.
         VisitorErasure::query()
             ->whereNotNull('pending_files')
-            ->orderBy('id')
+            ->lazyById(500)
             ->each(function (VisitorErasure $erasure) use ($eraser, &$remaining): void {
                 $remaining += $eraser->removePendingFiles($erasure);
             });
