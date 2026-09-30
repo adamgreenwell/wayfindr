@@ -102,6 +102,13 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   exception is an execution's error message, which is raw exception text,
   and a failed query quotes its values, so it can hold the ticket's or a
   message's content. Erasure clears it on a stripped ticket's executions;
+- **failed queue jobs** whose payload or exception names the person by
+  email, host ID, browser ID or support code. A job that exhausted its
+  retries is kept with the exception it died on, and a mail server's
+  rejection quotes the address it refused. They are free text, so the person's
+  own identifiers find them, except one too short to be specific (a host ID
+  like `42`), which would match strangers. Other failed-job text is
+  diagnostics, like logs (§6);
 - **outbound webhook deliveries** about erased conversations or stripped
   tickets. Pending ones for erased conversations are cancelled. Every one
   keeps its payload, which carries only identifiers (ADR 0020), and stays as
@@ -183,7 +190,10 @@ conversation gets the same treatment.
   the queue search saved in `return_query` on every run that touched an
   erased conversation or a stripped ticket. That search is what the agent
   typed to find the work, which may be the person's name or email. Undoing
-  such a run then returns to the unfiltered queue.
+  such a run then returns to the unfiltered queue. A review not yet confirmed
+  keeps no search at all: the search travels in the confirm form, not the
+  agent's session, so it never sits in session storage, which erasure cannot
+  reach.
 - **Queued jobs** carry identifiers only. A job whose row has gone must no-op,
   and the implementation will prove it for every job that loads a conversation,
   message, ticket or attachment.
@@ -229,7 +239,9 @@ else. It does not reach:
 - mail already sent;
 - the AI provider;
 - API consumers;
-- logs, or the operator's infrastructure.
+- logs, failed-job text that does not name them directly, or the operator's
+  infrastructure. The same goes for the last page address in an agent's
+  session, which a later page load replaces.
 
 **It does not stop future collection either.** A person who comes back is a
 new visitor. A host page that identifies them by external ID recreates the
