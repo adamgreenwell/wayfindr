@@ -50,6 +50,15 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   keys already present in visitor host context.
 - `visitor_notes`: private, visitor-owned team context that survives individual
   tickets and cascades with the visitor record.
+- `visitor_erasures`: the ledger of contacts erased on request (ADR 0026). A
+  row outlives what it records, so it has no foreign key to the erased
+  visitor and holds only internal IDs: the visitor's, and every visitor ID
+  merged into it, which a restore from before that merge would bring back.
+  It also holds the actor, counts, a receipt reference the operator can quote
+  to the person who asked, and the storage keys of any attachment binaries
+  not yet removed. Those keys are written inside the erasure's transaction,
+  so a crash after the commit cannot lose them. Never a name, email or
+  anything that was erased.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
 - `conversation_message_attachments`: private message-scoped files. Rows carry
