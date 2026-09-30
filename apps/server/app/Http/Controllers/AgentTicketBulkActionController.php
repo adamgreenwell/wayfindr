@@ -127,6 +127,14 @@ final class AgentTicketBulkActionController extends Controller
                 $action = TicketBulkAction::from((string) $preview['action']);
                 $ids = $this->ticketIds($preview['ticket_ids'] ?? []);
                 $tickets = $this->ticketsFor($lockedAgent, $accountId, $ids, true);
+                // The page came from the agent, so it can carry a search typed
+                // before an erasure that stripped one of these tickets. Under
+                // the account lock an erasure takes first, a stripped ticket
+                // here was stripped before this run: it keeps no search that
+                // found it, as erasure leaves the runs already made.
+                $runQuery = $tickets->contains(fn (Ticket $ticket): bool => data_get($ticket->metadata, 'requester_erased') === true)
+                    ? Arr::except($returnQuery, ['ticket_search'])
+                    : $returnQuery;
                 $value = $this->resolveValue(
                     $action,
                     data_get($preview, 'value.value'),
@@ -160,7 +168,7 @@ final class AgentTicketBulkActionController extends Controller
                     'item_count' => (int) $preview['item_count'],
                     'changed_count' => 0,
                     'changes' => [],
-                    'return_query' => $returnQuery,
+                    'return_query' => $runQuery,
                 ]);
                 $changes = $this->bulkActions->apply(
                     $lockedAgent,

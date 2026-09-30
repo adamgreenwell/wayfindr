@@ -650,6 +650,57 @@ test('a long history is summarized and erased in chunks the database can bind', 
         ->toBe(0, 'a ticket past the first chunk kept its subject');
 });
 
+test('a bulk review opened before an erasure cannot save the search that found the person', function (): void {
+    $f = erasureFixture();
+    $label = TicketLabel::factory()->for($f['account'])->create(['name' => 'Callback']);
+    $target = User::factory()->for($f['account'])->create(['account_role' => AccountRole::Admin]);
+    $search = 'Robin '.ERASURE_MARKER;
+    $runs = fn (): array => [DB::table('ticket_bulk_action_runs')->count(), DB::table('conversation_bulk_action_runs')->count()];
+
+    // Both pages carry the search back to the server from the agent's browser.
+    $tickets = $this->actingAs($f['admin'])->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => [$f['ticket']->id], 'action' => 'add_label', 'value' => (string) $label->id,
+        'return_query' => ['ticket_status' => 'all', 'ticket_search' => $search],
+    ]);
+    $conversations = $this->actingAs($f['admin'])->post(route('dashboard.conversations.bulk.preview'), [
+        'conversation_ids' => [$f['conversation']->id], 'action' => 'assign_agent', 'value' => (string) $target->id,
+        'return_query' => ['conversation_filter' => 'all', 'conversation_search' => $search],
+    ]);
+    [$ticketRuns, $conversationRuns] = $runs();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $this->actingAs($f['admin'])->post(route('dashboard.tickets.bulk.store'), [
+        'preview_token' => $tickets->viewData('token'), 'return_search' => $search,
+    ])->assertRedirect();
+    // The erased conversation is gone, so its page no longer applies at all.
+    $this->actingAs($f['admin'])->post(route('dashboard.conversations.bulk.store'), [
+        'preview_token' => $conversations->viewData('token'), 'return_search' => $search,
+    ])->assertNotFound();
+
+    expect($runs())->toBe([$ticketRuns + 1, $conversationRuns], 'the stripped ticket\'s run was refused, or the erased conversation\'s was not')
+        ->and(erasureTablesContaining(ERASURE_MARKER))->toBe([], 'a run saved after the erasure kept the search that found the person');
+});
+
+test('the receipt counts each scrubbed audit event once', function (): void {
+    $f = erasureFixture();
+    // A reply the visitor sent: about their conversation, and them as its actor.
+    AuditEvent::query()->create([
+        'account_id' => $f['account']->id, 'site_id' => $f['site']->id,
+        'actor_type' => $f['visitor']->getMorphClass(), 'actor_id' => $f['visitor']->id,
+        'subject_type' => $f['conversation']->getMorphClass(), 'subject_id' => $f['conversation']->id,
+        'action' => 'conversation.visitor_replied', 'metadata' => ['body' => 'Body '.ERASURE_MARKER], 'occurred_at' => now(),
+    ]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $scrubbed = AuditEvent::query()->get()->filter(fn (AuditEvent $event): bool => $event->metadata === ['erased' => true])->count();
+
+    expect($scrubbed)->toBeGreaterThan(1)
+        ->and(VisitorErasure::query()->sole()->counts['audit_events_scrubbed'])
+        ->toBe($scrubbed, 'an event scrubbed as both subject and actor was counted twice');
+});
+
 test('a stripped ticket takes the install language, not the erasing agent\'s', function (): void {
     $f = erasureFixture();
     $f['admin']->forceFill(['locale' => 'de'])->save();

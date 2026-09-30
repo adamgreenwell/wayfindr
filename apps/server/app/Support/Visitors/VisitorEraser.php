@@ -582,7 +582,9 @@ final class VisitorEraser
             (new Ticket)->getMorphClass() => $scope['ticket_ids'],
         ];
         $erased = json_encode(['erased' => true], JSON_THROW_ON_ERROR);
-        $scrubbed = 0;
+        // Keyed by event: a reply the visitor sent is about their conversation
+        // and has them as its actor, and is one event scrubbed, not two.
+        $scrubbed = [];
 
         foreach ($subjects as $type => $ids) {
             $this->whereInChunks(
@@ -590,18 +592,20 @@ final class VisitorEraser
                 'subject_id',
                 $ids,
                 function (Builder $query) use ($erased, &$scrubbed): void {
-                    $scrubbed += $query->update(['metadata' => $erased]);
+                    $scrubbed += array_fill_keys($this->ints((clone $query)->pluck('id')), true);
+                    $query->update(['metadata' => $erased]);
                 },
             );
         }
 
         // The visitor as actor: a reply they sent, a rating they left.
-        $scrubbed += DB::table('audit_events')
+        $asActor = DB::table('audit_events')
             ->where('actor_type', (new Visitor)->getMorphClass())
-            ->where('actor_id', $scope['visitor_id'])
-            ->update(['metadata' => $erased, 'actor_type' => null, 'actor_id' => null]);
+            ->where('actor_id', $scope['visitor_id']);
+        $scrubbed += array_fill_keys($this->ints((clone $asActor)->pluck('id')), true);
+        $asActor->update(['metadata' => $erased, 'actor_type' => null, 'actor_id' => null]);
 
-        return $scrubbed;
+        return count($scrubbed);
     }
 
     /**
