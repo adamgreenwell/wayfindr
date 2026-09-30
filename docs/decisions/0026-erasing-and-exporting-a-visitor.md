@@ -160,7 +160,10 @@ conversation gets the same treatment.
 
 - **Break-glass grants** keep their operator-written reason. That is the record
   of a platform operator reading customer data, and its accountability purpose
-  outweighs its incidental content.
+  outweighs its incidental content. The grant's audit trail keeps the reason
+  and who acted, but its stored labels name a conversation by its support code.
+  For an erased conversation those labels become `Conversation (deleted)`,
+  which is what the grant itself reads once the conversation is gone.
 - **Bulk-action runs** keep their identifier lists and before-and-after
   values, so they can still be undone. Runs never expire, so erasure clears
   the queue search saved in `return_query` on every run that touched an
@@ -259,6 +262,10 @@ The same permission downloads a ZIP for one visitor:
   means the response samples of webhook deliveries about their conversations
   and tickets, the error messages of automation runs on them, and the queue
   searches saved by bulk actions that touched their work;
+- `break_glass.json`: platform-operator access to their data. That covers
+  grants scoped to one of their conversations, and views of their
+  conversations or tickets under any grant: when, what scope, the reason
+  and how long. The operator is named by role, as in `audit.json`;
 - `attachments/`: the binaries;
 - `README.txt`: what is included, and the §6 list of what is not.
 
@@ -322,10 +329,13 @@ ends safe:
    The pending file already holds the whole entry, and reconciliation
    promotes it.
 
-If the transaction fails, erasure deletes its pending file. A crash can leave
-one behind, and reconciliation handles it. So a reported erasure always has a
-file on the volume, flushed before the database committed. The stale file a
-failed erasure leaves is the only inverse risk.
+If the transaction reports a failure, erasure leaves its pending file for
+reconciliation rather than deleting it. A commit whose acknowledgement was lost
+reports the same error as a rollback, and only the database can tell them
+apart. So a reported erasure always has a file on the volume, flushed before
+the database committed, and so does one whose success was never reported. The
+only inverse risk is a stale file from a failed erasure, and it lasts only
+until reconciliation clears it.
 
 **Reconciliation** settles pending files against the database. For each one
 it first takes the lock on the entry's site. The erasure holds that lock from
