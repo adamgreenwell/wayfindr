@@ -383,6 +383,7 @@ class AgentVisitorController extends Controller
         $canManageContacts = $agent->hasAccountPermission(AccountPermission::ManageContacts);
         $canReplyToConversations = $agent->hasAccountPermission(AccountPermission::ReplyToConversations);
         $canAssignTickets = $agent->hasAccountPermission(AccountPermission::AssignTickets);
+        $canHandleDataRequests = $agent->hasAccountPermission(AccountPermission::HandleDataRequests);
         $conversations = $canViewConversations ? $this->visitorConversations($visitor) : collect();
         $tickets = $canManageTickets
             ? $this->visitorTickets($visitor, $canViewConversations)
@@ -430,6 +431,7 @@ class AgentVisitorController extends Controller
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
             'canManageContacts' => $canManageContacts,
+            'canHandleDataRequests' => $canHandleDataRequests,
             'canManageTickets' => $canManageTickets,
             'canViewConversations' => $canViewConversations,
             'contactNotes' => $contactNotes,

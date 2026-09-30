@@ -51,6 +51,7 @@ use App\Http\Controllers\AgentTicketExternalLinkController;
 use App\Http\Controllers\AgentTicketLabelController;
 use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
+use App\Http\Controllers\AgentVisitorErasureController;
 use App\Http\Controllers\AgentVisitorMergeController;
 use App\Http\Controllers\AgentVisitorNoteController;
 use App\Http\Controllers\Auth\OidcSessionController;
@@ -397,6 +398,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.visitors.notes.store');
     Route::delete('/dashboard/visitors/{visitor}/notes/{visitorNote}', [AgentVisitorNoteController::class, 'destroy'])
         ->name('dashboard.visitors.notes.destroy');
+    Route::get('/dashboard/visitors/{visitor}/erase', [AgentVisitorErasureController::class, 'show'])
+        ->name('dashboard.visitors.erasure.show');
+    Route::post('/dashboard/visitors/{visitor}/erase', [AgentVisitorErasureController::class, 'store'])
+        ->name('dashboard.visitors.erasure.store');
     Route::post('/dashboard/visitors/{visitor}/merge', AgentVisitorMergeController::class)
         ->name('dashboard.visitors.merge');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])

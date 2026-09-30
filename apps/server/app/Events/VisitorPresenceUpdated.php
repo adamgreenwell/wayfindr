@@ -158,9 +158,13 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow, ShouldRescue
     {
         $site = $this->currentSite();
 
+        // A removal still has to reach the board when there is no visitor
+        // left to show: an erasure deletes the row and every alias, so the
+        // event is only a tombstone, and declining it left the erased contact
+        // on screen until the board's next resync.
         return $site !== null
             && ! $site->isArchived()
             && SitePresenceReporting::for($site)->enabled
-            && $this->currentVisitor() !== null;
+            && ($this->currentVisitor() !== null || $this->removedVisitorId !== null);
     }
 }

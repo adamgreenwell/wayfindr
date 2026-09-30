@@ -115,6 +115,78 @@ and browser-ID alias lineage are intentionally omitted. Export requires the
 delegable `manage_contacts` permission; directory readers who have only ticket
 or conversation access cannot make a bulk download.
 
+## Erasing a contact
+
+When a person asks the operator to delete everything held about them, an
+agent with `handle_data_requests` erases the contact from its profile
+([ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md)). The
+permission is granted to Owner and Admin, is assignable to a custom role only
+alongside `manage_contacts`, and needs support access to the contact's site,
+like every other contact action.
+
+Before anything is deleted, a summary shows what goes, which tickets stay, and
+what erasure cannot reach, including the linked external issues by URL. The
+agent confirms by typing `ERASE` and their current password. An agent who
+signs in only through single sign-on has no password they know, and sets one
+through the password reset link first. The erasure then, in one transaction:
+
+- deletes the contact's identity, browser-ID aliases, contact notes, cobrowse
+  sessions, conversations, messages, ratings, uploaded files, proactive-message
+  deliveries, the alerts that name their conversations or tickets, and those
+  conversations' SLA clocks and automation history;
+- keeps each of their tickets as a work item, with status, priority, labels,
+  assignee, SLA outcome and external issue link. The subject becomes
+  `Ticket #N (requester erased)`, and the description, visitor details,
+  support code, note bodies and any note copies queued for the provider go.
+  The ticket stops copying new comments from its linked issue, and SLA alerts
+  not yet sent for it are cancelled;
+- keeps every audit entry about them, with its text replaced and the contact
+  removed as an actor, so the account's record of who did what survives;
+- cancels webhook deliveries still pending for their conversations, and
+  clears the stored reply on every webhook delivery about their
+  conversations or tickets, which can echo what the subscriber fetched;
+- clears text kept in passing that can quote them: the queue search saved by
+  a bulk action that touched their work, which stays undoable, the error
+  text of a failed automation run on one of their tickets, and failed
+  background jobs that name them by email, host ID, browser ID or support
+  code;
+- keeps the record of any break-glass access to their conversations, with its
+  reason, but relabels it `Conversation (deleted)`.
+
+Erasure refuses, and erases nothing, while something about the contact is
+being sent to an outside service at that moment: a note posting to a linked
+issue, or the AI assistant working on one of their conversations. The agent
+is asked to try again in a few minutes. Once that call has ended, whatever it
+sent is out of reach like any other copy already sent. An alert email a worker
+has claimed but not yet handed to the mail server is stopped by the check it
+makes just before sending.
+
+Uploaded files are removed from storage after the transaction commits. The
+erasure's record lists them from inside the transaction and strikes each off
+as it goes, so if storage is unreachable, or the server stops mid-way, the
+hourly `wayfindr:finish-erasures` removes what is left. Live boards drop
+the contact at once.
+
+The erasure is recorded in `visitor_erasures` and in a `visitor.erased` audit
+event, with counts and a receipt reference, never who was erased. The ledger
+row keeps only internal IDs: the contact's, and those of any contacts merged
+into it, which a restore from before that merge would bring back. The
+reference is shown after erasing, for the reply to the person who asked.
+
+**Restoring a backup taken before an erasure undoes it.** Restore does not
+re-apply erasures yet; a later release adds that
+([ADR 0026 §8](../decisions/0026-erasing-and-exporting-a-visitor.md#8-erasures-survive-a-restore)).
+Until then, keep receipt references outside Wayfindr, because the restored
+database no longer holds the erasures made after the backup. After such a
+restore, erase those people again.
+
+Erasure does not reach backups taken before it, external issue trackers, mail
+already sent, the AI provider, API consumers or logs. It does not stop future
+collection either: a returning browser is a new contact, and a host page that
+sends the same visitor ID recreates the record. A `VisitorEraser::COVERAGE`
+map, held to the live schema by a test, says what erasure does to every table
+that can reach a visitor.
+
 ## Deliberately not in this slice
 
 CSV import, segmentation, CRM sync, and marketing automation remain separate

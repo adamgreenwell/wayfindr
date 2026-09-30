@@ -454,4 +454,19 @@
         @endif
     </section>
     @endif
+
+    @if ($canHandleDataRequests)
+    <section class="section" aria-labelledby="visitor-erasure-heading">
+        <div class="section-header">
+            <h2 id="visitor-erasure-heading">{{ __('visitor_erasure.section.heading') }}</h2>
+            <span class="lede">{{ __('visitor_erasure.section.lede') }}</span>
+        </div>
+
+        <p>{{ __('visitor_erasure.section.body') }}</p>
+
+        <div class="section-actions">
+            <a class="button danger" href="{{ route('dashboard.visitors.erasure.show', $visitor) }}">{{ __('visitor_erasure.section.link') }}</a>
+        </div>
+    </section>
+    @endif
 </x-layouts.app>

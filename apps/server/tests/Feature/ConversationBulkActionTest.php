@@ -443,3 +443,34 @@ test('site purge leaves no copied conversation content and undo restores survivo
     expect($surviving->fresh()->priority)->toBe('normal')
         ->and($run->fresh()->undone_at)->not->toBeNull();
 });
+
+test('a bulk review keeps the queue search out of the session and still returns to it', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $target = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $conversation = Conversation::factory()->for($site)->create(['assigned_agent_id' => null]);
+    $search = 'robin@example.test';
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.conversations.bulk.preview'), [
+        'conversation_ids' => [$conversation->id],
+        'action' => 'assign_agent',
+        'value' => (string) $target->id,
+        'return_query' => ['conversation_filter' => 'all', 'conversation_search' => $search],
+    ]);
+
+    // An unconfirmed review stays in session storage, where erasure cannot
+    // reach (ADR 0026 §4); the search it returns to must not be in it.
+    expect(serialize(session()->all()))->not->toContain($search);
+    $preview->assertSee('name="return_search" value="'.$search.'"', false);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.bulk.store'), [
+            'preview_token' => $preview->viewData('token'),
+            'return_search' => $search,
+        ])
+        ->assertRedirect(route('dashboard.conversations.index', ['conversation_filter' => 'all', 'conversation_search' => $search]));
+
+    expect(ConversationBulkActionRun::query()->sole()->return_query)
+        ->toBe(['conversation_filter' => 'all', 'conversation_search' => $search]);
+});

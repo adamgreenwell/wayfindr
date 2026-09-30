@@ -1,0 +1,738 @@
+<?php
+
+// Erasing a contact (ADR 0026). The claim under test is not "the visitor row
+// is gone" -- a plain delete manages that and leaves the person in tickets,
+// audit metadata, agent notifications and attachment storage. The claim is
+// that nothing Wayfindr stores still carries them, so the central test plants
+// a marker everywhere a visitor's data can live and then reads every table.
+
+use App\Enums\AccountPermission;
+use App\Enums\AccountRole;
+use App\Events\VisitorPresenceUpdated;
+use App\Jobs\DeliverTicketExternalComment;
+use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
+use App\Jobs\GenerateConversationCopilotReplyDraft;
+use App\Jobs\GenerateConversationCopilotSummary;
+use App\Jobs\GenerateConversationCopilotTicketSuggestion;
+use App\Listeners\MarkSlaMailTransportStarted;
+use App\Models\Account;
+use App\Models\AuditEvent;
+use App\Models\BreakGlassGrant;
+use App\Models\CobrowseSession;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
+use App\Models\ConversationRating;
+use App\Models\CustomRole;
+use App\Models\ExternalIssueProviderConnection;
+use App\Models\OutboundWebhookDelivery;
+use App\Models\OutboundWebhookEndpoint;
+use App\Models\ProactiveMessageDelivery;
+use App\Models\Site;
+use App\Models\Ticket;
+use App\Models\TicketExternalLink;
+use App\Models\TicketLabel;
+use App\Models\User;
+use App\Models\Visitor;
+use App\Models\VisitorErasure;
+use App\Models\VisitorIdentityAlias;
+use App\Models\VisitorNote;
+use App\Notifications\SlaDeadlineAlert;
+use App\Support\BreakGlass\BreakGlassGrants;
+use App\Support\ExternalIssues\InboundCommentSync;
+use App\Support\ProactiveMessages\ProactiveVisitorKey;
+use App\Support\Visitors\VisitorEraser;
+use App\Support\Visitors\VisitorIdentityMerger;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
+use Symfony\Component\Mime\Email;
+
+uses(RefreshDatabase::class);
+
+const ERASURE_MARKER = 'QZERASEMEQZ';
+const ERASURE_KEEPER = 'QZKEEPMEQZ';
+
+/**
+ * A contact with a history in every store erasure has to reach, each piece
+ * carrying the marker, plus a same-site bystander carrying another marker
+ * that must survive untouched.
+ *
+ * @return array<string, mixed>
+ */
+function erasureFixture(): array
+{
+    Storage::fake('attachments');
+
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $m = ERASURE_MARKER;
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => "Robin {$m}",
+        'email' => strtolower($m).'@example.test',
+        'external_id' => "host-{$m}",
+        'anonymous_id' => "browser-{$m}",
+        'metadata' => ['last_page_url' => "https://shop.example/{$m}", 'context' => ['plan' => $m]],
+    ]);
+    VisitorIdentityAlias::query()->create([
+        'site_id' => $site->id,
+        'visitor_id' => $visitor->id,
+        'anonymous_id' => "alias-{$m}",
+    ]);
+    VisitorNote::factory()->create(['account_id' => $account->id, 'visitor_id' => $visitor->id, 'author_id' => $admin->id, 'body' => "Note {$m}"]);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'subject' => "Subject {$m}",
+        'metadata' => ['started_page_url' => "https://shop.example/start/{$m}"],
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create(['body' => "Body {$m}"]);
+    $attachment = ConversationMessageAttachment::factory()->pendingFor($conversation, $visitor)->create([
+        'conversation_message_id' => $message->id,
+        'original_filename' => "{$m}.png",
+    ]);
+    Storage::disk('attachments')->put($attachment->storage_key, 'binary');
+    ConversationRating::factory()->for($conversation)->create(['comment' => "Rating {$m}"]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'metadata' => ['page_state' => ['url' => "https://shop.example/cobrowse/{$m}"]],
+    ]);
+
+    ProactiveMessageDelivery::factory()->for($site)->for($visitor)->create();
+    // Already detached from a pruned presence row, but keyed by this person's browser.
+    ProactiveMessageDelivery::factory()->for($site)->create([
+        'visitor_id' => null,
+        'visitor_key' => ProactiveVisitorKey::for((int) $site->id, "alias-{$m}"),
+    ]);
+
+    $ticket = Ticket::factory()->for($account)->for($site)->for($visitor, 'requester')->create([
+        'conversation_id' => $conversation->id,
+        'status' => 'open',
+        'subject' => "Ticket {$m}",
+        'description' => "Visitor: Body {$m}",
+        'metadata' => [
+            'source' => 'conversation',
+            'support_code' => $conversation->support_code,
+            'visitor_context' => ['last_page_url' => "https://shop.example/{$m}"],
+        ],
+    ]);
+    $label = TicketLabel::factory()->for($account)->create();
+    $ticket->labels()->attach($label);
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create();
+    $link = TicketExternalLink::factory()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'ticket_id' => $ticket->id,
+        'url' => 'https://github.example/acme/app/issues/7',
+    ]);
+    $note = AuditEvent::query()->create([
+        'account_id' => $account->id, 'site_id' => $site->id,
+        'actor_type' => $admin->getMorphClass(), 'actor_id' => $admin->id,
+        'subject_type' => $ticket->getMorphClass(), 'subject_id' => $ticket->id,
+        'action' => 'ticket.note_added', 'metadata' => ['body' => "Ticket note {$m}"],
+        'occurred_at' => now(),
+    ]);
+    DB::table('ticket_external_comment_deliveries')->insert([
+        'public_id' => (string) Str::uuid(),
+        'account_id' => $account->id, 'site_id' => $site->id, 'ticket_id' => $ticket->id,
+        'ticket_external_link_id' => $link->id, 'provider_connection_id' => $connection->id,
+        'note_audit_event_id' => $note->id, 'body' => "Comment {$m}",
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    AuditEvent::query()->create([
+        'account_id' => $account->id, 'site_id' => $site->id,
+        'actor_type' => $visitor->getMorphClass(), 'actor_id' => $visitor->id,
+        'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id,
+        'action' => 'conversation.created', 'metadata' => ['reason' => "Reason {$m}"],
+        'occurred_at' => now(),
+    ]);
+
+    DB::table('notifications')->insert([
+        'id' => (string) Str::uuid(), 'type' => 'App\\Notifications\\ConversationNeedsReply',
+        'notifiable_type' => $admin->getMorphClass(), 'notifiable_id' => $admin->id,
+        'data' => json_encode(['conversation_id' => $conversation->id, 'message_preview' => "Preview {$m}"]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    // A stripped ticket's alerts store its old subject, which may be the
+    // person's words, so they go even though the ticket stays.
+    DB::table('notifications')->insert([
+        'id' => (string) Str::uuid(), 'type' => 'App\\Notifications\\TicketAssigned',
+        'notifiable_type' => $admin->getMorphClass(), 'notifiable_id' => $admin->id,
+        'data' => json_encode(['ticket_id' => $ticket->id, 'subject' => "Ticket {$m}"]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('sla_clocks')->insert([
+        'account_id' => $account->id, 'site_id' => $site->id,
+        'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id,
+        'metric' => 'first_response', 'priority' => 'normal', 'target_seconds' => 60, 'warning_seconds' => 30,
+        'started_at' => now(), 'last_counted_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('automation_rule_executions')->insert([
+        'account_id' => $account->id,
+        'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id,
+        'rule_name' => 'Route', 'event' => 'conversation.created', 'status' => 'matched',
+        'conditions' => '[]', 'actions' => '[]', 'action_results' => '[]',
+        'metadata' => json_encode(['message_id' => $message->id, 'note' => "Automation {$m}"]),
+        'started_at' => now(), 'completed_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // A stripped ticket keeps its executions; a failed one's error text is the
+    // exception's own, and a failed query quotes the values it was writing.
+    DB::table('automation_rule_executions')->insert([
+        'account_id' => $account->id,
+        'subject_type' => $ticket->getMorphClass(), 'subject_id' => $ticket->id,
+        'rule_name' => 'Escalate', 'event' => 'ticket.updated', 'status' => 'failed',
+        'conditions' => json_encode([['field' => 'priority', 'operator' => 'equals', 'value' => 'urgent']]),
+        'actions' => '[]', 'action_results' => '[]', 'metadata' => '{}',
+        'error_message' => "SQLSTATE[23000]: update \"tickets\" set \"subject\" = 'Ticket {$m}'",
+        'started_at' => now(), 'completed_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    // Bulk runs keep the queue search the agent typed to find the work.
+    DB::table('conversation_bulk_action_runs')->insert([
+        'account_id' => $account->id, 'triggered_by_user_id' => $admin->id, 'action' => 'close',
+        'item_count' => 1, 'changed_count' => 1,
+        'changes' => json_encode([['conversation_id' => $conversation->id, 'before' => ['status' => 'open'], 'after' => ['status' => 'closed']]]),
+        'return_query' => json_encode(['conversation_filter' => 'open', 'conversation_search' => "robin {$m}"]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('ticket_bulk_action_runs')->insert([
+        'account_id' => $account->id, 'triggered_by_user_id' => $admin->id, 'action' => 'set_priority',
+        'item_count' => 1, 'changed_count' => 1,
+        'changes' => json_encode([['ticket_id' => $ticket->id, 'before' => ['priority' => 'normal'], 'after' => ['priority' => 'high']]]),
+        'return_query' => json_encode(['ticket_status' => 'open', 'ticket_search' => "robin {$m}"]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // A reply that exhausted its retries: the mail server's rejection
+    // quotes the address it refused, and failed_jobs keeps it.
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        'payload' => json_encode(['displayName' => 'App\\Jobs\\SendConversationReplyDelivery']),
+        'exception' => 'Symfony\\Component\\Mailer\\Exception\\TransportException: 550 5.1.1 "'.$visitor->name.'" <'.$visitor->email.'>: Recipient address rejected',
+        'failed_at' => now(),
+    ]);
+
+    $endpoint = OutboundWebhookEndpoint::factory()->for($account)->create();
+    $pending = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $site->id,
+        'event' => OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED,
+        'payload' => ['resource' => ['type' => 'conversation', 'support_code' => $conversation->support_code]],
+    ]);
+    // Response samples are encrypted, so the raw-table sweep cannot see
+    // them; the webhook test reads them back through the model.
+    $echoed = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $site->id, 'sequence' => 10,
+        'event' => OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED,
+        'payload' => ['resource' => ['type' => 'conversation', 'support_code' => $conversation->support_code]],
+        'response_status' => 200, 'response_body' => "{\"fetched\":\"Robin {$m}\"}", 'delivered_at' => now(),
+    ]);
+    $echoedTicket = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $site->id, 'sequence' => 11,
+        'payload' => ['resource' => ['type' => 'ticket', 'id' => $ticket->id]],
+        'response_status' => 500, 'response_body' => "could not sync Ticket {$m}", 'failed_at' => now(),
+    ]);
+
+    $bystander = Visitor::factory()->for($site)->create(['name' => 'Kept '.ERASURE_KEEPER]);
+    $kept = Conversation::factory()->for($site)->for($bystander)->create(['subject' => 'Kept '.ERASURE_KEEPER]);
+    ConversationMessage::factory()->for($kept)->create(['body' => 'Kept '.ERASURE_KEEPER]);
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        'payload' => json_encode(['displayName' => 'App\\Jobs\\SendConversationReplyDelivery']),
+        'exception' => 'TransportException: 550 5.1.1 "Kept '.ERASURE_KEEPER.'" <kept-'.strtolower(ERASURE_KEEPER).'@example.test>: Recipient address rejected',
+        'failed_at' => now(),
+    ]);
+    DB::table('conversation_bulk_action_runs')->insert([
+        'account_id' => $account->id, 'triggered_by_user_id' => $admin->id, 'action' => 'close',
+        'item_count' => 1, 'changed_count' => 1,
+        'changes' => json_encode([['conversation_id' => $kept->id, 'before' => ['status' => 'open'], 'after' => ['status' => 'closed']]]),
+        'return_query' => json_encode(['conversation_search' => 'kept '.ERASURE_KEEPER]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $keptEcho = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $site->id, 'sequence' => 12,
+        'event' => OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED,
+        'payload' => ['resource' => ['type' => 'conversation', 'support_code' => $kept->support_code]],
+        'response_status' => 200, 'response_body' => 'Kept '.ERASURE_KEEPER, 'delivered_at' => now(),
+    ]);
+
+    return compact('account', 'admin', 'site', 'visitor', 'conversation', 'attachment', 'ticket', 'label', 'link', 'note', 'pending', 'echoed', 'echoedTicket', 'bystander', 'kept', 'keptEcho');
+}
+
+/**
+ * Every table whose rows contain the needle anywhere, read the dumbest way
+ * possible so it cannot share a blind spot with the code under test.
+ *
+ * @return list<string>
+ */
+function erasureTablesContaining(string $needle): array
+{
+    $found = [];
+
+    foreach (Schema::getTableListing() as $table) {
+        $table = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
+
+        foreach (DB::table($table)->get() as $row) {
+            if (str_contains(json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?: '', $needle)) {
+                $found[] = $table;
+
+                break;
+            }
+        }
+    }
+
+    sort($found);
+
+    return $found;
+}
+
+function eraseThroughTheDashboard(User $actor, Visitor $visitor): TestResponse
+{
+    return test()->actingAs($actor)->post(route('dashboard.visitors.erasure.store', $visitor), [
+        'confirmation' => 'ERASE',
+        'current_password' => 'password',
+    ]);
+}
+
+test('erasing a contact leaves no trace of them anywhere Wayfindr stores data', function (): void {
+    $f = erasureFixture();
+
+    // The sweep has to see the marker before it can be trusted not to.
+    $before = erasureTablesContaining(ERASURE_MARKER);
+    foreach (['visitors', 'visitor_identity_aliases', 'visitor_notes', 'conversations', 'conversation_messages', 'conversation_message_attachments', 'conversation_ratings', 'cobrowse_sessions', 'tickets', 'ticket_external_comment_deliveries', 'audit_events', 'notifications', 'automation_rule_executions', 'conversation_bulk_action_runs', 'ticket_bulk_action_runs', 'failed_jobs'] as $table) {
+        expect(in_array($table, $before, true))->toBeTrue("the sweep did not find the marker in {$table} before erasure, so it proves nothing after");
+    }
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])
+        ->assertRedirect(route('dashboard.visitors.index'))
+        ->assertSessionHas('status', 'visitor_erasure.flash.erased');
+
+    expect(erasureTablesContaining(ERASURE_MARKER))->toBe([], 'the erased person is still stored somewhere')
+        ->and(Storage::disk('attachments')->exists($f['attachment']->storage_key))->toBeFalse('the uploaded file outlived the erasure')
+        ->and(VisitorErasure::query()->sole()->pending_files)->toBeNull('a removed file is still listed as pending')
+        ->and(ProactiveMessageDelivery::query()->count())->toBe(0, 'a proactive delivery keyed to their browser survived')
+        ->and(DB::table('sla_clocks')->count())->toBe(0, 'an SLA clock for an erased conversation survived')
+        ->and(erasureTablesContaining(ERASURE_KEEPER))->toBe(['conversation_bulk_action_runs', 'conversation_messages', 'conversations', 'failed_jobs', 'visitors'], 'the bystander on the same site was touched');
+});
+
+test('tickets stay as work items with the person stripped out', function (): void {
+    $f = erasureFixture();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    $ticket = Ticket::query()->findOrFail($f['ticket']->id);
+
+    expect($ticket->subject)->toBe('Ticket #'.$ticket->id.' (requester erased)')
+        ->and($ticket->description)->toBeNull()
+        ->and($ticket->requester_id)->toBeNull()
+        ->and($ticket->conversation_id)->toBeNull()
+        ->and($ticket->status)->toBe('open', 'the work item lost its status')
+        ->and($ticket->metadata)->toBe(['source' => 'conversation', 'requester_erased' => true])
+        ->and($ticket->labels()->pluck('ticket_labels.id')->all())->toBe([$f['label']->id], 'the work item lost its labels')
+        ->and(TicketExternalLink::query()->whereKey($f['link']->id)->exists())->toBeTrue('the external issue link was dropped')
+        ->and(DB::table('ticket_external_comment_deliveries')->count())->toBe(0, 'a note body posted to the provider was kept');
+
+    // Its automation history stays, with the rule's own text; only the raw
+    // error that quoted the ticket goes.
+    $execution = DB::table('automation_rule_executions')->where('subject_type', $ticket->getMorphClass())->where('subject_id', $ticket->id)->sole();
+    expect($execution->error_message)->toBeNull('a failed run still quotes the ticket')
+        ->and(json_decode((string) $execution->conditions, true))->toBe([['field' => 'priority', 'operator' => 'equals', 'value' => 'urgent']], 'the run lost its copy of the rule');
+
+    // The ticket's own page renders its activity from audit entries whose
+    // metadata is now only `{"erased": true}`: it has to cope with that.
+    $this->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Ticket #'.$ticket->id.' (requester erased)')
+        ->assertDontSee(ERASURE_MARKER);
+});
+
+test('a note already being posted to a linked issue holds the erasure, so none is sent after it', function (): void {
+    $f = erasureFixture();
+    DB::table('ticket_external_comment_deliveries')->update(['started_at' => now()->subSeconds(10)]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])
+        ->assertSessionHasErrors(['confirmation' => __('visitor_erasure.errors.note_posting')]);
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('a refused erasure still deleted the contact')
+        ->and(DB::table('ticket_external_comment_deliveries')->count())->toBe(1, 'a refused erasure still deleted the delivery');
+
+    // Past the window the post has ended one way or the other: the note is in
+    // the tracker or nowhere, so the erasure goes ahead and takes the copy.
+    $this->travel(VisitorEraser::IN_FLIGHT_WINDOW_SECONDS + 1)->seconds();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(DB::table('ticket_external_comment_deliveries')->count())->toBe(0);
+});
+
+test('a note the provider already accepted does not hold the erasure', function (): void {
+    $f = erasureFixture();
+    DB::table('ticket_external_comment_deliveries')->update(['started_at' => now()->subSeconds(10), 'accepted_at' => now()->subSeconds(5)]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse();
+});
+
+test('a stripped ticket stops mirroring comments from its linked issue', function (): void {
+    $f = erasureFixture();
+    $sync = app(InboundCommentSync::class);
+
+    // A comment that arrives first is recorded, and goes with the rest.
+    expect($sync->record($f['link'], 'before-erasure', 'Before '.ERASURE_MARKER, 'Engineer', 'webhook'))->toBeTrue();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect($sync->record($f['link']->fresh(), 'after-erasure', 'After '.ERASURE_MARKER, 'Engineer', 'webhook'))
+        ->toBeFalse('the tracker wrote a new copy onto the stripped ticket')
+        ->and(erasureTablesContaining(ERASURE_MARKER))->toBe([]);
+});
+
+test('the break-glass trail keeps its reason and who acted, and stops naming an erased conversation', function (): void {
+    $f = erasureFixture();
+    $grants = app(BreakGlassGrants::class);
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+    $scoped = BreakGlassGrant::factory()->create([
+        'account_id' => $f['account']->id,
+        'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+        'conversation_id' => $f['conversation']->id,
+        'requester_id' => $operator->id,
+        'reason' => 'The customer asked us to look',
+    ]);
+    $wide = BreakGlassGrant::factory()->create(['account_id' => $f['account']->id, 'requester_id' => $operator->id]);
+    $grants->recordResourceViewed($scoped, $operator, 'conversation', (int) $f['conversation']->id, 'Conversation '.$f['conversation']->support_code);
+    $grants->recordResourceViewed($wide, $operator, 'conversation', (int) $f['conversation']->id, 'Conversation '.$f['conversation']->support_code);
+    $grants->recordResourceViewed($wide, $operator, 'conversation', (int) $f['kept']->id, 'Conversation '.$f['kept']->support_code);
+    $approved = $scoped->auditEvents()->create([
+        'account_id' => $f['account']->id, 'actor_type' => $f['admin']->getMorphClass(), 'actor_id' => $f['admin']->id,
+        'action' => 'break_glass.approved', 'occurred_at' => now(),
+        'metadata' => ['scope_type' => 'conversation', 'scope_label' => $scoped->scopeLabel(), 'reason' => $scoped->reason],
+    ]);
+    $code = (string) $f['conversation']->support_code;
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $trail = AuditEvent::query()->where('subject_type', (new BreakGlassGrant)->getMorphClass())->get();
+
+    expect($trail)->toHaveCount(4, 'the record of operator access lost an entry')
+        ->and($trail->filter(fn (AuditEvent $event): bool => str_contains((string) json_encode($event->metadata), $code))->count())
+        ->toBe(0, 'the trail still names the erased conversation')
+        ->and($approved->fresh()->metadata)->toBe(['scope_type' => 'conversation', 'scope_label' => 'Conversation (deleted)', 'reason' => 'The customer asked us to look'])
+        ->and((int) $approved->fresh()->actor_id)->toBe((int) $f['admin']->id, 'the trail lost who approved')
+        ->and($trail->contains(fn (AuditEvent $event): bool => ($event->metadata['resource_label'] ?? null) === 'Conversation '.$f['kept']->support_code))
+        ->toBeTrue('a view of the bystander\'s conversation was relabelled');
+});
+
+test('an SLA alert a mail worker already holds for a stripped ticket is stopped before SMTP', function (): void {
+    $f = erasureFixture();
+    $clockId = DB::table('sla_clocks')->insertGetId([
+        'account_id' => $f['account']->id, 'site_id' => $f['site']->id,
+        'subject_type' => $f['ticket']->getMorphClass(), 'subject_id' => $f['ticket']->id,
+        'metric' => 'resolution', 'priority' => 'normal', 'target_seconds' => 60, 'warning_seconds' => 30,
+        'started_at' => now(), 'last_counted_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $delivery = fn (array $state): string => tap((string) Str::uuid(), fn (string $id) => DB::table('sla_alert_deliveries')->insert([
+        'public_id' => $id, 'sla_clock_id' => $clockId, 'user_id' => $f['admin']->id,
+        'stage' => 'breach', 'channel' => 'mail', 'created_at' => now(), 'updated_at' => now(), ...$state,
+    ]));
+    $claimed = $delivery(['claimed_at' => now(), 'stage' => 'breach']);
+    $sent = $delivery(['claimed_at' => now(), 'started_at' => now(), 'stage' => 'warning']);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    // The worker already holds the message, with the ticket's original
+    // subject; the check it makes immediately before SMTP must refuse it.
+    $email = (new Email)->to('agent@example.test')->text('breach');
+    $email->getHeaders()->addTextHeader(SlaDeadlineAlert::DELIVERY_HEADER, $claimed);
+
+    expect(fn () => app(MarkSlaMailTransportStarted::class)->handle(new MessageSending($email)))
+        ->toThrow(LogicException::class)
+        ->and(DB::table('sla_alert_deliveries')->where('public_id', $sent)->value('cancelled_at'))
+        ->toBeNull('a send already handed to the mail server was rewritten');
+});
+
+test('the in-flight window outlasts every job whose timeout bounds a call to an outside service', function (string $job): void {
+    $timeout = (new ReflectionProperty($job, 'timeout'))->getDefaultValue();
+
+    // Twice, not merely longer: margin for a start stamped just after the
+    // call began, and for the worker's clock.
+    expect(VisitorEraser::IN_FLIGHT_WINDOW_SECONDS)->toBeGreaterThanOrEqual(2 * $timeout);
+})->with([
+    'note post' => [DeliverTicketExternalComment::class],
+    'copilot summary' => [GenerateConversationCopilotSummary::class],
+    'copilot reply draft' => [GenerateConversationCopilotReplyDraft::class],
+    'copilot ticket suggestion' => [GenerateConversationCopilotTicketSuggestion::class],
+    'copilot knowledge suggestion' => [GenerateConversationCopilotKnowledgeSuggestion::class],
+]);
+
+test('a copilot request already sending the transcript holds the erasure', function (): void {
+    $f = erasureFixture();
+    DB::table('conversation_copilot_summaries')->insert([
+        'conversation_id' => $f['conversation']->id, 'requested_by_id' => $f['admin']->id,
+        'generation' => (string) Str::uuid(), 'status' => 'running',
+        'requested_at' => now()->subSeconds(12), 'started_at' => now()->subSeconds(10),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])
+        ->assertSessionHasErrors(['confirmation' => __('visitor_erasure.errors.copilot_running')]);
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('a refused erasure still deleted the contact');
+
+    // Past the window the job has timed out: the request has ended, and the
+    // erasure goes ahead and takes the row with the conversation.
+    $this->travel(VisitorEraser::IN_FLIGHT_WINDOW_SECONDS + 1)->seconds();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(DB::table('conversation_copilot_summaries')->count())->toBe(0);
+});
+
+test('the audit log names the erasure, and still renders after the scrub', function (): void {
+    // What the scrub removes is proven by the sweep above: the account audit
+    // views never display note bodies, so a marker check here would pass with
+    // or without it. This holds what they do show: a labelled erasure, and no
+    // failure on entries whose metadata is now only `{"erased": true}`.
+    $f = erasureFixture();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    $this->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Contact erased');
+
+    expect($this->get(route('dashboard.account.audit.export'))->assertOk()->streamedContent())
+        ->toContain('visitor.erased');
+});
+
+test('audit history keeps who did what, and loses what was said', function (): void {
+    $f = erasureFixture();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    $note = AuditEvent::query()->findOrFail($f['note']->id);
+    $created = AuditEvent::query()->where('action', 'conversation.created')->sole();
+
+    expect($note->action)->toBe('ticket.note_added')
+        ->and((int) $note->actor_id)->toBe((int) $f['admin']->id, 'the agent who acted was forgotten')
+        ->and($note->metadata)->toBe(['erased' => true])
+        ->and($created->actor_type)->toBeNull('the erased visitor is still named as an actor')
+        ->and($created->actor_id)->toBeNull()
+        ->and($created->metadata)->toBe(['erased' => true]);
+});
+
+test('the erasure is recorded, with a receipt, without recording who was erased', function (): void {
+    $f = erasureFixture();
+
+    $response = eraseThroughTheDashboard($f['admin'], $f['visitor']);
+
+    $receipt = VisitorErasure::query()->sole();
+    $event = AuditEvent::query()->where('action', 'visitor.erased')->sole();
+
+    $response->assertSessionHas('erasure_receipt', $receipt->public_id);
+
+    expect((int) $receipt->erased_visitor_id)->toBe((int) $f['visitor']->id)
+        ->and((int) $receipt->actor_id)->toBe((int) $f['admin']->id)
+        ->and($receipt->counts)->toMatchArray([
+            'conversations' => 1, 'messages' => 1, 'attachments' => 1, 'ratings' => 1,
+            'notes' => 1, 'cobrowse_sessions' => 1, 'tickets_stripped' => 1,
+            'notifications' => 2, 'proactive_deliveries' => 2, 'webhook_deliveries_cancelled' => 1,
+        ])
+        ->and($event->metadata['receipt'])->toBe($receipt->public_id)
+        ->and($event->metadata['erased'])->toBe($receipt->counts);
+
+    $this->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertSee($receipt->public_id)
+        ->assertSee('Contact erased.');
+});
+
+test('the ledger names every contact merged into the person, so a restore from before a merge finds them', function (): void {
+    $f = erasureFixture();
+    $merger = app(VisitorIdentityMerger::class);
+
+    // A chain: the first has no browser ID, so no alias ever records it and
+    // only the re-anchored audit history can.
+    $first = Visitor::factory()->for($f['site'])->create(['anonymous_id' => null, 'external_id' => null, 'email' => null]);
+    $second = Visitor::factory()->for($f['site'])->create(['anonymous_id' => 'browser-second', 'external_id' => null, 'email' => null]);
+    $merger->merge($f['admin'], $first, (int) $second->id);
+    $merger->merge($f['admin'], $second->refresh(), (int) $f['visitor']->id);
+
+    // History the audit trail does not hold is still read from the alias the
+    // widget follows.
+    $aliasOnly = Visitor::factory()->for($f['site'])->create();
+    $aliasOnlyId = (int) $aliasOnly->id;
+    $aliasOnly->delete();
+    VisitorIdentityAlias::query()->create([
+        'site_id' => $f['site']->id,
+        'visitor_id' => $f['visitor']->id,
+        'anonymous_id' => 'browser-alias-only',
+        'previous_visitor_ids' => [$aliasOnlyId],
+    ]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor']->refresh())->assertRedirect(route('dashboard.visitors.index'));
+
+    $expected = [(int) $first->id, (int) $second->id, $aliasOnlyId];
+    sort($expected);
+
+    expect(VisitorErasure::query()->sole()->merged_visitor_ids)->toBe($expected);
+});
+
+test('a file storage would not remove stays on the receipt until the scheduled run removes it', function (): void {
+    $f = erasureFixture();
+    // The binary lives on a disk that is unreachable at erasure time.
+    $f['attachment']->forceFill(['storage_disk' => 'attachments-offline'])->save();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $receipt = VisitorErasure::query()->sole();
+    expect($receipt->pending_files)->toBe([['disk' => 'attachments-offline', 'key' => $f['attachment']->storage_key]], 'a file the erasure could not remove was forgotten');
+
+    // Storage comes back, holding the binary; the next scheduled run takes it.
+    Storage::fake('attachments-offline')->put($f['attachment']->storage_key, 'binary');
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(Storage::disk('attachments-offline')->exists($f['attachment']->storage_key))->toBeFalse('the retry left the binary behind')
+        ->and($receipt->fresh()->pending_files)->toBeNull();
+});
+
+test('a pending webhook delivery for an erased conversation is cancelled, and history stays', function (): void {
+    $f = erasureFixture();
+    $delivered = OutboundWebhookDelivery::factory()->for($f['pending']->endpoint, 'endpoint')->create([
+        'site_id' => $f['site']->id,
+        'sequence' => 2,
+        'payload' => ['resource' => ['type' => 'conversation', 'support_code' => $f['conversation']->support_code]],
+        'delivered_at' => now()->subMinute(),
+    ]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    expect($f['pending']->fresh()->cancelled_at)->not->toBeNull('a delivery would still announce a conversation that no longer exists')
+        ->and($delivered->fresh()->cancelled_at)->toBeNull('delivered history was rewritten');
+});
+
+test('webhook replies that could echo the person are cleared, whatever the delivery state', function (): void {
+    $f = erasureFixture();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    expect($f['echoed']->fresh()->response_body)->toBeNull('a delivered reply about their conversation was kept')
+        ->and($f['echoedTicket']->fresh()->response_body)->toBeNull('a failed reply about their ticket was kept')
+        ->and($f['echoedTicket']->fresh()->payload['resource'])->toBe(['type' => 'ticket', 'id' => $f['ticket']->id], 'delivery history lost its identifiers')
+        ->and($f['keptEcho']->fresh()->response_body)->toBe('Kept '.ERASURE_KEEPER, 'a bystander\'s delivery was cleared');
+});
+
+test('bulk runs can still be undone, without the search that found the person', function (): void {
+    $f = erasureFixture();
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    $runs = DB::table('conversation_bulk_action_runs')->orderBy('id')->get();
+
+    expect(json_decode((string) $runs[0]->return_query, true))->toBe(['conversation_filter' => 'open'], 'the way back lost more than the search')
+        ->and(json_decode((string) $runs[0]->changes, true)[0]['conversation_id'])->toBe($f['conversation']->id, 'the run lost what it changed')
+        ->and(json_decode((string) DB::table('ticket_bulk_action_runs')->sole()->return_query, true))->toBe(['ticket_status' => 'open'])
+        ->and(json_decode((string) $runs[1]->return_query, true))->toBe(['conversation_search' => 'kept '.ERASURE_KEEPER], 'a bystander\'s run lost its search');
+});
+
+test('live boards are told to drop the erased contact', function (): void {
+    $f = erasureFixture();
+    $f['site']->forceFill(['settings' => ['presence' => ['enabled' => true, 'page_urls' => false]]])->save();
+    Event::fake([VisitorPresenceUpdated::class]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+
+    // Dispatched is not delivered: the event decides for itself whether to
+    // broadcast, and it once declined for a visitor that no longer exists --
+    // which, after an erasure, is always.
+    Event::assertDispatched(
+        VisitorPresenceUpdated::class,
+        fn (VisitorPresenceUpdated $event): bool => $event->removedVisitorId === (int) $f['visitor']->id
+            && $event->broadcastWhen()
+            && $event->broadcastWith() === ['visitor' => null, 'removed_visitor_id' => (int) $f['visitor']->id],
+    );
+});
+
+test('only a data-request handler who supports the site can erase a contact', function (): void {
+    $f = erasureFixture();
+    $agent = User::factory()->for($f['account'])->create(['account_role' => AccountRole::Agent]);
+    $contactsOnly = User::factory()->for($f['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => CustomRole::factory()->for($f['account'])->create([
+            'permissions' => [AccountPermission::ViewConversations->value, AccountPermission::ManageContacts->value],
+        ])->id,
+    ]);
+    $elsewhere = User::factory()->for($f['account'])->create(['account_role' => AccountRole::Admin]);
+    $otherSite = Site::factory()->for($f['account'])->create();
+    // Both lacking the permission support the site, so their refusal is the
+    // permission's; the admin elsewhere lacks the site, so theirs is 404.
+    $f['site']->supportAgents()->attach([$f['admin']->id, $agent->id, $contactsOnly->id]);
+    $otherSite->supportAgents()->attach($elsewhere);
+
+    foreach ([[$agent, 403], [$contactsOnly, 403], [$elsewhere, 404]] as [$actor, $status]) {
+        $this->actingAs($actor)->get(route('dashboard.visitors.erasure.show', $f['visitor']))->assertStatus($status);
+        eraseThroughTheDashboard($actor, $f['visitor'])->assertStatus($status);
+    }
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('a refused erasure deleted the contact');
+
+    $this->actingAs($f['admin'])
+        ->get(route('dashboard.visitors.show', $f['visitor']))
+        ->assertOk()
+        ->assertSee(route('dashboard.visitors.erasure.show', $f['visitor']));
+    $this->actingAs($contactsOnly)
+        ->get(route('dashboard.visitors.show', $f['visitor']))
+        ->assertOk()
+        ->assertDontSee(route('dashboard.visitors.erasure.show', $f['visitor']));
+});
+
+test('erasure needs the typed word and the current password', function (array $input, string $field): void {
+    $f = erasureFixture();
+
+    $this->actingAs($f['admin'])
+        ->from(route('dashboard.visitors.erasure.show', $f['visitor']))
+        ->post(route('dashboard.visitors.erasure.store', $f['visitor']), $input)
+        ->assertRedirect(route('dashboard.visitors.erasure.show', $f['visitor']))
+        ->assertSessionHasErrors($field);
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('an unconfirmed erasure deleted the contact')
+        ->and(VisitorErasure::query()->count())->toBe(0);
+})->with([
+    'the word in lower case' => [['confirmation' => 'erase', 'current_password' => 'password'], 'confirmation'],
+    'no word' => [['current_password' => 'password'], 'confirmation'],
+    'a wrong password' => [['confirmation' => 'ERASE', 'current_password' => 'not-it'], 'current_password'],
+]);
+
+test('the summary shows what goes, what stays, and what erasure cannot reach', function (): void {
+    $f = erasureFixture();
+
+    $this->actingAs($f['admin'])
+        ->get(route('dashboard.visitors.erasure.show', $f['visitor']))
+        ->assertOk()
+        ->assertSee('data-erasure-count="conversations">1<', false)
+        ->assertSee('data-erasure-count="attachments">1<', false)
+        ->assertSee('data-erasure-ticket="'.$f['ticket']->id.'"', false)
+        ->assertSee('https://github.example/acme/app/issues/7')
+        ->assertSee('Backups taken before now still hold this person’s data');
+});
+
+test('a custom role can hold the permission only alongside managing contacts', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.roles.index'))
+        ->post(route('dashboard.account.roles.store'), [
+            'name' => 'Privacy desk',
+            'permissions' => [AccountPermission::HandleDataRequests->value],
+        ])
+        ->assertSessionHasErrors('permissions');
+
+    expect(AccountRole::Admin->permissions())->toContain(AccountPermission::HandleDataRequests)
+        ->and(AccountRole::Agent->permissions())->not->toContain(AccountPermission::HandleDataRequests);
+});
