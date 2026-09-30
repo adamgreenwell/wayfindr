@@ -126,21 +126,26 @@ final class VisitorEraser
     public function summarize(Visitor $visitor): array
     {
         $scope = $this->scope($visitor);
+        $tickets = new EloquentCollection;
+        $urls = [];
+
+        // In chunks, like the erasure: a long history must not outgrow the
+        // driver's bound-parameter limit on the page that confirms it.
+        foreach (array_chunk($scope['ticket_ids'], 500) as $chunk) {
+            $tickets = $tickets->merge(Ticket::query()->whereIn('id', $chunk)->get(['id', 'subject', 'status']));
+            $urls += TicketExternalLink::query()
+                ->whereIn('ticket_id', $chunk)
+                ->whereNotNull('url')
+                ->pluck('url', 'id')
+                ->all();
+        }
+
+        ksort($urls);
 
         return [
             'counts' => $scope['counts'],
-            'tickets' => Ticket::query()
-                ->whereIn('id', $scope['ticket_ids'])
-                ->orderBy('id')
-                ->get(['id', 'subject', 'status']),
-            'external_issue_urls' => TicketExternalLink::query()
-                ->whereIn('ticket_id', $scope['ticket_ids'])
-                ->whereNotNull('url')
-                ->orderBy('id')
-                ->pluck('url')
-                ->map(fn (mixed $url): string => (string) $url)
-                ->values()
-                ->all(),
+            'tickets' => $tickets->sortBy('id')->values(),
+            'external_issue_urls' => array_values(array_map(fn (mixed $url): string => (string) $url, $urls)),
         ];
     }
 
@@ -452,26 +457,27 @@ final class VisitorEraser
             return;
         }
 
-        $tickets = Ticket::query()->whereIn('id', $ticketIds)->lockForUpdate()->get(['id', 'metadata']);
         // Stored content, seen by every agent and API consumer: the install's
         // language, not that of the agent who happens to erase.
         $subjectLocale = DashboardLanguage::forStoredContent();
 
-        foreach ($tickets as $ticket) {
-            $metadata = is_array($ticket->metadata) ? $ticket->metadata : [];
-            unset($metadata['visitor_context'], $metadata['support_code']);
-            $metadata['requester_erased'] = true;
+        foreach (array_chunk($ticketIds, 500) as $chunk) {
+            foreach (Ticket::query()->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->get(['id', 'metadata']) as $ticket) {
+                $metadata = is_array($ticket->metadata) ? $ticket->metadata : [];
+                unset($metadata['visitor_context'], $metadata['support_code']);
+                $metadata['requester_erased'] = true;
 
-            // Raw, like the merge: an Eloquent save would fire ticket side
-            // effects (automations, webhooks) for what is not a support change.
-            DB::table('tickets')->where('id', $ticket->id)->update([
-                'subject' => __('visitor_erasure.ticket_subject', ['number' => $ticket->id], $subjectLocale),
-                'description' => null,
-                'metadata' => json_encode($metadata, JSON_THROW_ON_ERROR),
-                'requester_id' => null,
-                'conversation_id' => null,
-                'updated_at' => now(),
-            ]);
+                // Raw, like the merge: an Eloquent save would fire ticket side
+                // effects (automations, webhooks) for what is not a support change.
+                DB::table('tickets')->where('id', $ticket->id)->update([
+                    'subject' => __('visitor_erasure.ticket_subject', ['number' => $ticket->id], $subjectLocale),
+                    'description' => null,
+                    'metadata' => json_encode($metadata, JSON_THROW_ON_ERROR),
+                    'requester_id' => null,
+                    'conversation_id' => null,
+                    'updated_at' => now(),
+                ]);
+            }
         }
 
         // Each row carries the body of a note that was, or was about to be,
@@ -936,16 +942,19 @@ final class VisitorEraser
             $anonymousIds,
         );
 
-        return DB::table('proactive_message_deliveries')
+        $deleted = DB::table('proactive_message_deliveries')
             ->where('site_id', $siteId)
-            ->where(function (Builder $query) use ($visitorId, $keys): void {
-                $query->where('visitor_id', $visitorId);
-
-                if ($keys !== []) {
-                    $query->orWhereIn('visitor_key', $keys);
-                }
-            })
+            ->where('visitor_id', $visitorId)
             ->delete();
+
+        foreach (array_chunk($keys, 500) as $chunk) {
+            $deleted += DB::table('proactive_message_deliveries')
+                ->where('site_id', $siteId)
+                ->whereIn('visitor_key', $chunk)
+                ->delete();
+        }
+
+        return $deleted;
     }
 
     /**

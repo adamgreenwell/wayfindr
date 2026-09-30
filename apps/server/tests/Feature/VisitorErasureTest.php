@@ -618,6 +618,38 @@ test('an automation failure recorded just after an erasure keeps nothing of the 
     }
 })->with(['rule', 'macro'])->with(['ticket', 'conversation']);
 
+test('a long history is summarized and erased in chunks the database can bind', function (): void {
+    $f = erasureFixture();
+    $now = now();
+
+    foreach (array_chunk(range(1, 1100), 200) as $batch) {
+        DB::table('tickets')->insert(array_map(fn (int $n): array => [
+            'account_id' => $f['account']->id, 'site_id' => $f['site']->id, 'requester_id' => $f['visitor']->id,
+            'subject' => "Old ticket {$n}", 'metadata' => '{}', 'created_at' => $now, 'updated_at' => $now,
+        ], $batch));
+        DB::table('visitor_identity_aliases')->insert(array_map(fn (int $n): array => [
+            'site_id' => $f['site']->id, 'visitor_id' => $f['visitor']->id,
+            'anonymous_id' => "browser-{$n}", 'created_at' => $now, 'updated_at' => $now,
+        ], $batch));
+    }
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $summary = app(VisitorEraser::class)->summarize($f['visitor']);
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $widest = collect(DB::getQueryLog())->max(fn (array $query): int => count($query['bindings']));
+    DB::disableQueryLog();
+
+    // A driver caps the values one statement can bind (PostgreSQL at 65,535),
+    // so no statement may bind a whole history, only a chunk of it.
+    expect($widest)->toBeLessThanOrEqual(520, 'a statement bound the whole history at once')
+        ->and($summary['tickets'])->toHaveCount(1101, 'the summary lost tickets across chunks')
+        ->and(DB::table('tickets')->where('subject', 'like', 'Old ticket%')->count())
+        ->toBe(0, 'a ticket past the first chunk kept its subject');
+});
+
 test('a stripped ticket takes the install language, not the erasing agent\'s', function (): void {
     $f = erasureFixture();
     $f['admin']->forceFill(['locale' => 'de'])->save();

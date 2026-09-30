@@ -95,6 +95,7 @@ class BreakGlassGrants
 
             abort_unless($lockedApprover instanceof User, 403);
 
+            $this->lockConversationFirst($grant);
             $locked = BreakGlassGrant::query()
                 ->whereKey($grant->getKey())
                 ->where('account_id', $accountId)
@@ -150,6 +151,7 @@ class BreakGlassGrants
     public function deny(BreakGlassGrant $grant, User $approver): BreakGlassGrant
     {
         return DB::transaction(function () use ($grant, $approver): BreakGlassGrant {
+            $this->lockConversationFirst($grant);
             $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
 
             abort_unless(
@@ -179,6 +181,7 @@ class BreakGlassGrants
     public function close(BreakGlassGrant $grant, User $actor): BreakGlassGrant
     {
         return DB::transaction(function () use ($grant, $actor): BreakGlassGrant {
+            $this->lockConversationFirst($grant);
             $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
 
             abort_unless(
@@ -230,6 +233,7 @@ class BreakGlassGrants
             ->chunkById(100, function ($grants) use (&$expired): void {
                 foreach ($grants as $grant) {
                     DB::transaction(function () use ($grant, &$expired): void {
+                        $this->lockConversationFirst($grant);
                         $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->first();
 
                         if (! $locked || $locked->status !== BreakGlassGrant::STATUS_ACTIVE || $locked->expires_at->isFuture()) {
@@ -361,6 +365,21 @@ class BreakGlassGrants
                 'occurred_at' => now(),
             ]);
         });
+    }
+
+    /**
+     * Deleting a conversation, as erasing its contact does, updates every
+     * grant that names it (the foreign key is set to null): the conversation
+     * is locked, then the grant. A change to the grant takes them in the same
+     * order, or the two deadlock: the conversation, shared, before the grant
+     * row. The grant's conversation is only ever cleared, never set, so
+     * reading it before the grant's lock can at worst name one already gone.
+     */
+    private function lockConversationFirst(BreakGlassGrant $grant): void
+    {
+        if ($grant->scope_type === BreakGlassGrant::SCOPE_CONVERSATION && $grant->conversation_id !== null) {
+            Conversation::query()->whereKey($grant->conversation_id)->sharedLock()->exists();
+        }
     }
 
     /**

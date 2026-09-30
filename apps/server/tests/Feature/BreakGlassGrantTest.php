@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Support\BreakGlass\BreakGlassGrants;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -264,6 +265,45 @@ test('closing an overdue grant records expiry, never an early close', function (
     expect(AuditEvent::where('action', 'break_glass.expired')->count())->toBe(1)
         ->and(AuditEvent::where('action', 'break_glass.closed')->count())->toBe(0);
 });
+
+test('every change to a grant locks its conversation first, the order deleting the conversation takes', function (string $change): void {
+    // Deleting a conversation, as erasing its contact does, locks it and then
+    // sets its grants' conversation to null. The reverse order here deadlocks.
+    $w = breakGlassWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+    $grant = grants()->request($w['operator'], $w['conversation'], 'Debugging.');
+
+    if (in_array($change, ['close', 'expire'], true)) {
+        $grant = grants()->approve($grant, $admin);
+    }
+
+    if ($change === 'expire') {
+        $grant->forceFill(['expires_at' => now()->subMinute()])->save();
+    }
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    match ($change) {
+        'approve' => grants()->approve($grant, $admin),
+        'deny' => grants()->deny($grant, $admin),
+        'close' => grants()->close($grant, $w['operator']),
+        'expire' => grants()->expireOverdue(),
+    };
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    // PostgreSQL shows the lock clauses; elsewhere the order is what is left.
+    $pgsql = DB::getDriverName() === 'pgsql';
+    $conversationLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations" where "conversations"."id" = ?')
+        && (! $pgsql || str_contains($query, 'for share')));
+    $grantLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "break_glass_grants" where "break_glass_grants"."id" = ?')
+        && (! $pgsql || str_contains($query, 'for update')));
+
+    expect($conversationLock)->toBeInt('the conversation was never locked')
+        ->and($grantLock)->toBeInt('the grant was never locked')
+        ->and($conversationLock)->toBeLessThan($grantLock, 'the grant was locked before its conversation');
+})->with(['approve', 'deny', 'close', 'expire']);
 
 test('a grant past its expiry is inactive live, before the sweep stamps it', function (): void {
     $w = breakGlassWorld();
