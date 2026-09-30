@@ -113,8 +113,9 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   retries is kept with the exception it died on, and a mail server's
   rejection quotes the address it refused. They are free text, so the person's
   own identifiers find them, except one too short to be specific (a host ID
-  like `42`), which would match strangers. Other failed-job text is
-  diagnostics, like logs (§6);
+  like `42`), which would match strangers. They are searched in whichever
+  store the operator configured: a table on any connection, a file, or
+  DynamoDB. Other failed-job text is diagnostics, like logs (§6);
 - **outbound webhook deliveries** about erased conversations or stripped
   tickets. Pending ones for erased conversations are cancelled. Every one
   keeps its payload, which carries only identifiers (ADR 0020), and stays as

@@ -60,6 +60,7 @@ use App\Support\ProactiveMessages\ProactiveVisitorKey;
 use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorIdentityMerger;
 use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
@@ -659,6 +660,45 @@ test('a break-glass view recorded just after an erasure does not name the conver
         ->and($viewed->metadata['resource_label'])->toBe('Conversation (deleted)', 'the late view named the erased conversation')
         ->and($viewed->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late view kept the stale scope label');
 });
+
+test('failed jobs are erased from wherever the operator keeps them', function (string $store): void {
+    $f = erasureFixture();
+    $address = (string) $f['visitor']->email;
+
+    if ($store === 'database connection') {
+        config()->set('database.connections.failed_jobs_store', ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
+        config()->set('queue.failed.database', 'failed_jobs_store');
+        Schema::connection('failed_jobs_store')->create('failed_jobs', function (Blueprint $table): void {
+            $table->id();
+            $table->string('uuid')->unique();
+            $table->text('connection');
+            $table->text('queue');
+            $table->longText('payload');
+            $table->longText('exception');
+            $table->timestamp('failed_at')->useCurrent();
+        });
+    } else {
+        config()->set('queue.failed.driver', 'file');
+        config()->set('queue.failed.path', storage_path('framework/testing/failed-jobs-'.Str::uuid().'.json'));
+    }
+
+    app()->forgetInstance('queue.failer');
+    $failer = app('queue.failer');
+    $log = fn (string $exception) => $failer->log('database', 'default', json_encode([
+        'uuid' => (string) Str::uuid(), 'displayName' => SendConversationReplyDelivery::class,
+    ]), new RuntimeException($exception));
+    $log("550 5.1.1 <{$address}>: Recipient address rejected");
+    $log('550 5.1.1 <kept-'.strtolower(ERASURE_KEEPER).'@example.test>: Recipient address rejected');
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $left = collect($failer->all())->map(fn (object $job): string => (string) $job->exception);
+
+    expect($left->filter(fn (string $exception): bool => str_contains($exception, $address)))
+        ->toHaveCount(0, "a failed job in the {$store} store still named the person")
+        ->and($left->filter(fn (string $exception): bool => str_contains($exception, strtolower(ERASURE_KEEPER))))
+        ->toHaveCount(1, "a stranger's failed job in the {$store} store went too");
+})->with(['database connection', 'file']);
 
 test('a reply that fails for good after an erasure cannot record the address it was refused', function (): void {
     $f = erasureFixture();

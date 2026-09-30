@@ -35,7 +35,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -112,7 +111,7 @@ final class VisitorEraser
         'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
         'visitor_erasures' => 'the ledger itself: identifiers and counts only',
         'alert_mail_sends' => 'alert mail on its way to SMTP, by identifier only: erasure waits while one about the person is fresh, and removes the rest',
-        'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted; a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
+        'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
     ];
 
     /**
@@ -962,24 +961,57 @@ final class VisitorEraser
      * own identifiers. One too short to be specific (a host ID like "42")
      * would match strangers, so it is not used.
      *
+     * Wherever the operator keeps them: a database store on its own
+     * connection is searched there, and a file or DynamoDB store through the
+     * provider every store implements. A store on another connection or
+     * outside the database is not part of this transaction.
+     *
      * @param  list<string>  $identifiers
      */
     private function deleteFailedJobsNaming(array $identifiers): void
     {
-        $table = (string) (config('queue.failed.table') ?: 'failed_jobs');
         $identifiers = array_values(array_unique(array_filter(
-            $identifiers,
-            fn (string $identifier): bool => mb_strlen(trim($identifier)) >= 6,
+            array_map(fn (string $identifier): string => trim($identifier), $identifiers),
+            fn (string $identifier): bool => mb_strlen($identifier) >= 6,
         )));
+        $driver = config('queue.failed.driver');
 
-        if ($identifiers === [] || ! Schema::hasTable($table)) {
+        if ($identifiers === [] || $driver === null || $driver === 'null') {
+            return;
+        }
+
+        if (in_array($driver, ['database', 'database-uuids'], true)) {
+            $this->deleteFailedJobRowsNaming($identifiers);
+
+            return;
+        }
+
+        $failer = app('queue.failer');
+        $needles = array_map(fn (string $identifier): string => mb_strtolower($identifier), $identifiers);
+
+        foreach ($failer->all() as $job) {
+            $text = mb_strtolower((string) data_get($job, 'payload').' '.data_get($job, 'exception'));
+
+            if (collect($needles)->contains(fn (string $needle): bool => str_contains($text, $needle))) {
+                $failer->forget(data_get($job, 'id'));
+            }
+        }
+    }
+
+    /** @param  list<string>  $identifiers */
+    private function deleteFailedJobRowsNaming(array $identifiers): void
+    {
+        $connection = DB::connection(config('queue.failed.database') ?: null);
+        $table = (string) (config('queue.failed.table') ?: 'failed_jobs');
+
+        if (! $connection->getSchemaBuilder()->hasTable($table)) {
             return;
         }
 
         foreach ($identifiers as $identifier) {
-            $query = DB::table($table);
+            $query = $connection->table($table);
             $grammar = $query->getGrammar();
-            $pattern = LiteralLike::pattern(trim($identifier));
+            $pattern = LiteralLike::pattern($identifier);
 
             $query->where(function (Builder $query) use ($grammar, $pattern): void {
                 foreach (['payload', 'exception'] as $column) {
