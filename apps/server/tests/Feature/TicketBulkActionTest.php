@@ -541,3 +541,32 @@ test('site purge leaves no copied ticket content and undo restores surviving tic
     expect($surviving->fresh()->priority)->toBe('normal')
         ->and($run->fresh()->undone_at)->not->toBeNull();
 });
+
+test('a bulk review keeps the ticket search out of the session and still returns to it', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $label = TicketLabel::factory()->for($account)->create(['name' => 'VIP']);
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $search = 'robin@example.test';
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => [$ticket->id],
+        'action' => 'add_label',
+        'value' => (string) $label->id,
+        'return_query' => ['ticket_status' => 'all', 'ticket_search' => $search],
+    ]);
+
+    expect(serialize(session()->all()))->not->toContain($search);
+    $preview->assertSee('name="return_search" value="'.$search.'"', false);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.bulk.store'), [
+            'preview_token' => $preview->viewData('token'),
+            'return_search' => $search,
+        ])
+        ->assertRedirect(route('dashboard.tickets.index', ['ticket_status' => 'all', 'ticket_search' => $search]));
+
+    expect(TicketBulkActionRun::query()->sole()->return_query)
+        ->toBe(['ticket_status' => 'all', 'ticket_search' => $search]);
+});

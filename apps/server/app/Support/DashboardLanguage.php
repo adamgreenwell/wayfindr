@@ -350,6 +350,8 @@ final class DashboardLanguage
         'dashboard.visitors.index',
         'dashboard.visitors.show',
         'dashboard.visitors.merge',
+        'dashboard.visitors.erasure.show',
+        'dashboard.visitors.erasure.store',
         'dashboard.visitors.notes.store',
         'dashboard.visitors.notes.destroy',
 

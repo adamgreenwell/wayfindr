@@ -35,6 +35,7 @@ return [
         'manage_sites' => ['label' => 'Websites verwalten', 'detail' => 'Websites erstellen, bearbeiten, archivieren und wiederherstellen.'],
         'manage_site_access' => ['label' => 'Website-Zugriff verwalten', 'detail' => 'Festlegen, wer jede Website betreuen darf.'],
         'manage_contacts' => ['label' => 'Kontakte verwalten', 'detail' => 'Besucherattribute definieren und Kontaktdatensätze auf zugewiesenen Websites verwalten.'],
+        'handle_data_requests' => ['label' => 'Datenanfragen bearbeiten', 'detail' => 'Einen Kontakt und alle zugehörigen gespeicherten Daten auf zugewiesenen Websites löschen. Kann nicht rückgängig gemacht werden.'],
         'manage_privacy_settings' => ['label' => 'Datenschutzeinstellungen verwalten', 'detail' => 'Besucherdaten- und Datenschutzkontrollen ändern.'],
         'manage_integrations' => ['label' => 'Integrationen verwalten', 'detail' => 'Anbieter, API-Token, Webhooks und Routing konfigurieren.'],
         'manage_knowledge' => ['label' => 'Wissen verwalten', 'detail' => 'Artikel, Antworten und Ticket-Labels erstellen und veröffentlichen.'],

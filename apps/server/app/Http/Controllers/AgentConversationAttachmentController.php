@@ -167,28 +167,39 @@ class AgentConversationAttachmentController extends Controller
      */
     private function recordAgentAccess(Conversation $conversation, ConversationMessageAttachment $attachment, User $agent): void
     {
-        $alreadyRecorded = $conversation->auditEvents()
-            ->where('action', 'attachment.downloaded')
-            ->where('actor_type', $agent->getMorphClass())
-            ->where('actor_id', $agent->getKey())
-            ->where('metadata->attachment_id', $attachment->id)
-            ->exists();
+        // This read takes no lock, so erasing the contact may have happened
+        // since the attachment was resolved. Under a shared lock on the
+        // conversation the event lands before an erasure, whose scrub covers
+        // it, or finds the conversation gone and keeps no filename of it
+        // (ADR 0026 §2).
+        DB::transaction(function () use ($conversation, $attachment, $agent): void {
+            if (! Conversation::query()->whereKey($conversation->id)->sharedLock()->exists()) {
+                return;
+            }
 
-        if ($alreadyRecorded) {
-            return;
-        }
+            $alreadyRecorded = $conversation->auditEvents()
+                ->where('action', 'attachment.downloaded')
+                ->where('actor_type', $agent->getMorphClass())
+                ->where('actor_id', $agent->getKey())
+                ->where('metadata->attachment_id', $attachment->id)
+                ->exists();
 
-        $conversation->auditEvents()->create([
-            'account_id' => $conversation->site?->account_id,
-            'site_id' => $conversation->site_id,
-            'actor_type' => $agent->getMorphClass(),
-            'actor_id' => $agent->getKey(),
-            'action' => 'attachment.downloaded',
-            'metadata' => [
-                'attachment_id' => $attachment->id,
-                'filename' => $attachment->original_filename,
-            ],
-            'occurred_at' => now(),
-        ]);
+            if ($alreadyRecorded) {
+                return;
+            }
+
+            $conversation->auditEvents()->create([
+                'account_id' => $conversation->site?->account_id,
+                'site_id' => $conversation->site_id,
+                'actor_type' => $agent->getMorphClass(),
+                'actor_id' => $agent->getKey(),
+                'action' => 'attachment.downloaded',
+                'metadata' => [
+                    'attachment_id' => $attachment->id,
+                    'filename' => $attachment->original_filename,
+                ],
+                'occurred_at' => now(),
+            ]);
+        });
     }
 }

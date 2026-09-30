@@ -15,6 +15,15 @@
         @endif
     </x-page-header>
 
+    @if (session('status'))
+        <p class="status-message" role="status">
+            {{ __(session('status')) }}
+            @if (session('erasure_receipt'))
+                {!! __('visitor_erasure.flash.receipt', ['receipt' => '<code lang="">'.e(session('erasure_receipt')).'</code>']) !!}
+            @endif
+        </p>
+    @endif
+
     @if ($canManageContacts)
         <section class="section" aria-labelledby="visitor-export-boundary-heading">
             <div class="section-header">

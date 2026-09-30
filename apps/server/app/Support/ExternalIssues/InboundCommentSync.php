@@ -2,6 +2,7 @@
 
 namespace App\Support\ExternalIssues;
 
+use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -60,10 +61,22 @@ class InboundCommentSync
         }
 
         return DB::transaction(function () use ($link, $commentId, $body, $author, $source): bool {
+            // The ticket before its link. Erasure strips a ticket under this
+            // same lock (ADR 0026 §3), so a comment arriving mid-erasure is
+            // either recorded first and scrubbed with the rest, or finds the
+            // ticket stripped. Erasure never locks a link, so this order
+            // cannot deadlock with it.
+            $ticket = Ticket::query()->whereKey($link->ticket_id)->lockForUpdate()->first();
             $locked = $this->lockLink($link);
-            $ticket = $locked?->ticket;
 
-            if (! $locked || ! $ticket) {
+            if (! $locked || ! $ticket || (int) $locked->ticket_id !== (int) $ticket->id) {
+                return false;
+            }
+
+            // A stripped ticket stays a work item, but stops mirroring the
+            // tracker: each comment would be a new copy of whatever it says,
+            // which may be about the person who was erased.
+            if (data_get($ticket->metadata, 'requester_erased') === true) {
                 return false;
             }
 

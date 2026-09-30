@@ -30,6 +30,52 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Pull and restart. Three migrations run
+themselves: they add the erasure ledger table and a table of alert emails on
+their way to the mail server, and let each bulk-action run record every item
+it selected.
+
+### Added
+
+- **Erase a contact when they ask.** A new **Erase this contact** section on a
+  contact's profile removes everything Wayfindr holds about that person:
+  - their identity, browser IDs, contact notes, conversations, messages,
+    ratings, uploaded files, cobrowse sessions and proactive-message
+    deliveries;
+  - the agent alerts that name their conversations or tickets.
+
+  Their tickets stay as work items with the personal content removed, and
+  stop copying new comments from their linked issue. Audit entries keep who
+  did what, but lose what was said. Webhook reply samples, bulk-action
+  searches, automation error text and failed jobs that quote the person are
+  cleared too. If a note is posting to a linked issue, or the AI assistant is
+  working on one of their conversations at that moment, or an alert email
+  about their work is on its way to the mail server, erasure waits and asks
+  the agent to try again in a few minutes. A summary shows what
+  goes, what stays and what erasure cannot reach before anything is deleted,
+  and the agent confirms by typing `ERASE` and their current password. It
+  needs the new **Handle data requests** permission, which Owners and Admins
+  have and custom roles can be given alongside **Manage contacts**. Each
+  erasure leaves a receipt reference and an audit entry that record how much
+  was removed, never who. See
+  [ADR 0026](docs/decisions/0026-erasing-and-exporting-a-visitor.md) for what
+  erasure cannot reach, such as backups and linked issue trackers.
+
+  A new hourly `wayfindr:finish-erasures` task removes any uploaded file that
+  storage refused at the time; it runs on the existing scheduler.
+
+  Restoring a backup taken before an erasure brings that person back, until a
+  later release re-applies erasures on restore. Keep receipt references
+  outside Wayfindr, and after such a restore erase those people again.
+
+### Changed
+
+- **A reply email that fails for good no longer keeps the mail server's
+  error in failed jobs.** That error quotes the visitor's address, and the
+  record can be written just after that visitor is erased. The failed job now
+  names the error's type and code, and the full error is in the application
+  log, as it was before.
+
 ## [1.0.0] - 2026-09-29
 
 **No operator action required.** Pull and restart. This release has no

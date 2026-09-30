@@ -6,6 +6,7 @@ use App\Models\ApiToken;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\Concerns\CoordinatesAgentAlertMail;
+use App\Support\Visitors\AlertMailErasureGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -74,12 +75,12 @@ class TicketAssigned extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        return $this->coordinateAgentAlertMail((new MailMessage)
+        return AlertMailErasureGuard::stamp($this->coordinateAgentAlertMail((new MailMessage)
             ->subject('Wayfindr ticket assigned: '.$this->ticket->subject)
             ->line($this->assignmentActorName().' assigned you a ticket on '.$this->ticket->site->name.'.')
             ->line('Ticket: #'.$this->ticket->id)
             ->line('Priority: '.ucfirst($this->ticket->priority))
-            ->action('Open ticket', route('dashboard.tickets.show', $this->ticket)));
+            ->action('Open ticket', route('dashboard.tickets.show', $this->ticket))), $this->ticket);
     }
 
     /**

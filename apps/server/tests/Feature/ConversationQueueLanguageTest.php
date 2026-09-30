@@ -527,6 +527,8 @@ function conversationQueueLanguageReaderForUrl(array $world, string $url, string
         || str_starts_with($path, '/dashboard/reports')
         || $routeName === 'dashboard.sites.show'
         || str_starts_with((string) $routeName, 'dashboard.sites.proactive-messages.')
+        // `handle_data_requests`, which a built-in Agent does not hold.
+        || $routeName === 'dashboard.visitors.erasure.show'
     ) {
         return $world['admins'][$locale];
     }
@@ -1769,6 +1771,10 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.visitors.index', ['search' => 'zzzz']),
         route('dashboard.visitors.show', $profileVisitor),
         route('dashboard.visitors.show', $sparseVisitor),
+        // Listed by name: its static prefix is /dashboard/visitors, which the
+        // index already matches, so the prefix guard below would count it as
+        // audited without ever rendering it.
+        route('dashboard.visitors.erasure.show', $profileVisitor),
         route('dashboard.account.articles.index'),
         // The DETAIL page explicitly. The prefix match above would let it pass
         // on the index's coverage without ever rendering it -- which the loop's

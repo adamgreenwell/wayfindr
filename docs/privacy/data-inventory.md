@@ -82,6 +82,18 @@ tickets, ratings, SLA history, automation execution history, and audit events ha
 should assume database records, logs and backups persist according to their
 infrastructure defaults.
 
+**One person can be erased on request.** An agent with
+`handle_data_requests` erases a contact
+([ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md),
+[how it works](../product/visitor-contact-management.md#erasing-a-contact)).
+That deletes their identity, conversations, messages, files, notes, ratings,
+cobrowse sessions, proactive deliveries and the alerts that name them. It keeps
+their tickets as work items with the personal content removed, and their audit
+entries with the text replaced. The erasure is recorded in `visitor_erasures`
+with internal IDs, counts and a receipt reference only. It does not reach
+backups taken before it, external issue trackers, sent mail, the AI provider,
+API consumers or logs.
+
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually
 long or indefinite retention windows.

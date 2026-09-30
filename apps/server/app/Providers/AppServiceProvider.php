@@ -7,6 +7,7 @@ use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Ticket;
+use App\Notifications\Channels\ErasureAwareDatabaseChannel;
 use App\Observers\ConversationMessageObserver;
 use App\Observers\ConversationObserver;
 use App\Observers\TicketObserver;
@@ -31,6 +32,7 @@ use App\Support\Release\UpgradeContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\Channels\DatabaseChannel;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -48,6 +50,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Agent alerts are stored under a lock shared with contact erasure, so
+        // one raised just before an erasure cannot land just after it quoting
+        // the person (ADR 0026 §1).
+        $this->app->bind(DatabaseChannel::class, ErasureAwareDatabaseChannel::class);
+
         // One observation of pre-migration state per process. The guard records
         // whether the database was empty on `CommandStarting`, and the recorder
         // reads it back on `CommandFinished` — migrating between those two points

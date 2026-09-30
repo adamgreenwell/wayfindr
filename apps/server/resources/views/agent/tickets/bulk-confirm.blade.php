@@ -49,6 +49,9 @@
                 <form method="POST" action="{{ route('dashboard.tickets.bulk.store') }}">
                     @csrf
                     <input type="hidden" name="preview_token" value="{{ $token }}">
+                    @if (filled($returnQuery['ticket_search'] ?? null))
+                        <input type="hidden" name="return_search" value="{{ $returnQuery['ticket_search'] }}">
+                    @endif
                     <button class="button" type="submit">{{ trans_choice('tickets.bulk.confirm.apply', $changedCount, ['count' => $changedCount]) }}</button>
                 </form>
             @endif

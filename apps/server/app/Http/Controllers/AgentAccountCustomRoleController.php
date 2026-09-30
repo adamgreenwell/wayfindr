@@ -216,6 +216,9 @@ final class AgentAccountCustomRoleController extends Controller
             AccountPermission::ManageConversations->value => AccountPermission::ViewConversations->value,
             AccountPermission::RequestCobrowse->value => AccountPermission::ViewConversations->value,
             AccountPermission::AssignTickets->value => AccountPermission::ManageTickets->value,
+            // Erasing or exporting a person is contact-record work, and the
+            // erasure summary lists what the contact holds (ADR 0026).
+            AccountPermission::HandleDataRequests->value => AccountPermission::ManageContacts->value,
         ];
 
         foreach ($requires as $permission => $required) {
@@ -302,7 +305,7 @@ final class AgentAccountCustomRoleController extends Controller
             'team' => [AccountPermission::ManageAgents, AccountPermission::ManageSiteAccess],
             'support' => [AccountPermission::ViewConversations, AccountPermission::ReplyToConversations, AccountPermission::ManageConversations, AccountPermission::RequestCobrowse, AccountPermission::ManageTickets, AccountPermission::AssignTickets, AccountPermission::ManageContacts, AccountPermission::ManageAutomations, AccountPermission::ViewAlerts],
             'content' => [AccountPermission::ManageKnowledge],
-            'account' => [AccountPermission::ManageSites, AccountPermission::ManagePrivacySettings, AccountPermission::ManageIntegrations, AccountPermission::ManageSecurity, AccountPermission::ManageOperatorAccess, AccountPermission::ViewReports, AccountPermission::ViewAudit],
+            'account' => [AccountPermission::ManageSites, AccountPermission::ManagePrivacySettings, AccountPermission::HandleDataRequests, AccountPermission::ManageIntegrations, AccountPermission::ManageSecurity, AccountPermission::ManageOperatorAccess, AccountPermission::ViewReports, AccountPermission::ViewAudit],
         ];
     }
 

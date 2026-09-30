@@ -42,6 +42,11 @@ Schedule::command('wayfindr:sweep-orphaned-attachments')
     ->hourly()
     ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');
 
+Schedule::command('wayfindr:finish-erasures')
+    ->hourly()
+    ->withoutOverlapping()
+    ->description('Remove attachment binaries that a contact erasure could not remove at the time.');
+
 Schedule::command('wayfindr:prune-api-idempotency-keys')
     ->hourly()
     ->description('Delete expired public API write receipts after their 24-hour retry window.');

@@ -94,6 +94,7 @@ return [
         'visitor_note_added' => 'Contact note added',
         'visitor_note_deleted' => 'Contact note deleted',
         'visitor_merged' => 'Visitor contact merged',
+        'visitor_erased' => 'Contact erased',
         'api_token_created' => 'API token issued',
         'api_token_revoked' => 'API token revoked',
         'api_token_revoked_with_issuer' => 'API token revoked with its issuer',

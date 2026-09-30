@@ -11,6 +11,7 @@ enum AccountPermission: string
     case ManageSites = 'manage_sites';
     case ManageSiteAccess = 'manage_site_access';
     case ManageContacts = 'manage_contacts';
+    case HandleDataRequests = 'handle_data_requests';
     case ManagePrivacySettings = 'manage_privacy_settings';
     case ManageIntegrations = 'manage_integrations';
     case ManageKnowledge = 'manage_knowledge';

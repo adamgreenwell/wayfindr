@@ -50,6 +50,22 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   keys already present in visitor host context.
 - `visitor_notes`: private, visitor-owned team context that survives individual
   tickets and cascades with the visitor record.
+- `visitor_erasures`: the ledger of contacts erased on request (ADR 0026). A
+  row outlives what it records, so it has no foreign key to the erased
+  visitor and holds only internal IDs: the visitor's, and every visitor ID
+  merged into it, which a restore from before that merge would bring back.
+  It also holds the actor, counts, a receipt reference the operator can quote
+  to the person who asked, and the storage keys of any attachment binaries
+  not yet removed. Those keys are written inside the erasure's transaction,
+  so a crash after the commit cannot lose them. Never a name, email or
+  anything that was erased.
+- `alert_mail_sends`: agent alert mail between its last check before SMTP and
+  the mail server, by the ticket or conversation it names and when it
+  started. The check releases its lock before the transport runs, so erasing
+  a contact refuses while a send about their work is fresh, rather than let a
+  mail built before the erasure leave after it. A row is removed when its mail
+  is sent; one that never reports back stops holding erasure after the
+  in-flight window and is pruned. Identifiers and a time only.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
 - `conversation_message_attachments`: private message-scoped files. Rows carry
@@ -166,7 +182,9 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   relevant audit event has moved since, and will not hand one back to an agent
   who has lost access in the meantime. `return_query` keeps the agent's queue
   filter on the run so the confirm and undo redirects land back on the list
-  they acted from.
+  they acted from. `item_ids` lists every conversation the run selected,
+  changed or not, so erasing a person can clear the search from every run
+  that found them; it is null on runs made before it.
 - `ticket_bulk_action_runs`: the ticket queue's counterpart, identical in shape
   to `conversation_bulk_action_runs` but with its own action set — only tickets
   take labels — and a `changes` payload keyed by ticket. `undone_at` and

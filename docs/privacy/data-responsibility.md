@@ -60,6 +60,28 @@ When an option keeps data indefinitely or for a long window, the UI should ask
 for an explicit acknowledgement instead of hiding the impact behind a normal
 save button.
 
+## A Request About One Person
+
+When a visitor asks the operator to delete what is held about them, the
+operator can erase that contact from its profile in the dashboard, with the
+`handle_data_requests` permission
+([how it works](../product/visitor-contact-management.md#erasing-a-contact)).
+The summary before confirmation lists what Wayfindr cannot reach. The operator
+remains responsible for those places:
+- backups taken before the erasure;
+- linked external issue trackers;
+- mail already sent;
+- the AI provider;
+- API integrations;
+- logs.
+
+The receipt reference shown afterwards identifies the erasure without naming
+the person, for the operator's reply and records.
+
+Restoring a backup taken before an erasure undoes it, until a later release
+makes restore re-apply erasures. Keep receipt references outside Wayfindr,
+and after such a restore erase those people again.
+
 ## Retention Defaults
 
 Wayfindr is pre-alpha and does not yet ship complete retention controls. Until

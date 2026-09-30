@@ -398,20 +398,41 @@ Ordered by real dogfood value and dependency, not feature novelty.
    (§20), and the owner decided that was enough without a non-author upgrade.
    #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
 
-4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
+4. **Finish visitor erasure (ADR 0026).** Delivery 1, erasing a contact, is in
+   Unreleased:
+   - `VisitorEraser`;
+   - the `handle_data_requests` permission;
+   - the `visitor_erasures` ledger;
+   - the summary and confirmation screens.
+
+   What it deletes, strips and keeps is `VisitorEraser::COVERAGE`, which
+   `VisitorErasureCoverageTest` holds to the live schema. A new table that can
+   reach a visitor fails that test until it is classified.
+   `VisitorErasureTest` plants a marker in every store and reads every table
+   afterwards.
+
+   Still owed:
+   - delivery 2: the restore re-applies ledger entries, which needs the volume
+     copy of the ledger (§8 of the ADR);
+   - delivery 3: the per-visitor export.
+
+   Until delivery 2 ships, the erasure summary tells the operator that
+   restoring an older backup brings the person back.
+
+5. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
    conversations choose the next branch-sized slice. After deployments, check
    `/operator`, failed queue jobs, mail, realtime, scheduler evidence, and
    backup/restore evidence without treating a fork sync or deploy receipt as
    runtime proof.
 
-5. **Keep expansion demand-gated.** Richer external-integration field mapping,
+6. **Keep expansion demand-gated.** Richer external-integration field mapping,
    direct-ticket/internal-note attachment variants, office-document opt-ins,
    pre-signed URLs, literal incremental cobrowse patching, and host SDK polish
    should start only when real traffic identifies the narrow need and preserves
    the existing security boundaries.
 
-6. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
+7. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
    implemented inside ADR 0004's human-review boundary. Four same-contract
    sixteen-case captures across three model/upstream routes produced one 16/16
    pass and three machine-scored failures. The owner completed human

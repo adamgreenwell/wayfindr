@@ -43,6 +43,8 @@ These are the account permissions Wayfindr models explicitly:
 | `manage_sites` | yes | yes | no | no |
 | `manage_site_access` | yes | yes | no | no |
 | `manage_privacy_settings` | yes | yes | no | yes |
+| `manage_contacts` | yes | yes | no | yes |
+| `handle_data_requests` | yes | yes | no | yes |
 | `manage_integrations` | yes | yes | no | no |
 | `manage_knowledge` | yes | yes | no | no |
 | `manage_security` | yes | yes | no | no |
@@ -57,7 +59,7 @@ These are the account permissions Wayfindr models explicitly:
 | `assign_tickets` | yes | yes | yes | yes |
 | `view_alerts` | yes | yes | yes | yes |
 
-Custom roles may contain any of these except `manage_roles`. Replying to, managing, or requesting cobrowse on a conversation requires `view_conversations`; assigning tickets requires `manage_tickets`. A visitor-facing reply sent from a linked ticket still requires both `view_conversations` and `reply_to_conversations`: `manage_tickets` alone does not expose or export the linked support code, transcript, message preview, or conversation history.
+Custom roles may contain any of these except `manage_roles`. Replying to, managing, or requesting cobrowse on a conversation requires `view_conversations`; assigning tickets requires `manage_tickets`; handling data requests (erasing a contact, [ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md)) requires `manage_contacts`. A visitor-facing reply sent from a linked ticket still requires both `view_conversations` and `reply_to_conversations`: `manage_tickets` alone does not expose or export the linked support code, transcript, message preview, or conversation history.
 
 A custom role needs both `manage_sites` and `manage_site_access` to create a site because the creator becomes its first explicit support assignment. Existing-site updates still follow their individual permissions and the creator is reauthorized under the account lock before the site is committed.
 

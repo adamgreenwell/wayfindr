@@ -3,10 +3,12 @@
 namespace App\Support;
 
 use App\Models\CobrowseSession;
+use App\Models\Conversation;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class CobrowseAuditTrail
 {
@@ -302,17 +304,29 @@ class CobrowseAuditTrail
      */
     private function record(CobrowseSession $session, ?Model $actor, string $action, array $metadata): void
     {
-        $session->loadMissing(['conversation', 'site']);
+        // Some events are written after their own transaction commits (a
+        // decline or a revocation, in the consent controller), so erasing the
+        // contact may have happened since. Under a shared lock on the
+        // conversation, the event lands before an erasure, whose scrub then
+        // covers it, or finds the conversation gone and names nobody: its
+        // actor and support code are what was erased (ADR 0026 §2).
+        DB::transaction(function () use ($session, $actor, $action, $metadata): void {
+            if (! Conversation::query()->whereKey($session->conversation_id)->sharedLock()->exists()) {
+                return;
+            }
 
-        $session->auditEvents()->create([
-            'account_id' => $session->site?->account_id,
-            'site_id' => $session->site_id,
-            'actor_type' => $actor ? $actor::class : null,
-            'actor_id' => $actor?->getKey(),
-            'action' => $action,
-            'metadata' => $metadata,
-            'occurred_at' => now(),
-        ]);
+            $session->loadMissing(['conversation', 'site']);
+
+            $session->auditEvents()->create([
+                'account_id' => $session->site?->account_id,
+                'site_id' => $session->site_id,
+                'actor_type' => $actor ? $actor::class : null,
+                'actor_id' => $actor?->getKey(),
+                'action' => $action,
+                'metadata' => $metadata,
+                'occurred_at' => now(),
+            ]);
+        });
     }
 
     private function supportCode(CobrowseSession $session): ?string

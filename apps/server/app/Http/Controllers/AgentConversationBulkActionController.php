@@ -17,6 +17,7 @@ use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -74,7 +75,11 @@ final class AgentConversationBulkActionController extends Controller
             ])->all(),
             'item_count' => $items->count(),
             'changed_count' => $changedCount,
-            'return_query' => $returnQuery,
+            // The search travels in the confirm form, not the session: it may
+            // be a person's name or email, and an unconfirmed preview would
+            // otherwise sit in session storage out of erasure's reach
+            // (ADR 0026 §4).
+            'return_query' => Arr::except($returnQuery, ['conversation_search']),
             'expires_at' => now()->addMinutes(self::PREVIEW_TTL_MINUTES)->getTimestamp(),
         ]);
 
@@ -95,7 +100,10 @@ final class AgentConversationBulkActionController extends Controller
         $account = $this->accountFor($agent);
         $data = $request->validate(['preview_token' => ['required', 'string', 'size:48']]);
         $preview = $request->session()->pull(self::PREVIEW_SESSION_PREFIX.$data['preview_token']);
-        $returnQuery = $this->returnQuery(is_array($preview) ? ($preview['return_query'] ?? []) : []);
+        $returnQuery = $this->returnQuery([
+            ...(is_array($preview) ? ($preview['return_query'] ?? []) : []),
+            ...$request->filled('return_search') ? ['conversation_search' => $request->input('return_search')] : [],
+        ]);
 
         if (! is_array($preview)
             || (int) ($preview['account_id'] ?? 0) !== (int) $account->id
@@ -109,7 +117,7 @@ final class AgentConversationBulkActionController extends Controller
         }
 
         try {
-            $run = DB::transaction(function () use ($account, $agent, $preview): ConversationBulkActionRun {
+            $run = DB::transaction(function () use ($account, $agent, $preview, $returnQuery): ConversationBulkActionRun {
                 $accountId = (int) $account->id;
                 $this->siteManagerCoverage->lockAccount($accountId);
                 $lockedAgent = User::query()
@@ -153,7 +161,10 @@ final class AgentConversationBulkActionController extends Controller
                     'item_count' => (int) $preview['item_count'],
                     'changed_count' => 0,
                     'changes' => [],
-                    'return_query' => $this->returnQuery($preview['return_query'] ?? []),
+                    // Every item selected, changed or not: erasure reads
+                    // it to find the runs whose search found a person.
+                    'item_ids' => array_map('intval', $conversations->modelKeys()),
+                    'return_query' => $returnQuery,
                 ]);
                 $changes = $this->bulkActions->apply(
                     $lockedAgent,
