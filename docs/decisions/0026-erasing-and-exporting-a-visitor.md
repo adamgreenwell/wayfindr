@@ -172,7 +172,10 @@ conversation gets the same treatment.
   the site wait), then the visitor and its aliases. The permission and site
   visibility are re-checked under the lock. Binaries are deleted after commit.
 - **Live dashboards drop the visitor** through the existing
-  `VisitorPresenceUpdated` removal path. A widget still holding the erased
+  `VisitorPresenceUpdated` removal path. That event has to be allowed to
+  broadcast a removal when no visitor remains, which after an erasure is
+  always the case: it declined for a missing visitor, which left the erased
+  contact on screen until the board's next resync. A widget still holding the erased
   visitor's token bootstraps a new, empty visitor next time it loads, exactly
   as a new browser would.
 
@@ -204,6 +207,10 @@ The same permission downloads a ZIP for one visitor:
   output (summary, reply draft, suggested ticket title and suggested
   articles);
 - `tickets/`: requested tickets with their notes;
+- `alerts.json`: the agent alerts that quote them. Each holds the
+  conversation or ticket subject, and a message alert also a preview of their
+  message and their browser ID. Erasure deletes these (§1), so they are data
+  held about the person;
 - `attachments/`: the binaries;
 - `README.txt`: what is included, and the §6 list of what is not.
 
