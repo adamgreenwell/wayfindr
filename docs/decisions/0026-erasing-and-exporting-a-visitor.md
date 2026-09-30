@@ -83,11 +83,17 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   a ticket stripped under §3. A ticket's alerts (assignment, SLA, automation)
   store its subject, which may be the person's words;
 - **SLA clocks and automation executions** whose subject is an erased
-  conversation. A ticket stripped under §3 keeps its own: they are the work
-  item's history and hold no content;
-- **pending outbound webhook deliveries** for erased resources, which are
-  cancelled. Delivered rows keep only identifiers (ADR 0020) and stay as
-  delivery history.
+  conversation. A ticket stripped under §3 keeps its own as the work item's
+  history: identifiers, outcomes and a copy of the rule's own text. The
+  exception is an execution's error message, which is raw exception text,
+  and a failed query quotes its values, so it can hold the ticket's or a
+  message's content. Erasure clears it on a stripped ticket's executions;
+- **outbound webhook deliveries** about erased conversations or stripped
+  tickets. Pending ones for erased conversations are cancelled. Every one
+  keeps its payload, which carries only identifiers (ADR 0020), and stays as
+  delivery history. Its stored response sample is cleared: up to 4 KB of
+  whatever the subscriber replied, which can echo what it fetched about the
+  person. This covers delivered and failed rows as well as pending ones.
 
 ### 2. Audit history keeps who did what, not what was said
 
@@ -142,8 +148,12 @@ conversation gets the same treatment.
 - **Break-glass grants** keep their operator-written reason. That is the record
   of a platform operator reading customer data, and its accountability purpose
   outweighs its incidental content.
-- **Bulk-action runs** keep their identifier lists. The `return_query` search
-  text of a run is not attributable to one person and expires with the run.
+- **Bulk-action runs** keep their identifier lists and before-and-after
+  values, so they can still be undone. Runs never expire, so erasure clears
+  the queue search saved in `return_query` on every run that touched an
+  erased conversation or a stripped ticket. That search is what the agent
+  typed to find the work, which may be the person's name or email. Undoing
+  such a run then returns to the unfiltered queue.
 - **Queued jobs** carry identifiers only. A job whose row has gone must no-op,
   and the implementation will prove it for every job that loads a conversation,
   message, ticket or attachment.
@@ -198,11 +208,13 @@ processing is the host's change to make, not Wayfindr's.
 
 ### 7. Export: everything held about one person
 
-The export is the read side of the erasure map. Every table the map deletes
-or strips contributes its rows, and so do the audit events §2 keeps. The
-contract test that holds the map to the schema also makes each entry say
-whether the export includes it, and why not when it doesn't. So a table that
-erasure reaches but the export skips fails the same test.
+The export is the read side of the erasure map, under one rule. Whatever
+erasure removes because it can hold the person's data is exported, and so are
+the audit events §2 keeps. Bookkeeping that erasure removes only because its
+parent row goes is not. The contract test that holds the map to the schema
+also makes each entry say whether the export includes it, and why not when it
+doesn't. So a table that erasure reaches but the export skips fails the same
+test.
 
 The same permission downloads a ZIP for one visitor:
 - `visitor.json`: identity fields, attribute values, known browser IDs, contact
@@ -226,13 +238,18 @@ The same permission downloads a ZIP for one visitor:
   person, an agent or the system acted, but not which agent: the agent's
   identity is data about the agent, and the operator adds it where their law
   requires naming who saw the data;
+- `incidental.json`: text Wayfindr kept in passing that can quote them. That
+  means the response samples of webhook deliveries about their conversations
+  and tickets, the error messages of automation runs on them, and the queue
+  searches saved by bulk actions that touched their work;
 - `attachments/`: the binaries;
 - `README.txt`: what is included, and the §6 list of what is not.
 
-What the export leaves out is the operator's own bookkeeping, not data about
-the person: which agent last read a thread, SLA targets, automation
-executions, webhook delivery history (identifiers only, §4). Each exclusion is
-written in the map with its reason, where the review above can see it.
+What the export leaves out is bookkeeping that erasure removes only because its
+parent row goes: which agent last read a thread, SLA clocks, an automation
+run's copy of its rule, and the identifiers of webhook deliveries. Each
+exclusion is written in the map with its reason, where the review above can see
+it.
 
 Contact notes are included. They are about the person and are usually
 disclosable, so the operator reviews the export before sending it and removes
