@@ -72,7 +72,12 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
 - identity aliases, contact notes and cobrowse sessions (all cascade today);
 - **every conversation whose visitor this is**, and with them their messages,
   ratings, read states, the four copilot tables, attachment rows and reply
-  deliveries (all cascade today);
+  deliveries (all cascade today). A copilot request that is already running
+  may be sending the transcript to the AI provider. Its job claims the row,
+  then calls out outside any lock, bounded only by its own timeout. So erasure
+  locks those rows and refuses while one started within twice that timeout,
+  as it does for a note post (§3). A request that started earlier has ended,
+  and whatever reached the provider is out of reach (§6);
 - **the attachment binaries**. Their disks and keys are collected before the
   delete and removed after commit, the pattern `SitePurge` already uses, with
   the orphan sweep as the backstop if storage is unavailable;
