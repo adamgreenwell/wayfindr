@@ -109,13 +109,16 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   and a failed query quotes its values, so it can hold the ticket's or a
   message's content. Erasure clears it on a stripped ticket's executions;
 - **failed queue jobs** whose payload or exception names the person by
-  email, host ID, browser ID or support code. A job that exhausted its
-  retries is kept with the exception it died on, and a mail server's
-  rejection quotes the address it refused. They are free text, so the person's
-  own identifiers find them, except one too short to be specific (a host ID
-  like `42`), which would match strangers. They are searched in whichever
-  store the operator configured: a table on any connection, a file, or
-  DynamoDB. Other failed-job text is diagnostics, like logs (§6);
+  email address or support code. A job that exhausted its retries is kept
+  with the exception it died on, and a mail server's rejection quotes the
+  address it refused. They are free text that says nothing of the site or
+  account a job was for, so only identifiers that name this person wherever
+  they appear find them: an address is one mailbox, and a support code is
+  unique across the install. A host or browser ID is unique only within its
+  site and would find other sites' visitors, so it is not used. Each must
+  appear whole, not inside a longer address or code. They are searched in
+  whichever store the operator configured: a table on any connection, a
+  file, or DynamoDB. Other failed-job text is diagnostics, like logs (§6);
 - **outbound webhook deliveries** about erased conversations or stripped
   tickets. Pending ones for erased conversations are cancelled. Every one
   keeps its payload, which carries only identifiers (ADR 0020), and stays as

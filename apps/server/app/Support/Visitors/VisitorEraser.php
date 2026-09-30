@@ -111,7 +111,7 @@ final class VisitorEraser
         'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
         'visitor_erasures' => 'the ledger itself: identifiers and counts only',
         'alert_mail_sends' => 'alert mail on its way to SMTP, by identifier only: erasure waits while one about the person is fresh, and removes the rest',
-        'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
+        'failed_jobs' => 'rows naming the person by email address or support code, whole, deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
     ];
 
     /**
@@ -238,8 +238,6 @@ final class VisitorEraser
             $proactive = $this->deleteProactiveDeliveries((int) $site->id, (int) $visitor->id, $scope['anonymous_ids']);
             $this->deleteFailedJobsNaming([
                 (string) $visitor->email,
-                (string) $visitor->external_id,
-                ...$scope['anonymous_ids'],
                 ...$scope['support_codes'],
             ]);
 
@@ -672,12 +670,12 @@ final class VisitorEraser
 
         $conversations = array_flip($scope['conversation_ids']);
         $tickets = array_flip($scope['ticket_ids']);
-        $userIds = User::query()->where('account_id', $accountId)->pluck('id');
         $doomed = [];
 
         DatabaseNotification::query()
             ->where('notifiable_type', (new User)->getMorphClass())
-            ->whereIn('notifiable_id', $userIds)
+            // A subquery, not a list: an account's agents are not bounded.
+            ->whereIn('notifiable_id', User::query()->select('id')->where('account_id', $accountId))
             ->select(['id', 'data'])
             ->chunkById(500, function (Collection $notifications) use ($conversations, $tickets, &$doomed): void {
                 foreach ($notifications as $notification) {
@@ -957,9 +955,13 @@ final class VisitorEraser
     /**
      * A job that exhausted its retries is kept with its payload and the
      * exception it died on, and a mail server's rejection quotes the address
-     * it refused. Both are free text, so the rows are found by the person's
-     * own identifiers. One too short to be specific (a host ID like "42")
-     * would match strangers, so it is not used.
+     * it refused. Both are free text, and say nothing of the site or account
+     * a job was for, so they are searched only for what names this person
+     * wherever it appears: their email address, one mailbox, and their
+     * support codes, unique across the install. A host or browser ID is
+     * unique only within its site, so it would find other sites' visitors
+     * too. Each must appear as a whole token, so a longer code or address
+     * that merely contains it is not a match.
      *
      * Wherever the operator keeps them: a database store on its own
      * connection is searched there, and a file or DynamoDB store through the
@@ -987,12 +989,9 @@ final class VisitorEraser
         }
 
         $failer = app('queue.failer');
-        $needles = array_map(fn (string $identifier): string => mb_strtolower($identifier), $identifiers);
 
         foreach ($failer->all() as $job) {
-            $text = mb_strtolower((string) data_get($job, 'payload').' '.data_get($job, 'exception'));
-
-            if (collect($needles)->contains(fn (string $needle): bool => str_contains($text, $needle))) {
+            if ($this->namesAny(data_get($job, 'payload').' '.data_get($job, 'exception'), $identifiers)) {
                 $failer->forget(data_get($job, 'id'));
             }
         }
@@ -1008,17 +1007,45 @@ final class VisitorEraser
             return;
         }
 
-        foreach ($identifiers as $identifier) {
-            $query = $connection->table($table);
-            $grammar = $query->getGrammar();
-            $pattern = LiteralLike::pattern($identifier);
-
-            $query->where(function (Builder $query) use ($grammar, $pattern): void {
+        // LIKE finds the candidates on any database; the whole-token check
+        // that decides is made here, the same for every store.
+        $query = $connection->table($table);
+        $grammar = $query->getGrammar();
+        $query->where(function (Builder $query) use ($grammar, $identifiers): void {
+            foreach ($identifiers as $identifier) {
                 foreach (['payload', 'exception'] as $column) {
-                    $query->orWhereRaw('LOWER('.$grammar->wrap($column).') LIKE LOWER(?) ESCAPE ?', [$pattern, '\\']);
+                    $query->orWhereRaw('LOWER('.$grammar->wrap($column).') LIKE LOWER(?) ESCAPE ?', [LiteralLike::pattern($identifier), '\\']);
                 }
-            })->delete();
+            }
+        });
+
+        $doomed = $query->get(['id', 'payload', 'exception'])
+            ->filter(fn (object $job): bool => $this->namesAny($job->payload.' '.$job->exception, $identifiers))
+            ->pluck('id')
+            ->all();
+
+        foreach (array_chunk($doomed, 500) as $ids) {
+            $connection->table($table)->whereIn('id', $ids)->delete();
         }
+    }
+
+    /**
+     * Whether the text names one of the identifiers as a whole token, not as
+     * part of a longer address or code.
+     *
+     * @param  list<string>  $identifiers
+     */
+    private function namesAny(string $text, array $identifiers): bool
+    {
+        foreach ($identifiers as $identifier) {
+            $pattern = '/(?<![\\p{L}\\p{N}._%+-])'.preg_quote($identifier, '/').'(?![\\p{L}\\p{N}_%+-]|\\.[\\p{L}\\p{N}])/iu';
+
+            if (preg_match($pattern, $text) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

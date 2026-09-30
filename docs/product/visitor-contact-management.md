@@ -148,8 +148,7 @@ through the password reset link first. The erasure then, in one transaction:
 - clears text kept in passing that can quote them: the queue search saved by
   a bulk action that selected their work, which stays undoable, the error
   text of a failed automation run on one of their tickets, and failed
-  background jobs that name them by email, host ID, browser ID or support
-  code;
+  background jobs that name them by email address or support code;
 - keeps the record of any break-glass access to their conversations, with its
   reason, but relabels it `Conversation (deleted)`.
 

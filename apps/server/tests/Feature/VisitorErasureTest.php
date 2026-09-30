@@ -661,6 +661,37 @@ test('a break-glass view recorded just after an erasure does not name the conver
         ->and($viewed->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late view kept the stale scope label');
 });
 
+test('failed jobs are matched only by what names this person, whole', function (): void {
+    $f = erasureFixture();
+    $email = (string) $f['visitor']->email;
+    $code = (string) $f['conversation']->support_code;
+    $job = fn (string $exception): int => DB::table('failed_jobs')->insertGetId([
+        'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        'payload' => json_encode(['displayName' => 'App\\Jobs\\DeliverOutboundWebhook']),
+        'exception' => $exception, 'failed_at' => now(),
+    ]);
+    $theirs = [
+        $job("550 5.1.1 <{$email}>: Recipient address rejected"),
+        $job("Webhook for {$code} was refused."),
+    ];
+    // Another mailbox and another code that merely contain theirs, and a host
+    // ID, which another site's visitor may share: failed-job text cannot say
+    // which site it was about.
+    $others = [
+        $job("550 5.1.1 <x{$email}>: Recipient address rejected"),
+        $job("550 5.1.1 <{$email}.example.org>: Recipient address rejected"),
+        $job("Webhook for {$code}9 was refused."),
+        $job('Host lookup for '.$f['visitor']->external_id.' failed.'),
+    ];
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $left = DB::table('failed_jobs')->pluck('id')->all();
+
+    expect(array_values(array_intersect($theirs, $left)))->toBe([], 'a failed job naming the person was kept')
+        ->and(array_values(array_diff($others, $left)))->toBe([], 'a failed job that only resembles the person went too');
+});
+
 test('failed jobs are erased from wherever the operator keeps them', function (string $store): void {
     $f = erasureFixture();
     $address = (string) $f['visitor']->email;
@@ -794,6 +825,11 @@ test('an automation failure recorded just after an erasure keeps nothing of the 
 test('a long history is summarized and erased in chunks the database can bind', function (): void {
     $f = erasureFixture();
     $now = now();
+
+    // An account's agents are not bounded either.
+    foreach (User::factory()->count(600)->for($f['account'])->make()->chunk(200) as $agents) {
+        DB::table('users')->insert($agents->map(fn (User $agent): array => [...$agent->getAttributes(), 'created_at' => $now, 'updated_at' => $now])->values()->all());
+    }
 
     foreach (array_chunk(range(1, 1100), 200) as $batch) {
         DB::table('tickets')->insert(array_map(fn (int $n): array => [
