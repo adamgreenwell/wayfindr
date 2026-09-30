@@ -39,6 +39,11 @@ apps/server && php artisan wayfindr:backup`.
   does *not* carry, and a fingerprint of the `APP_KEY` the backup was taken
   with.
 
+It deliberately does **not** capture the erasure ledger in
+`storage/app/erasure-ledger/`: a restore reads it to erase again anyone the
+archive brings back, so an archive must not be able to roll it back. See
+[Erasures survive a restore](#erasures-survive-a-restore).
+
 ### The archive needs the `APP_KEY` it does not contain
 
 Several columns are encrypted at rest with `APP_KEY` — single sign-on client
@@ -282,6 +287,9 @@ event, so it is guarded:
   archive and reports any that are missing (dangling), and it names rows whose
   binaries live in an external object store (which it cannot verify from the
   box — keep those buckets reachable).
+- It **erases again every contact erased since the archive was taken**, from
+  the ledger on the storage volume. See
+  [Erasures survive a restore](#erasures-survive-a-restore).
 
 ### Restoring from the operator GUI
 
@@ -380,7 +388,8 @@ docker compose --env-file .env exec web \
   php artisan wayfindr:restore /backups/wayfindr-backup-20260722-181500-a1b2c3.tar.gz --force
 
 # 3. If the archive predates a schema change, the command will have warned;
-#    bring the schema forward.
+#    bring the schema forward. This also erases again any contacts the restore
+#    had to leave until the schema caught up.
 docker compose --env-file .env exec web php artisan migrate --force
 
 # 4. Restart the workers and lift maintenance mode.
@@ -409,6 +418,67 @@ wholesale before repopulating it — so a failure in the attachment phase leaves
 committed database beside half-restored disks. Both the command and the operator
 console say so when it happens; verify the database **and** the attachment disks
 before serving traffic.
+
+### Erasures survive a restore
+
+Erasing a contact on request
+([ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md)) writes a
+small file per erasure to `storage/app/erasure-ledger/` on the storage volume:
+internal IDs, the site's public key, a time and the receipt reference, never a
+name or any content. Inside the containers that is
+`/app/apps/server/storage/app/erasure-ledger`, in the `wayfindr-storage`
+volume. Backups do not capture it, so restoring an archive taken before an
+erasure cannot roll the record of it back.
+
+**What a restore does with it.** Both the command and the operator console:
+1. **Before** replacing the database, settle any erasure that was interrupted.
+   An erasure the old database cannot confirm is kept as done, and its
+   receipt is listed.
+2. **After** loading the dump, move the visitor ID sequence past every ID the
+   ledger names, so no new contact can be given an erased person's ID.
+3. **Then** erase again everyone the archive brought back, including
+   contacts that were merged into them, and remove their files.
+
+The summary says how many:
+
+```
+  Erasures re-applied: 2 contact(s), from 1 of the 14 erasure(s) in the ledger.
+```
+
+An archive **older than the running code** needs its migrations first, since
+erasing works on today's tables. The restore then says:
+
+```
+  Erasures are re-applied once migrations have run. Keep the app in maintenance mode until php artisan migrate --force has finished.
+```
+
+Step 3 of the procedure above does it, and `migrate` prints an
+`Erasures re-applied after the restore` line when it has. The console restore keeps the site in
+maintenance mode until then.
+
+If erasing again **fails**, the people erased since the archive was taken may
+be back. The restore says so, and the command exits non-zero. The next
+`migrate` or hourly scheduled run tries again. Keep the app in maintenance mode,
+fix the cause the message names, then run
+`php artisan wayfindr:finish-erasures` yourself and read its output.
+
+**Keep the ledger alongside your backups.** A restore onto a **new** storage
+volume, such as disaster recovery onto new hardware, has no ledger to read.
+It warns:
+
+```
+  This storage volume held no erasure ledger, so contacts erased after this archive was taken cannot be erased again here. Keep /app/apps/server/storage/app/erasure-ledger alongside your backups.
+```
+
+So copy `storage/app/erasure-ledger/` wherever your archives go, and put it
+back in place on the new volume **before** restoring. An older copy is still
+useful: it covers every erasure up to when it was taken. Set
+`WAYFINDR_ERASURE_LEDGER_PATH` to keep the ledger somewhere else on persistent
+storage.
+
+Only `wayfindr:restore` and the operator console re-apply erasures. A dump
+loaded by hand re-applies nothing, even with the ledger in place. Keep receipt
+references outside Wayfindr, and after such a restore erase those people again.
 
 ## Deferred
 

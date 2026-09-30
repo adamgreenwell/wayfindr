@@ -398,12 +398,25 @@ Ordered by real dogfood value and dependency, not feature novelty.
    (§20), and the owner decided that was enough without a non-author upgrade.
    #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
 
-4. **Finish visitor erasure (ADR 0026).** Delivery 1, erasing a contact, is in
-   Unreleased:
+4. **Finish visitor erasure (ADR 0026).** Deliveries 1 and 2 are in
+   Unreleased. Delivery 1, erasing a contact:
    - `VisitorEraser`;
    - the `handle_data_requests` permission;
    - the `visitor_erasures` ledger;
    - the summary and confirmation screens.
+
+   Delivery 2, erasures surviving a restore:
+   - `ErasureLedger`, one file per erasure under `storage/app/erasure-ledger/`,
+     written pending before anything changes and promoted after the commit;
+   - reconciliation and backfill, in `wayfindr:finish-erasures` and at both
+     ends of a restore;
+   - `ErasureReapplier`, which `RestoreService` calls to move the visitor ID
+     sequence and erase again;
+   - `ReapplyErasuresAfterMigrating`, for an archive older than the code.
+
+   `VisitorErasureRestoreTest` restores a stand-in archive that brings the
+   person back. Every test gets its own ledger directory from
+   `Tests\TestCase`, so none writes to `storage/`.
 
    What it deletes, strips and keeps is `VisitorEraser::COVERAGE`, which
    `VisitorErasureCoverageTest` holds to the live schema. A new table that can
@@ -411,13 +424,7 @@ Ordered by real dogfood value and dependency, not feature novelty.
    `VisitorErasureTest` plants a marker in every store and reads every table
    afterwards.
 
-   Still owed:
-   - delivery 2: the restore re-applies ledger entries, which needs the volume
-     copy of the ledger (§8 of the ADR);
-   - delivery 3: the per-visitor export.
-
-   Until delivery 2 ships, the erasure summary tells the operator that
-   restoring an older backup brings the person back.
+   Still owed: delivery 3, the per-visitor export.
 
 5. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual

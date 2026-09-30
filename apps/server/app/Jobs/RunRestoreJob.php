@@ -172,10 +172,16 @@ class RunRestoreJob implements ShouldQueue
             // while they authenticate. Bringing that back online automatically
             // would hand the operator a site that looks restored and refuses
             // its own staff.
+            //
+            // So do erasures not yet re-applied (ADR 0026 §8): until they are,
+            // contacts erased since the backup was taken are back, and lifting
+            // maintenance would serve them to every agent.
             $this->keepMaintenance = (bool) ($result['version_skew'] ?? false)
                 || (bool) ($result['version_indeterminate'] ?? false)
                 || (bool) ($result['app_key_skew'] ?? false)
-                || (bool) ($result['app_key_indeterminate'] ?? false);
+                || (bool) ($result['app_key_indeterminate'] ?? false)
+                || ($result['erasures']['failed'] ?? null) !== null
+                || (bool) ($result['erasures']['deferred'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
@@ -491,7 +497,48 @@ class RunRestoreJob implements ShouldQueue
             $parts[] = count($dangling).' attachment(s) referenced by the database are missing their files.';
         }
 
+        $parts[] = $this->erasureMessage($result['erasures'] ?? []);
+
         $parts[] = $this->workerRestartHint();
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * What became of the erasures the backup predates (ADR 0026 §8), in the
+     * same terms the command uses.
+     *
+     * @param  array<string, mixed>  $erasures
+     */
+    private function erasureMessage(array $erasures): string
+    {
+        $parts = [];
+
+        if ($erasures['fresh_volume'] ?? false) {
+            $parts[] = 'This storage volume held no erasure ledger, so contacts erased after this backup was '
+                .'taken cannot be erased again here. Keep '.config('wayfindr.erasure.ledger_path').' alongside your backups.';
+        }
+
+        if (($erasures['unconfirmed'] ?? []) !== []) {
+            $parts[] = 'The replaced database could not confirm these erasures, so they are treated as done: '
+                .implode(', ', $erasures['unconfirmed']).'.';
+        }
+
+        if (($erasures['failed'] ?? null) !== null) {
+            $parts[] = 'Erasures could NOT all be re-applied, so contacts erased since this backup was taken may be '
+                .'back: '.$erasures['failed'].' The site is being kept in maintenance mode. Fix the cause, then run '
+                .'`php artisan wayfindr:finish-erasures` before `php artisan up`.';
+        } elseif ($erasures['deferred'] ?? false) {
+            $parts[] = 'Erasures are re-applied once migrations have run: `php artisan migrate --force` does it, '
+                .'and the site is being kept in maintenance mode until then.';
+        } else {
+            $parts[] = sprintf(
+                'Erasures re-applied: %d contact(s), from %d of the %d erasure(s) in the ledger.',
+                (int) ($erasures['visitors'] ?? 0),
+                (int) ($erasures['reapplied'] ?? 0),
+                (int) ($erasures['entries'] ?? 0),
+            );
+        }
 
         return implode(' ', $parts);
     }

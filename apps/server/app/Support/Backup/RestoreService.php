@@ -8,6 +8,7 @@ use App\Support\Release\ReleaseState;
 use App\Support\Settings\OperatorSettings;
 use App\Support\Version\SemanticVersion;
 use App\Support\Version\VersionComparator;
+use App\Support\Visitors\ErasureReapplier;
 use FilesystemIterator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -45,6 +46,7 @@ class RestoreService
     public function __construct(
         private readonly DatabaseRestorer $restorer,
         private readonly OperatorSettings $operatorSettings,
+        private readonly ErasureReapplier $erasures,
     ) {}
 
     /**
@@ -148,6 +150,7 @@ class RestoreService
      *     restored_disks: list<string>,
      *     unconfigured_disks: list<string>,
      *     integrity: array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>},
+     *     erasures: array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null},
      * }
      */
     public function restore(string $archivePath, bool $force = false): array
@@ -204,6 +207,18 @@ class RestoreService
 
             $localDisks = $this->localDisksFrom($manifest);
 
+            // The last moment the database being replaced can say which
+            // pending erasures committed (ADR 0026 §8). Nothing has changed
+            // yet, so a ledger that cannot be settled stops the restore here.
+            try {
+                $erasuresBefore = $this->erasures->beforeRestore();
+            } catch (Throwable $exception) {
+                throw new RuntimeException(
+                    'The erasure ledger could not be settled, so nothing was restored: '.$exception->getMessage(),
+                    previous: $exception,
+                );
+            }
+
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
 
@@ -242,6 +257,26 @@ class RestoreService
             // Put local attachment binaries back where their rows expect them.
             $attachments = $this->restoreAttachments($work, $localDisks);
 
+            // Erase again whoever the archive brought back (ADR 0026 §8),
+            // after the binaries are back so theirs go too. A failure leaves a
+            // restored install with erased people in it, and is reported as
+            // that rather than as the attachment failure the catch below
+            // describes. The ledger keeps the work outstanding for the next
+            // migrate or scheduled run.
+            try {
+                $erasures = [...$erasuresBefore, ...$this->erasures->afterRestore()];
+            } catch (Throwable $exception) {
+                report($exception);
+                $erasures = [
+                    ...$erasuresBefore,
+                    'entries' => 0,
+                    'reapplied' => 0,
+                    'visitors' => 0,
+                    'deferred' => false,
+                    'failed' => $exception->getMessage(),
+                ];
+            }
+
             // The dump's rows are now ground truth: verify each locally-homed
             // row's binary actually landed on a usable disk, and report the rest.
             $integrity = $this->verifyAttachmentIntegrity(
@@ -264,8 +299,14 @@ class RestoreService
                 'restored_disks' => $attachments['restored'],
                 'unconfigured_disks' => $attachments['unconfigured'],
                 'integrity' => $integrity,
+                'erasures' => $erasures,
             ];
         } catch (Throwable $exception) {
+            // Nothing was replaced, so there is nothing to re-apply.
+            if (! $destructiveWorkBegan && isset($erasuresBefore)) {
+                $this->erasures->abandon();
+            }
+
             throw $destructiveWorkBegan
                 ? PartialRestoreException::from($exception)
                 : $exception;
@@ -348,7 +389,7 @@ class RestoreService
      * command and the queued job must say so, and they must say the same thing,
      * so the sentence lives here rather than in either of them.
      */
-    public const PARTIAL_FAILURE_ADVICE = 'The database load is transactional, but attachment binaries are restored after it commits and the disks are purged first — so this may have applied only partially. Verify the database AND the attachment disks before serving traffic, then re-run the restore or put the previous archive back.';
+    public const PARTIAL_FAILURE_ADVICE = 'The database load is transactional, but attachment binaries are restored after it commits and the disks are purged first — so this may have applied only partially. Verify the database AND the attachment disks before serving traffic, then re-run the restore or put the previous archive back. Erasures the archive predates have not been re-applied yet: keep the app in maintenance mode until a restore completes.';
 
     public function preflight(string $archivePath): array
     {

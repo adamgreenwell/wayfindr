@@ -32,7 +32,7 @@ return [
     ],
     'unreachable' => [
         'heading' => 'Cosa la cancellazione non può raggiungere',
-        'backups' => 'I backup creati prima di adesso contengono ancora i dati di questa persona, e ripristinarne uno li riporta indietro.',
+        'backups' => 'I backup creati prima di adesso contengono ancora i dati di questa persona. Un ripristino tramite Wayfindr li cancella di nuovo, ma solo finché questa installazione conserva il volume di archiviazione su cui registra le sue cancellazioni.',
         'external' => 'Le issue esterne collegate conservano ciò che vi è stato copiato:',
         'mail' => 'Le risposte già inviate per email.',
         'ai' => 'Quanto il fornitore di IA ha conservato delle richieste al copilot.',
@@ -48,6 +48,7 @@ return [
         'confirm' => 'Digiti esattamente :word per confermare.',
         'alert_mail_sending' => 'Un\'email di avviso sulle conversazioni o sui ticket di questo contatto è in fase di invio a un agente. Non è stato cancellato nulla. Riprovi tra un paio di minuti.',
         'copilot_running' => 'L\'assistente IA sta lavorando su una conversazione di questo contatto, quindi la trascrizione potrebbe essere in invio al fornitore IA. Non è stato cancellato nulla. Riprovi tra qualche minuto.',
+        'ledger_unwritable' => 'Wayfindr non è riuscito a registrare questa cancellazione sul suo volume di archiviazione, quindi non è stato cancellato nulla. Chieda a chi gestisce questa installazione di verificare che l\'archiviazione sia scrivibile, poi riprovi.',
         'note_posting' => 'Una nota su un ticket di questo contatto è in fase di pubblicazione sulla issue collegata. Non è stato cancellato nulla. Riprovi tra un paio di minuti.',
     ],
     'ticket_subject' => 'Ticket #:number (richiedente cancellato)',

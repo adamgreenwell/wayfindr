@@ -114,6 +114,8 @@ final class VisitorEraser
         'failed_jobs' => 'rows naming the person by email address or support code, whole, deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
     ];
 
+    public function __construct(private readonly ErasureLedger $ledger) {}
+
     /**
      * What erasing this visitor would do, for the confirmation screen.
      *
@@ -151,151 +153,132 @@ final class VisitorEraser
 
     public function erase(User $actor, Visitor $visitor): VisitorErasure
     {
-        [$receipt, $site, $erasedId] = DB::transaction(function () use ($actor, $visitor): array {
-            // The contact merge's lock order, so the two can never deadlock:
-            // account, actor, site, then the visitor rows.
-            $accountId = (int) $actor->account_id;
-            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
-            $actor = User::query()
-                ->whereKey($actor->id)
-                ->where('account_id', $accountId)
-                ->lockForUpdate()
-                ->firstOrFail();
+        $receiptId = (string) Str::uuid();
+        // The transaction's last statement. An exception before it rolled the
+        // erasure back; one after it came from the commit, which may have
+        // happened all the same, and only the database can settle that.
+        $bodyCompleted = false;
 
-            abort_unless($actor->hasAccountPermission(AccountPermission::HandleDataRequests), 403);
+        try {
+            [$receipt, $site, $erasedId] = DB::transaction(function () use ($actor, $visitor, $receiptId, &$bodyCompleted): array {
+                // The contact merge's lock order, so the two can never deadlock:
+                // account, actor, site, then the visitor rows.
+                $accountId = (int) $actor->account_id;
+                Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+                $actor = User::query()
+                    ->whereKey($actor->id)
+                    ->where('account_id', $accountId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            // Exclusive: public widget writes that create visitor-owned rows
-            // take a shared lock on the site, so none lands mid-erasure.
-            $site = Site::query()
-                ->whereKey($visitor->site_id)
-                ->where('account_id', $accountId)
-                ->lockForUpdate()
-                ->firstOrFail();
+                abort_unless($actor->hasAccountPermission(AccountPermission::HandleDataRequests), 403);
 
-            $visitor = Visitor::query()
-                ->whereKey($visitor->id)
-                ->where('site_id', $site->id)
-                ->lockForUpdate()
-                ->first();
+                // Exclusive: public widget writes that create visitor-owned rows
+                // take a shared lock on the site, so none lands mid-erasure. It is
+                // also what a reconciliation of this erasure's ledger entry waits
+                // for (§8).
+                $site = Site::query()
+                    ->whereKey($visitor->site_id)
+                    ->where('account_id', $accountId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            abort_unless($visitor instanceof Visitor, 404);
-            abort_unless(Gate::forUser($actor)->allows('view', $visitor), 404);
+                $visitor = Visitor::query()
+                    ->whereKey($visitor->id)
+                    ->where('site_id', $site->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            $scope = $this->scope($visitor);
-            // Before the scrub, which replaces the metadata that holds it.
-            $mergedIds = $this->mergedVisitorIds($visitor);
-            // Before anything that scans for what names them: an alert or a
-            // break-glass view stored under a shared lock on one of these rows
-            // now lands either before this point, and is found, or after the
-            // commit, when it can see the erasure.
-            $this->whereInChunks(
-                DB::table('conversations'),
-                'id',
-                $scope['conversation_ids'],
-                fn (Builder $query) => $query->lockForUpdate()->get(['id']),
-            );
-            $breakGlassGrants = $this->idsIn(
-                BreakGlassGrant::query()->where('account_id', $accountId),
-                'conversation_id',
-                $scope['conversation_ids'],
-            );
+                abort_unless($visitor instanceof Visitor, 404);
+                abort_unless(Gate::forUser($actor)->allows('view', $visitor), 404);
 
-            $this->refuseWhileNotesArePosting($scope['ticket_ids']);
-            $this->refuseWhileCopilotIsRunning($scope['conversation_ids']);
+                $erasedAt = now();
+                $erased = $this->removeVisitor(
+                    $accountId,
+                    $site,
+                    $visitor,
+                    function (array $mergedIds, array $pendingFiles) use ($receiptId, $accountId, $site, $visitor, $actor, $erasedAt): void {
+                        // On the volume before anything changes, and flushed
+                        // there, so an erasure the database commits is never
+                        // missing from the ledger a restore reads. If it cannot
+                        // be written, nothing is erased.
+                        try {
+                            $this->ledger->writePending(ErasureLedger::entry(
+                                $receiptId,
+                                $accountId,
+                                $site,
+                                (int) $visitor->id,
+                                $mergedIds,
+                                (int) $actor->id,
+                                $erasedAt->toIso8601ZuluString(),
+                                $pendingFiles,
+                            ));
+                        } catch (\Throwable $e) {
+                            report($e);
 
-            // Collected before the rows go: the cascade takes the only record
-            // of where each binary lives. Kept on the receipt below, not only
-            // in memory, so a crash after the commit cannot lose them.
-            $pendingFiles = [];
-            $this->whereInChunks(
-                DB::table('conversation_message_attachments'),
-                'conversation_id',
-                $scope['conversation_ids'],
-                function (Builder $query) use (&$pendingFiles): void {
-                    foreach ($query->whereNotNull('storage_key')->get(['storage_disk', 'storage_key']) as $file) {
-                        $pendingFiles[] = ['disk' => (string) $file->storage_disk, 'key' => (string) $file->storage_key];
-                    }
-                },
-            );
+                            throw ValidationException::withMessages([
+                                'confirmation' => __('visitor_erasure.errors.ledger_unwritable'),
+                            ]);
+                        }
+                    },
+                );
 
-            $this->stripTickets($scope['ticket_ids']);
-            // After stripTickets, which locks the tickets, as the conversations
-            // are locked above: an alert mail past its pre-SMTP check is on
-            // record by now, and one that is not will see the erasure.
-            $this->refuseWhileAlertMailIsSending($scope['conversation_ids'], $scope['ticket_ids']);
-            $audited = $this->scrubAuditEvents($scope);
-            // SLA deliveries before the alerts they belong to: the check every
-            // alert mail makes just before SMTP locks them in that order, so
-            // the two cannot deadlock. That check is also what stops a send a
-            // worker has already claimed, once these rows are gone.
-            $this->deleteConversationBookkeeping($scope['conversation_ids']);
-            $this->cancelTicketSlaDeliveries($scope['ticket_ids']);
-            $notifications = $this->deleteNotifications($accountId, $scope);
-            $this->clearTicketAutomationErrors($scope['ticket_ids']);
-            $this->clearBulkRunSearches($accountId, $scope['conversation_ids'], $scope['ticket_ids']);
-            $cancelled = $this->cancelPendingWebhooks((int) $site->id, $scope['support_codes']);
-            $this->clearWebhookResponses((int) $site->id, $scope['support_codes'], $scope['ticket_ids']);
-            $proactive = $this->deleteProactiveDeliveries((int) $site->id, (int) $visitor->id, $scope['anonymous_ids']);
-            $this->deleteFailedJobsNaming([
-                (string) $visitor->email,
-                ...$scope['support_codes'],
-            ]);
+                $receipt = VisitorErasure::query()->create([
+                    'public_id' => $receiptId,
+                    'account_id' => $accountId,
+                    'site_id' => $site->id,
+                    'erased_visitor_id' => $erased['visitor_id'],
+                    'merged_visitor_ids' => $erased['merged_ids'],
+                    'actor_id' => $actor->id,
+                    'counts' => $erased['counts'],
+                    'pending_files' => $erased['pending_files'] === [] ? null : $erased['pending_files'],
+                    'erased_at' => $erasedAt,
+                ]);
 
-            $this->whereInChunks(
-                DB::table('conversations'),
-                'id',
-                $scope['conversation_ids'],
-                fn (Builder $query) => $query->delete(),
-            );
+                // Written after the scrub, so it is not scrubbed itself. Counts and
+                // the receipt only: the record that the erasure happened must not
+                // become a record of who was erased.
+                AuditEvent::query()->create([
+                    'account_id' => $accountId,
+                    'site_id' => $site->id,
+                    'actor_type' => $actor->getMorphClass(),
+                    'actor_id' => $actor->id,
+                    'subject_type' => $visitor->getMorphClass(),
+                    'subject_id' => $erased['visitor_id'],
+                    'action' => 'visitor.erased',
+                    'metadata' => [
+                        'receipt' => $receipt->public_id,
+                        'erased' => $erased['counts'],
+                    ],
+                    'occurred_at' => now(),
+                ]);
 
-            // After the conversations go, so a view recorded while they were
-            // locked is relabelled too; the grants were collected before the
-            // delete nulled their conversation.
-            $this->relabelBreakGlassTrail($accountId, $scope['conversation_ids'], $breakGlassGrants);
+                $bodyCompleted = true;
 
-            $erasedId = (int) $visitor->id;
-            DB::table('visitors')->where('id', $erasedId)->delete();
+                return [$receipt, $site, $erased['visitor_id']];
+            });
+        } catch (\Throwable $e) {
+            // Rolled back for certain, so its entry goes now. A failed commit
+            // leaves the entry pending for reconciliation to settle.
+            if (! $bodyCompleted) {
+                try {
+                    $this->ledger->discard($receiptId);
+                } catch (\Throwable $discardFailure) {
+                    report($discardFailure);
+                }
+            }
 
-            $counts = [
-                ...$scope['counts'],
-                'notifications' => $notifications,
-                'proactive_deliveries' => $proactive,
-                'webhook_deliveries_cancelled' => $cancelled,
-                'audit_events_scrubbed' => $audited,
-            ];
+            throw $e;
+        }
 
-            $receipt = VisitorErasure::query()->create([
-                'public_id' => (string) Str::uuid(),
-                'account_id' => $accountId,
-                'site_id' => $site->id,
-                'erased_visitor_id' => $erasedId,
-                'merged_visitor_ids' => $mergedIds,
-                'actor_id' => $actor->id,
-                'counts' => $counts,
-                'pending_files' => $pendingFiles === [] ? null : $pendingFiles,
-                'erased_at' => now(),
-            ]);
-
-            // Written after the scrub, so it is not scrubbed itself. Counts and
-            // the receipt only: the record that the erasure happened must not
-            // become a record of who was erased.
-            AuditEvent::query()->create([
-                'account_id' => $accountId,
-                'site_id' => $site->id,
-                'actor_type' => $actor->getMorphClass(),
-                'actor_id' => $actor->id,
-                'subject_type' => $visitor->getMorphClass(),
-                'subject_id' => $erasedId,
-                'action' => 'visitor.erased',
-                'metadata' => [
-                    'receipt' => $receipt->public_id,
-                    'erased' => $counts,
-                ],
-                'occurred_at' => now(),
-            ]);
-
-            return [$receipt, $site, $erasedId];
-        });
+        // Committed, so the erasure has happened: a rename that fails here is
+        // reported, not returned. The pending entry already holds everything,
+        // and reconciliation promotes it.
+        try {
+            $this->ledger->promote($receiptId);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         // After the commit, as in the site purge: deleting first would leave
         // live rows pointing at missing files. What cannot be removed now
@@ -303,50 +286,343 @@ final class VisitorEraser
         // happened by here, so a failure is reported, not returned: the
         // receipt still lists every file until it is shortened.
         try {
-            $this->removePendingFiles($receipt);
+            $this->removePendingFiles($receiptId);
         } catch (\Throwable $e) {
             report($e);
         }
 
-        // The erased row may be on an agent's live board. With the row gone
-        // the event carries only its removal. A realtime failure never undoes
-        // the durable erasure; the board's periodic resync is the fallback.
-        try {
-            $gone = new Visitor;
-            $gone->forceFill(['id' => $erasedId, 'site_id' => $site->id]);
-            event(new VisitorPresenceUpdated($site, $gone, $erasedId));
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        $this->announceRemoval($site, $erasedId);
 
-        return $receipt;
+        return $receipt->refresh();
     }
 
     /**
-     * Remove the binaries an erasure left on its receipt, keeping any that
-     * storage would not delete for the next attempt. Returns how many remain.
+     * Erase again every visitor a ledger entry names that the database holds
+     * (§8): after a restore brought back rows from before the erasure, under
+     * the erased visitor's ID or that of anyone merged into them. Returns how
+     * many visitors it erased; none, when the database holds none of them.
+     *
+     * The ledger row goes back with them, under the same receipt, so later
+     * backups carry it: the restored database may predate it.
+     *
+     * @param  array<string, mixed>  $entry
      */
-    public function removePendingFiles(VisitorErasure $erasure): int
+    public function reapply(array $entry): int
     {
-        $remaining = [];
+        $receiptId = (string) ($entry['receipt'] ?? '');
+        $lineage = ErasureLedger::lineage($entry);
 
-        foreach ($erasure->pending_files ?? [] as $file) {
-            try {
-                $disk = Storage::disk((string) ($file['disk'] ?? ''));
-                $key = (string) ($file['key'] ?? '');
+        if ($receiptId === '' || $lineage === []) {
+            return 0;
+        }
 
-                if ($key !== '' && $disk->exists($key) && ! $disk->delete($key)) {
-                    $remaining[] = $file;
+        $reapplied = DB::transaction(function () use ($entry, $receiptId, $lineage): ?array {
+            $site = $this->siteOf($entry, $lineage);
+
+            if ($site === null) {
+                return null;
+            }
+
+            // The erasure's lock order: account, site, then the visitors.
+            Account::query()->whereKey($site->account_id)->lockForUpdate()->firstOrFail();
+            $site = Site::query()->whereKey($site->id)->lockForUpdate()->firstOrFail();
+            $visitors = Visitor::query()
+                ->where('site_id', $site->id)
+                ->whereIn('id', $lineage)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($visitors->isEmpty()) {
+                return null;
+            }
+
+            $accountId = (int) $site->account_id;
+            $counts = [];
+            $pendingFiles = [];
+
+            foreach ($visitors as $visitor) {
+                $erased = $this->removeVisitor($accountId, $site, $visitor, static function (): void {});
+                $pendingFiles = [...$pendingFiles, ...$erased['pending_files']];
+
+                foreach ($erased['counts'] as $key => $count) {
+                    $counts[$key] = ($counts[$key] ?? 0) + $count;
                 }
+            }
+
+            // Listed on the row in this transaction, as an erasure does, so a
+            // crash after the commit cannot lose them.
+            $receipt = VisitorErasure::query()->where('public_id', $receiptId)->lockForUpdate()->first();
+            $files = ErasureLedger::files([...($receipt?->pending_files ?? []), ...$pendingFiles]);
+
+            if ($receipt === null) {
+                $actorId = is_int($entry['actor_id'] ?? null) ? $entry['actor_id'] : null;
+                $receipt = VisitorErasure::query()->create([
+                    'public_id' => $receiptId,
+                    'account_id' => $accountId,
+                    'site_id' => $site->id,
+                    'erased_visitor_id' => (int) $entry['erased_visitor_id'],
+                    'merged_visitor_ids' => array_values(array_diff($lineage, [(int) $entry['erased_visitor_id']])),
+                    // The agent who erased may postdate the restored database.
+                    'actor_id' => $actorId !== null && User::query()->whereKey($actorId)->where('account_id', $accountId)->exists() ? $actorId : null,
+                    'counts' => $counts,
+                    'pending_files' => $files === [] ? null : $files,
+                    'erased_at' => Carbon::parse((string) $entry['erased_at']),
+                ]);
+            } else {
+                $receipt->forceFill(['pending_files' => $files === [] ? null : $files])->save();
+            }
+
+            // The system acted, under the same receipt: counts only, like the
+            // erasure's own event, which the restored database may not hold.
+            AuditEvent::query()->create([
+                'account_id' => $accountId,
+                'site_id' => $site->id,
+                'actor_type' => null,
+                'actor_id' => null,
+                'subject_type' => (new Visitor)->getMorphClass(),
+                'subject_id' => (int) $entry['erased_visitor_id'],
+                'action' => 'visitor.erasure_reapplied',
+                'metadata' => [
+                    'receipt' => $receiptId,
+                    'erased' => $counts,
+                ],
+                'occurred_at' => now(),
+            ]);
+
+            return [
+                'site' => $site,
+                'visitor_ids' => $this->ints($visitors->pluck('id')),
+                'files' => $pendingFiles,
+            ];
+        });
+
+        if ($reapplied === null) {
+            return 0;
+        }
+
+        // The volume lists them too: a later restore takes the row back to
+        // whatever its archive holds.
+        try {
+            $this->ledger->updatePendingFiles($receiptId, fn (array $files): array => [...$files, ...$reapplied['files']]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        try {
+            $this->removePendingFiles($receiptId);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        foreach ($reapplied['visitor_ids'] as $visitorId) {
+            $this->announceRemoval($reapplied['site'], $visitorId);
+        }
+
+        return count($reapplied['visitor_ids']);
+    }
+
+    /**
+     * Remove the binaries an erasure still lists, keeping any that storage
+     * would not delete for the next attempt, and strike each removed one off
+     * the ledger row and the volume entry both. Either may list what the
+     * other does not: the volume survives a restore, the row survives a lost
+     * volume, and a file already gone is simply struck off. Returns how many
+     * remain.
+     */
+    public function removePendingFiles(string $receiptId): int
+    {
+        $entry = $this->ledger->find($receiptId);
+        $row = VisitorErasure::query()->where('public_id', $receiptId)->first(['id', 'pending_files']);
+        $removed = [];
+        $remaining = 0;
+
+        foreach (ErasureLedger::files([...($entry['pending_files'] ?? []), ...($row?->pending_files ?? [])]) as $file) {
+            try {
+                $disk = Storage::disk($file['disk']);
+
+                if ($disk->exists($file['key']) && ! $disk->delete($file['key'])) {
+                    $remaining++;
+
+                    continue;
+                }
+
+                $removed[$file['disk']."\0".$file['key']] = true;
             } catch (\Throwable $e) {
                 report($e);
-                $remaining[] = $file;
+                $remaining++;
             }
         }
 
-        $erasure->forceFill(['pending_files' => $remaining === [] ? null : $remaining])->save();
+        if ($removed === []) {
+            return $remaining;
+        }
 
-        return count($remaining);
+        $kept = fn (mixed $files): array => array_values(array_filter(
+            ErasureLedger::files($files),
+            fn (array $file): bool => ! isset($removed[$file['disk']."\0".$file['key']]),
+        ));
+
+        if ($entry !== null) {
+            $this->ledger->updatePendingFiles($receiptId, $kept);
+        }
+
+        DB::transaction(function () use ($receiptId, $kept): void {
+            $row = VisitorErasure::query()->where('public_id', $receiptId)->lockForUpdate()->first();
+            $left = $kept($row?->pending_files ?? []);
+            $row?->forceFill(['pending_files' => $left === [] ? null : $left])->save();
+        });
+
+        return $remaining;
+    }
+
+    /**
+     * The site an entry's visitors are on, when it is this install's. An
+     * archive from another install can hold a site, and visitors, under the
+     * same IDs, so the site's public key has to match too. An entry recorded
+     * from a ledger row after its site was purged has neither, and is held to
+     * its account instead.
+     *
+     * @param  array<string, mixed>  $entry
+     * @param  list<int>  $lineage
+     */
+    private function siteOf(array $entry, array $lineage): ?Site
+    {
+        $accountId = (int) ($entry['account_id'] ?? 0);
+        $siteId = is_int($entry['site_id'] ?? null)
+            ? $entry['site_id']
+            : Visitor::query()
+                ->whereIn('id', $lineage)
+                ->whereIn('site_id', Site::query()->select('id')->where('account_id', $accountId))
+                ->value('site_id');
+
+        $site = $siteId === null ? null : Site::query()->find($siteId);
+
+        if ($site === null) {
+            return null;
+        }
+
+        $key = $entry['site_public_key'] ?? null;
+
+        return (is_string($key) ? $site->public_key === $key : (int) $site->account_id === $accountId) ? $site : null;
+    }
+
+    /**
+     * The erased row may be on an agent's live board. With the row gone the
+     * event carries only its removal. A realtime failure never undoes the
+     * durable erasure; the board's periodic resync is the fallback.
+     */
+    private function announceRemoval(Site $site, int $visitorId): void
+    {
+        try {
+            $gone = new Visitor;
+            $gone->forceFill(['id' => $visitorId, 'site_id' => $site->id]);
+            event(new VisitorPresenceUpdated($site, $gone, $visitorId));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * The erasure itself, under the account, site and visitor locks its
+     * caller holds. $beforeChanging is called once everything to remove is
+     * known and nothing has changed yet, with the visitor IDs merged into this
+     * one and the binaries to remove after the commit.
+     *
+     * @param  callable(list<int>, list<array{disk: string, key: string}>): void  $beforeChanging
+     * @return array{visitor_id: int, merged_ids: list<int>, pending_files: list<array{disk: string, key: string}>, counts: array<string, int>}
+     */
+    private function removeVisitor(int $accountId, Site $site, Visitor $visitor, callable $beforeChanging): array
+    {
+        $scope = $this->scope($visitor);
+        // Before the scrub, which replaces the metadata that holds it.
+        $mergedIds = $this->mergedVisitorIds($visitor);
+        // Before anything that scans for what names them: an alert or a
+        // break-glass view stored under a shared lock on one of these rows
+        // now lands either before this point, and is found, or after the
+        // commit, when it can see the erasure.
+        $this->whereInChunks(
+            DB::table('conversations'),
+            'id',
+            $scope['conversation_ids'],
+            fn (Builder $query) => $query->lockForUpdate()->get(['id']),
+        );
+        $breakGlassGrants = $this->idsIn(
+            BreakGlassGrant::query()->where('account_id', $accountId),
+            'conversation_id',
+            $scope['conversation_ids'],
+        );
+
+        $this->refuseWhileNotesArePosting($scope['ticket_ids']);
+        $this->refuseWhileCopilotIsRunning($scope['conversation_ids']);
+
+        // Collected before the rows go: the cascade takes the only record
+        // of where each binary lives. Kept on the receipt, not only in
+        // memory, so a crash after the commit cannot lose them.
+        $pendingFiles = [];
+        $this->whereInChunks(
+            DB::table('conversation_message_attachments'),
+            'conversation_id',
+            $scope['conversation_ids'],
+            function (Builder $query) use (&$pendingFiles): void {
+                foreach ($query->whereNotNull('storage_key')->get(['storage_disk', 'storage_key']) as $file) {
+                    $pendingFiles[] = ['disk' => (string) $file->storage_disk, 'key' => (string) $file->storage_key];
+                }
+            },
+        );
+
+        $beforeChanging($mergedIds, $pendingFiles);
+
+        $this->stripTickets($scope['ticket_ids']);
+        // After stripTickets, which locks the tickets, as the conversations
+        // are locked above: an alert mail past its pre-SMTP check is on
+        // record by now, and one that is not will see the erasure.
+        $this->refuseWhileAlertMailIsSending($scope['conversation_ids'], $scope['ticket_ids']);
+        $audited = $this->scrubAuditEvents($scope);
+        // SLA deliveries before the alerts they belong to: the check every
+        // alert mail makes just before SMTP locks them in that order, so
+        // the two cannot deadlock. That check is also what stops a send a
+        // worker has already claimed, once these rows are gone.
+        $this->deleteConversationBookkeeping($scope['conversation_ids']);
+        $this->cancelTicketSlaDeliveries($scope['ticket_ids']);
+        $notifications = $this->deleteNotifications($accountId, $scope);
+        $this->clearTicketAutomationErrors($scope['ticket_ids']);
+        $this->clearBulkRunSearches($accountId, $scope['conversation_ids'], $scope['ticket_ids']);
+        $cancelled = $this->cancelPendingWebhooks((int) $site->id, $scope['support_codes']);
+        $this->clearWebhookResponses((int) $site->id, $scope['support_codes'], $scope['ticket_ids']);
+        $proactive = $this->deleteProactiveDeliveries((int) $site->id, (int) $visitor->id, $scope['anonymous_ids']);
+        $this->deleteFailedJobsNaming([
+            (string) $visitor->email,
+            ...$scope['support_codes'],
+        ]);
+
+        $this->whereInChunks(
+            DB::table('conversations'),
+            'id',
+            $scope['conversation_ids'],
+            fn (Builder $query) => $query->delete(),
+        );
+
+        // After the conversations go, so a view recorded while they were
+        // locked is relabelled too; the grants were collected before the
+        // delete nulled their conversation.
+        $this->relabelBreakGlassTrail($accountId, $scope['conversation_ids'], $breakGlassGrants);
+
+        $erasedId = (int) $visitor->id;
+        DB::table('visitors')->where('id', $erasedId)->delete();
+
+        return [
+            'visitor_id' => $erasedId,
+            'merged_ids' => $mergedIds,
+            'pending_files' => $pendingFiles,
+            'counts' => [
+                ...$scope['counts'],
+                'notifications' => $notifications,
+                'proactive_deliveries' => $proactive,
+                'webhook_deliveries_cancelled' => $cancelled,
+                'audit_events_scrubbed' => $audited,
+            ],
+        ];
     }
 
     /**

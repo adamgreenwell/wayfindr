@@ -420,6 +420,14 @@ return [
 
     // Resolved through ReleaseIdentity so a blank env_file override falls
     // back to the identity baked into the official image (see the class).
+    'erasure' => [
+        // One file per erased contact (ADR 0026 §8), so a restore can re-apply
+        // erasures its archive predates. On the storage volume and outside every
+        // attachment disk, because backups carry neither this directory nor
+        // anything a restore could roll back.
+        'ledger_path' => env('WAYFINDR_ERASURE_LEDGER_PATH', storage_path('app/erasure-ledger')),
+    ],
+
     'release' => [
         'commit' => ReleaseIdentity::commit(),
         'version' => ReleaseIdentity::version(),

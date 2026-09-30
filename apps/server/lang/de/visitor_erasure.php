@@ -32,7 +32,7 @@ return [
     ],
     'unreachable' => [
         'heading' => 'Was das Löschen nicht erreicht',
-        'backups' => 'Vor diesem Zeitpunkt erstellte Backups enthalten die Daten dieser Person weiterhin, und das Wiederherstellen eines Backups bringt sie zurück.',
+        'backups' => 'Vor diesem Zeitpunkt erstellte Backups enthalten die Daten dieser Person weiterhin. Eine Wiederherstellung über Wayfindr löscht sie erneut, allerdings nur, solange diese Installation das Speichervolume behält, auf dem sie ihre Löschungen festhält.',
         'external' => 'Verknüpfte externe Issues behalten, was in sie kopiert wurde:',
         'mail' => 'Bereits per E-Mail gesendete Antworten.',
         'ai' => 'Was der KI-Anbieter von Copilot-Anfragen gespeichert hat.',
@@ -48,6 +48,7 @@ return [
         'confirm' => 'Geben Sie zur Bestätigung genau :word ein.',
         'alert_mail_sending' => 'Gerade wird eine Benachrichtigungs-E-Mail zu Unterhaltungen oder Tickets dieses Kontakts an einen Agenten gesendet. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
         'copilot_running' => 'Der KI-Assistent bearbeitet gerade eine Unterhaltung dieses Kontakts, daher wird das Transkript möglicherweise an den KI-Anbieter übertragen. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
+        'ledger_unwritable' => 'Wayfindr konnte diese Löschung nicht auf dem Speichervolume der Installation festhalten, daher wurde nichts gelöscht. Bitten Sie die für diese Installation zuständige Person zu prüfen, ob der Speicher beschreibbar ist, und versuchen Sie es dann erneut.',
         'note_posting' => 'Eine Notiz zu einem Ticket dieses Kontakts wird gerade an das verknüpfte Issue übertragen. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
     ],
     'ticket_subject' => 'Ticket #:number (anfragende Person gelöscht)',

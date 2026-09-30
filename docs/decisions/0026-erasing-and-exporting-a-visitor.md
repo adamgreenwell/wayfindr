@@ -419,13 +419,32 @@ when the database goes back in time. Reconciliation settles a pending entry
 before it counts toward the list, so a failed erasure's stale list removes
 nothing.
 
-**Re-application.** After the dump is imported, restore re-applies every
+**Re-application.** After the dump is imported, restore moves the visitor ID
+sequence past the highest ID the ledger holds. An imported dump resets the
+sequence to the archive's value, so without this a new visitor could take an
+erased person's ID and be erased in their place. Then it re-applies every
 committed entry that names a visitor in the restored data, by any ID in its
-lineage, and reports how many it re-applied. Re-applying is idempotent.
-Restore then moves the visitor ID sequence past the highest ID the ledger
-holds. An imported dump resets the sequence to the archive's value, so
-without this a new visitor could take an erased person's ID, and the next
-restore would erase them instead.
+lineage, and reports how many it re-applied. Re-applying is idempotent. It
+puts the ledger row back under the same receipt when the restored database
+predates it, so later backups carry it, and writes a `visitor.erasure_reapplied`
+audit event with counts only.
+
+Delivery 2 settled four details:
+- **The entry also records the site's public key**, and re-application
+  requires the restored site to match it as well as the ID. An archive from
+  another installation can hold a site, and visitors, under the same IDs.
+- **Re-application runs only for a restore.** The restore records on the
+  volume that it is outstanding, before the load, and clears that once it
+  succeeds. Nothing else starts it, so an ID reused by a dump loaded some
+  other way, without the sequence move, is never erased.
+- **An archive older than the running code waits for its migrations.**
+  Erasing works on today's tables, so restore leaves re-application
+  outstanding and says so. It runs when `migrate` finishes, or failing that on
+  the next scheduled `wayfindr:finish-erasures`. The in-app restore keeps the
+  site in maintenance mode until it has.
+- **A failure is reported as its own thing.** The restore says the people
+  erased since the archive may be back, exits non-zero, and leaves
+  re-application outstanding for the next run.
 
 A restore onto a **fresh** volume, such as disaster recovery onto new hardware,
 has no ledger directory. Restore then warns that erasures recorded after the
@@ -434,7 +453,9 @@ ledger directory alongside the backups.
 
 The first release with re-application backfills the directory from the
 `visitor_erasures` table on first run, so erasures recorded before it are
-covered from then on. It cannot recover erasures that an earlier restore
+covered from then on. Any row without a file gets one: a row exists only for
+an erasure that committed. The scheduled run does this, and so does restore,
+from the database it replaces and again from the one it loads. It cannot recover erasures that an earlier restore
 already undid, and until it ships, restoring an older archive undoes the
 erasures made since, as it does today. Delivery 1's docs say so, and tell the
 operator to erase those people again.
