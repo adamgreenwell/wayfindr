@@ -81,7 +81,13 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   The keys can be computed before the row goes;
 - **agent notifications** whose data names one of the erased conversations, or
   a ticket stripped under §3. A ticket's alerts (assignment, SLA, automation)
-  store its subject, which may be the person's words;
+  store its subject, which may be the person's words. Deleting them also stops
+  alert email that a worker has claimed but not yet sent. Every alert mail
+  checks, immediately before SMTP, that its alert still exists and its
+  delivery is still live. A stripped ticket keeps its SLA clocks, so erasure
+  cancels their unsent SLA deliveries for that check to refuse. A message
+  already past the check has reached the mail server, which is mail already
+  sent (§6);
 - **SLA clocks and automation executions** whose subject is an erased
   conversation. A ticket stripped under §3 keeps its own as the work item's
   history: identifiers, outcomes and a copy of the rule's own text. The
@@ -257,7 +263,11 @@ The same permission downloads a ZIP for one visitor:
   tickets (§2): what happened, when, and its metadata. Each names whether the
   person, an agent or the system acted, but not which agent: the agent's
   identity is data about the agent, and the operator adds it where their law
-  requires naming who saw the data;
+  requires naming who saw the data. The same goes for agents named inside the
+  metadata, such as an assignment's old and new assignee: their names and IDs
+  become the role. A list of identity-bearing keys does it, and the export's
+  test holds that list to every action that writes a user into audit
+  metadata;
 - `incidental.json`: text Wayfindr kept in passing that can quote them. That
   means the response samples of webhook deliveries about their conversations
   and tickets, the error messages of automation runs on them, and the queue
