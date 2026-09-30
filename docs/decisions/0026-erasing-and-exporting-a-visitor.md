@@ -198,21 +198,41 @@ processing is the host's change to make, not Wayfindr's.
 
 ### 7. Export: everything held about one person
 
+The export is the read side of the erasure map. Every table the map deletes
+or strips contributes its rows, and so do the audit events §2 keeps. The
+contract test that holds the map to the schema also makes each entry say
+whether the export includes it, and why not when it doesn't. So a table that
+erasure reaches but the export skips fails the same test.
+
 The same permission downloads a ZIP for one visitor:
 - `visitor.json`: identity fields, attribute values, known browser IDs, contact
   notes;
 - one file per conversation: messages, ratings, attachment metadata, the
   conversation's cobrowse sessions (page state, snapshots and mutations
-  still held, which retention may already have pruned), and its copilot
+  still held, which retention may already have pruned), its copilot
   output (summary, reply draft, suggested ticket title and suggested
-  articles);
-- `tickets/`: requested tickets with their notes;
+  articles), and its email reply deliveries (the address each reply went
+  to, and its attempts and outcome);
+- `proactive.json`: the proactive messages shown to them, and when each was
+  shown, engaged with or dismissed;
+- `tickets/`: requested tickets with their notes, and each note's deliveries
+  to an external tracker (where it went, when, and the outcome);
 - `alerts.json`: the agent alerts that quote them. Each holds the
   conversation or ticket subject, and a message alert also a preview of their
   message and their browser ID. Erasure deletes these (§1), so they are data
   held about the person;
+- `audit.json`: the audit events about them, their conversations and their
+  tickets (§2): what happened, when, and its metadata. Each names whether the
+  person, an agent or the system acted, but not which agent: the agent's
+  identity is data about the agent, and the operator adds it where their law
+  requires naming who saw the data;
 - `attachments/`: the binaries;
 - `README.txt`: what is included, and the §6 list of what is not.
+
+What the export leaves out is the operator's own bookkeeping, not data about
+the person: which agent last read a thread, SLA targets, automation
+executions, webhook delivery history (identifiers only, §4). Each exclusion is
+written in the map with its reason, where the review above can see it.
 
 Contact notes are included. They are about the person and are usually
 disclosable, so the operator reviews the export before sending it and removes
@@ -224,21 +244,82 @@ memory.
 
 Restoring an archive taken before an erasure would silently undo it, and an
 operator restoring after an incident is not going to remember last month's
-requests. So each erasure is also written to a ledger. It holds only internal
-IDs, the site, a timestamp and the receipt reference: no name, email or content.
+requests. So each erasure is also written to a ledger. An entry holds only
+internal IDs, the site, a timestamp and the receipt reference: no name, email
+or content.
+
+**An entry names the person's whole merge history, not just the current
+row.** A contact merge deletes the source visitor and moves everything onto
+the target
+([identity merge](../product/visitor-contact-management.md#identity-merge)).
+Erasing that target and then restoring an archive from before the merge would
+bring back the source row, under an ID the ledger has never seen. So the
+entry records the erased visitor's ID and every visitor ID merged into it.
+Erasure reads these, before §2 scrubs the audit metadata, from two places:
+- the `previous_visitor_ids` on the person's browser aliases;
+- the `source_visitor_id` of each `visitor.merged` event. A merge re-anchors
+  the source's audit events onto the target, so a chain of merges ends with
+  all of them on the erased visitor.
+
+The aliases alone are not enough: each keeps only its last 50 IDs, and a
+visitor merged in by external ID or email may have had no browser alias at
+all.
+
 The ledger is kept in two places:
 - a `visitor_erasures` table, so later backups carry it;
-- a file on the volume. This follows the precedent of the release state, which
-  lives there so a restore cannot roll it back.
+- one file per entry under `storage/app/erasure-ledger/`. Backups archive the
+  database and the attachment disks, not this directory, so a restore cannot
+  roll it back. This follows the precedent of `release-state.json`.
 
-After the restore imports its dump, it re-applies every ledger entry whose
-visitor exists in the restored data, and reports how many it re-applied.
-Re-applying is idempotent.
+**Writing both, crash-safely.** The database transaction and a file write
+cannot commit together, so the order is fixed and every failure between them
+ends safe:
+1. Before the transaction opens, erasure writes the entry as
+   `<receipt>.pending.json`: to a temporary file, flushed to disk, then
+   renamed into place, and the directory flushed too. If that fails, nothing
+   has been deleted and erasure refuses, naming the storage problem.
+2. The transaction deletes and strips, and inserts the `visitor_erasures` row
+   under the same receipt.
+3. After the commit, erasure renames the file to `<receipt>.json`. If the
+   rename fails, the erasure has still happened, so it is reported as done.
+   The pending file already holds the whole entry, and reconciliation
+   promotes it.
+
+If the transaction fails, erasure deletes its pending file. A crash can leave
+one behind, and reconciliation handles it. So a reported erasure always has a
+file on the volume, flushed before the database committed. The stale file a
+failed erasure leaves is the only inverse risk.
+
+**Reconciliation** settles pending files against the database. A file whose
+receipt has a row is promoted; one whose receipt has no row is deleted.
+It runs on the scheduler, skipping pending files younger than an hour so it
+cannot race a transaction still in flight. It also runs at the start of every
+restore, against the database about to be replaced, before the dump is
+imported. That makes it the last moment the answer is still there. If that
+database cannot answer, because it is missing or older than the table,
+restore applies pending entries as if committed and lists their receipts. An
+unconfirmed entry is still one an operator confirmed, and applying one that
+did not commit costs far less than skipping one that did.
+
+**Re-application.** After the dump is imported, restore re-applies every
+committed entry that names a visitor in the restored data, by any ID in its
+lineage, and reports how many it re-applied. Re-applying is idempotent.
+Restore then moves the visitor ID sequence past the highest ID the ledger
+holds. An imported dump resets the sequence to the archive's value, so
+without this a new visitor could take an erased person's ID, and the next
+restore would erase them instead.
 
 A restore onto a **fresh** volume, such as disaster recovery onto new hardware,
-has no ledger file. Restore then warns that erasures recorded after the archive
-was taken cannot be re-applied. The operator runbook says to keep the ledger
-file alongside the backups.
+has no ledger directory. Restore then warns that erasures recorded after the
+archive was taken cannot be re-applied. The operator runbook says to keep the
+ledger directory alongside the backups.
+
+The first release with re-application backfills the directory from the
+`visitor_erasures` table on first run, so erasures recorded before it are
+covered from then on. It cannot recover erasures that an earlier restore
+already undid, and until it ships, restoring an older archive undoes the
+erasures made since, as it does today. Delivery 1's docs say so, and tell the
+operator to erase those people again.
 
 ### 9. Receipt
 
@@ -275,9 +356,12 @@ holding who was erased.
 In order, each shippable alone:
 
 1. **Erasure.** The permission, the service, the summary and confirmation, the
-   ledger table, the receipt, the schema contract test, and the privacy docs.
-2. **Restore re-application**, and the runbook change.
-3. **Per-visitor export.**
+   ledger table with each entry's merge lineage, the receipt, the schema
+   contract test, and the privacy docs.
+2. **Restore re-application.** The ledger directory with its write order and
+   reconciliation, the backfill, re-application and the sequence move, and
+   the runbook change.
+3. **Per-visitor export**, with the map's export column and its test.
 
 ## Decisions recorded
 
