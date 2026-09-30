@@ -2,7 +2,7 @@
 
 Date: 2026-09-30
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -100,12 +100,12 @@ The action name, the agent actor and the timestamps stay. The event that says
 "an agent added a note to ticket 812 on 3 September" survives. What the note
 said does not.
 
-### 3. Tickets: owner decision required
+### 3. Tickets are kept as work items, with the person stripped out
 
 A ticket is where this gets hard. It can be the person's support history, a
 product defect they happened to report, or both. Its subject may be the
-visitor's own words or an agent's summary, and nothing records which. The
-three options:
+visitor's own words or an agent's summary, and nothing records which. The owner
+weighed three options and chose B:
 
 - **A. Delete every ticket requested by the visitor or linked to an erased
   conversation.** This is the most complete. It loses the work history, and a
@@ -120,12 +120,12 @@ three options:
   - The external issue keeps whatever it already holds (§6).
 - **C. Ask per ticket at erasure time,** defaulting to B.
 
-**Recommendation: B.** A bug a visitor reported is still a bug after they leave,
+**Why B.** A bug a visitor reported is still a bug after they leave,
 and the engineering work is usually in the external tracker anyway. Replacing
 the subject is blunt, since an agent-written subject is often harmless. But
 Wayfindr cannot tell the two apart, and an erasure that depends on an operator
 spotting the person's name in a subject is not one. C adds a decision per
-ticket at the moment an operator most wants the task done; it can come later if
+ticket at the moment an operator most wants the task done. It can come later if
 B proves too blunt.
 
 A ticket created through API v1 with this visitor as requester and no
@@ -260,11 +260,11 @@ In order, each shippable alone:
 2. **Restore re-application**, and the runbook change.
 3. **Per-visitor export.**
 
-## Owner decisions
+## Decisions recorded
 
-1. **Tickets:** A, B or C (§3). Recommended: B.
-2. **Permission:** a new `handle_data_requests`, or reuse `manage_contacts` (§5).
-   Recommended: new.
-3. **Restore re-application:** build it (§8), or document the gap only.
-   Recommended: build it.
-4. **Export includes contact notes** (§7). Recommended: yes.
+The owner settled the four open questions on 2026-09-30, each as recommended:
+
+1. **Tickets:** option B, keep and strip (§3).
+2. **Permission:** a new `handle_data_requests`, not `manage_contacts` (§5).
+3. **Restore:** re-application is built (§8), not only documented.
+4. **Export:** contact notes are included (§7).
