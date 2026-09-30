@@ -127,8 +127,15 @@ weighed three options and chose B:
     subject, which becomes `Ticket #812 (requester erased)`.
   - *Deleted:* its `ticket_external_comment_deliveries`. Each holds an
     encrypted copy of a note posted, or about to be posted, to the provider,
-    and cascades only with the ticket. Deleting them also stops a pending one
-    from posting the note after the erasure.
+    and cascades only with the ticket.
+  - *No note is posted after the erasure completes.* A delivery that has not
+    started is deleted under the row lock the worker claims it with, so it
+    can never post. One that has started may be mid-post: the worker commits
+    its start, then calls the provider outside any lock, and only the job's
+    own timeout bounds that call. So erasure refuses while a post on one of
+    the tickets started within that timeout, and asks the agent to try again
+    in a couple of minutes. A post that started earlier has ended: its note
+    is in the tracker or nowhere, like any note already posted (§6).
   - The external issue keeps whatever it already holds (§6).
 - **C. Ask per ticket at erasure time,** defaulting to B.
 
@@ -214,11 +221,15 @@ the audit events §2 keeps. Bookkeeping that erasure removes only because its
 parent row goes is not. The contract test that holds the map to the schema
 also makes each entry say whether the export includes it, and why not when it
 doesn't. So a table that erasure reaches but the export skips fails the same
-test.
+test. The export's own test works per column: it compares each exported row
+with its table's columns. A column added later then fails until the export
+includes it, or the map says why not.
 
 The same permission downloads a ZIP for one visitor:
-- `visitor.json`: identity fields, attribute values, known browser IDs, contact
-  notes;
+- `visitor.json`: the whole visitor row. That is the identity fields, every
+  attribute and metadata value (including the last page address and host
+  context), and first and last seen times, plus known browser IDs and
+  contact notes;
 - one file per conversation: messages, ratings, attachment metadata, the
   conversation's cobrowse sessions (page state, snapshots and mutations
   still held, which retention may already have pruned), its copilot
@@ -291,12 +302,15 @@ The ledger is kept in two places:
 **Writing both, crash-safely.** The database transaction and a file write
 cannot commit together, so the order is fixed and every failure between them
 ends safe:
-1. Before the transaction opens, erasure writes the entry as
-   `<receipt>.pending.json`: to a temporary file, flushed to disk, then
-   renamed into place, and the directory flushed too. If that fails, nothing
-   has been deleted and erasure refuses, naming the storage problem.
-2. The transaction deletes and strips, and inserts the `visitor_erasures` row
-   under the same receipt.
+1. Inside the transaction, erasure first takes the contact merge's locks
+   (§5). Before deleting anything, it reads the lineage and writes the entry
+   as `<receipt>.pending.json`: to a temporary file, flushed to disk, then
+   renamed into place, and the directory flushed too. Holding the locks
+   means no merge can add a source the entry misses. If the write fails, the
+   transaction rolls back with nothing deleted, and erasure refuses, naming
+   the storage problem.
+2. The same transaction then deletes and strips, inserts the
+   `visitor_erasures` row under the same receipt, and commits.
 3. After the commit, erasure renames the file to `<receipt>.json`. If the
    rename fails, the erasure has still happened, so it is reported as done.
    The pending file already holds the whole entry, and reconciliation
@@ -307,12 +321,16 @@ one behind, and reconciliation handles it. So a reported erasure always has a
 file on the volume, flushed before the database committed. The stale file a
 failed erasure leaves is the only inverse risk.
 
-**Reconciliation** settles pending files against the database. A file whose
-receipt has a row is promoted; one whose receipt has no row is deleted.
-It runs on the scheduler, skipping pending files younger than an hour so it
-cannot race a transaction still in flight. It also runs at the start of every
-restore, against the database about to be replaced, before the dump is
-imported. That makes it the last moment the answer is still there. If that
+**Reconciliation** settles pending files against the database. For each one
+it first takes the lock on the entry's site. The erasure holds that lock from
+before its file is written until its transaction ends, so getting it means the
+transaction is over, however long it ran. Age is never taken as proof. Then a
+file whose receipt has a row is promoted, and one whose receipt has no row is
+deleted. A site that no longer exists has no lock to wait on, and nothing can
+still be erasing on it. Reconciliation runs on the scheduler. It also runs at
+the start of every restore, against the database about to be replaced,
+before the dump is imported. That makes it the last moment the answer is
+still there. If that
 database cannot answer, because it is missing or older than the table,
 restore applies pending entries as if committed and lists their receipts. An
 unconfirmed entry is still one an operator confirmed, and applying one that
