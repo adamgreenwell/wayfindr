@@ -187,16 +187,29 @@ final readonly class AutomationMacroRunner
         Throwable $exception,
     ): void {
         try {
-            AutomationRuleExecution::query()->create([
-                ...$this->executionIdentity($macro, $agent, $subject),
-                'status' => AutomationExecutionStatus::Failed,
-                'conditions' => [],
-                'actions' => $this->rawActions($macro),
-                'action_results' => [],
-                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
-                'started_at' => $startedAt,
-                'completed_at' => now(),
-            ]);
+            DB::transaction(function () use ($agent, $macro, $subject, $startedAt, $exception): void {
+                // After the rollback, so an erasure may have landed since; see
+                // AutomationRuleEngine::recordFailure().
+                $this->siteManagerCoverage->lockAccount($this->accountId($subject));
+                $current = $subject->newQuery()->whereKey($subject->getKey())->first();
+
+                if ($current === null) {
+                    return;
+                }
+
+                AutomationRuleExecution::query()->create([
+                    ...$this->executionIdentity($macro, $agent, $subject),
+                    'status' => AutomationExecutionStatus::Failed,
+                    'conditions' => [],
+                    'actions' => $this->rawActions($macro),
+                    'action_results' => [],
+                    'error_message' => $current instanceof Ticket && data_get($current->metadata, 'requester_erased') === true
+                        ? null
+                        : mb_substr($exception->getMessage(), 0, 2000),
+                    'started_at' => $startedAt,
+                    'completed_at' => now(),
+                ]);
+            });
         } catch (Throwable $loggingException) {
             Log::error('Automation macro failed and its execution record could not be stored.', [
                 'automation_macro_id' => $macro->id,

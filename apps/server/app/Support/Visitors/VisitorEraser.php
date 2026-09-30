@@ -111,7 +111,7 @@ final class VisitorEraser
         'push_subscriptions' => 'not visitor data: agent devices only',
         'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
         'visitor_erasures' => 'the ledger itself: identifiers and counts only',
-        'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted; other failed-job text is diagnostics, like logs (§6)',
+        'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted; a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
     ];
 
     /**

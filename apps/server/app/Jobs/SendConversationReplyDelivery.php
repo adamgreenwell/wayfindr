@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\ConversationReplyDeliveryFailed;
 use App\Mail\ConversationReplyMessage;
 use App\Models\ConversationReplyDelivery;
 use App\Support\Mail\OutboundMail;
@@ -134,7 +135,14 @@ class SendConversationReplyDelivery implements ShouldBeUnique, ShouldQueue
                 ->whereKey($this->deliveryId)
                 ->increment('attempts', 1, ['last_attempted_at' => now()]);
 
-            throw $exception;
+            // The worker keeps what this throws in failed_jobs once retries
+            // run out, and a mail server's refusal quotes the visitor's
+            // address. An erasure deleting this row waits out the send above
+            // and commits before that increment can run, so the failure lands
+            // after its sweep: the text goes to the log only.
+            report($exception);
+
+            throw ConversationReplyDeliveryFailed::after($this->deliveryId, $exception);
         }
     }
 

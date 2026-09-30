@@ -196,17 +196,33 @@ final readonly class AutomationRuleEngine
         int $accountId,
     ): void {
         try {
-            AutomationRuleExecution::query()->create([
-                ...$this->executionIdentity($rule, $event, $subject, $message),
-                'account_id' => $accountId,
-                'status' => AutomationExecutionStatus::Failed,
-                'conditions' => $this->rawList($rule, 'conditions'),
-                'actions' => $this->rawList($rule, 'actions'),
-                'action_results' => [],
-                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
-                'started_at' => $startedAt,
-                'completed_at' => now(),
-            ]);
+            DB::transaction(function () use ($rule, $event, $subject, $message, $startedAt, $exception, $accountId): void {
+                // After the rollback, so an erasure may have landed since.
+                // Taking the lock it takes first puts this record before one,
+                // which then clears it, or after it, reading what it left: no
+                // conversation, or a stripped ticket whose executions keep no
+                // error text.
+                $this->siteManagerCoverage->lockAccount($accountId);
+                $current = $subject->newQuery()->whereKey($subject->getKey())->first();
+
+                if ($current === null) {
+                    return;
+                }
+
+                AutomationRuleExecution::query()->create([
+                    ...$this->executionIdentity($rule, $event, $subject, $message),
+                    'account_id' => $accountId,
+                    'status' => AutomationExecutionStatus::Failed,
+                    'conditions' => $this->rawList($rule, 'conditions'),
+                    'actions' => $this->rawList($rule, 'actions'),
+                    'action_results' => [],
+                    'error_message' => $current instanceof Ticket && data_get($current->metadata, 'requester_erased') === true
+                        ? null
+                        : mb_substr($exception->getMessage(), 0, 2000),
+                    'started_at' => $startedAt,
+                    'completed_at' => now(),
+                ]);
+            });
         } catch (Throwable $loggingException) {
             Log::error('Automation failed and its execution record could not be stored.', [
                 'automation_rule_id' => $rule->id,

@@ -8,21 +8,27 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Enums\AutomationRuleEvent;
 use App\Events\VisitorPresenceUpdated;
 use App\Jobs\DeliverTicketExternalComment;
 use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
 use App\Jobs\GenerateConversationCopilotReplyDraft;
 use App\Jobs\GenerateConversationCopilotSummary;
 use App\Jobs\GenerateConversationCopilotTicketSuggestion;
+use App\Jobs\SendConversationReplyDelivery;
 use App\Listeners\MarkSlaMailTransportStarted;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\AutomationMacro;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\ConversationRating;
+use App\Models\ConversationReplyDelivery;
 use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\OutboundWebhookDelivery;
@@ -41,20 +47,27 @@ use App\Notifications\Channels\ErasureAwareDatabaseChannel;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
+use App\Support\Automation\AutomationMacroRunFailed;
+use App\Support\Automation\AutomationMacroRunner;
+use App\Support\Automation\AutomationRuleEngine;
 use App\Support\BreakGlass\BreakGlassGrants;
 use App\Support\ExternalIssues\InboundCommentSync;
 use App\Support\ProactiveMessages\ProactiveVisitorKey;
 use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorIdentityMerger;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mime\Email;
 
 uses(RefreshDatabase::class);
@@ -513,6 +526,97 @@ test('a break-glass view recorded just after an erasure does not name the conver
         ->and($viewed->metadata['resource_label'])->toBe('Conversation (deleted)', 'the late view named the erased conversation')
         ->and($viewed->metadata['scope_label'])->toBe('Conversation (deleted)', 'the late view kept the stale scope label');
 });
+
+test('a reply that fails for good after an erasure cannot record the address it was refused', function (): void {
+    $f = erasureFixture();
+    $address = (string) $f['visitor']->email;
+    $deliveryId = (int) ConversationReplyDelivery::query()->create([
+        'conversation_message_id' => ConversationMessage::query()->where('conversation_id', $f['conversation']->id)->firstOrFail()->id,
+        'recipient' => $address,
+        'message_id' => '<reply-'.Str::uuid().'@example.test>',
+    ])->id;
+    Exceptions::fake();
+    config()->set('mail.default', 'smtp');
+    Mail::shouldReceive('to')->once()->with($address)
+        ->andThrow(new TransportException("550 5.1.1 <{$address}>: Recipient address rejected"));
+
+    $thrown = null;
+
+    try {
+        (new SendConversationReplyDelivery($deliveryId))->handle();
+    } catch (Throwable $exception) {
+        $thrown = $exception;
+    }
+
+    expect($thrown)->not->toBeNull('the refused send did not fail the attempt');
+
+    // The erasure deletes the row while the send holds it, and commits before
+    // the worker's own bookkeeping can run, so the worker records the final
+    // attempt's failure after the sweep.
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $job = new SendConversationReplyDelivery($deliveryId);
+    $uuid = app('queue.failer')->log('database', 'default', json_encode([
+        'uuid' => (string) Str::uuid(),
+        'displayName' => $job::class,
+        'data' => ['commandName' => $job::class, 'command' => serialize($job)],
+    ]), $thrown);
+
+    expect(erasureTablesContaining($address))->toBe([], 'the late failure record named the address the mail server refused')
+        ->and(str_contains((string) DB::table('failed_jobs')->where('uuid', $uuid)->value('exception'), TransportException::class))
+        ->toBeTrue('the failure record no longer says what failed');
+
+    Exceptions::assertReported(fn (TransportException $exception): bool => str_contains($exception->getMessage(), '550 5.1.1'));
+});
+
+test('an automation failure recorded just after an erasure keeps nothing of the person', function (string $runner, string $subject): void {
+    $f = erasureFixture();
+    $earlier = AutomationRuleExecution::query()->pluck('id');
+    $target = $subject === 'ticket'
+        ? Ticket::query()->findOrFail($f['ticket']->id)
+        : Conversation::query()->findOrFail($f['conversation']->id);
+    // Another account's agent: assigning them fails inside the run's transaction.
+    $actions = [['type' => 'assign_agent', 'value' => User::factory()->create()->id]];
+
+    // The erasure lands after the run rolls back, before its failure is recorded.
+    $level = DB::transactionLevel();
+    $erased = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$erased, $f, $level): void {
+        if ($erased || DB::transactionLevel() !== $level) {
+            return;
+        }
+
+        $erased = true;
+        app(VisitorEraser::class)->erase($f['admin'], $f['visitor']);
+    });
+
+    if ($runner === 'macro') {
+        $macro = AutomationMacro::factory()->for($f['account'])->enabled()->create(['subject_type' => $subject, 'actions' => $actions]);
+
+        expect(fn () => app(AutomationMacroRunner::class)->run($f['admin'], $macro, $target))
+            ->toThrow(AutomationMacroRunFailed::class);
+    } else {
+        $event = $subject === 'ticket' ? AutomationRuleEvent::TicketCreated : AutomationRuleEvent::ConversationCreated;
+        AutomationRule::factory()->for($f['account'])->enabled()->create(['event' => $event, 'actions' => $actions]);
+
+        app(AutomationRuleEngine::class)->handle($event, $target);
+    }
+
+    $executions = AutomationRuleExecution::query()
+        ->whereKeyNot($earlier)
+        ->where('subject_type', $target->getMorphClass())
+        ->where('subject_id', $target->id)
+        ->get();
+
+    expect($erased)->toBeTrue('the run never failed, so the erasure never landed mid-run');
+
+    if ($subject === 'conversation') {
+        expect($executions)->toHaveCount(0, 'a failure about the erased conversation was recorded after it');
+    } else {
+        expect($executions)->toHaveCount(1, 'the failure on the stripped ticket was not recorded')
+            ->and($executions->sole()->error_message)->toBeNull('the failure on the stripped ticket kept its raw error text');
+    }
+})->with(['rule', 'macro'])->with(['ticket', 'conversation']);
 
 test('a stripped ticket takes the install language, not the erasing agent\'s', function (): void {
     $f = erasureFixture();

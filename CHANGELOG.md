@@ -65,6 +65,14 @@ erasure ledger table and runs itself.
   later release re-applies erasures on restore. Keep receipt references
   outside Wayfindr, and after such a restore erase those people again.
 
+### Changed
+
+- **A reply email that fails for good no longer keeps the mail server's
+  error in failed jobs.** That error quotes the visitor's address, and the
+  record can be written just after that visitor is erased. The failed job now
+  names the error's type and code, and the full error is in the application
+  log, as it was before.
+
 ## [1.0.0] - 2026-09-29
 
 **No operator action required.** Pull and restart. This release has no
