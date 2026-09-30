@@ -137,6 +137,12 @@ weighed three options and chose B:
     in a couple of minutes. A post that started earlier has ended: its note
     is in the tracker or nowhere, like any note already posted (§6).
   - The external issue keeps whatever it already holds (§6).
+  - *Mirroring stops.* The link stays, but the tracker's later comments are
+    no longer copied into the ticket's history. Each would be a new copy of
+    whatever the tracker says, which may be about the person. Mirroring locks
+    the ticket before writing, which is the lock erasure strips it under. So
+    a comment arriving mid-erasure is either recorded first and scrubbed
+    with the rest, or finds the ticket stripped and is dropped.
 - **C. Ask per ticket at erasure time,** defaulting to B.
 
 **Why B.** A bug a visitor reported is still a bug after they leave,
