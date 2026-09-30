@@ -187,8 +187,11 @@ conversation gets the same treatment.
   which is what the grant itself reads once the conversation is gone.
 - **Bulk-action runs** keep their identifier lists and before-and-after
   values, so they can still be undone. Runs never expire, so erasure clears
-  the queue search saved in `return_query` on every run that touched an
-  erased conversation or a stripped ticket. That search is what the agent
+  the queue search saved in `return_query` on every run that selected an
+  erased conversation or a stripped ticket, whether it changed it or not: a
+  run lists its whole selection in `item_ids`. A run made before that column
+  lists only what it changed, so one that skipped anything loses its search
+  too, since it cannot say what it skipped. That search is what the agent
   typed to find the work, which may be the person's name or email. Undoing
   such a run then returns to the unfiltered queue. A review not yet confirmed
   keeps no search at all: the search travels in the confirm form, not the
@@ -291,7 +294,7 @@ The same permission downloads a ZIP for one visitor:
 - `incidental.json`: text Wayfindr kept in passing that can quote them. That
   means the response samples of webhook deliveries about their conversations
   and tickets, the error messages of automation runs on them, the queue
-  searches saved by bulk actions that touched their work, and the failed jobs
+  searches saved by bulk actions that selected their work, and the failed jobs
   that name them (§1). A failed job is given as its job name, when it failed,
   and the first line of its exception. The first line is the message that
   quotes them. The stack trace below it is the installation's own code paths,

@@ -682,6 +682,70 @@ test('a bulk review opened before an erasure cannot save the search that found t
         ->and(erasureTablesContaining(ERASURE_MARKER))->toBe([], 'a run saved after the erasure kept the search that found the person');
 });
 
+test('a bulk run that selected the person but skipped them loses its search, and one that never selected them keeps it', function (): void {
+    $f = erasureFixture();
+    $target = User::factory()->for($f['account'])->create(['account_role' => AccountRole::Admin]);
+    [$keptTicket, $keptTicketToo] = Ticket::factory()->count(2)->for($f['account'])->for($f['site'])->create()->all();
+    $keptToo = Conversation::factory()->for($f['site'])->for($f['bystander'])->create();
+    // The person's work already holds each value, so their runs skip it.
+    DB::table('conversations')->where('id', $f['conversation']->id)->update(['assigned_agent_id' => $target->id]);
+    $theirs = 'Robin '.ERASURE_MARKER;
+    $others = 'Kept '.ERASURE_KEEPER;
+
+    $review = function (string $queue, array $ids, string $action, string $value, string $search) use ($f): void {
+        $item = $queue === 'tickets' ? 'ticket' : 'conversation';
+        $preview = $this->actingAs($f['admin'])->post(route("dashboard.{$queue}.bulk.preview"), [
+            "{$item}_ids" => $ids, 'action' => $action, 'value' => $value,
+            'return_query' => ["{$item}_search" => $search],
+        ]);
+        $this->actingAs($f['admin'])->post(route("dashboard.{$queue}.bulk.store"), [
+            'preview_token' => $preview->viewData('token'), 'return_search' => $search,
+        ])->assertRedirect();
+    };
+
+    // Each pair skips its first item, already labelled or assigned.
+    $review('tickets', [$f['ticket']->id, $keptTicket->id], 'add_label', (string) $f['label']->id, $theirs);
+    $review('tickets', [$keptTicket->id, $keptTicketToo->id], 'add_label', (string) $f['label']->id, $others);
+    $review('conversations', [$f['conversation']->id, $f['kept']->id], 'assign_agent', (string) $target->id, $theirs);
+    $review('conversations', [$f['kept']->id, $keptToo->id], 'assign_agent', (string) $target->id, $others);
+
+    $searches = fn (string $table, string $key): array => DB::table($table)
+        ->where('item_count', 2)->where('changed_count', 1)->orderBy('id')->pluck('return_query')
+        ->map(fn (mixed $query): mixed => json_decode((string) $query, true)[$key] ?? null)->all();
+
+    expect($searches('ticket_bulk_action_runs', 'ticket_search'))->toBe([$theirs, $others], 'the runs did not each skip one item')
+        ->and($searches('conversation_bulk_action_runs', 'conversation_search'))->toBe([$theirs, $others], 'the runs did not each skip one item');
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect($searches('ticket_bulk_action_runs', 'ticket_search'))
+        ->toBe([null, $others], 'a ticket run that skipped the person kept its search, or one that never selected them lost it')
+        ->and($searches('conversation_bulk_action_runs', 'conversation_search'))
+        ->toBe([null, $others], 'a conversation run that skipped the person kept its search, or one that never selected them lost it');
+});
+
+test('an older run that cannot say what it skipped loses its search, and one that skipped nothing keeps it', function (): void {
+    $f = erasureFixture();
+    $kept = Ticket::factory()->for($f['account'])->for($f['site'])->create();
+    // Runs from before item_ids: only what they changed is on record.
+    $run = fn (int $selected, string $search): int => DB::table('ticket_bulk_action_runs')->insertGetId([
+        'account_id' => $f['account']->id, 'triggered_by_user_id' => $f['admin']->id, 'action' => 'set_priority',
+        'item_count' => $selected, 'changed_count' => 1,
+        'changes' => json_encode([['ticket_id' => $kept->id, 'before' => ['priority' => 'normal'], 'after' => ['priority' => 'high']]]),
+        'return_query' => json_encode(['ticket_search' => $search]),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $skipped = $run(2, 'Robin '.ERASURE_MARKER);
+    $complete = $run(1, 'Kept '.ERASURE_KEEPER);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    $search = fn (int $id): mixed => json_decode((string) DB::table('ticket_bulk_action_runs')->where('id', $id)->value('return_query'), true)['ticket_search'] ?? null;
+
+    expect($search($skipped))->toBeNull('an older run that skipped an item it never recorded kept its search')
+        ->and($search($complete))->toBe('Kept '.ERASURE_KEEPER, 'an older run that recorded all it selected, none of it theirs, lost its search');
+});
+
 test('the receipt counts each scrubbed audit event once', function (): void {
     $f = erasureFixture();
     // A reply the visitor sent: about their conversation, and them as its actor.

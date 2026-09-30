@@ -175,7 +175,9 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   relevant audit event has moved since, and will not hand one back to an agent
   who has lost access in the meantime. `return_query` keeps the agent's queue
   filter on the run so the confirm and undo redirects land back on the list
-  they acted from.
+  they acted from. `item_ids` lists every conversation the run selected,
+  changed or not, so erasing a person can clear the search from every run
+  that found them; it is null on runs made before it.
 - `ticket_bulk_action_runs`: the ticket queue's counterpart, identical in shape
   to `conversation_bulk_action_runs` but with its own action set — only tickets
   take labels — and a `changes` payload keyed by ticket. `undone_at` and

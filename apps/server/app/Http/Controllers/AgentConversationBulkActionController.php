@@ -161,6 +161,9 @@ final class AgentConversationBulkActionController extends Controller
                     'item_count' => (int) $preview['item_count'],
                     'changed_count' => 0,
                     'changes' => [],
+                    // Every item selected, changed or not: erasure reads
+                    // it to find the runs whose search found a person.
+                    'item_ids' => array_map('intval', $conversations->modelKeys()),
                     'return_query' => $returnQuery,
                 ]);
                 $changes = $this->bulkActions->apply(

@@ -105,8 +105,8 @@ final class VisitorEraser
         'sla_alert_deliveries' => 'deleted by cascade from the clock; unsent ones for stripped tickets cancelled',
         'automation_rule_executions' => 'deleted for erased conversations; kept for stripped tickets, with the raw error message cleared',
         'outbound_webhook_deliveries' => 'pending deliveries for erased conversations cancelled; the response sample cleared on every delivery about them; payloads are identifiers only',
-        'conversation_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that touched an erased conversation',
-        'ticket_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that touched a stripped ticket',
+        'conversation_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that selected an erased conversation, and on older runs that cannot say',
+        'ticket_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that selected a stripped ticket, and on older runs that cannot say',
         'break_glass_grants' => 'kept: the record of operator access outweighs its incidental reason text (§4); its trail stops naming an erased conversation',
         'push_subscriptions' => 'not visitor data: agent devices only',
         'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
@@ -721,8 +721,12 @@ final class VisitorEraser
     /**
      * Runs never expire and can be undone at any time, so they stay (§4).
      * The queue search saved for the way back is what the agent typed to find
-     * the work, which may be the person's name or email. The runs name their
-     * items only inside JSON, read in PHP like the notifications.
+     * the work, which may be the person's name or email. A run found the
+     * person if it selected one of their items, changed or not: `item_ids`
+     * lists the selection, `changes` only what changed. A run from before
+     * `item_ids` cannot say what it skipped, so one that skipped anything
+     * loses its search too. The runs name their items only inside JSON, read
+     * in PHP like the notifications.
      *
      * @param  list<int>  $conversationIds
      * @param  list<int>  $ticketIds
@@ -742,7 +746,7 @@ final class VisitorEraser
             DB::table($table)
                 ->where('account_id', $accountId)
                 ->whereNotNull('return_query')
-                ->select(['id', 'changes', 'return_query'])
+                ->select(['id', 'item_count', 'changed_count', 'changes', 'item_ids', 'return_query'])
                 ->chunkById(500, function (Collection $runs) use ($table, $itemKey, $searchKey, $erased): void {
                     foreach ($runs as $run) {
                         $query = json_decode((string) $run->return_query, true);
@@ -752,9 +756,12 @@ final class VisitorEraser
                             continue;
                         }
 
+                        $selected = $run->item_ids === null ? null : json_decode((string) $run->item_ids, true);
                         $touched = collect($changes)->contains(
                             fn (mixed $change): bool => isset($erased[(int) data_get($change, $itemKey)]),
-                        );
+                        ) || (is_array($selected)
+                            ? collect($selected)->contains(fn (mixed $id): bool => isset($erased[(int) $id]))
+                            : (int) $run->item_count > (int) $run->changed_count);
 
                         if ($touched) {
                             unset($query[$searchKey]);

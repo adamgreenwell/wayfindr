@@ -146,7 +146,7 @@ through the password reset link first. The erasure then, in one transaction:
   clears the stored reply on every webhook delivery about their
   conversations or tickets, which can echo what the subscriber fetched;
 - clears text kept in passing that can quote them: the queue search saved by
-  a bulk action that touched their work, which stays undoable, the error
+  a bulk action that selected their work, which stays undoable, the error
   text of a failed automation run on one of their tickets, and failed
   background jobs that name them by email, host ID, browser ID or support
   code;

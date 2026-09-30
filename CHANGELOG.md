@@ -30,8 +30,9 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart. One migration adds the
-erasure ledger table and runs itself.
+**No operator action required.** Pull and restart. Two migrations run
+themselves: one adds the erasure ledger table, the other lets each bulk-action
+run record every item it selected.
 
 ### Added
 
