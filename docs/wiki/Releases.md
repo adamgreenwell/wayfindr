@@ -2,18 +2,22 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. Read each release as an operator change and validate it on
-a disposable VM before upgrading a persistent installation.
+Read each release as an operator change and validate it on a disposable VM
+before upgrading a persistent installation. From `v1.0.0` the version number
+says whether a release needs you: only a new major can ask for anything beyond
+pulling and restarting, a minor adds features and self-migrating schema, and a
+patch only fixes. The release notes and manifest remain the authoritative
+detail.
 
 The latest published release is
-[`v0.11.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.11.0).
-Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36610124239)
+[`v1.0.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.0.0).
+Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36720553755)
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
-and stable image aliases on September 29, 2026. It needs no operator action and
-has no migrations. It reorganises the account area and carries one security
-fix: a provider connection form that failed validation no longer writes its API
-token and webhook secret to the session in plaintext. Separate public-artifact
-install and upgrade runs are recorded below.
+and stable image aliases on September 30, 2026. It needs no operator action and
+has no migrations, and its application code is the same as `v0.11.0`'s. If you
+are several releases behind, read each release in between: `v0.11.0` carries a
+session-secret security fix. Separate public-artifact install and upgrade runs
+are recorded below.
 
 ## Where to Look
 
@@ -21,17 +25,17 @@ install and upgrade runs are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
-- The [attached `v0.11.0` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v0.11.0/release-manifest.json)
+- The [attached `v1.0.0` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.0.0/release-manifest.json)
   for the required actions and advisory notices in that published artifact;
-  [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v0.11.0/release.json)
+  [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.0.0/release.json)
   is its source declaration.
-- [Tagged `releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/v0.11.0/releases/history.json)
-  for the skipped-release history carried by `v0.11.0`, including the
+- [Tagged `releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.0.0/releases/history.json)
+  for the skipped-release history carried by `v1.0.0`, including the
   `v0.9.0` host-managed PHP runtime action for an install upgrading from
   before it.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
   for the next development line. Its cleared actions do not replace the
-  published `v0.11.0` manifest.
+  published `v1.0.0` manifest.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
@@ -45,6 +49,22 @@ artifact you intend to run.
 
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
+
+The September 30, 2026 `v1.0.0` public-artifact runs cover two hosted paths:
+
+- A [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
+  on a fresh Ubuntu 24.04 runner.
+- A [`v0.2.0 → v1.0.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996)
+  on a separate fresh Ubuntu 24.04 runner.
+
+Both resolved the published image to
+`sha256:47b697666e9bd7380cbbf39157d54a5a89b5e7071b0503cc22bf8c3aa27e222d`,
+completed the synthetic support loop, backup/restore, and stack restart, and
+read the authenticated `/operator` console's `Wayfindr version: v1.0.0` after
+install and after restore. In the upgrade, the `1.0.0/backups-queue-consumer`
+notice retired itself once the custom-queue worker was observed. The same
+boundaries as below apply: loopback HTTP on hosted runners, not bare metal,
+DNS/TLS, real mail, offsite backups, or production restore.
 
 The September 29, 2026 `v0.11.0` public-artifact runs cover two hosted paths:
 

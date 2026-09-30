@@ -2,10 +2,10 @@
 
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
-over the conversations and tickets it handles. The project is pre-1.0: it is a
-working support desk rather than a spine, but operators should still treat every
-installation as an actively managed system rather than a set-and-forget
-appliance.
+over the conversations and tickets it handles. The project reached `v1.0.0` on
+September 30, 2026: it is a working support desk, but operators should still
+treat every installation as an actively managed system rather than a
+set-and-forget appliance.
 
 Inbound email depends on which version you are running. Public `v0.9.0` and
 later let Mailgun and Postmark post straight to `POST /api/mail/inbound` once
