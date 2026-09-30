@@ -290,8 +290,12 @@ The same permission downloads a ZIP for one visitor:
   metadata;
 - `incidental.json`: text Wayfindr kept in passing that can quote them. That
   means the response samples of webhook deliveries about their conversations
-  and tickets, the error messages of automation runs on them, and the queue
-  searches saved by bulk actions that touched their work;
+  and tickets, the error messages of automation runs on them, the queue
+  searches saved by bulk actions that touched their work, and the failed jobs
+  that name them (§1). A failed job is given as its job name, when it failed,
+  and the first line of its exception. The first line is the message that
+  quotes them. The stack trace below it is the installation's own code paths,
+  not data about the person;
 - `break_glass.json`: platform-operator access to their data. That covers
   grants scoped to one of their conversations, and views of their
   conversations or tickets under any grant: when, what scope, the reason
@@ -325,8 +329,9 @@ silently left out.
 Restoring an archive taken before an erasure would silently undo it, and an
 operator restoring after an incident is not going to remember last month's
 requests. So each erasure is also written to a ledger. An entry holds only
-internal IDs, the site, a timestamp and the receipt reference: no name, email
-or content.
+internal IDs, the site, a timestamp, the receipt reference, and the storage
+disk and key of any attachment binary not yet removed (§1): no name, email or
+content.
 
 **An entry names the person's whole merge history, not just the current
 row.** A contact merge deletes the source visitor and moves everything onto
@@ -390,6 +395,16 @@ database cannot answer, because it is missing or older than the table,
 restore applies pending entries as if committed and lists their receipts. An
 unconfirmed entry is still one an operator confirmed, and applying one that
 did not commit costs far less than skipping one that did.
+
+**Binaries still to remove survive the restore too.** The dump restores the
+ledger table as it was when the archive was taken, which can predate a
+pending binary or its whole erasure. So the volume entry carries the same
+pending list as the table row. The scheduled `wayfindr:finish-erasures`
+strikes each binary off in both places, and after the import it works from
+the volume entries. A remote object can therefore not drop out of tracking
+when the database goes back in time. Reconciliation settles a pending entry
+before it counts toward the list, so a failed erasure's stale list removes
+nothing.
 
 **Re-application.** After the dump is imported, restore re-applies every
 committed entry that names a visitor in the restored data, by any ID in its
