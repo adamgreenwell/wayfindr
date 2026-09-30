@@ -1,15 +1,13 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 29, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 30, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§20](#20-797-closed--september-29-2026)** for
-the acceptance boundary, [§19](#19-published-0110--september-29-2026) for the
-current release, and
-[§18](#18-the-account-area-restructured--september-29-2026) for the account
-work it shipped. Then §5 (conventions) and §7 (gotchas). Sections 8–17 are
-dated snapshots, kept for their evidence rather than their currency.
+**Taking the baton? Start at [§21](#21-published-100--september-30-2026)** for
+the current release, then [§20](#20-797-closed--september-29-2026) for how its
+acceptance gate closed. Then §5 (conventions) and §7 (gotchas). Sections 8–19
+are dated snapshots, kept for their evidence rather than their currency.
 
 ---
 
@@ -43,11 +41,11 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v0.11.0` published September 29 at tag
-`2bb7d5e3`, with the manifest and multi-architecture image at
-`sha256:6b19e4c2529c86b291b25c09dbfe579c12df167e70a2473ce2f4a8b6da9b7ff5`
-(§19). The previous release, `v0.10.0`, published September 28 at `665faf09`
-(§17). Current `main` begins `1.0.0-dev`; it is not a 1.0.0 release.
+**Release truth comes first.** Public `v1.0.0` published September 30 at tag
+`d6e5875e`, with the manifest and multi-architecture image at
+`sha256:47b697666e9bd7380cbbf39157d54a5a89b5e7071b0503cc22bf8c3aa27e222d`
+(§21). The previous release, `v0.11.0`, published September 29 at `2bb7d5e3`
+(§19). Current `main` begins `1.1.0-dev`.
 
 The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
 direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
@@ -170,8 +168,8 @@ including a GUI-triggered backup completing end to end to real S3.
 
 **Releases now declare what they require of an operator, and the artifact
 enforces it (ADR 0012 + ADR 0013, August 3–5).** Versioning is SemVer where
-"major" means *the operator must do something beyond pulling the image* — pre-1.0
-the minor slot carries that role. Every install has a real release identity
+"major" means *the operator must do something beyond pulling the image* — before
+1.0.0 the minor slot carried that role. Every install has a real release identity
 (`0.2.0-dev+<sha>` for source builds, baked for official images), versions
 compare in order rather than only for equality, and a release publishes a
 manifest naming each required action, its phase, and whether it is machine-
@@ -378,13 +376,15 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Use the published `v0.11.0` artifact as the release baseline.** The guarded
-   tag, public release, manifest, and image digest are verified (§19), and so
-   were `v0.10.0`'s (§17) and `v0.9.0`'s (§16); keep hosted-runner proof
-   distinct from the older `v0.3.2` bare-metal matrix and `v0.7.0` cold sandbox
-   run. Host-managed PHP upgrades from before `v0.9.0` still owe that release's
-   scoped runtime action, carried in `v0.11.0`'s history; the published image is
-   exempt.
+1. **Use the published `v1.0.0` artifact as the release baseline.** The guarded
+   tag, public release, manifest, and image digest are verified (§21), and so
+   were `v0.11.0`'s (§19), `v0.10.0`'s (§17) and `v0.9.0`'s (§16); keep
+   hosted-runner proof distinct from the older `v0.3.2` bare-metal matrix and
+   `v0.7.0` cold sandbox run. Host-managed PHP upgrades from before `v0.9.0`
+   still owe that release's scoped runtime action, carried in `v1.0.0`'s
+   history; the published image is exempt. From 1.0.0 the number itself is the
+   operator-action signal (ADR 0012): anything that needs an operator's hands
+   now means a new major.
 
 2. **The account area's structural work for 1.0.0 is done (§18).** #994's
    epic, the overview that was a hub and a settings page at once, is split:
@@ -394,10 +394,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
    burn down; take further account work from real use, not from the audit's
    count.
 
-3. **#797 is closed (§20).** A human non-author installed Wayfindr on a clean
-   Ubuntu VM from the public docs alone. The owner decided that is enough:
-   #994's non-author *upgrade* is not required for 1.0.0. Nothing else gates
-   1.0.0; cutting it follows RELEASING.md like any release.
+3. **1.0.0 shipped (§21).** #797 closed with a human non-author's install
+   (§20), and the owner decided that was enough without a non-author upgrade.
+   #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
 
 4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -1367,3 +1366,52 @@ is done (§18). Its body also says "installed and upgraded", and no person has
 yet observed an upgrade; scripted runs cover `v0.2.0 → v0.11.0`. The owner
 decided the same day that the install is enough, so the upgrade is not a 1.0.0
 requirement, and asked for 1.0.0 to be prepared.
+
+## 21. Published 1.0.0 — September 30, 2026
+
+[`v1.0.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.0.0) is
+public at tag `d6e5875efcf6129d0cb6cf849eb761fa08b38323`, published by the
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36720553755).
+The image digest is
+`sha256:47b697666e9bd7380cbbf39157d54a5a89b5e7071b0503cc22bf8c3aa27e222d`, and
+the `1.0` and `latest` aliases point at it; the workflow promotes the minor and
+`latest` only, so there is no `1` alias. It needs no operator action and has no
+migrations.
+
+**Its application code is `v0.11.0`'s.** Only `VERSION` and documentation
+changed between the tags (#1087, #1088), and the release commit (#1089) added
+the changelog section and the history entry. The image still has a new digest,
+because the build bakes the version and the release history. The release
+notes explain what 1.0.0 does change: under ADR 0012 the version number now
+carries the operator-action signal. Only a major can ask for anything beyond
+pulling and restarting, a minor adds features and self-migrating schema, and a
+patch only fixes.
+
+The public artifact then passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
+and a [`v0.2.0 → v1.0.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996).
+Both:
+- resolved the published digest;
+- passed the support loop, backup/restore and restart;
+- read `v1.0.0` from authenticated `/operator` after install and after restore.
+
+In the upgrade, `1.0.0/backups-queue-consumer` retired itself.
+
+**The tag is a day after its commit, on purpose.** The release commit and its
+changelog date are September 29; the owner pushed the tag on September 30. As
+RELEASING.md §2 says, notes are dated by the release commit, and the publish
+contract measures against the commit, so nothing needed re-dating.
+
+**For the next release:**
+- `VERSION` is `1.1.0`, so source builds report `1.1.0-dev`.
+- `release.json` is unchanged: no actions, and the backups notice stands.
+- Anything that needs an operator's hands is now a 2.0.0, not a minor. The
+  release contract enforces that: it refuses an action-bearing manifest on a
+  post-1.0 version that is not a new major.
+
+**Not done by the release, and not implied by it:**
+- the Forge stage deploy;
+- the `northcoastmedia/wayfindr` fork sync;
+- the public site;
+- the published wiki mirror;
+- closing #994.

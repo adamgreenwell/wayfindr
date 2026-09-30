@@ -3,16 +3,16 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is
-[`v0.11.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.11.0)
-(September 29, 2026). Current `main` identifies the next development line as
-`1.0.0-dev`; no 1.0.0 artifact has been published.
+[`v1.0.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.0.0)
+(September 30, 2026). Current `main` identifies the next development line as
+`1.1.0-dev`.
 
-`v0.11.0` repeated both hosted-runner paths on September 29: a
-[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205)
-and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014),
-each reading `v0.11.0` from authenticated `/operator`. `v0.10.0` did the same on
-September 28 ([clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36463449869),
-[`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36463452977)).
+`v1.0.0` repeated both hosted-runner paths on September 30: a
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
+and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996),
+each reading `v1.0.0` from authenticated `/operator`. `v0.11.0` did the same on
+September 29 ([clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205),
+[`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014)).
 
 The first guarded release, `v0.9.0`, passed its tag ruleset and old-run gates,
 published the manifest and multi-architecture image, and verified stable image
@@ -24,21 +24,26 @@ with a custom backup queue. An additional
 read `v0.9.0` directly from authenticated `/operator`. These paths do not prove
 bare-metal operation, public TLS/origin behavior, or independent human use.
 
-`1.0.0` is scoped to an account experience a self-hoster can administer
+`1.0.0` was scoped to an account experience a self-hoster can administer
 ([#994](https://github.com/adamgreenwell/wayfindr/issues/994)) and the hard
 acceptance gate in [#797](https://github.com/adamgreenwell/wayfindr/issues/797),
 which closed on September 29, 2026: somebody who is not the author installed
 Wayfindr on a clean Ubuntu VM using only the public documentation. The owner
 decided that install is enough; the non-author upgrade #994's scope also named
-is not required for 1.0.0.
+was not required for 1.0.0, which published the next day.
 The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issues/985)
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v0.11.0
+## Implemented in v1.0.0
 
-This section describes the public `v0.11.0` artifact. Some foundation also
+This section describes the public `v1.0.0` artifact. Some foundation also
 exists in older releases; the release notes define each version's boundary.
+
+`v1.0.0` changes, relative to `v0.11.0`: none in the application. It is the
+first release whose version number carries the operator-action signal
+([ADR 0012](../decisions/0012-platform-versioning.md)): only a new major can
+ask an operator for anything beyond pulling and restarting.
 
 `v0.11.0` changes, relative to `v0.10.0`: the account area is reorganised, with
 a Team page for the roster, site access and team alerts, API tokens and
@@ -202,13 +207,17 @@ Underneath that, the original foundation:
   protection, private vulnerability reporting, Dependabot, and a repo-authored
   GitHub Wiki.
 
-## Before 1.0.0
+## After 1.0.0
 
-The support feature gaps, the v0.9.0, v0.10.0 and v0.11.0 publications, the
-guarded-tag preconditions, the account area's restructure, and the
-independent-install gate are complete, and the owner decided on September 29
-that the install is enough without a non-author upgrade. Nothing else gates
-1.0.0; other polish stays demand-gated.
+`v1.0.0` was published on September 30, 2026. Its gates were:
+- the support feature gaps;
+- the v0.9.0, v0.10.0 and v0.11.0 publications;
+- the guarded-tag preconditions;
+- the account area's restructure;
+- the independent install.
+
+The owner decided on September 29 that the install was enough without a
+non-author upgrade. How the last two were met:
 
 - **The account experience:** the structural work in
   [#994](https://github.com/adamgreenwell/wayfindr/issues/994) shipped across
@@ -223,18 +232,23 @@ that the install is enough without a non-author upgrade. Nothing else gates
   release, timings and any friction were not recorded; the issue's closing
   comment says what was and was not observed. No person has observed a
   non-author upgrade, and the owner decided 1.0.0 does not require one.
-  The hosted-runner v0.11.0, v0.10.0 and v0.9.0 clean install,
+  The hosted-runner v1.0.0, v0.11.0, v0.10.0 and v0.9.0 clean install,
   upgrade, support-loop, and backup/restore checks remain the reproducible
   evidence for those paths, including upgrades from `v0.2.0`. A prior cold
   Claude sandbox run against `v0.7.0` also found real widget and installer
   defects later fixed in v0.9.0, but it was not a real-environment acceptance
   run.
+
+What comes next is demand-gated. From here the version number says whether it
+needs the operator: a minor adds features, and only a major can ask for
+operator action.
+
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
   for future release candidates. The August 12 bare-metal matrix remains
-  specific to `v0.3.2`; the September 29, 28 and 24 public-artifact
-  hosted-runner checks cover the narrower `v0.11.0`, `v0.10.0` and `v0.9.0`
-  paths linked above. Neither proves a production restore posture.
+  specific to `v0.3.2`; the September 30, 29, 28 and 24 public-artifact
+  hosted-runner checks cover the narrower `v1.0.0`, `v0.11.0`, `v0.10.0` and
+  `v0.9.0` paths linked above. Neither proves a production restore posture.
 - MVP dogfood operation: the Forge stage has been the owner-approved initial
   dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real
