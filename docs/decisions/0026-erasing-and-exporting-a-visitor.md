@@ -98,8 +98,10 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
   a deleted conversation, or built from a ticket before it was stripped, is
   refused even when its alert was never claimed, and a retry builds it again
   from what is left. A stripped ticket goes on alerting, under its stripped
-  subject. A message already past the check has reached the mail server,
-  which is mail already sent (§6);
+  subject. The check's lock ends before the transport runs, so a mail that
+  passes is recorded as in flight under it, and erasure refuses while one
+  about the person's work is fresh, as it does for a note or a copilot call.
+  Once the mail server has it, it is mail already sent (§6);
 - **SLA clocks and automation executions** whose subject is an erased
   conversation. A ticket stripped under §3 keeps its own as the work item's
   history: identifiers, outcomes and a copy of the rule's own text. The

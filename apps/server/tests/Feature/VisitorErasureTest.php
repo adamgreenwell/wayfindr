@@ -48,6 +48,7 @@ use App\Notifications\Channels\ErasureAwareDatabaseChannel;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
+use App\Support\AgentAlertDeliveryCoordinator;
 use App\Support\Automation\AutomationMacroRunFailed;
 use App\Support\Automation\AutomationMacroRunner;
 use App\Support\Automation\AutomationRuleEngine;
@@ -60,6 +61,8 @@ use App\Support\Visitors\VisitorIdentityMerger;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Mail\SentMessage;
 use Illuminate\Notifications\ChannelManager;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\DB;
@@ -70,7 +73,9 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\SentMessage as SymfonySentMessage;
 use Symfony\Component\Mime\Email;
 
 uses(RefreshDatabase::class);
@@ -544,6 +549,57 @@ test('alert mail built before an erasure is stopped before SMTP, and a stripped 
         ->toBeTrue('a stripped ticket stopped alerting by mail');
 });
 
+test('an alert mail on its way to the mail server holds the erasure until it is sent', function (string $about): void {
+    $f = erasureFixture();
+    $notification = $about === 'ticket'
+        ? new TicketAssigned(Ticket::query()->with('site')->findOrFail($f['ticket']->id), $f['admin'])
+        : new ConversationNeedsReply(ConversationMessage::query()->where('conversation_id', $f['conversation']->id)->firstOrFail());
+    $email = (new Email)->from('alerts@example.test')->to('agent@example.test')->text('alert');
+
+    foreach ($notification->toMail($f['admin'])->callbacks as $callback) {
+        $callback($email);
+    }
+
+    // Past its last check, not yet at the mail server.
+    app(MarkSlaMailTransportStarted::class)->handle(new MessageSending($email));
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])
+        ->assertSessionHasErrors(['confirmation' => __('visitor_erasure.errors.alert_mail_sending')]);
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('the erasure went ahead while the mail was in flight');
+
+    event(new MessageSent(new SentMessage(new SymfonySentMessage($email, Envelope::create($email)))));
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+    expect(DB::table('alert_mail_sends')->count())->toBe(0, 'a sent mail was still on record');
+})->with(['ticket', 'conversation']);
+
+test('a send that never reported back stops holding the erasure after the in-flight window', function (): void {
+    $f = erasureFixture();
+    DB::table('alert_mail_sends')->insert([
+        'subject_type' => $f['conversation']->getMorphClass(), 'subject_id' => $f['conversation']->id,
+        'started_at' => now()->subSeconds(VisitorEraser::IN_FLIGHT_WINDOW_SECONDS + 1),
+    ]);
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(DB::table('alert_mail_sends')->count())->toBe(0, 'the stale record outlived the erasure it named');
+});
+
+test('an alert mail refused after its check leaves no send on record', function (): void {
+    $f = erasureFixture();
+    $email = (new Email)->to('agent@example.test')->text('alert');
+
+    foreach ((new TicketAssigned(Ticket::query()->with('site')->findOrFail($f['ticket']->id), $f['admin']))->toMail($f['admin'])->callbacks as $callback) {
+        $callback($email);
+    }
+
+    // A later boundary refuses it: here, a delivery claim that does not parse.
+    $email->getHeaders()->addTextHeader(AgentAlertDeliveryCoordinator::ID_HEADER, 'not-a-claim');
+
+    expect(fn () => app(MarkSlaMailTransportStarted::class)->handle(new MessageSending($email)))->toThrow(LogicException::class)
+        ->and(DB::table('alert_mail_sends')->count())->toBe(0, 'a mail that never left kept holding erasure');
+});
+
 test('a cobrowse answer recorded just after an erasure does not name the person', function (): void {
     $f = erasureFixture();
     // The consent controller commits a decline, then audits it: the erasure
@@ -960,6 +1016,19 @@ test('the ledger names every contact merged into the person, so a restore from b
     sort($expected);
 
     expect(VisitorErasure::query()->sole()->merged_visitor_ids)->toBe($expected);
+});
+
+test('a receipt the erasure cannot shorten afterwards still reports the erasure as done', function (): void {
+    $f = erasureFixture();
+    Exceptions::fake();
+    // The erasure has committed; then the database refuses the receipt update.
+    VisitorErasure::updating(fn () => throw new RuntimeException('the database went away'));
+
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect(route('dashboard.visitors.index'));
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse()
+        ->and(VisitorErasure::query()->sole()->pending_files)->not->toBeEmpty('the receipt lost the files the scheduled run still has to remove');
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'the database went away');
 });
 
 test('a file storage would not remove stays on the receipt until the scheduled run removes it', function (): void {

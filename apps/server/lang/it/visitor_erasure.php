@@ -46,6 +46,7 @@ return [
     ],
     'errors' => [
         'confirm' => 'Digiti esattamente :word per confermare.',
+        'alert_mail_sending' => 'Un\'email di avviso sulle conversazioni o sui ticket di questo contatto è in fase di invio a un agente. Non è stato cancellato nulla. Riprovi tra un paio di minuti.',
         'copilot_running' => 'L\'assistente IA sta lavorando su una conversazione di questo contatto, quindi la trascrizione potrebbe essere in invio al fornitore IA. Non è stato cancellato nulla. Riprovi tra qualche minuto.',
         'note_posting' => 'Una nota su un ticket di questo contatto è in fase di pubblicazione sulla issue collegata. Non è stato cancellato nulla. Riprovi tra un paio di minuti.',
     ],

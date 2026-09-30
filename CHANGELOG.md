@@ -30,9 +30,10 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart. Two migrations run
-themselves: one adds the erasure ledger table, the other lets each bulk-action
-run record every item it selected.
+**No operator action required.** Pull and restart. Three migrations run
+themselves: they add the erasure ledger table and a table of alert emails on
+their way to the mail server, and let each bulk-action run record every item
+it selected.
 
 ### Added
 
@@ -48,8 +49,9 @@ run record every item it selected.
   did what, but lose what was said. Webhook reply samples, bulk-action
   searches, automation error text and failed jobs that quote the person are
   cleared too. If a note is posting to a linked issue, or the AI assistant is
-  working on one of their conversations at that moment, erasure waits and
-  asks the agent to try again in a few minutes. A summary shows what
+  working on one of their conversations at that moment, or an alert email
+  about their work is on its way to the mail server, erasure waits and asks
+  the agent to try again in a few minutes. A summary shows what
   goes, what stays and what erasure cannot reach before anything is deleted,
   and the agent confirms by typing `ERASE` and their current password. It
   needs the new **Handle data requests** permission, which Owners and Admins

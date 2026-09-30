@@ -155,11 +155,12 @@ through the password reset link first. The erasure then, in one transaction:
 
 Erasure refuses, and erases nothing, while something about the contact is
 being sent to an outside service at that moment: a note posting to a linked
-issue, or the AI assistant working on one of their conversations. The agent
-is asked to try again in a few minutes. Once that call has ended, whatever it
-sent is out of reach like any other copy already sent. An alert email a worker
-has claimed but not yet handed to the mail server is stopped by the check it
-makes just before sending.
+issue, the AI assistant working on one of their conversations, or an alert
+email about their work on its way to the mail server. The agent is asked to
+try again in a few minutes. Once that call has ended, whatever it sent is out
+of reach like any other copy already sent. An alert email built before the
+erasure but not yet sent is stopped by the check it makes just before
+sending.
 
 Uploaded files are removed from storage after the transaction commits. The
 erasure's record lists them from inside the transaction and strikes each off

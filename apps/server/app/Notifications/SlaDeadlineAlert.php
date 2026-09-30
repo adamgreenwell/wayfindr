@@ -8,6 +8,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\Concerns\CoordinatesAgentAlertMail;
 use App\Support\Sla\SlaAlertRouting;
+use App\Support\Visitors\AlertMailErasureGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -93,7 +94,12 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
             });
         }
 
-        return $this->coordinateAgentAlertMail($message);
+        $subject = $this->clock->subject;
+        $message = $this->coordinateAgentAlertMail($message);
+
+        return $subject instanceof Ticket || $subject instanceof Conversation
+            ? AlertMailErasureGuard::stamp($message, $subject)
+            : $message;
     }
 
     public function clockId(): int

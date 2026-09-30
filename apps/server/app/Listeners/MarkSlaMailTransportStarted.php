@@ -9,6 +9,7 @@ use App\Support\Visitors\AlertMailErasureGuard;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Str;
 use LogicException;
+use Throwable;
 
 /** Place durable alert ambiguity boundaries immediately before mail transport. */
 class MarkSlaMailTransportStarted
@@ -19,11 +20,23 @@ class MarkSlaMailTransportStarted
     {
         // Before any boundary moves: mail built from work an erasure has
         // since deleted or stripped does not reach SMTP (ADR 0026 §1). A retry
-        // builds it again from what is left, if anything is.
-        if (! AlertMailErasureGuard::allows($event->message)) {
+        // builds it again from what is left, if anything is. One that passes
+        // holds erasure off until FinishAlertMailSend sees it sent.
+        if (! AlertMailErasureGuard::begin($event->message)) {
             throw new LogicException('The alert mail was built from support work that has since been erased.');
         }
 
+        try {
+            $this->markTransportStarted($event);
+        } catch (Throwable $exception) {
+            AlertMailErasureGuard::finish($event->message);
+
+            throw $exception;
+        }
+    }
+
+    private function markTransportStarted(MessageSending $event): void
+    {
         $agentAlertClaim = $this->agentAlertClaim($event);
         $batchClaim = $this->batchClaim($event);
         $header = $event->message->getHeaders()->get(SlaDeadlineAlert::DELIVERY_HEADER);

@@ -46,6 +46,7 @@ return [
     ],
     'errors' => [
         'confirm' => 'Geben Sie zur Bestätigung genau :word ein.',
+        'alert_mail_sending' => 'Gerade wird eine Benachrichtigungs-E-Mail zu Unterhaltungen oder Tickets dieses Kontakts an einen Agenten gesendet. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
         'copilot_running' => 'Der KI-Assistent bearbeitet gerade eine Unterhaltung dieses Kontakts, daher wird das Transkript möglicherweise an den KI-Anbieter übertragen. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
         'note_posting' => 'Eine Notiz zu einem Ticket dieses Kontakts wird gerade an das verknüpfte Issue übertragen. Es wurde nichts gelöscht. Versuchen Sie es in ein paar Minuten erneut.',
     ],

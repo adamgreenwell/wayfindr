@@ -45,6 +45,7 @@ return [
     ],
     'errors' => [
         'confirm' => 'Type :word exactly to confirm.',
+        'alert_mail_sending' => 'An alert email about this contact\'s conversations or tickets is being sent to an agent right now. Nothing was erased. Try again in a couple of minutes.',
         'copilot_running' => 'The AI assistant is working on one of this contact\'s conversations right now, so their transcript may be on its way to the AI provider. Nothing was erased. Try again in a few minutes.',
         'note_posting' => 'A note on one of this contact\'s tickets is being posted to its linked issue right now. Nothing was erased. Try again in a couple of minutes.',
     ],

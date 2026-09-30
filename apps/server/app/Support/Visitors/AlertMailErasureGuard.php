@@ -21,12 +21,17 @@ use Symfony\Component\Mime\Email;
  * mail makes just before SMTP reads that again under a shared lock: a mail
  * about a deleted conversation, or built from a ticket since stripped, goes no
  * further. A stripped ticket still alerts, with what the stripped ticket says.
- * A mail that passes this check has been handed to the mail server, which
- * erasure cannot reach (§6).
+ *
+ * That lock ends before the transport runs, so a mail that passes is recorded
+ * as in flight under it, and erasing the contact refuses while such a send is
+ * fresh. The record goes when the mail is sent; a send that never reports back
+ * stops holding erasure after the in-flight window.
  */
 final class AlertMailErasureGuard
 {
     public const HEADER = 'X-Wayfindr-Alert-About';
+
+    public const SEND_HEADER = 'X-Wayfindr-Alert-Send';
 
     public static function stamp(MailMessage $message, Ticket|Conversation $subject): MailMessage
     {
@@ -39,7 +44,11 @@ final class AlertMailErasureGuard
         );
     }
 
-    public static function allows(Email $email): bool
+    /**
+     * Just before SMTP. False when the mail must not be sent; otherwise the
+     * send is in flight until finish() is called with the same message.
+     */
+    public static function begin(Email $email): bool
     {
         $header = $email->getHeaders()->get(self::HEADER);
 
@@ -48,13 +57,50 @@ final class AlertMailErasureGuard
         }
 
         [$type, $id, $built] = array_pad(explode(':', trim($header->getBodyAsString()), 3), 3, '');
+        $subject = match ($type) {
+            'conversation' => new Conversation,
+            'ticket' => new Ticket,
+            default => null,
+        };
 
-        return DB::transaction(fn (): bool => match ($type) {
-            'conversation' => Conversation::query()->whereKey((int) $id)->sharedLock()->exists(),
-            'ticket' => ($ticket = Ticket::query()->whereKey((int) $id)->sharedLock()->first(['id', 'metadata'])) instanceof Ticket
-                && ($built === 'stripped' || ! self::stripped($ticket)),
-            default => true,
+        if ($subject === null) {
+            return true;
+        }
+
+        return DB::transaction(function () use ($email, $subject, $id, $built): bool {
+            $current = $subject->newQuery()->whereKey((int) $id)->sharedLock()->first();
+
+            if ($current === null || ($current instanceof Ticket && $built !== 'stripped' && self::stripped($current))) {
+                return false;
+            }
+
+            $send = DB::table('alert_mail_sends')->insertGetId([
+                'subject_type' => $subject->getMorphClass(),
+                'subject_id' => (int) $id,
+                'started_at' => now(),
+            ]);
+            $email->getHeaders()->addTextHeader(self::SEND_HEADER, (string) $send);
+
+            return true;
         });
+    }
+
+    /** After SMTP, or where the send stopped short of it. */
+    public static function finish(Email $email): void
+    {
+        $header = $email->getHeaders()->get(self::SEND_HEADER);
+
+        if ($header === null) {
+            return;
+        }
+
+        DB::table('alert_mail_sends')
+            ->where('id', (int) trim($header->getBodyAsString()))
+            ->delete();
+        // Sends that never reported back, so the table stays small.
+        DB::table('alert_mail_sends')
+            ->where('started_at', '<', now()->subSeconds(VisitorEraser::IN_FLIGHT_WINDOW_SECONDS))
+            ->delete();
     }
 
     private static function stripped(Ticket $ticket): bool

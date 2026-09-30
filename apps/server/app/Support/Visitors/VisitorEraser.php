@@ -111,6 +111,7 @@ final class VisitorEraser
         'push_subscriptions' => 'not visitor data: agent devices only',
         'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
         'visitor_erasures' => 'the ledger itself: identifiers and counts only',
+        'alert_mail_sends' => 'alert mail on its way to SMTP, by identifier only: erasure waits while one about the person is fresh, and removes the rest',
         'failed_jobs' => 'rows naming the person by email, host ID, browser ID or support code deleted; a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
     ];
 
@@ -219,6 +220,10 @@ final class VisitorEraser
             );
 
             $this->stripTickets($scope['ticket_ids']);
+            // After stripTickets, which locks the tickets, as the conversations
+            // are locked above: an alert mail past its pre-SMTP check is on
+            // record by now, and one that is not will see the erasure.
+            $this->refuseWhileAlertMailIsSending($scope['conversation_ids'], $scope['ticket_ids']);
             $audited = $this->scrubAuditEvents($scope);
             // SLA deliveries before the alerts they belong to: the check every
             // alert mail makes just before SMTP locks them in that order, so
@@ -297,8 +302,14 @@ final class VisitorEraser
 
         // After the commit, as in the site purge: deleting first would leave
         // live rows pointing at missing files. What cannot be removed now
-        // stays on the receipt for wayfindr:finish-erasures.
-        $this->removePendingFiles($receipt);
+        // stays on the receipt for wayfindr:finish-erasures. The erasure has
+        // happened by here, so a failure is reported, not returned: the
+        // receipt still lists every file until it is shortened.
+        try {
+            $this->removePendingFiles($receipt);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         // The erased row may be on an agent's live board. With the row gone
         // the event carries only its removal. A realtime failure never undoes
@@ -562,6 +573,44 @@ final class VisitorEraser
         if ($running) {
             throw ValidationException::withMessages([
                 'confirmation' => __('visitor_erasure.errors.copilot_running'),
+            ]);
+        }
+    }
+
+    /**
+     * An alert mail past its check before SMTP may carry what this erasure is
+     * about to remove, and the check's lock ends before the transport runs,
+     * so each such send is on record until the mail server has it. Refused
+     * while one about this person's work is fresh, like a note or a copilot
+     * call in flight. Older records are sends that never reported back: they
+     * hold only an identifier and a time, and go with the erasure.
+     *
+     * @param  list<int>  $conversationIds
+     * @param  list<int>  $ticketIds
+     */
+    private function refuseWhileAlertMailIsSending(array $conversationIds, array $ticketIds): void
+    {
+        $cutoff = now()->subSeconds(self::IN_FLIGHT_WINDOW_SECONDS);
+        $sending = false;
+
+        foreach ([
+            [(new Conversation)->getMorphClass(), $conversationIds],
+            [(new Ticket)->getMorphClass(), $ticketIds],
+        ] as [$type, $ids]) {
+            $this->whereInChunks(
+                DB::table('alert_mail_sends')->where('subject_type', $type),
+                'subject_id',
+                $ids,
+                function (Builder $query) use ($cutoff, &$sending): void {
+                    $sending = $sending || (clone $query)->where('started_at', '>', $cutoff)->exists();
+                    $query->delete();
+                },
+            );
+        }
+
+        if ($sending) {
+            throw ValidationException::withMessages([
+                'confirmation' => __('visitor_erasure.errors.alert_mail_sending'),
             ]);
         }
     }

@@ -59,6 +59,13 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   not yet removed. Those keys are written inside the erasure's transaction,
   so a crash after the commit cannot lose them. Never a name, email or
   anything that was erased.
+- `alert_mail_sends`: agent alert mail between its last check before SMTP and
+  the mail server, by the ticket or conversation it names and when it
+  started. The check releases its lock before the transport runs, so erasing
+  a contact refuses while a send about their work is fresh, rather than let a
+  mail built before the erasure leave after it. A row is removed when its mail
+  is sent; one that never reports back stops holding erasure after the
+  in-flight window and is pruned. Identifiers and a time only.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
 - `conversation_message_attachments`: private message-scoped files. Rows carry
