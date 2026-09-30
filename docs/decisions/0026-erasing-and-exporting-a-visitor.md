@@ -79,8 +79,9 @@ Deleted, for the visitor, including everything earlier merges moved onto them:
 - **proactive message deliveries**: rows naming the visitor, and detached rows
   whose `visitor_key` matches the key derived from the browser IDs being erased.
   The keys can be computed before the row goes;
-- **agent notifications** whose data names one of the erased conversations or
-  tickets deleted under §3;
+- **agent notifications** whose data names one of the erased conversations, or
+  a ticket stripped under §3. A ticket's alerts (assignment, SLA, automation)
+  store its subject, which may be the person's words;
 - **SLA clocks and automation executions** whose subject is an erased
   conversation or ticket;
 - **pending outbound webhook deliveries** for erased resources, which are
@@ -117,6 +118,10 @@ weighed three options and chose B:
   - *Cleared or replaced:* the description, `metadata.visitor_context`, the
     support code, note and comment bodies in its audit events (§2), and the
     subject, which becomes `Ticket #812 (requester erased)`.
+  - *Deleted:* its `ticket_external_comment_deliveries`. Each holds an
+    encrypted copy of a note posted, or about to be posted, to the provider,
+    and cascades only with the ticket. Deleting them also stops a pending one
+    from posting the note after the erasure.
   - The external issue keeps whatever it already holds (§6).
 - **C. Ask per ticket at erasure time,** defaulting to B.
 
@@ -190,7 +195,11 @@ processing is the host's change to make, not Wayfindr's.
 The same permission downloads a ZIP for one visitor:
 - `visitor.json`: identity fields, attribute values, known browser IDs, contact
   notes;
-- one file per conversation: messages, ratings, and attachment metadata;
+- one file per conversation: messages, ratings, attachment metadata, the
+  conversation's cobrowse sessions (page state, snapshots and mutations
+  still held, which retention may already have pruned), and its copilot
+  output (summary, reply draft, suggested ticket title and suggested
+  articles);
 - `tickets/`: requested tickets with their notes;
 - `attachments/`: the binaries;
 - `README.txt`: what is included, and the §6 list of what is not.
