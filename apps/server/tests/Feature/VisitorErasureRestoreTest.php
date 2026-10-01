@@ -515,6 +515,24 @@ test('a restore that stops before replacing anything leaves nothing to re-apply'
     expect(app(ErasureLedger::class)->reapplyOutstanding())->toBeFalse();
 });
 
+test('a restore whose ledger cannot be settled takes its serving gate down again', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    // Backfilling this receipt will fail: its file's name is taken by a directory.
+    unlink(ledgerPath()."/{$receipt}.json");
+    mkdir(ledgerPath()."/{$receipt}.json");
+    $loaded = false;
+
+    restoreArchive(function () use (&$loaded): void {
+        $loaded = true;
+    })
+        ->expectsOutputToContain('The erasure ledger could not be settled, so nothing was restored')
+        ->assertFailed();
+
+    expect($loaded)->toBeFalse()
+        ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeFalse('a restore that replaced nothing left the site refusing traffic');
+});
+
 test('a restore that stops early leaves an earlier restore\'s re-application outstanding', function (): void {
     ledgerFixture();
     app(ErasureLedger::class)->markReapplyOutstanding();

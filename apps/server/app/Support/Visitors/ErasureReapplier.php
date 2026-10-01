@@ -39,6 +39,8 @@ final class ErasureReapplier
      */
     public function beforeRestore(): array
     {
+        $this->markedOutstanding = false;
+
         // A ledger the restore itself would purge is refused while nothing
         // has changed.
         $this->ledger->assertOutsideAttachmentDisks();

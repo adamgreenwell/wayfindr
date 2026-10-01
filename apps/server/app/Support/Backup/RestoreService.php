@@ -308,8 +308,10 @@ class RestoreService
                 'erasures' => $erasures,
             ];
         } catch (Throwable $exception) {
-            // Nothing was replaced, so there is nothing to re-apply.
-            if (! $destructiveWorkBegan && isset($erasuresBefore)) {
+            // Nothing was replaced, so there is nothing to re-apply: the gate
+            // comes down, even when settling the ledger itself is what failed.
+            // Only one this restore raised; abandon() keeps an earlier one.
+            if (! $destructiveWorkBegan) {
                 $this->erasures->abandon();
             }
 
