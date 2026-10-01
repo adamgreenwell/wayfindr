@@ -429,7 +429,7 @@ puts the ledger row back under the same receipt when the restored database
 predates it, so later backups carry it, and writes a `visitor.erasure_reapplied`
 audit event with counts only.
 
-Delivery 2 settled four details:
+Delivery 2 settled these details:
 - **The entry also records the site's public key**, and re-application finds
   the restored site by it, and by the ID when there is one. An archive from
   another installation can hold a site, and visitors, under the same IDs. The
@@ -476,6 +476,13 @@ Delivery 2 settled four details:
   a failure that is not transient. So, like the release gate of ADR 0013,
   the app answers every request but its health check with a 503 until the
   ledger records the work as done.
+- **A ledger row outlives its account,** as its file on the volume does. The
+  rows are what fill a new volume's ledger. A row that went with its account
+  would leave that volume knowing some erasures and not others, so it would
+  not count as new and give no warning, while a restore from before the
+  account was removed brings the account back, erased contacts and all. A row
+  holds internal IDs, the site's key and counts, so keeping it keeps nothing
+  about anyone.
 
 A restore onto a **fresh** volume, such as disaster recovery onto new hardware,
 has no ledger directory. Restore then warns that erasures recorded after the

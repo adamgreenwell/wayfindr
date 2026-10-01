@@ -511,6 +511,31 @@ test('a restore onto a volume that never held the ledger says what it cannot re-
         ->assertSuccessful();
 });
 
+test('an erasure is still known to a new volume after its account is removed', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows([
+        'accounts' => [$f['account']->id],
+        'sites' => [$f['site']->id],
+        'visitors' => [$f['bystander']->id, $f['visitor']->id],
+    ]);
+    app(VisitorEraser::class)->erase($f['admin'], $f['visitor']);
+    // Another account's erasure keeps its row, so the new volume is not empty
+    // once the restore has backfilled it.
+    $other = Account::factory()->create();
+    $otherAdmin = User::factory()->for($other)->create(['account_role' => AccountRole::Admin]);
+    app(VisitorEraser::class)->erase($otherAdmin, Visitor::factory()->for(Site::factory()->for($other))->create());
+
+    $f['account']->delete();
+    exec('rm -rf '.escapeshellarg(ledgerPath()));
+
+    // An archive from before the account went brings it back, erased contact
+    // and all.
+    restoreArchive(fn () => putArchivedRowsBack($archived))->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('an erasure was lost with its account, and the restore brought the person back')
+        ->and(Visitor::query()->whereKey($f['bystander']->id)->exists())->toBeTrue();
+});
+
 test('a ledger entry is checked whole, not only for its receipt', function (Closure $damage): void {
     $f = ledgerFixture();
     $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;

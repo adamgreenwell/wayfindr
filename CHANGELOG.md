@@ -30,10 +30,11 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart. Four migrations run
+**No operator action required.** Pull and restart. Five migrations run
 themselves: they add the erasure ledger table, with each erased contact's site
-key, and a table of alert emails on their way to the mail server, and let each
-bulk-action run record every item it selected.
+key, and keep its rows when their account is removed; add a table of alert
+emails on their way to the mail server; and let each bulk-action run record
+every item it selected.
 
 ### Added
 
