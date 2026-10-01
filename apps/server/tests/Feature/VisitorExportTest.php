@@ -583,6 +583,23 @@ test('a history too large for one archive is refused before anything is written'
         ->assertSessionHasErrors(['export' => __('visitor_export.errors.too_large')]);
 });
 
+test('only the files the archive would hold count against its size', function (): void {
+    $f = exportFixture();
+    // Each alone is past what one archive holds, and neither is written: an
+    // agent's unsent upload is not theirs, and a file the scanner holds is
+    // withheld.
+    ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create([
+        'conversation_message_id' => null, 'size_bytes' => VisitorExporter::MAX_BYTES + 1,
+        'uploaded_by_type' => $f['agent']->getMorphClass(), 'uploaded_by_id' => $f['agent']->id,
+        'status' => ConversationMessageAttachment::STATUS_READY,
+    ]);
+    ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create([
+        'size_bytes' => VisitorExporter::MAX_BYTES + 1, 'status' => ConversationMessageAttachment::STATUS_QUARANTINED,
+    ]);
+
+    expect(exportArchive($f['admin'], $f['visitor']))->toHaveKey('README.txt');
+});
+
 test('a history whose text outgrows the archive is refused, and nothing is left behind', function (): void {
     $f = exportFixture();
     // Its files fit, so the refusal before writing lets it through, and the

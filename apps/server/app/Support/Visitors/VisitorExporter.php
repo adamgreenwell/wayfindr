@@ -387,7 +387,7 @@ final class VisitorExporter
         }
 
         $scope = $this->footprint->scope($visitor);
-        $this->assertFits($scope);
+        $this->assertFits($scope, $visitor);
 
         $zip = new StoredZipWriter($path, $this->maxBytes);
 
@@ -422,16 +422,26 @@ final class VisitorExporter
      * what can be counted first: the entries and the files. Text cannot be
      * without reading it, so the writer refuses it as it goes.
      *
+     * Only the files writeAttachments() writes count: an agent's unsent
+     * upload is not theirs, and one that is not ready is withheld.
+     *
      * @param  array{conversation_ids: list<int>, attachment_ids: list<int>, ticket_ids: list<int>}  $scope
      */
-    private function assertFits(array $scope): void
+    private function assertFits(array $scope, Visitor $visitor): void
     {
-        $entries = count($scope['conversation_ids']) + count($scope['attachment_ids']) + count($scope['ticket_ids']) + 16;
+        $files = 0;
         $bytes = 0;
 
         foreach (array_chunk($scope['attachment_ids'], 500) as $chunk) {
-            $bytes += (int) ConversationMessageAttachment::query()->whereIn('id', $chunk)->sum('size_bytes');
+            foreach (ConversationMessageAttachment::query()->whereIn('id', $chunk)->get() as $attachment) {
+                if (self::belongsToThem($attachment, $visitor) && $attachment->isReady()) {
+                    $files++;
+                    $bytes += (int) $attachment->size_bytes;
+                }
+            }
         }
+
+        $entries = count($scope['conversation_ids']) + $files + count($scope['ticket_ids']) + 16;
 
         if ($entries > StoredZipWriter::MAX_ENTRIES || $bytes > $this->maxBytes) {
             throw new VisitorExportRefused(VisitorExportRefused::TOO_LARGE);
