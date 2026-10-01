@@ -108,6 +108,15 @@ function exportFixture(): array
         'occurred_at' => now(),
     ]);
 
+    // A job that names their conversation by its support code, unique to the
+    // install, as the email-only one the history fixture holds is not.
+    DB::table('failed_jobs')->insert([
+        'uuid' => (string) Str::uuid(), 'connection' => 'database', 'queue' => 'default',
+        'payload' => json_encode(['displayName' => 'App\\Jobs\\DeliverOutboundWebhook']),
+        'exception' => "RuntimeException: could not deliver {$f['conversation']->support_code} for Robin {$m}\n#0 /app/Jobs/DeliverOutboundWebhook.php(42)",
+        'failed_at' => now(),
+    ]);
+
     // A platform operator looked at their conversation and ticket.
     $operator = User::factory()->create(['platform_role' => 'operator', 'name' => 'Operator Pat']);
     $grant = BreakGlassGrant::factory()->activeFor($f['account'], $operator)->create([
@@ -220,7 +229,7 @@ test('an export holds everything held about the person, and nothing about anyone
         'incidental.json' => [
             'conversation webhook response' => "Robin {$m}", 'ticket webhook response' => "could not sync Ticket {$m}",
             'automation error' => "'Ticket {$m}'", 'saved search' => "robin {$m}",
-            'failed job' => '<'.strtolower($m).'@example.test>: Recipient address rejected',
+            'failed job' => "could not deliver {$code} for Robin {$m}",
         ],
         'break_glass.json' => ['reason' => "Reason {$m}", 'viewed conversation' => "conversation {$m}", 'viewed ticket' => "ticket {$m}"],
     ] as $file => $stores) {
@@ -469,6 +478,19 @@ test('a file an agent has not sent yet is not theirs to receive, but their own u
         'status' => ConversationMessageAttachment::STATUS_READY,
     ]);
     Storage::disk('attachments')->put($draft->storage_key, 'QZDRAFTQZ binary');
+    // Recorded the moment it was uploaded, as the upload service does, and a
+    // rejected upload of the agent's beside one of the visitor's.
+    foreach ([
+        [$f['agent'], 'attachment.uploaded', ['attachment_id' => $draft->id, 'filename' => 'QZDRAFTQZ.png']],
+        [$f['agent'], 'attachment.quarantined', ['filename' => 'QZDRAFTQZ-rejected.exe', 'threat' => 'Eicar']],
+        [$f['visitor'], 'attachment.quarantined', ['filename' => 'their-own-rejected.exe', 'threat' => 'Eicar']],
+    ] as [$actor, $action, $metadata]) {
+        $f['conversation']->auditEvents()->create([
+            'account_id' => $f['account']->id, 'site_id' => $f['site']->id,
+            'actor_type' => $actor->getMorphClass(), 'actor_id' => $actor->id,
+            'action' => $action, 'metadata' => $metadata, 'occurred_at' => now(),
+        ]);
+    }
     $own = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create([
         'conversation_message_id' => null, 'original_filename' => 'mine.png', 'status' => ConversationMessageAttachment::STATUS_READY,
     ]);
@@ -480,7 +502,18 @@ test('a file an agent has not sent yet is not theirs to receive, but their own u
         expect(str_contains($name.$contents, 'QZDRAFTQZ'))->toBeFalse("{$name} holds a file an agent has not sent");
     }
 
-    expect($entries["attachments/{$own->id}-mine.png"] ?? null)->toBe('their own');
+    expect($entries["attachments/{$own->id}-mine.png"] ?? null)->toBe('their own')
+        ->and($entries['audit.json'])->toContain('their-own-rejected.exe');
+});
+
+test('a failed job that names them only by an email address another contact can share is not exported', function (): void {
+    $f = exportFixture();
+    $entries = exportArchive($f['admin'], $f['visitor']);
+
+    // The history fixture's mail rejection names their address and nothing
+    // that is theirs alone. Erasure removes it; the export cannot claim it.
+    $this->assertStringNotContainsString('Recipient address rejected', $entries['incidental.json'], 'a failed job tied to them only by a shareable email address was exported');
+    expect($entries['incidental.json'])->toContain($f['conversation']->support_code);
 });
 
 test('a saved search that cannot be tied to the person is not handed to them', function (): void {

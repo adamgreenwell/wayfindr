@@ -40,7 +40,7 @@ return [
             'ciò che il fornitore IA ha conservato;',
             'ciò che le integrazioni API hanno già recuperato;',
             'i file caricati da un agente per una risposta non ancora inviata;',
-            'i log, il testo dei job non riusciti che non la nomina direttamente e l’infrastruttura del gestore.',
+            'i log, il testo dei job non riusciti che non riporta uno dei suoi codici di supporto e l’infrastruttura del gestore.',
         ],
         'counts_heading' => 'Quanto contiene',
         'pruned' => 'Questi file sono stati rimossi dalla conservazione dopo l’avvio dell’esportazione, quindi sono elencati ma non inclusi:',

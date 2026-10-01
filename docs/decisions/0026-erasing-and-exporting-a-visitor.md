@@ -370,13 +370,17 @@ Delivery 3 settled these details:
   malware scanner holds, or one that never finished uploading, keeps its
   details in its conversation's file, and `README.txt` lists it as withheld.
   A file an agent has uploaded but not yet sent is a draft of a reply, which
-  the download path shows only to its uploader, so it is left out entirely;
-  the person's own unsent upload is theirs and is included.
+  the download path shows only to its uploader, so it is left out entirely,
+  with the audit events that name it; the person's own unsent upload is
+  theirs and is included.
 - **Only what can be tied to the person is handed to them.** Erasure clears
   a bulk-action run's saved search when the run may have found the person,
   which for a run from before runs recorded their selection includes any that
   skipped an item. Export includes only runs that provably selected their
-  work: the rest may be a search about someone else.
+  work: the rest may be a search about someone else. In the same way,
+  erasure removes a failed job that names their email address, which another
+  contact can share, while export includes only failed jobs that name one of
+  their support codes, which are unique to the installation.
 - **A cobrowse session on someone else's conversation** goes in
   `cobrowse.json`. Every session belongs to a conversation, so this is rare.
 - **The README is in the exporting agent's dashboard language.** The operator

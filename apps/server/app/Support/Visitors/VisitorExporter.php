@@ -672,12 +672,21 @@ final class VisitorExporter
 
         $ids = array_keys($ids);
         sort($ids);
+        $exported = 0;
 
         $this->json($zip, 'audit.json', [
-            'events' => $this->rowsById(AuditEvent::query(), $ids, 'audit_events', $this->auditRow(...)),
+            'events' => $this->rowsById(AuditEvent::query(), $ids, 'audit_events', function (AuditEvent $event, array $row) use ($visitor, &$exported): ?array {
+                if (! $this->auditAboutTheirFiles($event, $visitor)) {
+                    return null;
+                }
+
+                $exported++;
+
+                return $this->auditRow($event, $row);
+            }),
         ]);
 
-        return ['audit_events' => count($ids)];
+        return ['audit_events' => $exported];
     }
 
     /**
@@ -696,7 +705,9 @@ final class VisitorExporter
             $this->footprint->bulkRunsSelecting($accountId, $scope['conversation_ids'], $scope['ticket_ids']),
             fn (array $run): bool => $run['attributed'],
         ));
-        $jobs = $this->footprint->failedJobsNaming($this->footprint->installWideIdentifiers($visitor, $scope['support_codes']));
+        // By their support codes only. Erasure also removes a job that names
+        // their email address, to be safe, but another contact can share it.
+        $jobs = $this->footprint->failedJobsNaming($this->footprint->uniqueIdentifiers($scope['support_codes']));
 
         // The runs on their conversations go with them; those on their
         // tickets keep everything but the error text.
@@ -1035,6 +1046,28 @@ final class VisitorExporter
     private function requestedBy(Model $model, array $row): array
     {
         return [...$row, 'requested_by' => $this->userRole($model->getAttribute('requested_by_id'))];
+    }
+
+    /**
+     * An event about a file is theirs when the file is (an agent's upload
+     * not yet sent is a draft of a reply), and an event about a file no
+     * longer held, or never stored, is theirs when they did it: a file sent
+     * with a message is never removed on its own, so one that is gone was
+     * an upload that was not sent. Every other event is theirs.
+     */
+    private function auditAboutTheirFiles(AuditEvent $event, Visitor $visitor): bool
+    {
+        if (! str_starts_with((string) $event->action, 'attachment.')) {
+            return true;
+        }
+
+        $attachment = ConversationMessageAttachment::query()->find(data_get($event->metadata, 'attachment_id'));
+
+        if ($attachment instanceof ConversationMessageAttachment) {
+            return self::belongsToThem($attachment, $visitor);
+        }
+
+        return $event->actor_type === $visitor->getMorphClass() && (int) $event->actor_id === (int) $visitor->id;
     }
 
     /**

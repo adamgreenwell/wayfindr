@@ -39,7 +39,7 @@ return [
             'what the AI provider kept;',
             'what API integrations already fetched;',
             'files an agent uploaded to a reply that has not been sent;',
-            'logs, failed-job text that does not name them directly, and the operator’s infrastructure.',
+            'logs, failed-job text that does not name one of their support codes, and the operator’s infrastructure.',
         ],
         'counts_heading' => 'How much is included',
         'pruned' => 'These files were removed by retention after the export started, so they are listed but not included:',

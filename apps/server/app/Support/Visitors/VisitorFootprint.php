@@ -307,6 +307,22 @@ final class VisitorFootprint
     }
 
     /**
+     * Their support codes alone, for text that must be tied to this person
+     * and nobody else: a code is unique across the install, while an email
+     * address can be another contact's too, in another account or site.
+     *
+     * @param  list<string>  $supportCodes
+     * @return list<string>
+     */
+    public function uniqueIdentifiers(array $supportCodes): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(fn (string $code): string => trim($code), $supportCodes),
+            fn (string $code): bool => mb_strlen($code) >= 6,
+        )));
+    }
+
+    /**
      * Jobs that exhausted their retries and name the person. A job is kept
      * with its payload and the exception it died on, and a mail server's
      * rejection quotes the address it refused. Each identifier must appear as
