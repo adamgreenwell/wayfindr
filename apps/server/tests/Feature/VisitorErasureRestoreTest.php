@@ -125,9 +125,14 @@ function rewindVisitorSequenceTo(int $value): void
     DB::table('sqlite_sequence')->where('name', 'visitors')->update(['seq' => $value]);
 }
 
-function restoreArchive(Closure $archive, array $files = []): PendingCommand
+function restoreArchive(Closure $archive, array $files = [], bool $asLongLivedWorker = false): PendingCommand
 {
     app()->instance(DatabaseRestorer::class, new ArchiveStandInRestorer($archive));
+
+    // A queue worker runs the in-app restore and keeps its services after.
+    if ($asLongLivedWorker) {
+        app()->instance(RestoreService::class, app(RestoreService::class));
+    }
 
     $src = sys_get_temp_dir().'/wf-erasure-restore-src-'.bin2hex(random_bytes(6));
     mkdir($src, 0700, true);
@@ -531,6 +536,54 @@ test('a restore whose ledger cannot be settled takes its serving gate down again
 
     expect($loaded)->toBeFalse()
         ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeFalse('a restore that replaced nothing left the site refusing traffic');
+});
+
+test('recovery leaves a restore that is under way alone', function (): void {
+    ledgerFixture();
+    // A restore between its first look at the ledger and its load: gate up,
+    // lock held, nothing replaced yet.
+    $restoring = app(ErasureReapplier::class);
+    $restoring->beforeRestore();
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+    event(new CommandFinished('migrate', new ArrayInput([]), new BufferedOutput, 0));
+
+    expect(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue('recovery lifted the gate of a restore still under way');
+
+    $restoring->abandon();
+    $restoring->finishRestore();
+
+    expect(app(ErasureLedger::class)->reapplyOutstanding())->toBeFalse();
+});
+
+test('a finished restore lets recovery run, though the worker that ran it lives on', function (): void {
+    $f = ledgerFixture();
+    restoreArchive(fn () => null, asLongLivedWorker: true)->assertSuccessful();
+
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    app(VisitorEraser::class)->erase($f['admin'], $f['visitor']);
+    putArchivedRowsBack($archived);
+    app(ErasureLedger::class)->markReapplyOutstanding();
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('a finished restore kept recovery locked out');
+});
+
+test('an erasure the database cannot answer for stays pending when the load fails', function (): void {
+    $f = ledgerFixture();
+    $receipt = (string) Str::uuid();
+    app(ErasureLedger::class)->writePending(ErasureLedger::entry(
+        $receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], null, now()->toIso8601ZuluString(), [],
+    ));
+    // Unanswerable: as a database older than the ledger, or one that drops
+    // the connection, would be.
+    Schema::drop('visitor_erasures');
+
+    restoreArchive(fn () => throw new RuntimeException('psql would not start'))->assertFailed();
+
+    expect(ledgerFiles('.pending.json'))->toBe([$receipt.'.pending.json'], 'a failed restore kept an erasure as done that may never have happened')
+        ->and(app(ErasureLedger::class)->find($receipt))->toBeNull();
 });
 
 test('a restore that stops early leaves an earlier restore\'s re-application outstanding', function (): void {

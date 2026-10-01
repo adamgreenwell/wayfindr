@@ -457,7 +457,12 @@ Delivery 2 settled four details:
   erased since the archive may be back, exits non-zero, and leaves
   re-application outstanding for the next run.
 - **The restore stops new erasures before it reads the ledger.** It marks
-  re-application outstanding first, which raises the serving gate below. An
+  re-application outstanding first, which raises the serving gate below, and
+  holds a lock on the ledger until it is over, which the scheduled and
+  post-migrate re-applications take too: they cannot settle a restore that is
+  still under way. Before the load, an entry the database being replaced
+  cannot answer for stays pending, because a failed load leaves that database
+  live. An
   erasure already past the gate may still write its entry after that first
   read and commit to the database the load replaces. So after the load, a
   pending entry without a row is kept as committed and listed, rather than

@@ -318,6 +318,7 @@ class RestoreService
                 ? PartialRestoreException::from($exception)
                 : $exception;
         } finally {
+            $this->erasures->finishRestore();
             $this->removeDir($work);
         }
     }

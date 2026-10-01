@@ -222,6 +222,43 @@ final class ErasureLedger
         return $highest;
     }
 
+    /**
+     * Held by a restore from before it reads the ledger until it is over, and
+     * by every re-application a restore left outstanding, so recovery never
+     * runs inside a restore that is still under way. The operating system
+     * releases it when the process ends, however it ends. Null when $wait is
+     * false and another process holds it.
+     *
+     * @return resource|null
+     */
+    public function lockRestore(bool $wait)
+    {
+        $this->assertOutsideAttachmentDisks();
+        $this->ensureDirectory();
+        $handle = @fopen($this->path().'/.restore.lock', 'c');
+
+        if (! is_resource($handle)) {
+            throw new RuntimeException("Could not open the restore lock in {$this->path()}.");
+        }
+
+        if (! flock($handle, $wait ? LOCK_EX : LOCK_EX | LOCK_NB)) {
+            fclose($handle);
+
+            return null;
+        }
+
+        return $handle;
+    }
+
+    /** @param resource|null $handle */
+    public function unlockRestore($handle): void
+    {
+        if (is_resource($handle)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
     /** A restore replaced the database before its erasures could be re-applied. */
     public function markReapplyOutstanding(): void
     {

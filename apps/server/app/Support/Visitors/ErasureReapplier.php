@@ -27,6 +27,9 @@ final class ErasureReapplier
     /** Whether this restore is what made re-application outstanding. */
     private bool $markedOutstanding = false;
 
+    /** @var resource|null The restore lock, while this restore is under way. */
+    private $restoreLock = null;
+
     public function __construct(
         private readonly ErasureLedger $ledger,
         private readonly VisitorEraser $eraser,
@@ -50,6 +53,12 @@ final class ErasureReapplier
         // Before anything creates the directory: a volume that never held
         // the ledger cannot know about erasures made after the archive.
         $fresh = ! $this->ledger->exists();
+
+        // Held until finishRestore(), so a scheduled or post-migrate
+        // re-application cannot run inside this restore; one that is running
+        // now finishes first.
+        $this->restoreLock = $this->ledger->lockRestore(wait: true);
+
         // An earlier restore that loaded and then stopped short leaves the
         // database this one replaces unable to answer for its pending
         // entries, as afterRestore() would have treated them.
@@ -66,7 +75,11 @@ final class ErasureReapplier
         $this->ledger->markReapplyOutstanding();
 
         $this->ledger->backfill();
-        $settled = $this->ledger->reconcile(assumeCommitted: true, restoredSinceErasure: $earlier);
+        // An entry this database cannot answer for stays pending: if the load
+        // fails, this database is still the live one, and the erasure may
+        // never have happened. afterRestore() settles it once the load has
+        // succeeded.
+        $settled = $this->ledger->reconcile(assumeCommitted: false, restoredSinceErasure: $earlier);
 
         return ['fresh_volume' => $fresh, 'unconfirmed' => $settled['unconfirmed']];
     }
@@ -108,6 +121,13 @@ final class ErasureReapplier
         ]);
 
         return true;
+    }
+
+    /** The restore is over, however it ended: recovery may run again. */
+    public function finishRestore(): void
+    {
+        $this->ledger->unlockRestore($this->restoreLock);
+        $this->restoreLock = null;
     }
 
     /**
@@ -172,13 +192,30 @@ final class ErasureReapplier
      */
     public function reapplyOutstanding(): ?array
     {
-        if (! $this->ledger->reapplyOutstanding() || ! $this->schemaIsCurrent()) {
+        if (! $this->ledger->reapplyOutstanding()) {
             return null;
         }
 
-        $this->ledger->reconcile();
+        // A restore under way settles its own erasures, and may not have
+        // loaded anything yet: re-applying now would find nobody to erase
+        // and lift its gate.
+        $lock = $this->ledger->lockRestore(wait: false);
 
-        return $this->reapplyAll();
+        if ($lock === null) {
+            return null;
+        }
+
+        try {
+            if (! $this->ledger->reapplyOutstanding() || ! $this->schemaIsCurrent()) {
+                return null;
+            }
+
+            $this->ledger->reconcile();
+
+            return $this->reapplyAll();
+        } finally {
+            $this->ledger->unlockRestore($lock);
+        }
     }
 
     /**
