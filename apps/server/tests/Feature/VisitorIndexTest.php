@@ -565,6 +565,40 @@ test('the list counts the conversations a visitor has had', function (): void {
     expect($visitor->conversations()->count())->toBe(3);
 });
 
+test('the pager is the app\'s own, and its chevrons carry their own size', function (): void {
+    $w = visitorIndexWorld();
+
+    foreach (range(1, 26) as $index) {
+        Visitor::factory()->for($w['site'])->create([
+            'anonymous_id' => 'anon-pager-'.$index,
+            'last_seen_at' => now()->subMinutes($index),
+        ]);
+    }
+
+    $html = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', ['page' => 2]))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML((string) $html);
+    $pager = (new DOMXPath($document))->query('//nav[contains(concat(" ", normalize-space(@class), " "), " wf-pager ")]');
+
+    expect($pager->length)->toBe(1, 'the visitor directory does not render the app\'s pager');
+
+    // The stock view sized these with Tailwind's w-5 h-5, which this app does
+    // not ship, so each drew at the full width of its card.
+    $chevrons = $pager->item(0)->getElementsByTagName('svg');
+    expect($chevrons->length)->toBe(2);
+
+    foreach ($chevrons as $chevron) {
+        expect([$chevron->getAttribute('width'), $chevron->getAttribute('height')])
+            ->toBe(['16', '16'], 'a pager chevron has no size of its own');
+    }
+
+    $this->assertStringNotContainsString('w-5 h-5', (string) $html, 'the pager still uses Tailwind utilities this app does not ship');
+});
+
 test('a translated visitor directory translates its paginator too', function (): void {
     $w = visitorIndexWorld();
     $w['agent']->forceFill(['locale' => 'de'])->save();
@@ -582,7 +616,7 @@ test('a translated visitor directory translates its paginator too', function ():
         ->assertOk()
         ->assertSee('<html lang="de"', false)
         ->assertSee('aria-label="Seitennavigation"', false)
-        ->assertSee('Ergebnisse <span class="font-medium">26</span> bis <span class="font-medium">26</span> von <span class="font-medium">26</span>', false)
+        ->assertSee('Ergebnisse <strong>26</strong> bis <strong>26</strong> von <strong>26</strong>', false)
         ->assertSee('Zurück')
         ->assertSee('Weiter')
         ->assertDontSee('Pagination navigation')
