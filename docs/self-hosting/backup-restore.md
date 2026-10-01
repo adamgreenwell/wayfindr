@@ -493,7 +493,7 @@ volume, such as disaster recovery onto new hardware, has no ledger to read.
 It warns:
 
 ```
-  This storage volume held no erasure ledger, so contacts erased after this archive was taken cannot be erased again here. Keep /app/apps/server/storage/app/erasure-ledger alongside your backups.
+  This storage volume holds no erasure records, so any contact erased after this archive was taken cannot be erased again here. Keep /app/apps/server/storage/app/erasure-ledger alongside your backups.
 ```
 
 So copy `storage/app/erasure-ledger/` wherever your archives go, and put it

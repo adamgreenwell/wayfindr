@@ -502,13 +502,35 @@ test('re-applying the same erasure twice changes nothing the second time', funct
 test('a restore onto a volume that never held the ledger says what it cannot re-apply', function (): void {
     ledgerFixture();
     exec('rm -rf '.escapeshellarg(ledgerPath()));
+    // The scheduled run on a new volume makes the directory for its lock;
+    // that is not a history of erasures.
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
 
     restoreArchive(fn () => null)
-        ->expectsOutputToContain('This storage volume held no erasure ledger')
+        ->expectsOutputToContain('This storage volume holds no erasure records')
         ->assertSuccessful();
-
-    expect(app(ErasureLedger::class)->exists())->toBeTrue();
 });
+
+test('a ledger entry is checked whole, not only for its receipt', function (Closure $damage): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    $path = ledgerPath()."/{$receipt}.json";
+    file_put_contents($path, json_encode($damage(json_decode((string) file_get_contents($path), true))));
+
+    expect(app(ErasureLedger::class)->unreadable())->toBe([$receipt.'.json'], 'an entry that cannot be re-applied was taken as a good one')
+        ->and(app(ErasureLedger::class)->find($receipt))->toBeNull();
+})->with([
+    'no erased ID' => [function (array $entry): array {
+        unset($entry['erased_visitor_id']);
+
+        return $entry;
+    }],
+    'the erased ID as text' => [fn (array $entry): array => [...$entry, 'erased_visitor_id' => (string) $entry['erased_visitor_id']]],
+    'a merged ID as text' => [fn (array $entry): array => [...$entry, 'merged_visitor_ids' => ['12']]],
+    'no account' => [fn (array $entry): array => [...$entry, 'account_id' => null]],
+    'no time' => [fn (array $entry): array => [...$entry, 'erased_at' => '']],
+    'a file without its key' => [fn (array $entry): array => [...$entry, 'pending_files' => [['disk' => 'attachments']]]],
+]);
 
 test('a restore that stops before replacing anything leaves nothing to re-apply', function (): void {
     ledgerFixture();

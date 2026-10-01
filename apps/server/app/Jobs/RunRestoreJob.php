@@ -515,7 +515,7 @@ class RunRestoreJob implements ShouldQueue
         $parts = [];
 
         if ($erasures['fresh_volume'] ?? false) {
-            $parts[] = 'This storage volume held no erasure ledger, so contacts erased after this backup was '
+            $parts[] = 'This storage volume holds no erasure records, so any contact erased after this backup was '
                 .'taken cannot be erased again here. Keep '.config('wayfindr.erasure.ledger_path').' alongside your backups.';
         }
 

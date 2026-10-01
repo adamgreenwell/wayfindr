@@ -193,7 +193,7 @@ class RestoreCommand extends Command
     {
         if ($erasures['fresh_volume']) {
             $this->warn(sprintf(
-                '  This storage volume held no erasure ledger, so contacts erased after this archive was taken cannot be erased again here. Keep %s alongside your backups.',
+                '  This storage volume holds no erasure records, so any contact erased after this archive was taken cannot be erased again here. Keep %s alongside your backups.',
                 (string) config('wayfindr.erasure.ledger_path'),
             ));
         }

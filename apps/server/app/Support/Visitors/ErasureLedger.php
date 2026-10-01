@@ -92,12 +92,24 @@ final class ErasureLedger
     }
 
     /**
-     * Whether this volume has ever held the ledger. A restore onto a volume
-     * without it cannot know about erasures made after its archive was taken.
+     * Whether this volume holds any erasure, readable or not. A restore onto
+     * one that holds none cannot know about erasures made after its archive
+     * was taken. The directory alone proves nothing: the restore lock and the
+     * outstanding marker live in it too, and a scheduled run on a new volume
+     * creates it.
      */
-    public function exists(): bool
+    public function holdsEntries(): bool
     {
-        return is_dir($this->path());
+        $directory = $this->path();
+        $names = is_dir($directory) ? scandir($directory) : false;
+
+        foreach ($names === false ? [] : $names as $name) {
+            if (preg_match('/^'.self::RECEIPT.'(?:\.pending)?\.json$/', $name) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -411,10 +423,6 @@ final class ErasureLedger
                 }
             });
 
-        if (! $this->exists()) {
-            $this->ensureDirectory();
-        }
-
         return $written;
     }
 
@@ -570,7 +578,35 @@ final class ErasureLedger
             return null;
         }
 
+        // Valid JSON is not yet an entry: one that lost the erased ID, or
+        // holds it as text, would name nobody, and a restore would re-apply it
+        // to no one and report success.
+        if (! self::wellFormed($entry)) {
+            report(new RuntimeException("Erasure ledger entry {$path} is missing a field re-application needs, or holds one of the wrong type."));
+
+            return null;
+        }
+
         return $entry;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private static function wellFormed(array $entry): bool
+    {
+        $positiveInt = fn (mixed $value): bool => is_int($value) && $value > 0;
+        $optional = fn (mixed $value, callable $check): bool => $value === null || $check($value);
+        $merged = $entry['merged_visitor_ids'] ?? null;
+        $files = $entry['pending_files'] ?? null;
+
+        return $positiveInt($entry['erased_visitor_id'] ?? null)
+            && $positiveInt($entry['account_id'] ?? null)
+            && $optional($entry['site_id'] ?? null, $positiveInt)
+            && $optional($entry['site_public_key'] ?? null, fn (mixed $key): bool => is_string($key) && $key !== '')
+            && $optional($entry['actor_id'] ?? null, $positiveInt)
+            && is_string($entry['erased_at'] ?? null) && $entry['erased_at'] !== ''
+            && is_array($merged) && array_is_list($merged) && array_filter($merged, fn (mixed $id): bool => ! $positiveInt($id)) === []
+            && is_array($files) && array_is_list($files)
+            && array_filter($files, fn (mixed $file): bool => ! is_array($file) || ! is_string($file['disk'] ?? null) || ! is_string($file['key'] ?? null)) === [];
     }
 
     /**
