@@ -434,8 +434,12 @@ Delivery 2 settled four details:
   the restored site by it, and by the ID when there is one. An archive from
   another installation can hold a site, and visitors, under the same IDs. The
   ledger row keeps the key too, since a purged site nulls its `site_id`. An
-  entry with no key cannot prove its site: it is not re-applied, and the
-  restore names it.
+  entry with no key cannot prove its site. It is not re-applied, and it holds
+  re-application open, so nothing is served, until the operator checks the
+  contacts it names. Then they either vouch for it
+  (`wayfindr:finish-erasures --vouch=<receipt>`), which records the restored
+  site's key, or remove its file when the archive is another
+  installation's.
 - **Re-application runs only for a restore.** The restore records on the
   volume that it is outstanding, before the load, and clears that once it
   succeeds. Nothing else starts it, so an ID reused by a dump loaded some
@@ -457,7 +461,10 @@ Delivery 2 settled four details:
   erasure already past the gate may still write its entry after that first
   read and commit to the database the load replaces. So after the load, a
   pending entry without a row is kept as committed and listed, rather than
-  discarded: the restored database cannot answer for it.
+  discarded: the restored database cannot answer for it. The same holds for
+  every reconciliation while a restore's re-application is outstanding, so a
+  restore that fails after its load and before that step leaves nothing for
+  a later run, or a later restore, to discard.
 - **Nothing is served while re-application is outstanding.** A deploy cannot
   be trusted to hold maintenance mode: a standard Forge deploy restores the
   site when `migrate` fails, and the container's migration loop crash-loops on

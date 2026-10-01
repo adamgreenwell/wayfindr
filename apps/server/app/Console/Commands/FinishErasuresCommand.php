@@ -20,7 +20,8 @@ use Throwable;
  */
 class FinishErasuresCommand extends Command
 {
-    protected $signature = 'wayfindr:finish-erasures';
+    protected $signature = 'wayfindr:finish-erasures
+        {--vouch=* : The receipt of an erasure recorded without its site\'s key, whose restored contacts you have checked are this installation\'s}';
 
     protected $description = 'Settle the erasure ledger and remove attachment binaries that a contact erasure could not remove at the time.';
 
@@ -57,15 +58,27 @@ class FinishErasuresCommand extends Command
             $failed = true;
         }
 
+        foreach ((array) $this->option('vouch') as $receipt) {
+            try {
+                $vouched = $erasures->vouch((string) $receipt);
+            } catch (Throwable $e) {
+                report($e);
+                $vouched = false;
+            }
+
+            if ($vouched) {
+                $this->line("Erasure {$receipt} is recorded as this installation's.");
+            } else {
+                $this->error("Erasure {$receipt} is not in the ledger, or names no contact here to take its site from.");
+                $failed = true;
+            }
+        }
+
         try {
             $reapplied = $erasures->reapplyOutstanding();
 
             if ($reapplied !== null) {
                 $this->line("Erasures re-applied after a restore: {$reapplied['visitors']} contact(s).");
-
-                if ($reapplied['unverifiable'] !== []) {
-                    $this->warn('These erasures name restored contacts but were recorded without their site\'s key, so they were left as they are. Check each by its receipt: '.implode(', ', $reapplied['unverifiable']));
-                }
 
                 if ($reapplied['failed'] !== null) {
                     $this->error('Some erasures could not be re-applied yet, and the next run tries again: '.$reapplied['failed']);

@@ -681,7 +681,7 @@ test('an erasure whose site was purged is re-applied by the site\'s key', functi
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse();
 });
 
-test('an erasure that cannot prove its site is never re-applied, and is named', function (): void {
+test('an erasure that cannot prove its site holds the restore open until the operator vouches for it', function (): void {
     $f = ledgerFixture();
     $receipt = (string) Str::uuid();
     $entry = ErasureLedger::entry($receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], null, now()->toIso8601ZuluString(), []);
@@ -690,12 +690,54 @@ test('an erasure that cannot prove its site is never re-applied, and is named', 
     app(ErasureLedger::class)->markReapplyOutstanding();
 
     $this->artisan('wayfindr:finish-erasures')
-        ->expectsOutputToContain("recorded without their site's key, so they were left as they are. Check each by its receipt: {$receipt}")
-        ->assertSuccessful();
+        ->expectsOutputToContain("name contacts this restore brought back: {$receipt}. If those contacts are this installation's, run php artisan wayfindr:finish-erasures --vouch={$receipt}")
+        ->assertFailed();
 
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('a contact was erased on an ID match alone')
+        ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue('a contact nobody could verify was served again')
         ->and(app(VisitorEraser::class)->reapply($entry))->toBe(0, 're-applying an entry with no site key erased by ID alone')
         ->and(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue();
+
+    $this->artisan('wayfindr:finish-erasures', ['--vouch' => [$receipt]])
+        ->expectsOutputToContain("Erasure {$receipt} is recorded as this installation's.")
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('a vouched-for erasure was not re-applied')
+        ->and(app(ErasureLedger::class)->find($receipt)['site_public_key'])->toBe($f['site']->public_key)
+        ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeFalse();
+});
+
+test('a restore that stopped after its load leaves no pending entry for a later run to discard', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    // What a restore that loaded and then failed, before settling, leaves:
+    // its gate up, the erasure's row gone with the replaced database, its
+    // entry still pending, and the person back.
+    rename(ledgerPath()."/{$receipt}.json", ledgerPath()."/{$receipt}.pending.json");
+    DB::table('visitor_erasures')->delete();
+    putArchivedRowsBack($archived);
+    app(ErasureLedger::class)->markReapplyOutstanding();
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('the recovery discarded an erasure the restore had not settled')
+        ->and(app(ErasureLedger::class)->find($receipt))->not->toBeNull();
+});
+
+test('a restore after one that stopped short keeps the pending entries it left', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    rename(ledgerPath()."/{$receipt}.json", ledgerPath()."/{$receipt}.pending.json");
+    DB::table('visitor_erasures')->delete();
+    app(ErasureLedger::class)->markReapplyOutstanding();
+
+    restoreArchive(fn () => putArchivedRowsBack($archived))
+        ->expectsOutputToContain('Erasures re-applied: 1 contact(s)')
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('a second restore discarded what the first left pending');
 });
 
 test('ledger rows written before the site key was kept get it from their site', function (): void {

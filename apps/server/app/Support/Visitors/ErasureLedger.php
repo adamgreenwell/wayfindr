@@ -255,14 +255,17 @@ final class ErasureLedger
      * they are kept as committed. An erasure an operator confirmed costs far
      * less to re-apply by mistake than to lose.
      *
-     * Right after a restore's load, a missing row proves nothing either: an
-     * erasure that ran while the restore was getting ready committed to the
-     * database the load then replaced. A restore passes $restoredSinceErasure
-     * then, and every entry without a row is kept as committed too.
+     * After a restore's load, a missing row proves nothing either: an erasure
+     * that ran while the restore was getting ready may have committed to the
+     * database the load replaced. Every entry without a row is then kept as
+     * committed too. That holds for as long as the restore's re-application
+     * is outstanding, which is what $restoredSinceErasure defaults to, so a
+     * restore that failed before its own settlement leaves nothing for a
+     * later run to discard.
      *
      * @return array{promoted: list<string>, discarded: list<string>, unconfirmed: list<string>}
      */
-    public function reconcile(bool $assumeCommitted = false, bool $restoredSinceErasure = false): array
+    public function reconcile(bool $assumeCommitted = false, ?bool $restoredSinceErasure = null): array
     {
         $settled = ['promoted' => [], 'discarded' => [], 'unconfirmed' => []];
         $pending = $this->pending();
@@ -270,6 +273,8 @@ final class ErasureLedger
         if ($pending === []) {
             return $settled;
         }
+
+        $restoredSinceErasure ??= $this->reapplyOutstanding();
 
         $answerable = $this->databaseCanAnswer();
 
@@ -303,6 +308,12 @@ final class ErasureLedger
                     $settled['unconfirmed'][] = $receipt;
                 }
 
+                continue;
+            }
+
+            // Its own erasure may have settled it while this waited for the
+            // lock: promoted after its commit, or taken back after a refusal.
+            if (! is_file($this->pendingPath($receipt))) {
                 continue;
             }
 

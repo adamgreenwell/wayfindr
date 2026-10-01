@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Visitors;
 
+use App\Models\Site;
+use App\Models\Visitor;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
@@ -48,6 +50,10 @@ final class ErasureReapplier
         // Before anything creates the directory: a volume that never held
         // the ledger cannot know about erasures made after the archive.
         $fresh = ! $this->ledger->exists();
+        // An earlier restore that loaded and then stopped short leaves the
+        // database this one replaces unable to answer for its pending
+        // entries, as afterRestore() would have treated them.
+        $earlier = $this->ledger->reapplyOutstanding();
 
         // First, so the serving gate refuses every request from here on and
         // no erasure can start while the restore is under way; so a restore
@@ -56,13 +62,52 @@ final class ErasureReapplier
         // restore while nothing has changed. An erasure already past the gate
         // may still write its entry after the snapshot below: afterRestore()
         // settles that one.
-        $this->markedOutstanding = ! $this->ledger->reapplyOutstanding();
+        $this->markedOutstanding = ! $earlier;
         $this->ledger->markReapplyOutstanding();
 
         $this->ledger->backfill();
-        $settled = $this->ledger->reconcile(assumeCommitted: true);
+        $settled = $this->ledger->reconcile(assumeCommitted: true, restoredSinceErasure: $earlier);
 
         return ['fresh_volume' => $fresh, 'unconfirmed' => $settled['unconfirmed']];
+    }
+
+    /**
+     * The operator's word that the restored contacts an entry names are this
+     * installation's, for an entry recorded without its site's key. The key
+     * is taken from the restored site those contacts are on, within the
+     * entry's account, and written to the entry, so it re-applies like any
+     * other. False when the entry is unknown or none of its contacts is here.
+     */
+    public function vouch(string $receipt): bool
+    {
+        $entry = $this->ledger->find($receipt);
+
+        if ($entry === null) {
+            return false;
+        }
+
+        if (is_string($entry['site_public_key'] ?? null) && $entry['site_public_key'] !== '') {
+            return true;
+        }
+
+        $siteId = Visitor::query()
+            ->whereIn('id', ErasureLedger::lineage($entry))
+            ->whereIn('site_id', Site::query()->select('id')->where('account_id', (int) ($entry['account_id'] ?? 0)))
+            ->value('site_id');
+        $site = $siteId === null ? null : Site::query()->find($siteId);
+
+        if ($site === null) {
+            return false;
+        }
+
+        $this->ledger->record([
+            ...$entry,
+            'site_id' => (int) $site->id,
+            'site_public_key' => (string) $site->public_key,
+            'vouched_at' => gmdate('c'),
+        ]);
+
+        return true;
     }
 
     /**
@@ -90,7 +135,7 @@ final class ErasureReapplier
      * outstanding on the ledger until then, and the next scheduled
      * wayfindr:finish-erasures also tries.
      *
-     * @return array{unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>}
+     * @return array{unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}
      */
     public function afterRestore(): array
     {
@@ -113,7 +158,6 @@ final class ErasureReapplier
                 'visitors' => 0,
                 'deferred' => true,
                 'failed' => null,
-                'unverifiable' => [],
             ];
         }
 
@@ -124,7 +168,7 @@ final class ErasureReapplier
      * Re-application a restore left outstanding, once the schema has caught
      * up. Null when none is outstanding, or the schema is still behind.
      *
-     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null, unverifiable: list<string>}|null
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}|null
      */
     public function reapplyOutstanding(): ?array
     {
@@ -138,7 +182,7 @@ final class ErasureReapplier
     }
 
     /**
-     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null, unverifiable: list<string>}
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}
      */
     private function reapplyAll(): array
     {
@@ -171,9 +215,11 @@ final class ErasureReapplier
             }
 
             // Recorded before entries kept their site's key, by a site since
-            // purged. Nothing can show the matching rows are this install's,
-            // so they are left, and named, rather than risk erasing someone
-            // else's contact.
+            // purged. Nothing here can show the matching rows are this
+            // install's, so they are left until the operator says: erasing
+            // someone else's contact is the worse mistake, and serving one
+            // who asked to be erased is the next worst, so the work stays
+            // outstanding meanwhile.
             if (! is_string($entry['site_public_key'] ?? null) || $entry['site_public_key'] === '') {
                 $unverifiable[] = (string) $entry['receipt'];
 
@@ -195,6 +241,17 @@ final class ErasureReapplier
             }
         }
 
+        if ($unverifiable !== []) {
+            $failures[] = sprintf(
+                'These erasures were recorded without their site\'s key and name contacts this restore brought back: %s. '
+                .'If those contacts are this installation\'s, run php artisan wayfindr:finish-erasures %s; '
+                .'if the archive came from another installation, remove each receipt\'s file from %s.',
+                implode(', ', $unverifiable),
+                implode(' ', array_map(fn (string $receipt): string => '--vouch='.$receipt, $unverifiable)),
+                $this->ledger->path(),
+            );
+        }
+
         // Kept while anything failed, so the next migrate or scheduled run
         // tries again.
         if ($failures === []) {
@@ -206,7 +263,6 @@ final class ErasureReapplier
             'reapplied' => $reapplied,
             'visitors' => $visitors,
             'failed' => $failures === [] ? null : implode(' ', $failures),
-            'unverifiable' => $unverifiable,
         ];
     }
 

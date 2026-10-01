@@ -187,7 +187,7 @@ class RestoreCommand extends Command
      * Whoever was erased since the archive was taken is back until erasure is
      * re-applied (ADR 0026 §8), so each way that can fall short is said.
      *
-     * @param  array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>}  $erasures
+     * @param  array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}  $erasures
      */
     private function reportErasures(array $erasures): void
     {
@@ -202,14 +202,6 @@ class RestoreCommand extends Command
             $this->warn(
                 '  The replaced database could not confirm these erasures, so they are treated as done: '
                 .implode(', ', $erasures['unconfirmed'])
-            );
-        }
-
-        if ($erasures['unverifiable'] !== []) {
-            $this->warn(
-                '  These erasures name contacts the archive brought back, but were recorded without their site\'s key, '
-                .'so nothing shows those contacts are this install\'s and they were left as they are. Check each by its '
-                .'receipt and erase it again if it is: '.implode(', ', $erasures['unverifiable'])
             );
         }
 

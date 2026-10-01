@@ -466,6 +466,17 @@ be back. The restore says so, and the command exits non-zero. The next
 `migrate` or hourly scheduled run tries again. Fix the cause the message names,
 then run `php artisan wayfindr:finish-erasures` yourself and read its output.
 
+**An erasure recorded without its site's key** holds re-application open too.
+Those exist only from before this release, for a site purged since. Nothing
+can show that the contacts it names are this installation's rather than
+another's under the same IDs, so they are not erased on an ID match alone.
+The restore names each such receipt. Check the contacts it names, then either:
+- if they are this installation's, run
+  `php artisan wayfindr:finish-erasures --vouch=<receipt>`, which records the
+  restored site's key and erases them;
+- if the archive came from another installation, remove
+  `<receipt>.json` from the ledger directory.
+
 **Until erasures are re-applied, Wayfindr does not serve them.** From the start
 of a restore until its erasures are done, every request except the `/up`
 health check gets a 503 saying a restore's erasures are outstanding. That holds

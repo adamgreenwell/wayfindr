@@ -524,12 +524,6 @@ class RunRestoreJob implements ShouldQueue
                 .implode(', ', $erasures['unconfirmed']).'.';
         }
 
-        if (($erasures['unverifiable'] ?? []) !== []) {
-            $parts[] = 'These erasures name contacts the backup brought back, but were recorded without their site'."'".'s '
-                .'key, so nothing shows those contacts are this install'."'".'s and they were left as they are. Check each by '
-                .'its receipt and erase it again if it is: '.implode(', ', $erasures['unverifiable']).'.';
-        }
-
         if (($erasures['failed'] ?? null) !== null) {
             $parts[] = 'Erasures could NOT all be re-applied, so contacts erased since this backup was taken may be '
                 .'back: '.$erasures['failed'].' The site is being kept in maintenance mode. Fix the cause, then run '
