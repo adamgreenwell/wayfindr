@@ -78,9 +78,13 @@ remains responsible for those places:
 The receipt reference shown afterwards identifies the erasure without naming
 the person, for the operator's reply and records.
 
-Restoring a backup taken before an erasure undoes it, until a later release
-makes restore re-apply erasures. Keep receipt references outside Wayfindr,
-and after such a restore erase those people again.
+A restore through `wayfindr:restore` erases again anyone its archive brings
+back, from a ledger kept on the storage volume in
+`storage/app/erasure-ledger/`. Backups do not carry that directory. Keep the
+volume, or a copy of the directory, alongside them: a restore onto new storage
+cannot re-apply erasures made after its archive was taken. Keep receipt
+references outside Wayfindr too, and after such a restore erase those people
+again.
 
 ## Retention Defaults
 

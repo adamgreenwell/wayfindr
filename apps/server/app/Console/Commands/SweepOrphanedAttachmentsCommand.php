@@ -5,10 +5,12 @@ namespace App\Console\Commands;
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentRetentionRequestCounter;
 use App\Support\Attachments\AttachmentStorage;
+use App\Support\Visitors\ErasureLedger;
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use RuntimeException;
 
 class SweepOrphanedAttachmentsCommand extends Command
 {
@@ -34,6 +36,19 @@ class SweepOrphanedAttachmentsCommand extends Command
         }
 
         $removedRows = $this->sweepAbandonedUploads($dryRun);
+
+        // Phase B deletes whatever has no attachment row, and an erasure
+        // ledger placed inside an attachment disk has none: its files would go
+        // without a word, and with them every erasure a restore must re-apply
+        // (ADR 0026 §8). Phase A removes only files rows name, so it still runs.
+        try {
+            app(ErasureLedger::class)->assertOutsideAttachmentDisks();
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage().' Orphaned storage objects are not swept until it is moved.');
+
+            return self::FAILURE;
+        }
+
         $removedFiles = $this->sweepOrphanedFiles($diskNames, $dryRun);
 
         $this->info(sprintf(

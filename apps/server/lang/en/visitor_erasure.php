@@ -31,7 +31,7 @@ return [
     ],
     'unreachable' => [
         'heading' => 'What erasure cannot reach',
-        'backups' => 'Backups taken before now still hold this person’s data, and restoring one brings it back.',
+        'backups' => 'Backups taken before now still hold this person’s data. Restoring one through Wayfindr erases them again, but only while this installation keeps the storage volume that records its erasures.',
         'external' => 'Linked external issues keep whatever was copied into them:',
         'mail' => 'Replies already emailed to them.',
         'ai' => 'Anything the AI provider kept of copilot requests.',
@@ -47,6 +47,7 @@ return [
         'confirm' => 'Type :word exactly to confirm.',
         'alert_mail_sending' => 'An alert email about this contact\'s conversations or tickets is being sent to an agent right now. Nothing was erased. Try again in a couple of minutes.',
         'copilot_running' => 'The AI assistant is working on one of this contact\'s conversations right now, so their transcript may be on its way to the AI provider. Nothing was erased. Try again in a few minutes.',
+        'ledger_unwritable' => 'Wayfindr could not record this erasure on its storage volume, so nothing was erased. Ask whoever runs this installation to check that its storage is writable, then try again.',
         'note_posting' => 'A note on one of this contact\'s tickets is being posted to its linked issue right now. Nothing was erased. Try again in a couple of minutes.',
     ],
     'ticket_subject' => 'Ticket #:number (requester erased)',

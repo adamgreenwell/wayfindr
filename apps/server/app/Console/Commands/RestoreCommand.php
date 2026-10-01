@@ -128,6 +128,11 @@ class RestoreCommand extends Command
             $this->line('  Wayfindr version: '.$result['archive_version']);
         }
 
+        $this->reportErasures($result['erasures']);
+        // The database is back, but so are people who asked to be erased:
+        // not a restore a script should read as clean.
+        $exitCode = $result['erasures']['failed'] === null ? self::SUCCESS : self::FAILURE;
+
         if ($result['restored_disks'] !== []) {
             $this->line('  Local attachment binaries restored to: '.implode(', ', $result['restored_disks']));
         }
@@ -147,7 +152,7 @@ class RestoreCommand extends Command
 
             $this->info('Restore complete.');
 
-            return self::SUCCESS;
+            return $exitCode;
         }
 
         $this->line('  Attachments verified present: '.$integrity['verified']);
@@ -175,6 +180,43 @@ class RestoreCommand extends Command
 
         $this->info('Restore complete.');
 
-        return self::SUCCESS;
+        return $exitCode;
+    }
+
+    /**
+     * Whoever was erased since the archive was taken is back until erasure is
+     * re-applied (ADR 0026 §8), so each way that can fall short is said.
+     *
+     * @param  array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}  $erasures
+     */
+    private function reportErasures(array $erasures): void
+    {
+        if ($erasures['fresh_volume']) {
+            $this->warn(sprintf(
+                '  This storage volume holds no erasure records, so any contact erased after this archive was taken cannot be erased again here. Keep %s alongside your backups.',
+                (string) config('wayfindr.erasure.ledger_path'),
+            ));
+        }
+
+        if ($erasures['unconfirmed'] !== []) {
+            $this->warn(
+                '  The replaced database could not confirm these erasures, so they are treated as done: '
+                .implode(', ', $erasures['unconfirmed'])
+            );
+        }
+
+        if ($erasures['failed'] !== null) {
+            $this->error('  Erasures could NOT all be re-applied, so contacts erased since this archive was taken may be back: '.$erasures['failed']);
+            $this->warn('  Keep the app in maintenance mode, fix the cause, then run php artisan wayfindr:finish-erasures.');
+        } elseif ($erasures['deferred']) {
+            $this->warn('  Erasures are re-applied once the restored schema matches this code: after php artisan migrate --force for an older archive, or on the archive\'s own release for a newer one. Keep the app in maintenance mode until then.');
+        } else {
+            $this->line(sprintf(
+                '  Erasures re-applied: %d contact(s), from %d of the %d erasure(s) in the ledger.',
+                $erasures['visitors'],
+                $erasures['reapplied'],
+                $erasures['entries'],
+            ));
+        }
     }
 }

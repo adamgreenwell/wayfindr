@@ -419,13 +419,72 @@ when the database goes back in time. Reconciliation settles a pending entry
 before it counts toward the list, so a failed erasure's stale list removes
 nothing.
 
-**Re-application.** After the dump is imported, restore re-applies every
+**Re-application.** After the dump is imported, restore moves the visitor ID
+sequence past the highest ID the ledger holds. An imported dump resets the
+sequence to the archive's value, so without this a new visitor could take an
+erased person's ID and be erased in their place. Then it re-applies every
 committed entry that names a visitor in the restored data, by any ID in its
-lineage, and reports how many it re-applied. Re-applying is idempotent.
-Restore then moves the visitor ID sequence past the highest ID the ledger
-holds. An imported dump resets the sequence to the archive's value, so
-without this a new visitor could take an erased person's ID, and the next
-restore would erase them instead.
+lineage, and reports how many it re-applied. Re-applying is idempotent. It
+puts the ledger row back under the same receipt when the restored database
+predates it, so later backups carry it, and writes a `visitor.erasure_reapplied`
+audit event with counts only.
+
+Delivery 2 settled these details:
+- **The entry also records the site's public key**, and re-application finds
+  the restored site by it, and by the ID when there is one. An archive from
+  another installation can hold a site, and visitors, under the same IDs. The
+  ledger row keeps the key too, since a purged site nulls its `site_id`. An
+  entry with no key cannot prove its site. It is not re-applied, and it holds
+  re-application open, so nothing is served, until the operator checks the
+  contacts it names. Then they either vouch for it
+  (`wayfindr:finish-erasures --vouch=<receipt>`), which records the restored
+  site's key, or remove its file when the archive is another
+  installation's.
+- **Re-application runs only for a restore.** The restore records on the
+  volume that it is outstanding, before the load, and clears that once it
+  succeeds. Nothing else starts it, so an ID reused by a dump loaded some
+  other way, without the sequence move, is never erased.
+- **An archive whose schema differs from the code waits.** Erasing works on
+  the tables the running code knows. An older archive lacks some of them, and
+  a newer release's archive may hold the person in tables this code cannot
+  reach. So restore leaves re-application outstanding, and says so, until the
+  database has run exactly the migrations the code ships. It runs when
+  `migrate` finishes, after migrating an older archive or deploying a newer
+  one's release, or failing that on the next scheduled
+  `wayfindr:finish-erasures`. The in-app restore keeps the site in maintenance
+  mode until it has.
+- **A failure is reported as its own thing.** The restore says the people
+  erased since the archive may be back, exits non-zero, and leaves
+  re-application outstanding for the next run.
+- **The restore stops new erasures before it reads the ledger.** It marks
+  re-application outstanding first, which raises the serving gate below, and
+  holds a lock on the ledger until it is over, which the scheduled and
+  post-migrate re-applications take too: they cannot settle a restore that is
+  still under way. Before the load, an entry the database being replaced
+  cannot answer for stays pending, because a failed load leaves that database
+  live. An
+  erasure already past the gate may still write its entry after that first
+  read and commit to the database the load replaces. So after the load, a
+  pending entry without a row is kept as committed and listed, rather than
+  discarded: the restored database cannot answer for it. The same holds for
+  every reconciliation while a restore's re-application is outstanding, so a
+  restore that fails after its load and before that step leaves nothing for
+  a later run, or a later restore, to discard. An entry no run can settle
+  yet, because the database will not answer, holds the work open as a
+  failure until one can.
+- **Nothing is served while re-application is outstanding.** A deploy cannot
+  be trusted to hold maintenance mode: a standard Forge deploy restores the
+  site when `migrate` fails, and the container's migration loop crash-loops on
+  a failure that is not transient. So, like the release gate of ADR 0013,
+  the app answers every request but its health check with a 503 until the
+  ledger records the work as done.
+- **A ledger row outlives its account,** as its file on the volume does. The
+  rows are what fill a new volume's ledger. A row that went with its account
+  would leave that volume knowing some erasures and not others, so it would
+  not count as new and give no warning, while a restore from before the
+  account was removed brings the account back, erased contacts and all. A row
+  holds internal IDs, the site's key and counts, so keeping it keeps nothing
+  about anyone.
 
 A restore onto a **fresh** volume, such as disaster recovery onto new hardware,
 has no ledger directory. Restore then warns that erasures recorded after the
@@ -434,7 +493,9 @@ ledger directory alongside the backups.
 
 The first release with re-application backfills the directory from the
 `visitor_erasures` table on first run, so erasures recorded before it are
-covered from then on. It cannot recover erasures that an earlier restore
+covered from then on. Any row without a file gets one: a row exists only for
+an erasure that committed. The scheduled run does this, and so does restore,
+from the database it replaces and again from the one it loads. It cannot recover erasures that an earlier restore
 already undid, and until it ships, restoring an older archive undoes the
 erasures made since, as it does today. Delivery 1's docs say so, and tell the
 operator to erase those people again.

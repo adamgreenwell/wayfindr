@@ -90,9 +90,12 @@ That deletes their identity, conversations, messages, files, notes, ratings,
 cobrowse sessions, proactive deliveries and the alerts that name them. It keeps
 their tickets as work items with the personal content removed, and their audit
 entries with the text replaced. The erasure is recorded in `visitor_erasures`
-with internal IDs, counts and a receipt reference only. It does not reach
-backups taken before it, external issue trackers, sent mail, the AI provider,
-API consumers or logs.
+with internal IDs, counts and a receipt reference only. The same record, less
+the counts and plus the site's public key, is a file under
+`storage/app/erasure-ledger/` on the storage volume, so a restore can erase
+again anyone its archive brings back. Erasure does not reach external issue
+trackers, sent mail, the AI provider, API consumers or logs, and backups taken
+before it still hold the person until one is restored.
 
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually

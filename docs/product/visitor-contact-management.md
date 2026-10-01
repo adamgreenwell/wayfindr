@@ -173,12 +173,30 @@ row keeps only internal IDs: the contact's, and those of any contacts merged
 into it, which a restore from before that merge would bring back. The
 reference is shown after erasing, for the reply to the person who asked.
 
-**Restoring a backup taken before an erasure undoes it.** Restore does not
-re-apply erasures yet; a later release adds that
+**Erasures survive a restore.** Each erasure is also written to a ledger on
+the storage volume, in `storage/app/erasure-ledger/`. Backups do not carry
+that directory, so a restore cannot roll it back
 ([ADR 0026 §8](../decisions/0026-erasing-and-exporting-a-visitor.md#8-erasures-survive-a-restore)).
-Until then, keep receipt references outside Wayfindr, because the restored
-database no longer holds the erasures made after the backup. After such a
-restore, erase those people again.
+`wayfindr:restore` reads it:
+- **Before** it replaces the database, it settles any erasure that was
+  interrupted.
+- **After**, it moves the visitor ID sequence past every erased ID, so no new
+  contact can inherit one.
+- **Then** it erases again everyone the archive brought back, including
+  contacts merged into them, and their files, and says how many.
+
+An archive whose schema differs from the running code waits: an older one
+until `php artisan migrate --force` finishes, and one from a newer release
+until that release is deployed.
+
+Two things it cannot do:
+- **Restore onto a new storage volume**, such as disaster recovery onto new
+  hardware, has no ledger to read. Keep `storage/app/erasure-ledger/` alongside
+  your backups.
+- **Load a dump any other way**, by hand, and nothing is re-applied.
+
+In either case, keep receipt references outside Wayfindr, and erase those
+people again.
 
 Erasure does not reach backups taken before it, external issue trackers, mail
 already sent, the AI provider, API consumers or logs. It does not stop future

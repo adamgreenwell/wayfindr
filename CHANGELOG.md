@@ -30,10 +30,11 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart. Three migrations run
-themselves: they add the erasure ledger table and a table of alert emails on
-their way to the mail server, and let each bulk-action run record every item
-it selected.
+**No operator action required.** Pull and restart. Five migrations run
+themselves: they add the erasure ledger table, with each erased contact's site
+key, and keep its rows when their account is removed; add a table of alert
+emails on their way to the mail server; and let each bulk-action run record
+every item it selected.
 
 ### Added
 
@@ -64,9 +65,22 @@ it selected.
   A new hourly `wayfindr:finish-erasures` task removes any uploaded file that
   storage refused at the time; it runs on the existing scheduler.
 
-  Restoring a backup taken before an erasure brings that person back, until a
-  later release re-applies erasures on restore. Keep receipt references
-  outside Wayfindr, and after such a restore erase those people again.
+  **Erasures survive a restore.** Each erasure is also recorded in
+  `storage/app/erasure-ledger/` on the storage volume, which backups do not
+  carry. `wayfindr:restore` and the operator console's restore now erase
+  again anyone the archive brings back, including contacts merged into them,
+  and say how many. First they move the visitor ID sequence past every
+  erased ID, so no new contact can inherit one. An archive older than the
+  running code is erased from once `php artisan migrate --force` has run,
+  and one from a newer release once that release is deployed. The console
+  restore keeps the site in maintenance mode until then. If
+  erasing again fails, the restore says so and exits with an error, and the
+  next migrate or scheduled run tries again. Until erasures are re-applied,
+  Wayfindr answers every request except its health check with a 503 that
+  says so, however the deploy treats maintenance mode. Keep that directory
+  alongside your backups: a restore onto a new storage volume cannot re-apply erasures
+  made after its archive was taken, and warns that it cannot.
+  `WAYFINDR_ERASURE_LEDGER_PATH` moves the directory.
 
 ### Changed
 

@@ -1,0 +1,432 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Visitors;
+
+use App\Models\Site;
+use App\Models\Visitor;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
+use Throwable;
+
+/**
+ * Makes erasures survive a restore (ADR 0026 §8). Restoring an archive taken
+ * before an erasure brings the person back, and an operator restoring after
+ * an incident will not remember last month's requests, so the ledger on the
+ * volume, which the restore cannot roll back, puts them right.
+ *
+ * Re-applying erases by visitor ID, which is only safe while no new visitor
+ * can take an erased person's ID. An imported dump resets the ID sequence to
+ * the archive's, so the restore moves it past every ID the ledger holds before
+ * anything else can create a visitor, and re-application only ever runs for a
+ * restore that did.
+ */
+final class ErasureReapplier
+{
+    /** Whether this restore is what made re-application outstanding. */
+    private bool $markedOutstanding = false;
+
+    /** @var resource|null The restore lock, while this restore is under way. */
+    private $restoreLock = null;
+
+    /** @var resource|null The restore lock, while recovery holds it. */
+    private $recoveryLock = null;
+
+    public function __construct(
+        private readonly ErasureLedger $ledger,
+        private readonly VisitorEraser $eraser,
+    ) {}
+
+    /**
+     * Before the restore replaces the database: the last moment it can say
+     * which pending erasures committed. One it cannot answer for is kept as
+     * committed and listed.
+     *
+     * @return array{fresh_volume: bool, unconfirmed: list<string>}
+     */
+    public function beforeRestore(): array
+    {
+        $this->markedOutstanding = false;
+
+        // A ledger the restore itself would purge is refused while nothing
+        // has changed.
+        $this->ledger->assertOutsideAttachmentDisks();
+
+        // Held until finishRestore(), so a scheduled or post-migrate
+        // re-application cannot run inside this restore; one that is running
+        // now finishes first.
+        $this->restoreLock = $this->ledger->lockRestore(wait: true);
+
+        // An earlier restore that loaded and then stopped short leaves the
+        // database this one replaces unable to answer for its pending
+        // entries, as afterRestore() would have treated them.
+        $earlier = $this->ledger->reapplyOutstanding();
+
+        // First, so the serving gate refuses every request from here on and
+        // no erasure can start while the restore is under way; so a restore
+        // that fails anywhere after the load still leaves its re-application
+        // on record; and so a volume the ledger cannot be written to stops the
+        // restore while nothing has changed. An erasure already past the gate
+        // may still write its entry after the snapshot below: afterRestore()
+        // settles that one.
+        $this->markedOutstanding = ! $earlier;
+        $this->ledger->markReapplyOutstanding();
+
+        $this->ledger->backfill();
+
+        // An entry this database cannot answer for stays pending: if the load
+        // fails, this database is still the live one, and the erasure may
+        // never have happened. afterRestore() settles it once the load has
+        // succeeded.
+        $settled = $this->ledger->reconcile(assumeCommitted: false, restoredSinceErasure: $earlier);
+
+        // After the backfill and the settling, so only a volume that knows of
+        // no erasure at all, from this database or its own history, counts as
+        // new: one that cannot know about erasures made after the archive was
+        // taken. An entry for an erasure that rolled back is not history.
+        $fresh = ! $this->ledger->holdsEntries();
+
+        return ['fresh_volume' => $fresh, 'unconfirmed' => $settled['unconfirmed']];
+    }
+
+    /**
+     * The operator's word that the restored contacts an entry names are this
+     * installation's, for an entry recorded without its site's key. The key
+     * is taken from the restored site those contacts are on, within the
+     * entry's account, and written to the entry, so it re-applies like any
+     * other. False when the entry is unknown or none of its contacts is here.
+     */
+    public function vouch(string $receipt): bool
+    {
+        $entry = $this->ledger->find($receipt);
+
+        if ($entry === null) {
+            return false;
+        }
+
+        if (is_string($entry['site_public_key'] ?? null) && $entry['site_public_key'] !== '') {
+            return true;
+        }
+
+        $siteId = Visitor::query()
+            ->whereIn('id', ErasureLedger::lineage($entry))
+            ->whereIn('site_id', Site::query()->select('id')->where('account_id', (int) ($entry['account_id'] ?? 0)))
+            ->value('site_id');
+        $site = $siteId === null ? null : Site::query()->find($siteId);
+
+        if ($site === null) {
+            return false;
+        }
+
+        $this->ledger->record([
+            ...$entry,
+            'site_id' => (int) $site->id,
+            'site_public_key' => (string) $site->public_key,
+            'vouched_at' => gmdate('c'),
+        ]);
+
+        return true;
+    }
+
+    /** The restore is over, however it ended: recovery may run again. */
+    public function finishRestore(): void
+    {
+        $this->ledger->unlockRestore($this->restoreLock);
+        $this->restoreLock = null;
+    }
+
+    /**
+     * The restore stopped before it replaced anything, so it has nothing to
+     * re-apply. One an earlier restore left outstanding stays that way.
+     */
+    public function abandon(): void
+    {
+        if (! $this->markedOutstanding) {
+            return;
+        }
+
+        try {
+            $this->ledger->clearReapplyOutstanding();
+        } catch (Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * After the dump is imported. Erasing reads the tables the running code
+     * knows, so a schema that differs from them waits: one behind waits for
+     * `migrate`, and one ahead, from a newer release, for that release,
+     * whose own migrate run then finishes it. Re-application stays
+     * outstanding on the ledger until then, and the next scheduled
+     * wayfindr:finish-erasures also tries.
+     *
+     * @return array{unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}
+     */
+    public function afterRestore(): array
+    {
+        // An erasure that wrote its entry after beforeRestore() looked, and
+        // committed before the load replaced its row, is pending still, and
+        // the restored database cannot answer for it. Kept as committed: one
+        // the operator confirmed costs less to re-apply than to lose.
+        $late = $this->ledger->reconcile(assumeCommitted: true, restoredSinceErasure: true);
+
+        // The restored ledger table may know erasures this volume does not:
+        // a volume that is new, or older than the ledger.
+        $this->ledger->backfill();
+        $this->moveVisitorSequencePast($this->ledger->highestVisitorId());
+
+        if (! $this->schemaIsCurrent()) {
+            return [
+                'unconfirmed' => $late['unconfirmed'],
+                'entries' => count($this->ledger->committed()),
+                'reapplied' => 0,
+                'visitors' => 0,
+                'deferred' => true,
+                'failed' => null,
+            ];
+        }
+
+        return ['unconfirmed' => $late['unconfirmed'], ...$this->reapplyAll(), 'deferred' => false];
+    }
+
+    /**
+     * Re-application a restore left outstanding, once the schema has caught
+     * up. Null when none is outstanding, or the schema is still behind.
+     *
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}|null
+     */
+    public function reapplyOutstanding(): ?array
+    {
+        if (! $this->ledger->reapplyOutstanding()) {
+            return null;
+        }
+
+        $result = null;
+
+        $this->duringRecovery(function () use (&$result): void {
+            if (! $this->ledger->reapplyOutstanding() || ! $this->schemaIsCurrent()) {
+                return;
+            }
+
+            $this->ledger->reconcile();
+            $result = $this->reapplyAll();
+        });
+
+        return $result;
+    }
+
+    /**
+     * Run ledger work outside any restore: settling, backfilling,
+     * re-applying, removing files. A restore under way settles its own
+     * erasures and may not have loaded anything yet, so work done meanwhile
+     * would read the wrong database: it is skipped, and false returned. The
+     * restore lock is held throughout, so no restore starts meanwhile
+     * either. Calls made from inside $work run inside the same hold.
+     */
+    public function duringRecovery(callable $work): bool
+    {
+        if (is_resource($this->recoveryLock)) {
+            $work();
+
+            return true;
+        }
+
+        $lock = $this->ledger->lockRestore(wait: false);
+
+        if ($lock === null) {
+            return false;
+        }
+
+        $this->recoveryLock = $lock;
+
+        try {
+            $work();
+        } finally {
+            $this->ledger->unlockRestore($lock);
+            $this->recoveryLock = null;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}
+     */
+    private function reapplyAll(): array
+    {
+        $entries = $this->ledger->committed();
+        // Again, and before any erasing: a restore that failed after its load
+        // left the move undone, and erasing by ID is only safe past it.
+        $this->moveVisitorSequencePast($this->ledger->highestVisitorId());
+        $present = $this->presentVisitorIds($entries);
+        $reapplied = 0;
+        $visitors = 0;
+        $failures = [];
+
+        // An entry that cannot be read may be an erasure this restore undid,
+        // so the work is not done until it is repaired.
+        $unreadable = $this->ledger->unreadable();
+
+        if ($unreadable !== []) {
+            $failures[] = sprintf(
+                'Ledger entries in %s cannot be read: %s. Put each back from a copy of the ledger, then run php artisan wayfindr:finish-erasures.',
+                $this->ledger->path(),
+                implode(', ', $unreadable),
+            );
+        }
+
+        // One still pending is an erasure reconciliation could not settle:
+        // the database would not answer, or its site stayed locked. It may be
+        // one this restore undid, so it holds the work open too, and the next
+        // run settles it.
+        $unsettled = array_map(fn (array $entry): string => (string) ($entry['receipt'] ?? ''), $this->ledger->pending());
+
+        if ($unsettled !== []) {
+            $failures[] = sprintf(
+                'These erasures could not be settled yet: %s. The next run of php artisan wayfindr:finish-erasures tries again.',
+                implode(', ', $unsettled),
+            );
+        }
+
+        $unverifiable = [];
+
+        foreach ($entries as $entry) {
+            if (array_intersect(ErasureLedger::lineage($entry), $present) === []) {
+                continue;
+            }
+
+            // Recorded before entries kept their site's key, by a site since
+            // purged. Nothing here can show the matching rows are this
+            // install's, so they are left until the operator says: erasing
+            // someone else's contact is the worse mistake, and serving one
+            // who asked to be erased is the next worst, so the work stays
+            // outstanding meanwhile.
+            if (! is_string($entry['site_public_key'] ?? null) || $entry['site_public_key'] === '') {
+                $unverifiable[] = (string) $entry['receipt'];
+
+                continue;
+            }
+
+            try {
+                $erased = $this->eraser->reapply($entry);
+            } catch (Throwable $e) {
+                report($e);
+                $failures[] = $entry['receipt'].': '.$e->getMessage();
+
+                continue;
+            }
+
+            if ($erased > 0) {
+                $reapplied++;
+                $visitors += $erased;
+            }
+        }
+
+        if ($unverifiable !== []) {
+            $failures[] = sprintf(
+                'These erasures were recorded without their site\'s key and name contacts this restore brought back: %s. '
+                .'If those contacts are this installation\'s, run php artisan wayfindr:finish-erasures %s; '
+                .'if the archive came from another installation, remove each receipt\'s file from %s.',
+                implode(', ', $unverifiable),
+                implode(' ', array_map(fn (string $receipt): string => '--vouch='.$receipt, $unverifiable)),
+                $this->ledger->path(),
+            );
+        }
+
+        // Kept while anything failed, so the next migrate or scheduled run
+        // tries again.
+        if ($failures === []) {
+            $this->ledger->clearReapplyOutstanding();
+        }
+
+        return [
+            'entries' => count($entries),
+            'reapplied' => $reapplied,
+            'visitors' => $visitors,
+            'failed' => $failures === [] ? null : implode(' ', $failures),
+        ];
+    }
+
+    /**
+     * The visitor IDs the ledger names that the database holds, so an
+     * erasure the restore did not bring back costs no transaction.
+     *
+     * @param  list<array<string, mixed>>  $entries
+     * @return list<int>
+     */
+    private function presentVisitorIds(array $entries): array
+    {
+        $ids = array_values(array_unique(array_merge([], ...array_map(ErasureLedger::lineage(...), $entries))));
+        $present = [];
+
+        foreach (array_chunk($ids, 500) as $chunk) {
+            $present = [...$present, ...DB::table('visitors')->whereIn('id', $chunk)->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()];
+        }
+
+        return $present;
+    }
+
+    /**
+     * Move the visitor ID sequence past the highest ID the ledger names, and
+     * never back.
+     */
+    private function moveVisitorSequencePast(int $id): void
+    {
+        if ($id <= 0) {
+            return;
+        }
+
+        $connection = DB::connection();
+
+        match ($connection->getDriverName()) {
+            'pgsql' => $connection->select(
+                "select setval(pg_get_serial_sequence('visitors', 'id'), greatest(?::bigint, (select coalesce(max(id), 0) from visitors), coalesce(pg_sequence_last_value(pg_get_serial_sequence('visitors', 'id')::regclass), 0)))",
+                [$id],
+            ),
+            'sqlite' => $this->moveSqliteSequencePast($id),
+            default => throw new RuntimeException(sprintf(
+                'Cannot move the visitor ID sequence on the %s driver; restore supports PostgreSQL.',
+                $connection->getDriverName(),
+            )),
+        };
+    }
+
+    private function moveSqliteSequencePast(int $id): void
+    {
+        $current = DB::table('sqlite_sequence')->where('name', 'visitors')->value('seq');
+        $past = max($id, (int) $current, (int) DB::table('visitors')->max('id'));
+
+        if ($current === null) {
+            DB::table('sqlite_sequence')->insert(['name' => 'visitors', 'seq' => $past]);
+        } else {
+            DB::table('sqlite_sequence')->where('name', 'visitors')->update(['seq' => $past]);
+        }
+    }
+
+    /**
+     * Whether the database has run exactly the migrations the running code
+     * ships. One it has not run is a table erasing would miss or a column it
+     * would not find; one the code does not know is a newer release's table
+     * that could hold the person, and this code cannot reach it.
+     */
+    private function schemaIsCurrent(): bool
+    {
+        try {
+            $migrator = app('migrator');
+
+            if (! $migrator->repositoryExists()) {
+                return false;
+            }
+
+            $shipped = array_keys($migrator->getMigrationFiles([database_path('migrations'), ...$migrator->paths()]));
+            $ran = $migrator->getRepository()->getRan();
+
+            return array_diff($shipped, $ran) === [] && array_diff($ran, $shipped) === [];
+        } catch (Throwable $e) {
+            report($e);
+
+            return false;
+        }
+    }
+}

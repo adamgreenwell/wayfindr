@@ -1,0 +1,788 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Visitors;
+
+use App\Models\Site;
+use App\Models\VisitorErasure;
+use DateTimeImmutable;
+use DateTimeZone;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use RuntimeException;
+use Throwable;
+
+/**
+ * The erasure ledger on the storage volume (ADR 0026 §8): one file per erased
+ * contact, so a restore can re-apply the erasures its archive predates.
+ *
+ * Backups archive the database and the attachment disks, not this directory,
+ * so a restore cannot roll it back; the `visitor_erasures` table is the copy
+ * later backups carry. An entry holds internal IDs, the site's public key, a
+ * time, the receipt and any binaries still to remove: never a name, email,
+ * browser ID or content.
+ *
+ * An erasure writes its entry as `<receipt>.pending.json` inside its own
+ * transaction, before it changes anything, and renames it to `<receipt>.json`
+ * once the database has committed. A pending entry is settled against the
+ * database by {@see self::reconcile()}.
+ */
+final class ErasureLedger
+{
+    private const RECEIPT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+    /** Written by a restore whose re-application has not run yet. */
+    private const REAPPLY_MARKER = 'reapply-after-restore.json';
+
+    public function path(): string
+    {
+        return rtrim((string) config('wayfindr.erasure.ledger_path', storage_path('app/erasure-ledger')), '/');
+    }
+
+    /**
+     * Refuse a ledger inside a local attachment disk. Backups copy those
+     * disks, so an archive could carry the ledger back in time; a restore
+     * purges them, and the orphan sweep deletes any file with no attachment
+     * row. Any of the three loses erasures without a word.
+     */
+    public function assertOutsideAttachmentDisks(): void
+    {
+        $ledger = self::resolved($this->path());
+
+        foreach ((array) config('filesystems.disks', []) as $name => $disk) {
+            $root = is_array($disk) ? ($disk['root'] ?? null) : null;
+
+            if (! str_starts_with((string) $name, 'attachments') || ($disk['driver'] ?? null) !== 'local' || ! is_string($root) || $root === '') {
+                continue;
+            }
+
+            $root = self::resolved($root);
+
+            if ($ledger === $root || str_starts_with($ledger.'/', $root.'/')) {
+                throw new RuntimeException(sprintf(
+                    'The erasure ledger at %s is inside the attachment disk [%s], which backups copy and restores purge. '
+                    .'Set WAYFINDR_ERASURE_LEDGER_PATH to a directory outside attachment storage.',
+                    $this->path(),
+                    $name,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Ledger files that exist and cannot be read: edited, or copied back in
+     * part. Each may be an erasure nobody can re-apply until it is repaired,
+     * so they are reported rather than skipped.
+     *
+     * @return list<string>
+     */
+    public function unreadable(): array
+    {
+        $directory = $this->path();
+        $names = is_dir($directory) ? scandir($directory) : false;
+        $broken = [];
+
+        foreach ($names === false ? [] : $names as $name) {
+            if (preg_match('/^('.self::RECEIPT.')(?:\.pending)?\.json$/', $name, $match) === 1
+                && $this->read($directory.'/'.$name, $match[1]) === null) {
+                $broken[] = $name;
+            }
+        }
+
+        return $broken;
+    }
+
+    /**
+     * Whether this volume holds any erasure, readable or not. A restore onto
+     * one that holds none cannot know about erasures made after its archive
+     * was taken. The directory alone proves nothing: the restore lock and the
+     * outstanding marker live in it too, and a scheduled run on a new volume
+     * creates it.
+     */
+    public function holdsEntries(): bool
+    {
+        $directory = $this->path();
+        $names = is_dir($directory) ? scandir($directory) : false;
+
+        foreach ($names === false ? [] : $names as $name) {
+            if (preg_match('/^'.self::RECEIPT.'(?:\.pending)?\.json$/', $name) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The entry for an erasure about to happen. Throws when it cannot be made
+     * durable, so the erasure refuses with nothing changed.
+     *
+     * @param  array<string, mixed>  $entry
+     */
+    public function writePending(array $entry): void
+    {
+        $this->write($this->receiptOf($entry).'.pending.json', $entry);
+    }
+
+    /**
+     * The erasure committed: its entry is part of the ledger from now on. The
+     * erasure and a reconciliation can both get here; whichever is second
+     * finds the work done.
+     */
+    public function promote(string $receipt): void
+    {
+        $this->assertReceipt($receipt);
+
+        if (@rename($this->pendingPath($receipt), $this->committedPath($receipt))) {
+            $this->syncDirectory();
+
+            return;
+        }
+
+        if (! is_file($this->pendingPath($receipt)) && is_file($this->committedPath($receipt))) {
+            return;
+        }
+
+        throw new RuntimeException("Could not record erasure {$receipt} as committed in {$this->path()}.");
+    }
+
+    /** The erasure never committed: its entry goes. */
+    public function discard(string $receipt): void
+    {
+        $this->assertReceipt($receipt);
+
+        $path = $this->pendingPath($receipt);
+
+        if (is_file($path) && ! @unlink($path)) {
+            throw new RuntimeException("Could not remove the entry of erasure {$receipt}, which never happened, from {$this->path()}.");
+        }
+    }
+
+    /**
+     * Write a committed entry whole: a backfilled one, or one whose list of
+     * binaries has changed.
+     *
+     * @param  array<string, mixed>  $entry
+     */
+    public function record(array $entry): void
+    {
+        $this->write($this->receiptOf($entry).'.json', $entry);
+    }
+
+    /**
+     * Every committed entry.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function committed(): array
+    {
+        return $this->entries('/^('.self::RECEIPT.')\.json$/');
+    }
+
+    /**
+     * Every entry whose erasure has not been settled yet.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function pending(): array
+    {
+        return $this->entries('/^('.self::RECEIPT.')\.pending\.json$/');
+    }
+
+    /** @return array<string, mixed>|null */
+    public function find(string $receipt): ?array
+    {
+        $this->assertReceipt($receipt);
+
+        return $this->read($this->committedPath($receipt), $receipt);
+    }
+
+    /**
+     * Change a committed entry's list of binaries still to remove, under a
+     * lock, so two runs cannot each write back a list the other has changed.
+     *
+     * @param  callable(list<array{disk: string, key: string}>): list<array{disk: string, key: string}>  $change
+     */
+    public function updatePendingFiles(string $receipt, callable $change): void
+    {
+        $this->exclusively(function () use ($receipt, $change): void {
+            $entry = $this->find($receipt);
+
+            if ($entry === null) {
+                return;
+            }
+
+            $entry['pending_files'] = self::files($change(self::files($entry['pending_files'] ?? [])));
+            $this->record($entry);
+        });
+    }
+
+    /**
+     * The highest visitor ID any entry names. A restore moves the visitor ID
+     * sequence past it, so no new visitor can take an erased person's ID and
+     * be erased in their place by the next restore.
+     */
+    public function highestVisitorId(): int
+    {
+        $highest = 0;
+
+        foreach ([...$this->committed(), ...$this->pending()] as $entry) {
+            foreach (self::lineage($entry) as $id) {
+                $highest = max($highest, $id);
+            }
+        }
+
+        return $highest;
+    }
+
+    /**
+     * Held by a restore from before it reads the ledger until it is over, and
+     * by every re-application a restore left outstanding, so recovery never
+     * runs inside a restore that is still under way. The operating system
+     * releases it when the process ends, however it ends. Null when $wait is
+     * false and another process holds it.
+     *
+     * @return resource|null
+     */
+    public function lockRestore(bool $wait)
+    {
+        $this->assertOutsideAttachmentDisks();
+        $this->ensureDirectory();
+        $handle = @fopen($this->path().'/.restore.lock', 'c');
+
+        if (! is_resource($handle)) {
+            throw new RuntimeException("Could not open the restore lock in {$this->path()}.");
+        }
+
+        if (! flock($handle, $wait ? LOCK_EX : LOCK_EX | LOCK_NB)) {
+            fclose($handle);
+
+            return null;
+        }
+
+        return $handle;
+    }
+
+    /** @param resource|null $handle */
+    public function unlockRestore($handle): void
+    {
+        if (is_resource($handle)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
+    /** A restore replaced the database before its erasures could be re-applied. */
+    public function markReapplyOutstanding(): void
+    {
+        $this->write(self::REAPPLY_MARKER, ['since' => gmdate('c')]);
+    }
+
+    public function reapplyOutstanding(): bool
+    {
+        return is_file($this->path().'/'.self::REAPPLY_MARKER);
+    }
+
+    public function clearReapplyOutstanding(): void
+    {
+        $path = $this->path().'/'.self::REAPPLY_MARKER;
+
+        if (is_file($path) && ! @unlink($path)) {
+            throw new RuntimeException("Could not clear {$path}.");
+        }
+    }
+
+    /**
+     * Settle every pending entry against the database. Each waits for the lock
+     * on its site, which the erasure holds from before its entry is written
+     * until its transaction ends: once it is free, the transaction is over,
+     * however long it ran. Age is never taken as proof. Then a receipt with a
+     * row committed, and one without never did.
+     *
+     * A database that cannot answer, because it is unreachable or older than
+     * the ledger table, leaves the entries pending; a restore, which is about
+     * to replace that database for good, passes $assumeCommitted instead, and
+     * they are kept as committed. An erasure an operator confirmed costs far
+     * less to re-apply by mistake than to lose.
+     *
+     * After a restore's load, a missing row proves nothing either: an erasure
+     * that ran while the restore was getting ready may have committed to the
+     * database the load replaced. Every entry without a row is then kept as
+     * committed too. That holds for as long as the restore's re-application
+     * is outstanding, which is what $restoredSinceErasure defaults to, so a
+     * restore that failed before its own settlement leaves nothing for a
+     * later run to discard.
+     *
+     * @return array{promoted: list<string>, discarded: list<string>, unconfirmed: list<string>}
+     */
+    public function reconcile(bool $assumeCommitted = false, ?bool $restoredSinceErasure = null): array
+    {
+        $settled = ['promoted' => [], 'discarded' => [], 'unconfirmed' => []];
+        $pending = $this->pending();
+
+        if ($pending === []) {
+            return $settled;
+        }
+
+        $restoredSinceErasure ??= $this->reapplyOutstanding();
+
+        $answerable = $this->databaseCanAnswer();
+
+        foreach ($pending as $entry) {
+            $receipt = $this->receiptOf($entry);
+
+            if (! $answerable) {
+                if ($assumeCommitted) {
+                    $this->promote($receipt);
+                    $settled['unconfirmed'][] = $receipt;
+                }
+
+                continue;
+            }
+
+            try {
+                $committed = DB::transaction(function () use ($entry, $receipt): bool {
+                    // A site that no longer exists has no lock to wait on, and
+                    // nothing can still be erasing on it.
+                    if (is_int($entry['site_id'] ?? null)) {
+                        Site::query()->whereKey($entry['site_id'])->lockForUpdate()->first(['id']);
+                    }
+
+                    return VisitorErasure::query()->where('public_id', $receipt)->exists();
+                });
+            } catch (Throwable $e) {
+                report($e);
+
+                if ($assumeCommitted) {
+                    $this->promote($receipt);
+                    $settled['unconfirmed'][] = $receipt;
+                }
+
+                continue;
+            }
+
+            // Its own erasure may have settled it while this waited for the
+            // lock: promoted after its commit, or taken back after a refusal.
+            if (! is_file($this->pendingPath($receipt))) {
+                continue;
+            }
+
+            if ($committed) {
+                $this->promote($receipt);
+                $settled['promoted'][] = $receipt;
+            } elseif ($restoredSinceErasure) {
+                $this->promote($receipt);
+                $settled['unconfirmed'][] = $receipt;
+            } else {
+                $this->discard($receipt);
+                $settled['discarded'][] = $receipt;
+            }
+        }
+
+        return $settled;
+    }
+
+    /**
+     * Write an entry for every ledger row that has none on this volume: an
+     * erasure made before the volume held the ledger, or one a restored
+     * database knows about and a fresh volume does not. A row exists only for
+     * an erasure that committed, so each is safe to record. Returns how many
+     * were written.
+     */
+    public function backfill(): int
+    {
+        if (! $this->databaseCanAnswer()) {
+            return 0;
+        }
+
+        $written = 0;
+
+        VisitorErasure::query()
+            ->with('site:id,public_key')
+            ->lazyById(500)
+            ->each(function (VisitorErasure $erasure) use (&$written): void {
+                $receipt = (string) $erasure->public_id;
+
+                $pending = $this->pendingPath($receipt);
+                $committed = $this->committedPath($receipt);
+
+                // A readable pending entry is reconciliation's to settle.
+                if (is_file($pending) && $this->read($pending, $receipt) !== null) {
+                    return;
+                }
+
+                // A file that cannot be read, pending or committed, is
+                // repaired from the row, which says the same thing; the row
+                // exists only because the erasure committed.
+                if (! is_file($committed) || $this->read($committed, $receipt) === null) {
+                    $this->record(self::entryFor($erasure));
+                    $written++;
+                }
+
+                if (is_file($pending) && ! @unlink($pending)) {
+                    throw new RuntimeException("Could not remove the damaged entry {$pending}, which {$receipt}.json replaces.");
+                }
+            });
+
+        return $written;
+    }
+
+    /**
+     * The entry that records an erasure.
+     *
+     * @param  list<int>  $mergedVisitorIds
+     * @param  list<array{disk: string, key: string}>  $pendingFiles
+     * @return array<string, mixed>
+     */
+    public static function entry(
+        string $receipt,
+        int $accountId,
+        ?Site $site,
+        int $erasedVisitorId,
+        array $mergedVisitorIds,
+        ?int $actorId,
+        string $erasedAt,
+        array $pendingFiles,
+    ): array {
+        return [
+            'receipt' => $receipt,
+            'account_id' => $accountId,
+            'site_id' => $site?->id === null ? null : (int) $site->id,
+            // With the ID, what tells this install's site from another's: an
+            // archive from somewhere else can hold a site, and visitors, under
+            // the same IDs.
+            'site_public_key' => $site?->public_key === null ? null : (string) $site->public_key,
+            'erased_visitor_id' => $erasedVisitorId,
+            'merged_visitor_ids' => array_values($mergedVisitorIds),
+            'actor_id' => $actorId,
+            'erased_at' => $erasedAt,
+            'pending_files' => array_values($pendingFiles),
+        ];
+    }
+
+    /**
+     * The entry a ledger row describes. The row keeps its site's public key
+     * itself, since its site may have been purged since.
+     *
+     * @return array<string, mixed>
+     */
+    public static function entryFor(VisitorErasure $erasure): array
+    {
+        $entry = self::entry(
+            (string) $erasure->public_id,
+            (int) $erasure->account_id,
+            $erasure->site,
+            (int) $erasure->erased_visitor_id,
+            array_map('intval', array_values((array) ($erasure->merged_visitor_ids ?? []))),
+            $erasure->actor_id === null ? null : (int) $erasure->actor_id,
+            $erasure->erased_at?->toIso8601ZuluString() ?? gmdate('Y-m-d\TH:i:s\Z'),
+            self::files($erasure->pending_files ?? []),
+        );
+
+        if (is_string($erasure->site_public_key) && $erasure->site_public_key !== '') {
+            $entry['site_public_key'] = $erasure->site_public_key;
+        }
+
+        return $entry;
+    }
+
+    /**
+     * Every visitor ID an entry names: the erased one and each merged into it.
+     *
+     * @param  array<string, mixed>  $entry
+     * @return list<int>
+     */
+    public static function lineage(array $entry): array
+    {
+        return collect([$entry['erased_visitor_id'] ?? null, ...((array) ($entry['merged_visitor_ids'] ?? []))])
+            ->filter(fn (mixed $id): bool => is_int($id) && $id > 0)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{disk: string, key: string}>
+     */
+    public static function files(mixed $files): array
+    {
+        return collect(is_array($files) ? $files : [])
+            ->filter(fn (mixed $file): bool => is_array($file) && is_string($file['key'] ?? null) && $file['key'] !== '')
+            ->map(fn (array $file): array => ['disk' => (string) ($file['disk'] ?? ''), 'key' => (string) $file['key']])
+            ->unique(fn (array $file): string => $file['disk']."\0".$file['key'])
+            ->values()
+            ->all();
+    }
+
+    /** Whether this database has the ledger table: an archive may predate it. */
+    public function databaseCanAnswer(): bool
+    {
+        try {
+            return Schema::hasTable('visitor_erasures');
+        } catch (Throwable $e) {
+            report($e);
+
+            return false;
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function entries(string $pattern): array
+    {
+        $directory = $this->path();
+
+        if (! is_dir($directory)) {
+            return [];
+        }
+
+        $entries = [];
+        $names = scandir($directory);
+
+        foreach ($names === false ? [] : $names as $name) {
+            if (preg_match($pattern, $name, $match) !== 1) {
+                continue;
+            }
+
+            $entry = $this->read($directory.'/'.$name, $match[1]);
+
+            if ($entry !== null) {
+                $entries[] = $entry;
+            }
+        }
+
+        return $entries;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function read(string $path, string $receipt): ?array
+    {
+        if (! is_file($path)) {
+            return null;
+        }
+
+        try {
+            $entry = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable $e) {
+            // Every write is renamed into place whole, so this is a file
+            // someone edited. Skipped, and said, rather than trusted.
+            report(new RuntimeException("Unreadable erasure ledger entry {$path}.", previous: $e));
+
+            return null;
+        }
+
+        if (! is_array($entry) || ($entry['receipt'] ?? null) !== $receipt) {
+            report(new RuntimeException("Erasure ledger entry {$path} does not name its own receipt."));
+
+            return null;
+        }
+
+        // Valid JSON is not yet an entry: one that lost the erased ID, or
+        // holds it as text, would name nobody, and a restore would re-apply it
+        // to no one and report success.
+        if (! self::wellFormed($entry)) {
+            report(new RuntimeException("Erasure ledger entry {$path} is missing a field re-application needs, or holds one of the wrong type."));
+
+            return null;
+        }
+
+        return $entry;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private static function wellFormed(array $entry): bool
+    {
+        $positiveInt = fn (mixed $value): bool => is_int($value) && $value > 0;
+        $text = fn (mixed $value): bool => is_string($value) && $value !== '';
+        $optional = fn (mixed $value, callable $check): bool => $value === null || $check($value);
+        $merged = $entry['merged_visitor_ids'] ?? null;
+        $files = $entry['pending_files'] ?? null;
+
+        return $positiveInt($entry['erased_visitor_id'] ?? null)
+            && $positiveInt($entry['account_id'] ?? null)
+            && $optional($entry['site_id'] ?? null, $positiveInt)
+            && $optional($entry['site_public_key'] ?? null, $text)
+            && $optional($entry['actor_id'] ?? null, $positiveInt)
+            && self::zuluTime($entry['erased_at'] ?? null)
+            && is_array($merged) && array_is_list($merged) && array_filter($merged, fn (mixed $id): bool => ! $positiveInt($id)) === []
+            && is_array($files) && array_is_list($files)
+            // Neither could be removed: files() drops one with no key, and one
+            // with no disk names no storage to remove it from.
+            && array_filter($files, fn (mixed $file): bool => ! is_array($file) || ! $text($file['disk'] ?? null) || ! $text($file['key'] ?? null)) === [];
+    }
+
+    /**
+     * The one form every entry is written in. Anything looser lets through a
+     * value re-application cannot parse, or one it parses as some other time
+     * ("tomorrow", a thirteenth month rolled into the next year).
+     */
+    private static function zuluTime(mixed $value): bool
+    {
+        if (! is_string($value)) {
+            return false;
+        }
+
+        $time = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s\Z', $value, new DateTimeZone('UTC'));
+
+        return $time !== false && $time->format('Y-m-d\TH:i:s\Z') === $value;
+    }
+
+    /**
+     * To a temporary file, flushed to disk, then renamed into place, and the
+     * directory flushed too: a crash leaves the old file or the new one, never
+     * part of either.
+     *
+     * @param  array<string, mixed>  $contents
+     */
+    private function write(string $name, array $contents): void
+    {
+        $this->assertOutsideAttachmentDisks();
+        $this->ensureDirectory();
+
+        $json = json_encode($contents, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+        $temporary = $this->path().'/.'.$name.'.'.bin2hex(random_bytes(6)).'.tmp';
+        $handle = @fopen($temporary, 'xb');
+
+        if (! is_resource($handle)) {
+            throw new RuntimeException("Could not write to the erasure ledger at {$this->path()}.");
+        }
+
+        try {
+            $remaining = $json;
+
+            while ($remaining !== '') {
+                $written = fwrite($handle, $remaining);
+
+                if ($written === false || $written === 0) {
+                    throw new RuntimeException("Could not write to the erasure ledger at {$this->path()}.");
+                }
+
+                $remaining = substr($remaining, $written);
+            }
+
+            if (! fflush($handle) || ! fsync($handle)) {
+                throw new RuntimeException("Could not flush the erasure ledger at {$this->path()} to disk.");
+            }
+
+            fclose($handle);
+            $handle = null;
+
+            if (! @rename($temporary, $this->path().'/'.$name)) {
+                throw new RuntimeException("Could not write to the erasure ledger at {$this->path()}.");
+            }
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+
+            if (is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
+
+        $this->syncDirectory();
+    }
+
+    private function ensureDirectory(): void
+    {
+        $directory = $this->path();
+
+        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            throw new RuntimeException("Could not create the erasure ledger directory {$directory}.");
+        }
+    }
+
+    /**
+     * A rename is durable only once the directory that holds it is. A
+     * platform that cannot open a directory as a file has no such flush to
+     * make; one that can and fails is an error.
+     */
+    private function syncDirectory(): void
+    {
+        $handle = @fopen($this->path(), 'r');
+
+        if (! is_resource($handle)) {
+            return;
+        }
+
+        try {
+            if (! @fsync($handle)) {
+                throw new RuntimeException("Could not flush the erasure ledger directory {$this->path()} to disk.");
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /** @param callable(): void $work */
+    private function exclusively(callable $work): void
+    {
+        $this->ensureDirectory();
+        $lock = @fopen($this->path().'/.lock', 'c');
+
+        if (! is_resource($lock) || ! flock($lock, LOCK_EX)) {
+            throw new RuntimeException("Could not lock the erasure ledger at {$this->path()}.");
+        }
+
+        try {
+            $work();
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function receiptOf(array $entry): string
+    {
+        $receipt = (string) ($entry['receipt'] ?? '');
+        $this->assertReceipt($receipt);
+
+        return $receipt;
+    }
+
+    private function assertReceipt(string $receipt): void
+    {
+        if (preg_match('/^'.self::RECEIPT.'$/', $receipt) !== 1) {
+            throw new RuntimeException('An erasure receipt must be a UUID.');
+        }
+    }
+
+    private function pendingPath(string $receipt): string
+    {
+        return $this->path().'/'.$receipt.'.pending.json';
+    }
+
+    private function committedPath(string $receipt): string
+    {
+        return $this->path().'/'.$receipt.'.json';
+    }
+
+    /**
+     * A path with its existing part resolved through any symlinks, so two
+     * spellings of one directory compare equal before either is created.
+     */
+    private static function resolved(string $path): string
+    {
+        $path = rtrim($path, '/');
+        $missing = [];
+
+        while ($path !== '' && realpath($path) === false) {
+            $missing[] = basename($path);
+            $parent = dirname($path);
+
+            if ($parent === $path) {
+                break;
+            }
+
+            $path = $parent;
+        }
+
+        $base = realpath($path);
+
+        return rtrim(($base === false ? $path : $base).'/'.implode('/', array_reverse($missing)), '/');
+    }
+}
