@@ -96,6 +96,7 @@ return [
         'visitor_merged' => 'Visitor contact merged',
         'visitor_erased' => 'Contact erased',
         'visitor_erasure_reapplied' => 'Contact erasure re-applied after a restore',
+        'visitor_exported' => 'Contact exported',
         'api_token_created' => 'API token issued',
         'api_token_revoked' => 'API token revoked',
         'api_token_revoked_with_issuer' => 'API token revoked with its issuer',

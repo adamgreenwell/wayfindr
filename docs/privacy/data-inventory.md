@@ -97,6 +97,14 @@ again anyone its archive brings back. Erasure does not reach external issue
 trackers, sent mail, the AI provider, API consumers or logs, and backups taken
 before it still hold the person until one is restored.
 
+**One person can also export what is held about them.** The same permission
+downloads a ZIP of everything erasure would remove, plus the audit events and
+break-glass access about them
+([how it works](../product/visitor-contact-management.md#exporting-everything-about-a-contact)).
+It names agents and operators by role, not by name. The archive is built in the
+server's temporary directory and removed once it has been sent; the
+`visitor.exported` audit event holds counts only.
+
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually
 long or indefinite retention windows.

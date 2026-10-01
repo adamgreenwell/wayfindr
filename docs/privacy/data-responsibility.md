@@ -62,6 +62,14 @@ save button.
 
 ## A Request About One Person
 
+When a visitor asks to see what is held about them, an agent with the
+`handle_data_requests` permission downloads it as one ZIP from the contact's
+profile ([how it works](../product/visitor-contact-management.md#exporting-everything-about-a-contact)).
+It names agents and operators by role, not by name, and includes contact
+notes: review it before sending it, and add or remove what your law requires.
+It holds what this installation stores, and its `README.txt` lists the places
+it cannot reach, the same ones erasure cannot.
+
 When a visitor asks the operator to delete what is held about them, the
 operator can erase that contact from its profile in the dashboard, with the
 `handle_data_requests` permission

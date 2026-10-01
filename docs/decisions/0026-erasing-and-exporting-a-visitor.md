@@ -337,6 +337,43 @@ carry on. Binaries are read inside the same window. One that retention prunes
 between the snapshot and its read is listed in `README.txt` as pruned, not
 silently left out.
 
+Delivery 3 settled these details:
+- **Repeatable read, not read-only.** PostgreSQL refuses `SELECT … FOR SHARE`
+  in a read-only transaction, so the export cannot be both. It runs at
+  repeatable read, takes the shared site lock as its first statement, and
+  writes nothing inside the transaction. Its audit event is written after. A
+  site row changed while the lock was awaited fails the snapshot, so the
+  export takes it again, up to three times.
+- **Built, then served.** The ZIP is built into a temporary file inside the
+  snapshot and sent after the transaction ends. The site lock lasts as long as
+  building takes, not as long as the agent's download does, and a refusal is
+  an ordinary page rather than a broken download.
+- **Erased while it waited.** The snapshot is taken when the lock is
+  requested, so it can predate an erasure, or a merge into another contact,
+  that held the lock first. After the transaction the export checks that the
+  contact still exists, and if not, discards the archive and says so.
+- **No zip extension.** The runtime does not require one, so the archive is
+  written by `StoredZipWriter`: stored entries, each one's checksum written
+  back into its header, and no ZIP64. A history past 65,535 files or about
+  3.5 GB of attachments is refused before anything is written.
+- **Every column decided.** `VisitorExporter::COLUMNS` lists every column of
+  every table the export reads, as exported or with the reason it is not.
+  Its test holds the list to the live schema, so a column added later is left
+  out, and fails, until someone decides. Columns and metadata keys that name a
+  user are replaced by a role: `visitor`, `agent`, `platform operator`,
+  `integration` or `system`. `VisitorExporter::IDENTITY_KEYS` lists the keys,
+  and a test holds it to every identity-shaped key the code writes.
+- **A POST, and the same permission as erasure.** Building the archive reads
+  the whole history and is audited, which a link another site can embed must
+  not start. It is throttled to six a minute.
+- **A file the download path would not serve is not exported either.** One the
+  malware scanner holds, or one that never finished uploading, keeps its
+  details in its conversation's file, and `README.txt` lists it as withheld.
+- **A cobrowse session on someone else's conversation** goes in
+  `cobrowse.json`. Every session belongs to a conversation, so this is rare.
+- **The README is in the exporting agent's dashboard language.** The operator
+  reviews the archive before it goes to the person.
+
 ### 8. Erasures survive a restore
 
 Restoring an archive taken before an erasure would silently undo it, and an

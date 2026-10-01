@@ -35,7 +35,7 @@ return [
         'manage_sites' => ['label' => 'Gestisci siti', 'detail' => 'Creazione, modifica, archiviazione e ripristino dei siti.'],
         'manage_site_access' => ['label' => 'Gestisci accesso ai siti', 'detail' => 'Scelta delle persone che possono assistere ogni sito.'],
         'manage_contacts' => ['label' => 'Gestisci contatti', 'detail' => 'Definizione degli attributi dei visitatori e gestione dei contatti sui siti assegnati.'],
-        'handle_data_requests' => ['label' => 'Gestisci richieste sui dati', 'detail' => 'Cancellazione di un contatto e di tutti i dati conservati su di lui nei siti assegnati. Non è reversibile.'],
+        'handle_data_requests' => ['label' => 'Gestisci richieste sui dati', 'detail' => 'Esportazione o cancellazione di tutti i dati conservati su un contatto nei siti assegnati. La cancellazione non è reversibile.'],
         'manage_privacy_settings' => ['label' => 'Gestisci impostazioni privacy', 'detail' => 'Gestione dei controlli sui dati dei visitatori e sulla privacy.'],
         'manage_integrations' => ['label' => 'Gestisci integrazioni', 'detail' => 'Configurazione di provider, token API, webhook e instradamento.'],
         'manage_knowledge' => ['label' => 'Gestisci conoscenza', 'detail' => 'Creazione e pubblicazione di articoli, risposte ed etichette dei ticket.'],

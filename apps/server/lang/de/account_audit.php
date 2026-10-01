@@ -93,6 +93,7 @@ return [
         'visitor_merged' => 'Besucherkontakt zusammengeführt',
         'visitor_erased' => 'Kontakt gelöscht',
         'visitor_erasure_reapplied' => 'Kontaktlöschung nach Wiederherstellung erneut angewendet',
+        'visitor_exported' => 'Kontakt exportiert',
         'api_token_created' => 'API-Token ausgestellt',
         'api_token_revoked' => 'API-Token widerrufen',
         'api_token_revoked_with_issuer' => 'API-Token mit dem Aussteller widerrufen',

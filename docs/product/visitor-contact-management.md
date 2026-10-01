@@ -115,6 +115,44 @@ and browser-ID alias lineage are intentionally omitted. Export requires the
 delegable `manage_contacts` permission; directory readers who have only ticket
 or conversation access cannot make a bulk download.
 
+## Exporting everything about a contact
+
+When a person asks to see what is held about them, an agent with
+`handle_data_requests` downloads it from the contact's profile with **Download
+export**, in the **Export this contact** section
+([ADR 0026 §7](../decisions/0026-erasing-and-exporting-a-visitor.md)). The erase
+page offers the same download, for a request that asks for both. It is the
+same permission and site scope as erasure, and unlike the directory's CSV it is
+one contact's whole history:
+
+| File | What it holds |
+| --- | --- |
+| `visitor.json` | The contact record, every attribute and host-context value, browser IDs and contact notes |
+| `conversations/` | One file per conversation: messages, ratings, file details, cobrowse sessions, copilot output and email reply deliveries |
+| `cobrowse.json` | Cobrowse sessions of theirs on someone else's conversation, if any |
+| `proactive.json` | Proactive messages shown to them, and when each was shown, engaged with or dismissed |
+| `tickets/` | Their tickets, with notes, each note's deliveries to an issue tracker, and linked issues |
+| `alerts.json` | Agent alerts about their conversations and tickets |
+| `audit.json` | Audit events about them, their conversations and their tickets |
+| `incidental.json` | Webhook response samples, automation errors, saved bulk-action searches and failed jobs that name them |
+| `break_glass.json` | Platform-operator access to their data: grants scoped to their conversations, and views under any grant |
+| `attachments/` | The files themselves |
+| `README.txt` | What is included, what is not, counts, any file removed before it could be read, and any file withheld because the malware scanner holds it or it never finished uploading |
+
+Agents, platform operators and integrations are named by role, not by name or
+ID, including inside audit metadata, alerts and cobrowse records: their identity
+is data about them, and the operator adds it where their law requires naming
+who saw the data. Contact notes are included, so review the archive before
+sending it and remove anything your law lets you withhold.
+
+Every file describes one moment. The export reads in one repeatable-read
+transaction under a shared lock on the site, which erasure takes exclusively,
+and builds the ZIP inside that window before the download starts. A contact
+erased or merged while the export waited for the lock is refused rather than
+exported. A history past what one archive holds (65,535 files, or about 3.5 GB
+of attachments) is refused before anything is written. Each export writes a
+`visitor.exported` audit event with counts only.
+
 ## Erasing a contact
 
 When a person asks the operator to delete everything held about them, an

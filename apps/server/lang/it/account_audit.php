@@ -93,6 +93,7 @@ return [
         'visitor_merged' => 'Contatto visitatore unito',
         'visitor_erased' => 'Contatto cancellato',
         'visitor_erasure_reapplied' => 'Cancellazione del contatto riapplicata dopo un ripristino',
+        'visitor_exported' => 'Contatto esportato',
         'api_token_created' => 'Token API emesso',
         'api_token_revoked' => 'Token API revocato',
         'api_token_revoked_with_issuer' => 'Token API revocato insieme a chi lo ha emesso',
