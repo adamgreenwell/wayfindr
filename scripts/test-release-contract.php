@@ -902,12 +902,99 @@ function assertGenericHostDeployGuarded(string $root): void
     }
 }
 
+/**
+ * A tag pushed before main CI has finished is the ordinary way to meet the
+ * full-CI guard, so its refusal has to name the run it saw. The step's own
+ * script runs here against a stand-in gh, once for a run still in progress
+ * and once for one that passed.
+ */
+function assertMainCiGuardExplainsItself(string $root): void
+{
+    $workflow = requiredFile($root.'/.github/workflows/release-image.yml');
+
+    if (preg_match(
+        '/- name: Verify full main CI for the release commit\n(?:.*\n)*?        run: \|\n((?: {10}.*\n|\n)+)/',
+        $workflow,
+        $step,
+    ) !== 1) {
+        throw new RuntimeException('release workflow full main CI check could not be exercised.');
+    }
+
+    $script = (string) preg_replace('/^ {10}/m', '', $step[1]);
+    $sha = str_repeat('a', 40);
+    $directory = sys_get_temp_dir().'/wayfindr-ci-guard-'.bin2hex(random_bytes(8));
+    mkdir($directory);
+    file_put_contents($directory.'/gh', "#!/bin/sh\ncat \"\$WAYFINDR_FAKE_RUNS\"\n");
+    chmod($directory.'/gh', 0755);
+
+    $run = function (array $runs) use ($script, $sha, $directory): array {
+        file_put_contents($directory.'/runs.json', json_encode($runs, JSON_THROW_ON_ERROR));
+        $process = proc_open(['/usr/bin/env', 'bash', '-c', $script], [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes, $directory, [
+            'PATH' => $directory.':'.(string) getenv('PATH'),
+            'HOME' => (string) getenv('HOME'),
+            'GH_TOKEN' => 'contract-test',
+            'RELEASE_SHA' => $sha,
+            'WAYFINDR_FAKE_RUNS' => $directory.'/runs.json',
+        ]);
+
+        if (! is_resource($process)) {
+            throw new RuntimeException('could not start the release workflow full main CI check.');
+        }
+
+        fclose($pipes[0]);
+        stream_get_contents($pipes[1]);
+        $stderr = (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return [proc_close($process), $stderr];
+    };
+
+    try {
+        [$status, $stderr] = $run([
+            ['conclusion' => null, 'headSha' => $sha, 'status' => 'in_progress', 'url' => 'https://example.test/runs/1'],
+            ['conclusion' => 'success', 'headSha' => str_repeat('b', 40), 'status' => 'completed', 'url' => 'https://example.test/runs/2'],
+        ]);
+
+        if ($status !== 1 || ! str_contains($stderr, 'in_progress / no conclusion: https://example.test/runs/1')) {
+            throw new RuntimeException(
+                "release workflow full main CI check does not refuse a release whose CI is still running by naming that run (exit {$status}): ".trim($stderr)
+            );
+        }
+
+        if (str_contains($stderr, 'https://example.test/runs/2')) {
+            throw new RuntimeException('release workflow full main CI check lists a run for another commit.');
+        }
+
+        [$status, $stderr] = $run([
+            ['conclusion' => 'success', 'headSha' => $sha, 'status' => 'completed', 'url' => 'https://example.test/runs/3'],
+        ]);
+
+        if ($status !== 0) {
+            throw new RuntimeException(
+                "release workflow full main CI check refuses a release whose CI passed (exit {$status}): ".trim($stderr)
+            );
+        }
+    } finally {
+        foreach (['gh', 'runs.json'] as $file) {
+            @unlink($directory.'/'.$file);
+        }
+
+        @rmdir($directory);
+    }
+}
+
 function main(string $root, bool $publishing = false): void
 {
     // A PR-only contract races a tag-triggered publisher. The workflow itself
     // must make every identity and declaration check before registry auth or an
     // image push, and this assertion prevents that ordering from drifting.
     assertPublishingWorkflowGuarded($root);
+    assertMainCiGuardExplainsItself($root);
     assertGenericHostDeployGuarded($root);
 
     $candidate = candidateVersion(requiredFile($root.'/VERSION'));
