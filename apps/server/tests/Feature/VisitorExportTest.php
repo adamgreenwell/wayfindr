@@ -86,6 +86,11 @@ function exportFixture(): array
     ])]);
     $f['conversation']->forceFill(['assigned_agent_id' => $agent->id])->save();
     $f['ticket']->forceFill(['assignee_id' => $agent->id])->save();
+    // Typing, and gone before saying they had stopped: the signal stays.
+    test()->actingAs($agent)
+        ->postJson(route('dashboard.conversations.typing.store', $f['conversation']->support_code), ['is_typing' => true])
+        ->assertOk();
+    expect($f['conversation']->refresh()->metadata['agent_typing'] ?? [])->toHaveKey((string) $agent->id);
     ConversationMessage::query()->forceCreate([
         'conversation_id' => $f['conversation']->id, 'sender_type' => $agent->getMorphClass(), 'sender_id' => $agent->id,
         'type' => 'text', 'body' => "Agent reply {$m}",
@@ -363,13 +368,16 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
     ];
 
     $found = [];
+    $source = '';
 
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path())) as $file) {
         if ($file->getExtension() !== 'php' || $file->getRealPath() === (new ReflectionClass(VisitorExporter::class))->getFileName()) {
             continue;
         }
 
-        preg_match_all($pattern, (string) file_get_contents($file->getPathname()), $matches);
+        $contents = (string) file_get_contents($file->getPathname());
+        $source .= $contents;
+        preg_match_all($pattern, $contents, $matches);
 
         foreach ($matches[1] as $key) {
             $found[$key][] = str_replace(app_path().'/', '', $file->getPathname());
@@ -390,6 +398,10 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
     // the keys it was written for.
     foreach ([...array_keys(VisitorExporter::IDENTITY_KEYS), ...array_keys($reviewed)] as $key) {
         expect(array_key_exists($key, $found))->toBeTrue("{$key} is listed, but the code no longer writes it");
+    }
+
+    foreach (collect(VisitorExporter::OMITTED_KEYS)->flatMap(fn (array $columns): array => array_merge(...array_map(array_keys(...), array_values($columns))))->all() as $key) {
+        expect(str_contains($source, "'{$key}'"))->toBeTrue("{$key} is left out, but the code no longer writes it");
     }
 });
 

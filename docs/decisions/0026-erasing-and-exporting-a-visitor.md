@@ -362,7 +362,11 @@ Delivery 3 settled these details:
   out, and fails, until someone decides. Columns and metadata keys that name a
   user are replaced by a role: `visitor`, `agent`, `platform operator`,
   `integration` or `system`. `VisitorExporter::IDENTITY_KEYS` lists the keys,
-  and a test holds it to every identity-shaped key the code writes.
+  and a test holds it to every identity-shaped key the code writes. A key with
+  no role to put in its place is left out instead: `VisitorExporter::OMITTED_KEYS`
+  drops a conversation's `agent_typing`, which agents are typing, keyed by
+  their user IDs and naming them, and left behind by an agent who disconnects
+  mid-reply.
 - **A POST, and the same permission as erasure.** Building the archive reads
   the whole history and is audited, which a link another site can embed must
   not start. It is throttled to six a minute.

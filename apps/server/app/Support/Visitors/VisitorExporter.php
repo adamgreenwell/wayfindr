@@ -105,6 +105,18 @@ final class VisitorExporter
         'automation_rule_executions' => ['metadata'],
     ];
 
+    /**
+     * Keys left out of a JSON column, and why: what they hold is about the
+     * staff, not the person (§7), and there is no role to put in its place.
+     */
+    public const OMITTED_KEYS = [
+        'conversations' => [
+            'metadata' => [
+                'agent_typing' => 'which agents are typing a reply, keyed by their user IDs and naming them: a signal about the staff, and one an agent who disconnects mid-reply leaves behind',
+            ],
+        ],
+    ];
+
     private const ROLE = 'replaced by a role (§7): the agent\'s identity is data about the agent';
 
     private const COPILOT = [
@@ -963,6 +975,10 @@ final class VisitorExporter
 
             if (in_array($column, self::IDENTITY_COLUMNS[$table] ?? [], true)) {
                 $value = self::withoutIdentities($value);
+            }
+
+            if (is_array($value)) {
+                $value = array_diff_key($value, self::OMITTED_KEYS[$table][$column] ?? []);
             }
 
             $row[$column] = $value;
