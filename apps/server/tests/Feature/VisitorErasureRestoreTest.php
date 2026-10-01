@@ -519,6 +519,12 @@ test('a ledger entry is checked whole, not only for its receipt', function (Clos
 
     expect(app(ErasureLedger::class)->unreadable())->toBe([$receipt.'.json'], 'an entry that cannot be re-applied was taken as a good one')
         ->and(app(ErasureLedger::class)->find($receipt))->toBeNull();
+
+    // Taken as damaged, it is rebuilt from its row like any other.
+    app(ErasureLedger::class)->backfill();
+
+    expect(app(ErasureLedger::class)->unreadable())->toBe([], 'a damaged entry with a row to rebuild it from was left damaged')
+        ->and(app(ErasureLedger::class)->find($receipt)['erased_visitor_id'] ?? null)->toBe((int) $f['visitor']->id);
 })->with([
     'no erased ID' => [function (array $entry): array {
         unset($entry['erased_visitor_id']);
@@ -529,7 +535,12 @@ test('a ledger entry is checked whole, not only for its receipt', function (Clos
     'a merged ID as text' => [fn (array $entry): array => [...$entry, 'merged_visitor_ids' => ['12']]],
     'no account' => [fn (array $entry): array => [...$entry, 'account_id' => null]],
     'no time' => [fn (array $entry): array => [...$entry, 'erased_at' => '']],
+    'a time nothing can parse' => [fn (array $entry): array => [...$entry, 'erased_at' => 'not a time']],
+    'a time in words' => [fn (array $entry): array => [...$entry, 'erased_at' => 'tomorrow']],
+    'a month that does not exist' => [fn (array $entry): array => [...$entry, 'erased_at' => '2026-13-01T00:00:00Z']],
     'a file without its key' => [fn (array $entry): array => [...$entry, 'pending_files' => [['disk' => 'attachments']]]],
+    'a file with an empty key' => [fn (array $entry): array => [...$entry, 'pending_files' => [['disk' => 'attachments', 'key' => '']]]],
+    'a file with an empty disk' => [fn (array $entry): array => [...$entry, 'pending_files' => [['disk' => '', 'key' => 'erased/a.png']]]],
 ]);
 
 test('a restore that stops before replacing anything leaves nothing to re-apply', function (): void {

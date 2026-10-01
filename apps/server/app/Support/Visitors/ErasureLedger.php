@@ -6,6 +6,8 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\VisitorErasure;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -594,6 +596,7 @@ final class ErasureLedger
     private static function wellFormed(array $entry): bool
     {
         $positiveInt = fn (mixed $value): bool => is_int($value) && $value > 0;
+        $text = fn (mixed $value): bool => is_string($value) && $value !== '';
         $optional = fn (mixed $value, callable $check): bool => $value === null || $check($value);
         $merged = $entry['merged_visitor_ids'] ?? null;
         $files = $entry['pending_files'] ?? null;
@@ -601,12 +604,30 @@ final class ErasureLedger
         return $positiveInt($entry['erased_visitor_id'] ?? null)
             && $positiveInt($entry['account_id'] ?? null)
             && $optional($entry['site_id'] ?? null, $positiveInt)
-            && $optional($entry['site_public_key'] ?? null, fn (mixed $key): bool => is_string($key) && $key !== '')
+            && $optional($entry['site_public_key'] ?? null, $text)
             && $optional($entry['actor_id'] ?? null, $positiveInt)
-            && is_string($entry['erased_at'] ?? null) && $entry['erased_at'] !== ''
+            && self::zuluTime($entry['erased_at'] ?? null)
             && is_array($merged) && array_is_list($merged) && array_filter($merged, fn (mixed $id): bool => ! $positiveInt($id)) === []
             && is_array($files) && array_is_list($files)
-            && array_filter($files, fn (mixed $file): bool => ! is_array($file) || ! is_string($file['disk'] ?? null) || ! is_string($file['key'] ?? null)) === [];
+            // Neither could be removed: files() drops one with no key, and one
+            // with no disk names no storage to remove it from.
+            && array_filter($files, fn (mixed $file): bool => ! is_array($file) || ! $text($file['disk'] ?? null) || ! $text($file['key'] ?? null)) === [];
+    }
+
+    /**
+     * The one form every entry is written in. Anything looser lets through a
+     * value re-application cannot parse, or one it parses as some other time
+     * ("tomorrow", a thirteenth month rolled into the next year).
+     */
+    private static function zuluTime(mixed $value): bool
+    {
+        if (! is_string($value)) {
+            return false;
+        }
+
+        $time = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s\Z', $value, new DateTimeZone('UTC'));
+
+        return $time !== false && $time->format('Y-m-d\TH:i:s\Z') === $value;
     }
 
     /**
