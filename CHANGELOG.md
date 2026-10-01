@@ -71,7 +71,8 @@ it selected.
   and say how many. First they move the visitor ID sequence past every
   erased ID, so no new contact can inherit one. An archive older than the
   running code is erased from once `php artisan migrate --force` has run,
-  and the console restore keeps the site in maintenance mode until then. If
+  and one from a newer release once that release is deployed. The console
+  restore keeps the site in maintenance mode until then. If
   erasing again fails, the restore says so and exits with an error, and the
   next migrate or scheduled run tries again. Keep that directory alongside
   your backups: a restore onto a new storage volume cannot re-apply erasures

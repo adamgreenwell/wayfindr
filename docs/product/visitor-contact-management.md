@@ -185,8 +185,9 @@ that directory, so a restore cannot roll it back
 - **Then** it erases again everyone the archive brought back, including
   contacts merged into them, and their files, and says how many.
 
-An archive older than the running code needs its migrations first, so its
-erasures are re-applied when `php artisan migrate --force` finishes.
+An archive whose schema differs from the running code waits: an older one
+until `php artisan migrate --force` finishes, and one from a newer release
+until that release is deployed.
 
 Two things it cannot do:
 - **Restore onto a new storage volume**, such as disaster recovery onto new

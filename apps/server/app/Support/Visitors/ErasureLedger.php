@@ -39,6 +39,59 @@ final class ErasureLedger
     }
 
     /**
+     * Refuse a ledger inside a local attachment disk. Backups copy those
+     * disks, so an archive could carry the ledger back in time; a restore
+     * purges them, and the orphan sweep deletes any file with no attachment
+     * row. Any of the three loses erasures without a word.
+     */
+    public function assertOutsideAttachmentDisks(): void
+    {
+        $ledger = self::resolved($this->path());
+
+        foreach ((array) config('filesystems.disks', []) as $name => $disk) {
+            $root = is_array($disk) ? ($disk['root'] ?? null) : null;
+
+            if (! str_starts_with((string) $name, 'attachments') || ($disk['driver'] ?? null) !== 'local' || ! is_string($root) || $root === '') {
+                continue;
+            }
+
+            $root = self::resolved($root);
+
+            if ($ledger === $root || str_starts_with($ledger.'/', $root.'/')) {
+                throw new RuntimeException(sprintf(
+                    'The erasure ledger at %s is inside the attachment disk [%s], which backups copy and restores purge. '
+                    .'Set WAYFINDR_ERASURE_LEDGER_PATH to a directory outside attachment storage.',
+                    $this->path(),
+                    $name,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Ledger files that exist and cannot be read: edited, or copied back in
+     * part. Each may be an erasure nobody can re-apply until it is repaired,
+     * so they are reported rather than skipped.
+     *
+     * @return list<string>
+     */
+    public function unreadable(): array
+    {
+        $directory = $this->path();
+        $names = is_dir($directory) ? scandir($directory) : false;
+        $broken = [];
+
+        foreach ($names === false ? [] : $names as $name) {
+            if (preg_match('/^('.self::RECEIPT.')(?:\.pending)?\.json$/', $name, $match) === 1
+                && $this->read($directory.'/'.$name, $match[1]) === null) {
+                $broken[] = $name;
+            }
+        }
+
+        return $broken;
+    }
+
+    /**
      * Whether this volume has ever held the ledger. A restore onto a volume
      * without it cannot know about erasures made after its archive was taken.
      */
@@ -281,7 +334,10 @@ final class ErasureLedger
             ->each(function (VisitorErasure $erasure) use (&$written): void {
                 $receipt = (string) $erasure->public_id;
 
-                if (is_file($this->committedPath($receipt)) || is_file($this->pendingPath($receipt))) {
+                // A committed file that cannot be read is repaired from the
+                // row, which says the same thing.
+                if (is_file($this->pendingPath($receipt))
+                    || (is_file($this->committedPath($receipt)) && $this->read($this->committedPath($receipt), $receipt) !== null)) {
                     return;
                 }
 
@@ -448,6 +504,7 @@ final class ErasureLedger
      */
     private function write(string $name, array $contents): void
     {
+        $this->assertOutsideAttachmentDisks();
         $this->ensureDirectory();
 
         $json = json_encode($contents, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
@@ -567,5 +624,30 @@ final class ErasureLedger
     private function committedPath(string $receipt): string
     {
         return $this->path().'/'.$receipt.'.json';
+    }
+
+    /**
+     * A path with its existing part resolved through any symlinks, so two
+     * spellings of one directory compare equal before either is created.
+     */
+    private static function resolved(string $path): string
+    {
+        $path = rtrim($path, '/');
+        $missing = [];
+
+        while ($path !== '' && realpath($path) === false) {
+            $missing[] = basename($path);
+            $parent = dirname($path);
+
+            if ($parent === $path) {
+                break;
+            }
+
+            $path = $parent;
+        }
+
+        $base = realpath($path);
+
+        return rtrim(($base === false ? $path : $base).'/'.implode('/', array_reverse($missing)), '/');
     }
 }

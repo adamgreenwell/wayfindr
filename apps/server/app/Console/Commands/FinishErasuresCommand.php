@@ -41,6 +41,16 @@ class FinishErasuresCommand extends Command
             if ($backfilled > 0) {
                 $this->line("Erasures newly recorded in the ledger on the storage volume: {$backfilled}.");
             }
+
+            // Said now, while there is time to put them back, rather than by
+            // the restore that needed them.
+            $unreadable = $ledger->unreadable();
+
+            if ($unreadable !== []) {
+                $this->error('Erasure ledger entries in '.$ledger->path().' cannot be read and have no ledger row to rebuild them from: '
+                    .implode(', ', $unreadable).'. Put each back from a copy of the ledger.');
+                $failed = true;
+            }
         } catch (Throwable $e) {
             report($e);
             $this->error('The erasure ledger could not be settled: '.$e->getMessage());

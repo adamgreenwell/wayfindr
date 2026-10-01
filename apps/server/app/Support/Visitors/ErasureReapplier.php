@@ -39,6 +39,10 @@ final class ErasureReapplier
      */
     public function beforeRestore(): array
     {
+        // A ledger the restore itself would purge is refused while nothing
+        // has changed.
+        $this->ledger->assertOutsideAttachmentDisks();
+
         // Before anything creates the directory: a volume that never held
         // the ledger cannot know about erasures made after the archive.
         $fresh = ! $this->ledger->exists();
@@ -72,10 +76,12 @@ final class ErasureReapplier
     }
 
     /**
-     * After the dump is imported. A schema the running code has migrations
-     * for waits for them, since erasing reads today's tables: the ledger
-     * records that re-application is outstanding, and it runs when
-     * `migrate` finishes, or on the next scheduled wayfindr:finish-erasures.
+     * After the dump is imported. Erasing reads the tables the running code
+     * knows, so a schema that differs from them waits: one behind waits for
+     * `migrate`, and one ahead, from a newer release, for that release,
+     * whose own migrate run then finishes it. Re-application stays
+     * outstanding on the ledger until then, and the next scheduled
+     * wayfindr:finish-erasures also tries.
      *
      * @return array{entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}
      */
@@ -129,6 +135,18 @@ final class ErasureReapplier
         $reapplied = 0;
         $visitors = 0;
         $failures = [];
+
+        // An entry that cannot be read may be an erasure this restore undid,
+        // so the work is not done until it is repaired.
+        $unreadable = $this->ledger->unreadable();
+
+        if ($unreadable !== []) {
+            $failures[] = sprintf(
+                'Ledger entries in %s cannot be read: %s. Put each back from a copy of the ledger, then run php artisan wayfindr:finish-erasures.',
+                $this->ledger->path(),
+                implode(', ', $unreadable),
+            );
+        }
 
         foreach ($entries as $entry) {
             if (array_intersect(ErasureLedger::lineage($entry), $present) === []) {
@@ -220,7 +238,12 @@ final class ErasureReapplier
         }
     }
 
-    /** Whether every migration the running code ships has run. */
+    /**
+     * Whether the database has run exactly the migrations the running code
+     * ships. One it has not run is a table erasing would miss or a column it
+     * would not find; one the code does not know is a newer release's table
+     * that could hold the person, and this code cannot reach it.
+     */
     private function schemaIsCurrent(): bool
     {
         try {
@@ -230,9 +253,10 @@ final class ErasureReapplier
                 return false;
             }
 
-            $files = $migrator->getMigrationFiles([database_path('migrations'), ...$migrator->paths()]);
+            $shipped = array_keys($migrator->getMigrationFiles([database_path('migrations'), ...$migrator->paths()]));
+            $ran = $migrator->getRepository()->getRan();
 
-            return array_diff(array_keys($files), $migrator->getRepository()->getRan()) === [];
+            return array_diff($shipped, $ran) === [] && array_diff($ran, $shipped) === [];
         } catch (Throwable $e) {
             report($e);
 

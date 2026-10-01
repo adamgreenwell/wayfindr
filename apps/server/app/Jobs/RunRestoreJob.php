@@ -529,8 +529,9 @@ class RunRestoreJob implements ShouldQueue
                 .'back: '.$erasures['failed'].' The site is being kept in maintenance mode. Fix the cause, then run '
                 .'`php artisan wayfindr:finish-erasures` before `php artisan up`.';
         } elseif ($erasures['deferred'] ?? false) {
-            $parts[] = 'Erasures are re-applied once migrations have run: `php artisan migrate --force` does it, '
-                .'and the site is being kept in maintenance mode until then.';
+            $parts[] = 'Erasures are re-applied once the restored schema matches this code: `php artisan migrate --force` '
+                .'does it for an older backup, and deploying the backup'."'".'s own release does it for a newer one. The site '
+                .'is being kept in maintenance mode until then.';
         } else {
             $parts[] = sprintf(
                 'Erasures re-applied: %d contact(s), from %d of the %d erasure(s) in the ledger.',

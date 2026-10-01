@@ -209,7 +209,7 @@ class RestoreCommand extends Command
             $this->error('  Erasures could NOT all be re-applied, so contacts erased since this archive was taken may be back: '.$erasures['failed']);
             $this->warn('  Keep the app in maintenance mode, fix the cause, then run php artisan wayfindr:finish-erasures.');
         } elseif ($erasures['deferred']) {
-            $this->warn('  Erasures are re-applied once migrations have run. Keep the app in maintenance mode until php artisan migrate --force has finished.');
+            $this->warn('  Erasures are re-applied once the restored schema matches this code: after php artisan migrate --force for an older archive, or on the archive\'s own release for a newer one. Keep the app in maintenance mode until then.');
         } else {
             $this->line(sprintf(
                 '  Erasures re-applied: %d contact(s), from %d of the %d erasure(s) in the ledger.',

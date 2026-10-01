@@ -401,7 +401,7 @@ test('an archive behind the running code is erased from once migrations have run
         putArchivedRowsBack($archived);
         DB::table('migrations')->where('migration', $latest)->delete();
     })
-        ->expectsOutputToContain('Erasures are re-applied once migrations have run')
+        ->expectsOutputToContain('Erasures are re-applied once the restored schema matches this code')
         ->assertSuccessful();
 
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('erasing ran against a schema the code has not migrated')
@@ -517,6 +517,83 @@ test('the post-migrate hook is quiet when no restore is outstanding', function (
         ->and(app(ErasureReapplier::class)->reapplyOutstanding())->toBeNull();
 });
 
+test('a ledger inside an attachment disk is refused before anything is erased or restored', function (): void {
+    $f = ledgerFixture();
+    $root = sys_get_temp_dir().'/wf-attachments-root-'.bin2hex(random_bytes(6));
+    config()->set('filesystems.disks.attachments.root', $root);
+    config()->set('wayfindr.erasure.ledger_path', $root.'/erasure-ledger');
+
+    $this->actingAs($f['admin'])
+        ->post(route('dashboard.visitors.erasure.store', $f['visitor']), ['confirmation' => 'ERASE', 'current_password' => 'password'])
+        ->assertSessionHasErrors(['confirmation' => __('visitor_erasure.errors.ledger_unwritable')]);
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('an erasure was recorded where a restore would purge it');
+
+    $loaded = false;
+    restoreArchive(function () use (&$loaded): void {
+        $loaded = true;
+    })
+        ->expectsOutputToContain('is inside the attachment disk [attachments]')
+        ->assertFailed();
+
+    expect($loaded)->toBeFalse('the restore replaced the database with its ledger inside a disk it purges');
+});
+
+test('an unreadable ledger entry nothing can repair keeps the restore from reporting success', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    file_put_contents(ledgerPath()."/{$receipt}.json", '{"receipt": ');
+    // With its row, the restore would repair it first; without, nothing can.
+    DB::table('visitor_erasures')->delete();
+
+    restoreArchive(function () use ($archived): void {
+        putArchivedRowsBack($archived);
+        DB::table('visitor_erasures')->delete();
+    })
+        ->expectsOutputToContain("cannot be read: {$receipt}.json")
+        ->assertFailed();
+
+    expect(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue('an erasure nobody could read was treated as done');
+});
+
+test('an unreadable ledger entry is repaired from its row', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    file_put_contents(ledgerPath()."/{$receipt}.json", '{"receipt": ');
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(app(ErasureLedger::class)->find($receipt))->toMatchArray(['erased_visitor_id' => (int) $f['visitor']->id], 'an unreadable entry was left for a restore to trip over');
+});
+
+test('the scheduled run says which ledger entries it cannot read or rebuild', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    file_put_contents(ledgerPath()."/{$receipt}.json", '{"receipt": ');
+    DB::table('visitor_erasures')->delete();
+
+    $this->artisan('wayfindr:finish-erasures')
+        ->expectsOutputToContain("have no ledger row to rebuild them from: {$receipt}.json")
+        ->assertFailed();
+});
+
+test('an archive from a newer release waits for that release', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    app(VisitorEraser::class)->erase($f['admin'], $f['visitor']);
+
+    restoreArchive(function () use ($archived): void {
+        putArchivedRowsBack($archived);
+        DB::table('migrations')->insert(['migration' => '2099_01_01_000000_from_a_newer_release', 'batch' => 99]);
+    })
+        ->expectsOutputToContain('Erasures are re-applied once the restored schema matches this code')
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('this code erased from a schema with tables it does not know')
+        ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue();
+});
+
 test('the in-app restore keeps the site down until erasures are re-applied', function (array $erasures, bool $down, string $message): void {
     config()->set('app.maintenance.driver', 'cache');
     config()->set('app.maintenance.store', 'array');
@@ -542,5 +619,5 @@ test('the in-app restore keeps the site down until erasures are re-applied', fun
 })->with([
     're-applied' => [[], false, 'Erasures re-applied: 1 contact(s), from 1 of the 1 erasure(s) in the ledger.'],
     'failed' => [['reapplied' => 0, 'visitors' => 0, 'failed' => 'held by a copilot request'], true, 'Erasures could NOT all be re-applied'],
-    'waiting on migrations' => [['reapplied' => 0, 'visitors' => 0, 'deferred' => true], true, 'Erasures are re-applied once migrations have run'],
+    'waiting on migrations' => [['reapplied' => 0, 'visitors' => 0, 'deferred' => true], true, 'Erasures are re-applied once the restored schema matches this code'],
 ]);

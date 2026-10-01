@@ -445,16 +445,19 @@ The summary says how many:
   Erasures re-applied: 2 contact(s), from 1 of the 14 erasure(s) in the ledger.
 ```
 
-An archive **older than the running code** needs its migrations first, since
-erasing works on today's tables. The restore then says:
+An archive whose schema **differs from the running code** waits, since erasing
+works on the tables this code knows. That is an older archive, which needs its
+migrations, or one from a newer release, whose tables this code cannot reach.
+The restore then says:
 
 ```
-  Erasures are re-applied once migrations have run. Keep the app in maintenance mode until php artisan migrate --force has finished.
+  Erasures are re-applied once the restored schema matches this code: after php artisan migrate --force for an older archive, or on the archive's own release for a newer one. Keep the app in maintenance mode until then.
 ```
 
-Step 3 of the procedure above does it, and `migrate` prints an
-`Erasures re-applied after the restore` line when it has. The console restore keeps the site in
-maintenance mode until then.
+For an older archive, step 3 of the procedure above does it. For a newer one,
+deploying that release does, because its deploy runs `migrate`. Either way
+`migrate` prints an `Erasures re-applied after the restore` line when it has.
+The console restore keeps the site in maintenance mode until then.
 
 If erasing again **fails**, the people erased since the archive was taken may
 be back. The restore says so, and the command exits non-zero. The next
@@ -474,7 +477,14 @@ So copy `storage/app/erasure-ledger/` wherever your archives go, and put it
 back in place on the new volume **before** restoring. An older copy is still
 useful: it covers every erasure up to when it was taken. Set
 `WAYFINDR_ERASURE_LEDGER_PATH` to keep the ledger somewhere else on persistent
-storage.
+storage, outside attachment storage: backups copy the attachment disks and a
+restore purges them, so Wayfindr refuses to erase, or to restore, with the
+ledger inside one.
+
+If a ledger file is damaged, a restore reports it by name, exits non-zero, and
+keeps re-application outstanding. Put the file back from a copy, then run
+`php artisan wayfindr:finish-erasures`. The scheduled run also rewrites a
+damaged file from its ledger row while the database still has one.
 
 Only `wayfindr:restore` and the operator console re-apply erasures. A dump
 loaded by hand re-applies nothing, even with the ledger in place. Keep receipt

@@ -437,11 +437,15 @@ Delivery 2 settled four details:
   volume that it is outstanding, before the load, and clears that once it
   succeeds. Nothing else starts it, so an ID reused by a dump loaded some
   other way, without the sequence move, is never erased.
-- **An archive older than the running code waits for its migrations.**
-  Erasing works on today's tables, so restore leaves re-application
-  outstanding and says so. It runs when `migrate` finishes, or failing that on
-  the next scheduled `wayfindr:finish-erasures`. The in-app restore keeps the
-  site in maintenance mode until it has.
+- **An archive whose schema differs from the code waits.** Erasing works on
+  the tables the running code knows. An older archive lacks some of them, and
+  a newer release's archive may hold the person in tables this code cannot
+  reach. So restore leaves re-application outstanding, and says so, until the
+  database has run exactly the migrations the code ships. It runs when
+  `migrate` finishes, after migrating an older archive or deploying a newer
+  one's release, or failing that on the next scheduled
+  `wayfindr:finish-erasures`. The in-app restore keeps the site in maintenance
+  mode until it has.
 - **A failure is reported as its own thing.** The restore says the people
   erased since the archive may be back, exits non-zero, and leaves
   re-application outstanding for the next run.
