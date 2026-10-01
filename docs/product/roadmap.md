@@ -3,16 +3,16 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is
-[`v1.0.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.0.0)
-(September 30, 2026). Current `main` identifies the next development line as
-`1.1.0-dev`.
+[`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0)
+(October 1, 2026). Current `main` identifies the next development line as
+`1.2.0-dev`.
 
-`v1.0.0` repeated both hosted-runner paths on September 30: a
-[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
-and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996),
-each reading `v1.0.0` from authenticated `/operator`. `v0.11.0` did the same on
-September 29 ([clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205),
-[`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014)).
+`v1.1.0` repeated both hosted-runner paths on October 1: a
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)
+and a [`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36881550403),
+each reading `v1.1.0` from authenticated `/operator`. `v1.0.0` did the same on
+September 30 ([clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923),
+[`v0.2.0` upgrade](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996)).
 
 The first guarded release, `v0.9.0`, passed its tag ruleset and old-run gates,
 published the manifest and multi-architecture image, and verified stable image
@@ -35,10 +35,22 @@ The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issue
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v1.0.0
+## Implemented in v1.1.0
 
-This section describes the public `v1.0.0` artifact. Some foundation also
+This section describes the public `v1.1.0` artifact. Some foundation also
 exists in older releases; the release notes define each version's boundary.
+
+`v1.1.0` changes, relative to `v1.0.0`: a contact can be erased on request,
+from an "Erase this contact" section on their profile that removes everything
+Wayfindr holds about that person and keeps their tickets as work items with
+the personal content removed; erasures survive a restore, because each is also
+recorded in `storage/app/erasure-ledger/`, which backups do not carry, and a
+restore erases again anyone the archive brings back; and an "Export this
+contact" section downloads one ZIP of everything held about that person, with
+agents and operators shown by role, not by name. Both need the new Handle data
+requests permission
+([ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md)). It needs
+no operator action; five migrations run themselves.
 
 `v1.0.0` changes, relative to `v0.11.0`: none in the application. It is the
 first release whose version number carries the operator-action signal
@@ -232,12 +244,12 @@ non-author upgrade. How the last two were met:
   release, timings and any friction were not recorded; the issue's closing
   comment says what was and was not observed. No person has observed a
   non-author upgrade, and the owner decided 1.0.0 does not require one.
-  The hosted-runner v1.0.0, v0.11.0, v0.10.0 and v0.9.0 clean install,
-  upgrade, support-loop, and backup/restore checks remain the reproducible
-  evidence for those paths, including upgrades from `v0.2.0`. A prior cold
-  Claude sandbox run against `v0.7.0` also found real widget and installer
-  defects later fixed in v0.9.0, but it was not a real-environment acceptance
-  run.
+  The hosted-runner v1.1.0, v1.0.0, v0.11.0, v0.10.0 and v0.9.0 clean
+  install, upgrade, support-loop, and backup/restore checks remain the
+  reproducible evidence for those paths, including upgrades from `v0.2.0`. A
+  prior cold Claude sandbox run against `v0.7.0` also found real widget and
+  installer defects later fixed in v0.9.0, but it was not a real-environment
+  acceptance run.
 
 What comes next is demand-gated. From here the version number says whether it
 needs the operator: a minor adds features, and only a major can ask for
@@ -246,9 +258,10 @@ operator action.
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
   for future release candidates. The August 12 bare-metal matrix remains
-  specific to `v0.3.2`; the September 30, 29, 28 and 24 public-artifact
-  hosted-runner checks cover the narrower `v1.0.0`, `v0.11.0`, `v0.10.0` and
-  `v0.9.0` paths linked above. Neither proves a production restore posture.
+  specific to `v0.3.2`; the October 1 and September 30, 29, 28 and 24
+  public-artifact hosted-runner checks cover the narrower `v1.1.0`, `v1.0.0`,
+  `v0.11.0`, `v0.10.0` and `v0.9.0` paths linked above. Neither proves a
+  production restore posture.
 - MVP dogfood operation: the Forge stage has been the owner-approved initial
   dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real

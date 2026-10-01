@@ -7,13 +7,13 @@ they ask, or by email. An agent works the queue, replies, cobrowses with
 consent, and turns any of it into a durable ticket. An owner can see whether the
 desk is actually working.
 
-Published `v1.0.0` accepts Mailgun and Postmark deliveries directly at
+Published `v1.1.0` accepts Mailgun and Postmark deliveries directly at
 `POST /api/mail/inbound` when the matching provider verification is configured,
 and still accepts the original Wayfindr-signed proxy format for existing
 integrations. Older `v0.7.0` predates that direct-provider support. See the
 [inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
 
-The capability list below describes the public `v1.0.0` release. The Status
+The capability list below describes the public `v1.1.0` release. The Status
 section separates published evidence from what it does not prove.
 
 - install a small widget on a site, themed to match it and speaking the
@@ -151,12 +151,16 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 ## Status
 
 The latest public release is
-[`v1.0.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.0.0)
-(September 30, 2026). Its protected tag resolves to `d6e5875e`, and the
+[`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0)
+(October 1, 2026). Its protected tag resolves to `9b634b23`, and the
 published multi-architecture image resolves to
-`sha256:47b697666e9bd7380cbbf39157d54a5a89b5e7071b0503cc22bf8c3aa27e222d`.
-It needs no operator action, and its application code is the same as
-`v0.11.0`'s.
+`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`.
+It needs no operator action; its five migrations run themselves. It adds
+erasing a contact on request and exporting everything held about one, as
+[ADR 0026](docs/decisions/0026-erasing-and-exporting-a-visitor.md) records.
+Each erasure is also recorded in `storage/app/erasure-ledger/` on the storage
+volume, which backups do not carry, so a restore erases again anyone the
+archive brings back. Keep that directory alongside your backups.
 
 From 1.0.0 the version number carries the operator-action signal, as
 [ADR 0012](docs/decisions/0012-platform-versioning.md) defines it:
@@ -168,16 +172,19 @@ From 1.0.0 the version number carries the operator-action signal, as
 See the [release notes](CHANGELOG.md). If you are several releases behind, read
 each release in between. `v0.11.0` carries a session-secret security fix, and
 `v0.10.0` sends an email reply backlog left over from `v0.9.0`.
-Current `main` identifies its next development line as `1.1.0-dev`.
+Current `main` identifies its next development line as `1.2.0-dev`.
 
-The public `v1.0.0` artifact passed a
-[fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
-and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996).
-Both resolved the published image digest, completed the support loop, passed
-backup/restore and restart checks, and read `v1.0.0` from the authenticated
-`/operator` console, including after restore.
+The public `v1.1.0` artifact passed a
+[fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)
+and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36881550403).
+Both completed the support loop, passed backup/restore and restart checks, and
+read `v1.1.0` from the authenticated `/operator` console, including after
+restore. The upgrade resolved the published image digest.
 
-The earlier public `v0.11.0` and `v0.10.0` artifacts passed the same two paths:
+The earlier public `v1.0.0`, `v0.11.0` and `v0.10.0` artifacts passed the same
+two paths: `v1.0.0`'s
+[fresh install](https://github.com/adamgreenwell/wayfindr/actions/runs/36723360923)
+and [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36723365996),
 `v0.11.0`'s
 [fresh install](https://github.com/adamgreenwell/wayfindr/actions/runs/36613505205)
 and [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36613509014),
@@ -233,7 +240,7 @@ That is point-in-time variability—not long-term drift resistance,
 model-revision evidence, provider or runtime approval, or authority to change
 ADR 0004.
 
-The list below describes the published `v1.0.0` capability set.
+The list below describes the published `v1.1.0` capability set.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -271,6 +278,9 @@ The list below describes the published `v1.0.0` capability set.
   bulk queue actions, and keyboard-first command surfaces;
 - visitor presence, typed contact attributes, private contact notes, explicit
   same-site identity merge, and operator-enabled proactive messages;
+- erasure of a contact on request, re-applied after a restore, and a one-ZIP
+  export of everything held about a contact, both behind the Handle data
+  requests permission;
 - an optional provider-configured agent copilot for summaries and editable
   suggestions, bounded by a provider-free evaluation harness and refusal policy;
 - operator readiness diagnostics, database-backed operator settings, guided
@@ -283,9 +293,9 @@ The list below describes the published `v1.0.0` capability set.
   state reflection, and comment relay foundations.
 
 The full disposable bare-metal recovery matrix remains specific to `v0.3.2`.
-The newer `v1.0.0`, `v0.11.0`, `v0.10.0` and `v0.9.0` public-artifact hosted-runner
-paths above prove clean install, an upgrade from `v0.2.0`, support-loop health,
-and backup/restore within that environment. See [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md)
+The newer `v1.1.0`, `v1.0.0`, `v0.11.0`, `v0.10.0` and `v0.9.0` public-artifact
+hosted-runner paths above prove clean install, an upgrade from `v0.2.0`,
+support-loop health, and backup/restore within that environment. See [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md)
 for the evidence contract. A prior cold, no-context Claude sandbox run matched
 the `v0.7.0` release, commit, and image digest and completed a synthetic support
 loop after working around two defects. Those defects were fixed in `v0.9.0` by
