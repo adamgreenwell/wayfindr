@@ -452,6 +452,12 @@ Delivery 2 settled four details:
 - **A failure is reported as its own thing.** The restore says the people
   erased since the archive may be back, exits non-zero, and leaves
   re-application outstanding for the next run.
+- **The restore stops new erasures before it reads the ledger.** It marks
+  re-application outstanding first, which raises the serving gate below. An
+  erasure already past the gate may still write its entry after that first
+  read and commit to the database the load replaces. So after the load, a
+  pending entry without a row is kept as committed and listed, rather than
+  discarded: the restored database cannot answer for it.
 - **Nothing is served while re-application is outstanding.** A deploy cannot
   be trusted to hold maintenance mode: a standard Forge deploy restores the
   site when `migrate` fails, and the container's migration loop crash-loops on

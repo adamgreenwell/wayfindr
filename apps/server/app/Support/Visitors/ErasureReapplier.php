@@ -47,13 +47,18 @@ final class ErasureReapplier
         // the ledger cannot know about erasures made after the archive.
         $fresh = ! $this->ledger->exists();
 
-        $this->ledger->backfill();
-        $settled = $this->ledger->reconcile(assumeCommitted: true);
-        // Before the load, so a restore that fails anywhere after it still
-        // leaves its re-application on record, and a volume the ledger cannot
-        // be written to stops the restore while nothing has changed.
+        // First, so the serving gate refuses every request from here on and
+        // no erasure can start while the restore is under way; so a restore
+        // that fails anywhere after the load still leaves its re-application
+        // on record; and so a volume the ledger cannot be written to stops the
+        // restore while nothing has changed. An erasure already past the gate
+        // may still write its entry after the snapshot below: afterRestore()
+        // settles that one.
         $this->markedOutstanding = ! $this->ledger->reapplyOutstanding();
         $this->ledger->markReapplyOutstanding();
+
+        $this->ledger->backfill();
+        $settled = $this->ledger->reconcile(assumeCommitted: true);
 
         return ['fresh_volume' => $fresh, 'unconfirmed' => $settled['unconfirmed']];
     }
@@ -83,10 +88,16 @@ final class ErasureReapplier
      * outstanding on the ledger until then, and the next scheduled
      * wayfindr:finish-erasures also tries.
      *
-     * @return array{entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>}
+     * @return array{unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>}
      */
     public function afterRestore(): array
     {
+        // An erasure that wrote its entry after beforeRestore() looked, and
+        // committed before the load replaced its row, is pending still, and
+        // the restored database cannot answer for it. Kept as committed: one
+        // the operator confirmed costs less to re-apply than to lose.
+        $late = $this->ledger->reconcile(assumeCommitted: true, restoredSinceErasure: true);
+
         // The restored ledger table may know erasures this volume does not:
         // a volume that is new, or older than the ledger.
         $this->ledger->backfill();
@@ -94,6 +105,7 @@ final class ErasureReapplier
 
         if (! $this->schemaIsCurrent()) {
             return [
+                'unconfirmed' => $late['unconfirmed'],
                 'entries' => count($this->ledger->committed()),
                 'reapplied' => 0,
                 'visitors' => 0,
@@ -103,7 +115,7 @@ final class ErasureReapplier
             ];
         }
 
-        return [...$this->reapplyAll(), 'deferred' => false];
+        return ['unconfirmed' => $late['unconfirmed'], ...$this->reapplyAll(), 'deferred' => false];
     }
 
     /**

@@ -255,9 +255,14 @@ final class ErasureLedger
      * they are kept as committed. An erasure an operator confirmed costs far
      * less to re-apply by mistake than to lose.
      *
+     * Right after a restore's load, a missing row proves nothing either: an
+     * erasure that ran while the restore was getting ready committed to the
+     * database the load then replaced. A restore passes $restoredSinceErasure
+     * then, and every entry without a row is kept as committed too.
+     *
      * @return array{promoted: list<string>, discarded: list<string>, unconfirmed: list<string>}
      */
-    public function reconcile(bool $assumeCommitted = false): array
+    public function reconcile(bool $assumeCommitted = false, bool $restoredSinceErasure = false): array
     {
         $settled = ['promoted' => [], 'discarded' => [], 'unconfirmed' => []];
         $pending = $this->pending();
@@ -304,6 +309,9 @@ final class ErasureLedger
             if ($committed) {
                 $this->promote($receipt);
                 $settled['promoted'][] = $receipt;
+            } elseif ($restoredSinceErasure) {
+                $this->promote($receipt);
+                $settled['unconfirmed'][] = $receipt;
             } else {
                 $this->discard($receipt);
                 $settled['discarded'][] = $receipt;

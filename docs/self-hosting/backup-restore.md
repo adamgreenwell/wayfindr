@@ -431,9 +431,11 @@ volume. Backups do not capture it, so restoring an archive taken before an
 erasure cannot roll the record of it back.
 
 **What a restore does with it.** Both the command and the operator console:
-1. **Before** replacing the database, settle any erasure that was interrupted.
-   An erasure the old database cannot confirm is kept as done, and its
-   receipt is listed.
+1. **Before** replacing the database, stop serving (see below), so no new
+   erasure can start mid-restore, then settle any erasure that was
+   interrupted. An erasure the old database cannot confirm is kept as done,
+   and its receipt is listed. So is one that lands while the restore is
+   getting ready: the load replaces the database it committed to.
 2. **After** loading the dump, move the visitor ID sequence past every ID the
    ledger names, so no new contact can be given an erased person's ID.
 3. **Then** erase again everyone the archive brought back, including

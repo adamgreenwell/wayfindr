@@ -264,7 +264,12 @@ class RestoreService
             // describes. The ledger keeps the work outstanding for the next
             // migrate or scheduled run.
             try {
-                $erasures = [...$erasuresBefore, ...$this->erasures->afterRestore()];
+                $after = $this->erasures->afterRestore();
+                $erasures = [
+                    ...$erasuresBefore,
+                    ...$after,
+                    'unconfirmed' => [...$erasuresBefore['unconfirmed'], ...$after['unconfirmed']],
+                ];
             } catch (Throwable $exception) {
                 report($exception);
                 $erasures = [

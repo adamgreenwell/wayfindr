@@ -391,6 +391,44 @@ test('a pending entry the restore settles as committed is re-applied', function 
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse();
 });
 
+test('an erasure that lands while a restore is getting ready is re-applied, not lost', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    $receipt = (string) Str::uuid();
+
+    restoreArchive(function () use ($archived, $f, $receipt): void {
+        // An erasure that wrote its entry after the restore's first look and
+        // committed to the database the load then replaced: its row is gone
+        // with that database, and it never got to promote its entry.
+        app(ErasureLedger::class)->writePending(ErasureLedger::entry(
+            $receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], (int) $f['admin']->id, now()->toIso8601ZuluString(), [],
+        ));
+        putArchivedRowsBack($archived);
+    })
+        ->expectsOutputToContain("The replaced database could not confirm these erasures, so they are treated as done: {$receipt}")
+        ->expectsOutputToContain('Erasures re-applied: 1 contact(s)')
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('an erasure made during the restore was lost to it')
+        ->and(ledgerFiles('.pending.json'))->toBe([])
+        ->and(app(ErasureLedger::class)->find($receipt))->not->toBeNull();
+});
+
+test('the serving gate is up before a restore takes its first look at the ledger', function (): void {
+    ledgerFixture();
+    $gateUp = null;
+
+    DB::listen(function ($query) use (&$gateUp): void {
+        if ($gateUp === null && str_contains($query->sql, 'visitor_erasures')) {
+            $gateUp = app(ErasureLedger::class)->reapplyOutstanding();
+        }
+    });
+
+    restoreArchive(fn () => null)->assertSuccessful();
+
+    expect($gateUp)->toBeTrue('a restore looked at the ledger while erasures could still start');
+});
+
 test('an archive behind the running code is erased from once migrations have run', function (): void {
     $f = ledgerFixture();
     $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
