@@ -70,6 +70,12 @@
             <h2 id="erasure-confirm-heading">{{ __('visitor_erasure.section.heading') }}</h2>
         </div>
 
+        <form method="POST" action="{{ route('dashboard.visitors.data-export', $visitor) }}" class="section-actions">
+            @csrf
+            <p>{{ __('visitor_export.before_erasing') }}</p>
+            <button type="submit" class="button">{{ __('visitor_export.section.link') }}</button>
+        </form>
+
         <form class="section-form" method="POST" action="{{ route('dashboard.visitors.erasure.store', $visitor) }}">
             @csrf
             <div class="field">

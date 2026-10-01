@@ -398,7 +398,7 @@ Ordered by real dogfood value and dependency, not feature novelty.
    (§20), and the owner decided that was enough without a non-author upgrade.
    #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
 
-4. **Finish visitor erasure (ADR 0026).** Deliveries 1 and 2 are in
+4. **Visitor erasure and export (ADR 0026).** All three deliveries are in
    Unreleased. Delivery 1, erasing a contact:
    - `VisitorEraser`;
    - the `handle_data_requests` permission;
@@ -422,13 +422,22 @@ Ordered by real dogfood value and dependency, not feature novelty.
    person back. Every test gets its own ledger directory from
    `Tests\TestCase`, so none writes to `storage/`.
 
-   What it deletes, strips and keeps is `VisitorEraser::COVERAGE`, which
-   `VisitorErasureCoverageTest` holds to the live schema. A new table that can
-   reach a visitor fails that test until it is classified.
-   `VisitorErasureTest` plants a marker in every store and reads every table
-   afterwards.
+   Delivery 3, exporting a contact:
+   - `VisitorExporter`, a ZIP built in one repeatable-read snapshot under a
+     shared site lock, then served from a temporary file;
+   - `StoredZipWriter`, because the runtime does not require the zip
+     extension;
+   - `VisitorFootprint`, the row selection erasure and export now share, so
+     what one finds the other finds.
 
-   Still owed: delivery 3, the per-visitor export.
+   What erasure deletes, strips and keeps, and where the export puts each
+   table, is `VisitorEraser::COVERAGE`, which `VisitorErasureCoverageTest`
+   holds to the live schema. A new table that can reach a visitor fails that
+   test until it is classified. `VisitorExporter::COLUMNS` does the same for
+   every column the export reads, and `VisitorExportTest` holds it to the
+   schema and to the archive itself. The history fixture both tests use is
+   `Tests\Support\VisitorHistory`: it plants a marker in every store, and a
+   bystander's that must never be erased or exported.
 
 5. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual

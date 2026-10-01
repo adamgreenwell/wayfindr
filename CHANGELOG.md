@@ -82,6 +82,26 @@ every item it selected.
   made after its archive was taken, and warns that it cannot.
   `WAYFINDR_ERASURE_LEDGER_PATH` moves the directory.
 
+- **Export everything held about a contact when they ask to see it.** A new
+  **Export this contact** section on a contact's profile, also offered on the
+  erase page, downloads one ZIP of everything Wayfindr holds about that person:
+  - their contact record, browser IDs and contact notes;
+  - each conversation with its messages, ratings, files, cobrowse sessions,
+    AI assistant output and email reply deliveries;
+  - their tickets with notes and linked issues;
+  - the proactive messages shown to them;
+  - the alerts and audit entries about them;
+  - text kept in passing that quotes them, and platform-operator access to
+    their data.
+
+  Agents and operators appear by role, not by name, and a `README.txt` says
+  what is included and what is not. Contact notes are included, so review
+  the archive before sending it. Every file describes the same moment, and an
+  erasure that starts meanwhile waits for the export to finish. It needs the
+  same **Handle data requests** permission as erasure, and each export leaves
+  an audit entry with counts only. See
+  [ADR 0026 §7](docs/decisions/0026-erasing-and-exporting-a-visitor.md).
+
 ### Changed
 
 - **A reply email that fails for good no longer keeps the mail server's

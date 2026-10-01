@@ -337,6 +337,67 @@ carry on. Binaries are read inside the same window. One that retention prunes
 between the snapshot and its read is listed in `README.txt` as pruned, not
 silently left out.
 
+Delivery 3 settled these details:
+- **Repeatable read, not read-only.** PostgreSQL refuses `SELECT … FOR SHARE`
+  in a read-only transaction, so the export cannot be both. It runs at
+  repeatable read, takes the shared site lock as its first statement, and
+  writes nothing inside the transaction. Its audit event is written after. A
+  site row changed while the lock was awaited fails the snapshot, so the
+  export takes it again, up to three times.
+- **Built, then served.** The ZIP is built into a temporary file inside the
+  snapshot and sent after the transaction ends. The site lock lasts as long as
+  building takes, not as long as the agent's download does, and a refusal is
+  an ordinary page rather than a broken download.
+- **Erased while it waited.** The snapshot is taken when the lock is
+  requested, so it can predate an erasure, or a merge into another contact,
+  that held the lock first. After the transaction the export checks that the
+  contact still exists, and if not, discards the archive and says so.
+- **No zip extension.** The runtime does not require one, so the archive is
+  written by `StoredZipWriter`: stored entries, each one's checksum written
+  back into its header, and no ZIP64. A history past 65,535 files or about
+  3.5 GB of attachments is refused before anything is written. Text cannot be
+  measured without reading it, so the writer holds the whole archive to the
+  same 3.5 GB as it writes, and a history whose text outgrows it is refused
+  the same way, its partial archive removed.
+- **Every column decided.** `VisitorExporter::COLUMNS` lists every column of
+  every table the export reads, as exported or with the reason it is not.
+  Its test holds the list to the live schema, so a column added later is left
+  out, and fails, until someone decides. Columns and metadata keys that name a
+  user are replaced by a role: `visitor`, `agent`, `platform operator`,
+  `integration` or `system`. `VisitorExporter::IDENTITY_KEYS` lists the keys,
+  and a test holds it to every identity-shaped key the code writes. Where the
+  same object records the kind of user as `<prefix>_type`, that is the role:
+  ticket alerts record `assigned_by_type` from this delivery on. An older
+  alert has only the assigner's name, and a name in Wayfindr's or an
+  integration's shape is one an agent can also have, so it says `unknown`
+  rather than guess. A key with
+  no role to put in its place is left out instead: `VisitorExporter::OMITTED_KEYS`
+  drops a conversation's `agent_typing`, which agents are typing, keyed by
+  their user IDs and naming them, and left behind by an agent who disconnects
+  mid-reply.
+- **A POST, and the same permission as erasure.** Building the archive reads
+  the whole history and is audited, which a link another site can embed must
+  not start. It is throttled to six a minute.
+- **A file the download path would not serve is not exported either.** One the
+  malware scanner holds, or one that never finished uploading, keeps its
+  details in its conversation's file, and `README.txt` lists it as withheld.
+  A file an agent has uploaded but not yet sent is a draft of a reply, which
+  the download path shows only to its uploader, so it is left out entirely,
+  with the audit events that name it; the person's own unsent upload is
+  theirs and is included.
+- **Only what can be tied to the person is handed to them.** Erasure clears
+  a bulk-action run's saved search when the run may have found the person,
+  which for a run from before runs recorded their selection includes any that
+  skipped an item. Export includes only runs that provably selected their
+  work: the rest may be a search about someone else. In the same way,
+  erasure removes a failed job that names their email address, which another
+  contact can share, while export includes only failed jobs that name one of
+  their support codes, which are unique to the installation.
+- **A cobrowse session on someone else's conversation** goes in
+  `cobrowse.json`. Every session belongs to a conversation, so this is rare.
+- **The README is in the exporting agent's dashboard language.** The operator
+  reviews the archive before it goes to the person.
+
 ### 8. Erasures survive a restore
 
 Restoring an archive taken before an erasure would silently undo it, and an

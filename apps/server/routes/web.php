@@ -52,6 +52,7 @@ use App\Http\Controllers\AgentTicketLabelController;
 use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\AgentVisitorErasureController;
+use App\Http\Controllers\AgentVisitorExportController;
 use App\Http\Controllers\AgentVisitorMergeController;
 use App\Http\Controllers\AgentVisitorNoteController;
 use App\Http\Controllers\Auth\OidcSessionController;
@@ -402,6 +403,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.visitors.erasure.show');
     Route::post('/dashboard/visitors/{visitor}/erase', [AgentVisitorErasureController::class, 'store'])
         ->name('dashboard.visitors.erasure.store');
+    // Named apart from dashboard.visitors.export, the directory's CSV.
+    Route::post('/dashboard/visitors/{visitor}/data-export', AgentVisitorExportController::class)
+        ->middleware('throttle:6,1')
+        ->name('dashboard.visitors.data-export');
     Route::post('/dashboard/visitors/{visitor}/merge', AgentVisitorMergeController::class)
         ->name('dashboard.visitors.merge');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])

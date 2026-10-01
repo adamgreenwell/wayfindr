@@ -13,7 +13,6 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
-use App\Models\ConversationRating;
 use App\Models\OutboundWebhookDelivery;
 use App\Models\Site;
 use App\Models\SlaClock;
@@ -22,13 +21,8 @@ use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorErasure;
-use App\Models\VisitorIdentityAlias;
-use App\Models\VisitorNote;
 use App\Support\DashboardLanguage;
-use App\Support\LiteralLike;
-use App\Support\ProactiveMessages\ProactiveVisitorKey;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Carbon;
@@ -53,14 +47,6 @@ use Illuminate\Validation\ValidationException;
 final class VisitorEraser
 {
     /**
-     * How erasure treats every table that can hold data derived from one
-     * visitor. The keys are table names; the contract test fails for any
-     * foreign key or polymorphic column reaching a visitor, conversation,
-     * message, attachment, cobrowse session or ticket from a table not here.
-     *
-     * @var array<string, string>
-     */
-    /**
      * How recently a started call to an outside service may still be under
      * way: a note post to a linked issue (§3), or a copilot request to the AI
      * provider (§1). Each worker commits its start, then makes the call
@@ -77,44 +63,162 @@ final class VisitorEraser
         'conversation_copilot_knowledge_suggestions',
     ];
 
+    /**
+     * How erasure treats every table that can hold data derived from one
+     * visitor, and where the export puts it or why it leaves it out (§7). The
+     * keys are table names; the contract test fails for any foreign key or
+     * polymorphic column reaching a visitor, conversation, message,
+     * attachment, cobrowse session or ticket from a table not here. An export
+     * entry is `file#key` (several separated by commas), or `not exported:`
+     * and the reason.
+     *
+     * @var array<string, array{erasure: string, export: string}>
+     */
     public const COVERAGE = [
-        'visitors' => 'deleted',
-        'visitor_identity_aliases' => 'deleted by cascade from the visitor',
-        'visitor_notes' => 'deleted by cascade from the visitor',
-        'cobrowse_sessions' => 'deleted by cascade from the visitor and conversation',
-        'conversations' => 'deleted',
-        'conversation_messages' => 'deleted by cascade from the conversation',
-        'conversation_message_attachments' => 'deleted by cascade; binaries removed after commit',
-        'conversation_reply_deliveries' => 'deleted by cascade from the message',
-        'conversation_ratings' => 'deleted by cascade from the conversation',
-        'conversation_read_states' => 'deleted by cascade from the conversation',
-        'conversation_copilot_summaries' => 'deleted by cascade from the conversation',
-        'conversation_copilot_reply_drafts' => 'deleted by cascade from the conversation',
-        'conversation_copilot_ticket_suggestions' => 'deleted by cascade from the conversation',
-        'conversation_copilot_knowledge_suggestions' => 'deleted by cascade from the conversation',
-        'proactive_message_deliveries' => 'deleted, by visitor and by keyed browser digest',
-        'tickets' => 'kept as a work item, with the person stripped out (ADR 0026 §3)',
-        'ticket_label_ticket' => 'kept with the ticket: label links only',
-        'ticket_external_links' => 'kept with the ticket: the external issue is out of reach (§6)',
-        'ticket_external_comment_deliveries' => 'deleted for stripped tickets: they hold note bodies',
-        'audit_events' => 'kept with metadata replaced and any visitor actor cleared (§2)',
-        'notifications' => 'deleted when they name an erased conversation or stripped ticket; alert mail built before the erasure is refused before SMTP',
-        'agent_alert_deliveries' => 'deleted by cascade from the notification',
-        'sla_clocks' => 'deleted for erased conversations; kept for stripped tickets',
-        'sla_alert_deliveries' => 'deleted by cascade from the clock; unsent ones for stripped tickets cancelled',
-        'automation_rule_executions' => 'deleted for erased conversations; kept for stripped tickets, with the raw error message cleared',
-        'outbound_webhook_deliveries' => 'pending deliveries for erased conversations cancelled; the response sample cleared on every delivery about them; payloads are identifiers only',
-        'conversation_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that selected an erased conversation, and on older runs that cannot say',
-        'ticket_bulk_action_runs' => 'kept for undo; the saved queue search cleared on runs that selected a stripped ticket, and on older runs that cannot say',
-        'break_glass_grants' => 'kept: the record of operator access outweighs its incidental reason text (§4); its trail stops naming an erased conversation',
-        'push_subscriptions' => 'not visitor data: agent devices only',
-        'api_idempotency_keys' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
-        'visitor_erasures' => 'the ledger itself: identifiers and counts only',
-        'alert_mail_sends' => 'alert mail on its way to SMTP, by identifier only: erasure waits while one about the person is fresh, and removes the rest',
-        'failed_jobs' => 'rows naming the person by email address or support code, whole, deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
+        'visitors' => [
+            'erasure' => 'deleted',
+            'export' => 'visitor.json#visitor',
+        ],
+        'visitor_identity_aliases' => [
+            'erasure' => 'deleted by cascade from the visitor',
+            'export' => 'visitor.json#browser_ids',
+        ],
+        'visitor_notes' => [
+            'erasure' => 'deleted by cascade from the visitor',
+            'export' => 'visitor.json#notes',
+        ],
+        'cobrowse_sessions' => [
+            'erasure' => 'deleted by cascade from the visitor and conversation',
+            'export' => 'conversations/*.json#cobrowse_sessions, cobrowse.json#sessions',
+        ],
+        'conversations' => [
+            'erasure' => 'deleted',
+            'export' => 'conversations/*.json#conversation',
+        ],
+        'conversation_messages' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#messages',
+        ],
+        'conversation_message_attachments' => [
+            'erasure' => 'deleted by cascade; binaries removed after commit',
+            'export' => 'conversations/*.json#attachments',
+        ],
+        'conversation_reply_deliveries' => [
+            'erasure' => 'deleted by cascade from the message',
+            'export' => 'conversations/*.json#reply_deliveries',
+        ],
+        'conversation_ratings' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#ratings',
+        ],
+        'conversation_read_states' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'not exported: which agent last read a thread is bookkeeping (§7)',
+        ],
+        'conversation_copilot_summaries' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#copilot_summaries',
+        ],
+        'conversation_copilot_reply_drafts' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#copilot_reply_drafts',
+        ],
+        'conversation_copilot_ticket_suggestions' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#copilot_ticket_suggestions',
+        ],
+        'conversation_copilot_knowledge_suggestions' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#copilot_knowledge_suggestions',
+        ],
+        'proactive_message_deliveries' => [
+            'erasure' => 'deleted, by visitor and by keyed browser digest',
+            'export' => 'proactive.json#deliveries',
+        ],
+        'tickets' => [
+            'erasure' => 'kept as a work item, with the person stripped out (ADR 0026 §3)',
+            'export' => 'tickets/*.json#ticket',
+        ],
+        'ticket_label_ticket' => [
+            'erasure' => 'kept with the ticket: label links only',
+            'export' => 'not exported: links to the team\'s own labels, which hold nothing about the person',
+        ],
+        'ticket_external_links' => [
+            'erasure' => 'kept with the ticket: the external issue is out of reach (§6)',
+            'export' => 'tickets/*.json#external_links',
+        ],
+        'ticket_external_comment_deliveries' => [
+            'erasure' => 'deleted for stripped tickets: they hold note bodies',
+            'export' => 'tickets/*.json#note_deliveries',
+        ],
+        'audit_events' => [
+            'erasure' => 'kept with metadata replaced and any visitor actor cleared (§2)',
+            'export' => 'audit.json#events, tickets/*.json#notes, break_glass.json#views',
+        ],
+        'notifications' => [
+            'erasure' => 'deleted when they name an erased conversation or stripped ticket; alert mail built before the erasure is refused before SMTP',
+            'export' => 'alerts.json#alerts',
+        ],
+        'agent_alert_deliveries' => [
+            'erasure' => 'deleted by cascade from the notification',
+            'export' => 'not exported: which channel an alert went out on, and when: bookkeeping that goes with the alert',
+        ],
+        'sla_clocks' => [
+            'erasure' => 'deleted for erased conversations; kept for stripped tickets',
+            'export' => 'not exported: SLA clocks are bookkeeping (§7)',
+        ],
+        'sla_alert_deliveries' => [
+            'erasure' => 'deleted by cascade from the clock; unsent ones for stripped tickets cancelled',
+            'export' => 'not exported: SLA alert bookkeeping (§7)',
+        ],
+        'automation_rule_executions' => [
+            'erasure' => 'deleted for erased conversations; kept for stripped tickets, with the raw error message cleared',
+            'export' => 'incidental.json#automation_runs',
+        ],
+        'outbound_webhook_deliveries' => [
+            'erasure' => 'pending deliveries for erased conversations cancelled; the response sample cleared on every delivery about them; payloads are identifiers only',
+            'export' => 'incidental.json#webhook_responses',
+        ],
+        'conversation_bulk_action_runs' => [
+            'erasure' => 'kept for undo; the saved queue search cleared on runs that selected an erased conversation, and on older runs that cannot say',
+            'export' => 'incidental.json#conversation_searches',
+        ],
+        'ticket_bulk_action_runs' => [
+            'erasure' => 'kept for undo; the saved queue search cleared on runs that selected a stripped ticket, and on older runs that cannot say',
+            'export' => 'incidental.json#ticket_searches',
+        ],
+        'break_glass_grants' => [
+            'erasure' => 'kept: the record of operator access outweighs its incidental reason text (§4); its trail stops naming an erased conversation',
+            'export' => 'break_glass.json#grants',
+        ],
+        'push_subscriptions' => [
+            'erasure' => 'not visitor data: agent devices only',
+            'export' => 'not exported: agent devices only',
+        ],
+        'api_idempotency_keys' => [
+            'erasure' => 'kept: hashes and a resource id only, never a body, and expired rows are pruned',
+            'export' => 'not exported: hashes and a resource id only, never a body',
+        ],
+        'visitor_erasures' => [
+            'erasure' => 'the ledger itself: identifiers and counts only',
+            'export' => 'not exported: a contact that can be exported has not been erased',
+        ],
+        'alert_mail_sends' => [
+            'erasure' => 'alert mail on its way to SMTP, by identifier only: erasure waits while one about the person is fresh, and removes the rest',
+            'export' => 'not exported: alert mail on its way to SMTP, by identifier only',
+        ],
+        'failed_jobs' => [
+            'erasure' => 'rows naming the person by email address or support code, whole, deleted, in whichever store is configured (a table on any connection, a file, DynamoDB); a reply that fails for good, which can land after that sweep, records its error type only; other failed-job text is diagnostics, like logs (§6)',
+            'export' => 'incidental.json#failed_jobs',
+        ],
     ];
 
-    public function __construct(private readonly ErasureLedger $ledger) {}
+    use QueriesIdsInChunks;
+
+    public function __construct(
+        private readonly ErasureLedger $ledger,
+        private readonly VisitorFootprint $footprint,
+    ) {}
 
     /**
      * What erasing this visitor would do, for the confirmation screen.
@@ -127,7 +231,7 @@ final class VisitorEraser
      */
     public function summarize(Visitor $visitor): array
     {
-        $scope = $this->scope($visitor);
+        $scope = $this->footprint->scope($visitor);
         $tickets = new EloquentCollection;
         $urls = [];
 
@@ -537,9 +641,9 @@ final class VisitorEraser
      */
     private function removeVisitor(int $accountId, Site $site, Visitor $visitor, callable $beforeChanging): array
     {
-        $scope = $this->scope($visitor);
+        $scope = $this->footprint->scope($visitor);
         // Before the scrub, which replaces the metadata that holds it.
-        $mergedIds = $this->mergedVisitorIds($visitor);
+        $mergedIds = $this->footprint->mergedVisitorIds($visitor);
         // Before anything that scans for what names them: an alert or a
         // break-glass view stored under a shared lock on one of these rows
         // now lands either before this point, and is found, or after the
@@ -550,11 +654,7 @@ final class VisitorEraser
             $scope['conversation_ids'],
             fn (Builder $query) => $query->lockForUpdate()->get(['id']),
         );
-        $breakGlassGrants = $this->idsIn(
-            BreakGlassGrant::query()->where('account_id', $accountId),
-            'conversation_id',
-            $scope['conversation_ids'],
-        );
+        $breakGlassGrants = $this->footprint->breakGlassGrantIds($accountId, $scope['conversation_ids']);
 
         $this->refuseWhileNotesArePosting($scope['ticket_ids']);
         $this->refuseWhileCopilotIsRunning($scope['conversation_ids']);
@@ -594,10 +694,7 @@ final class VisitorEraser
         $cancelled = $this->cancelPendingWebhooks((int) $site->id, $scope['support_codes']);
         $this->clearWebhookResponses((int) $site->id, $scope['support_codes'], $scope['ticket_ids']);
         $proactive = $this->deleteProactiveDeliveries((int) $site->id, (int) $visitor->id, $scope['anonymous_ids']);
-        $this->deleteFailedJobsNaming([
-            (string) $visitor->email,
-            ...$scope['support_codes'],
-        ]);
+        $this->deleteFailedJobsNaming($this->footprint->installWideIdentifiers($visitor, $scope['support_codes']));
 
         $this->whereInChunks(
             DB::table('conversations'),
@@ -626,108 +723,6 @@ final class VisitorEraser
                 'audit_events_scrubbed' => $audited,
             ],
         ];
-    }
-
-    /**
-     * Everything the erasure touches, as identifiers.
-     *
-     * @return array{
-     *     conversation_ids: list<int>,
-     *     message_ids: list<int>,
-     *     attachment_ids: list<int>,
-     *     cobrowse_ids: list<int>,
-     *     ticket_ids: list<int>,
-     *     support_codes: list<string>,
-     *     anonymous_ids: list<string>,
-     *     visitor_id: int,
-     *     counts: array<string, int>
-     * }
-     */
-    private function scope(Visitor $visitor): array
-    {
-        $visitorId = (int) $visitor->id;
-        $conversations = Conversation::query()
-            ->where('visitor_id', $visitorId)
-            ->get(['id', 'support_code']);
-        $conversationIds = $this->ints($conversations->pluck('id'));
-
-        $messageIds = $this->idsIn(ConversationMessage::query(), 'conversation_id', $conversationIds);
-        $attachmentIds = $this->idsIn(ConversationMessageAttachment::query(), 'conversation_id', $conversationIds);
-        $cobrowseIds = $this->ints(CobrowseSession::query()
-            ->where('visitor_id', $visitorId)
-            ->pluck('id')
-            ->merge($this->idsIn(CobrowseSession::query(), 'conversation_id', $conversationIds))
-            ->unique());
-        $ticketIds = $this->ints(Ticket::query()
-            ->where('site_id', $visitor->site_id)
-            ->where('requester_id', $visitorId)
-            ->pluck('id')
-            ->merge($this->idsIn(Ticket::query()->where('site_id', $visitor->site_id), 'conversation_id', $conversationIds))
-            ->unique()
-            ->sort());
-
-        $anonymousIds = VisitorIdentityAlias::query()
-            ->where('visitor_id', $visitorId)
-            ->pluck('anonymous_id')
-            ->push($visitor->anonymous_id)
-            ->filter(fn (mixed $id): bool => is_string($id) && $id !== '')
-            ->unique()
-            ->values()
-            ->all();
-
-        return [
-            'conversation_ids' => $conversationIds,
-            'message_ids' => $messageIds,
-            'attachment_ids' => $attachmentIds,
-            'cobrowse_ids' => $cobrowseIds,
-            'ticket_ids' => $ticketIds,
-            'support_codes' => $conversations->pluck('support_code')->filter()->map(fn (mixed $code): string => (string) $code)->values()->all(),
-            'anonymous_ids' => $anonymousIds,
-            'visitor_id' => $visitorId,
-            'counts' => [
-                'conversations' => count($conversationIds),
-                'messages' => count($messageIds),
-                'attachments' => count($attachmentIds),
-                'ratings' => $this->countIn(ConversationRating::query(), 'conversation_id', $conversationIds),
-                'notes' => VisitorNote::query()->where('visitor_id', $visitorId)->count(),
-                'cobrowse_sessions' => count($cobrowseIds),
-                'tickets_stripped' => count($ticketIds),
-            ],
-        ];
-    }
-
-    /**
-     * Every visitor ID merged into this one (§8). A merge deletes the source
-     * row and re-anchors its audit events onto the target, so a chain of
-     * merges ends with every `visitor.merged` event on this visitor. The
-     * aliases' own history is read as well: each keeps only its last IDs,
-     * but it is the record the widget follows.
-     *
-     * @return list<int>
-     */
-    private function mergedVisitorIds(Visitor $visitor): array
-    {
-        $visitorId = (int) $visitor->id;
-
-        $fromAudit = AuditEvent::query()
-            ->where('subject_type', $visitor->getMorphClass())
-            ->where('subject_id', $visitorId)
-            ->where('action', 'visitor.merged')
-            ->get(['metadata'])
-            ->map(fn (AuditEvent $event): mixed => data_get($event->metadata, 'source_visitor_id'));
-        $fromAliases = VisitorIdentityAlias::query()
-            ->where('visitor_id', $visitorId)
-            ->get(['previous_visitor_ids'])
-            ->flatMap(fn (VisitorIdentityAlias $alias): array => is_array($alias->previous_visitor_ids) ? $alias->previous_visitor_ids : []);
-
-        return $fromAudit->merge($fromAliases)
-            ->filter(fn (mixed $id): bool => is_int($id) || (is_string($id) && ctype_digit($id)))
-            ->map(fn (int|string $id): int => (int) $id)
-            ->reject(fn (int $id): bool => $id <= 0 || $id === $visitorId)
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
     }
 
     /**
@@ -943,35 +938,13 @@ final class VisitorEraser
      */
     private function deleteNotifications(int $accountId, array $scope): int
     {
-        if ($scope['conversation_ids'] === [] && $scope['ticket_ids'] === []) {
-            return 0;
+        $ids = $this->footprint->notificationIds($accountId, $scope['conversation_ids'], $scope['ticket_ids']);
+
+        foreach (array_chunk($ids, 500) as $chunk) {
+            DatabaseNotification::query()->whereIn('id', $chunk)->delete();
         }
 
-        $conversations = array_flip($scope['conversation_ids']);
-        $tickets = array_flip($scope['ticket_ids']);
-        $doomed = [];
-
-        DatabaseNotification::query()
-            ->where('notifiable_type', (new User)->getMorphClass())
-            // A subquery, not a list: an account's agents are not bounded.
-            ->whereIn('notifiable_id', User::query()->select('id')->where('account_id', $accountId))
-            ->select(['id', 'data'])
-            ->chunkById(500, function (Collection $notifications) use ($conversations, $tickets, &$doomed): void {
-                foreach ($notifications as $notification) {
-                    $conversationId = (int) data_get($notification->data, 'conversation_id');
-                    $ticketId = (int) data_get($notification->data, 'ticket_id');
-
-                    if (isset($conversations[$conversationId]) || isset($tickets[$ticketId])) {
-                        $doomed[] = $notification->id;
-                    }
-                }
-            }, 'id');
-
-        foreach (array_chunk($doomed, 500) as $ids) {
-            DatabaseNotification::query()->whereIn('id', $ids)->delete();
-        }
-
-        return count($doomed);
+        return count($ids);
     }
 
     /**
@@ -1058,44 +1031,13 @@ final class VisitorEraser
      */
     private function clearBulkRunSearches(int $accountId, array $conversationIds, array $ticketIds): void
     {
-        foreach ([
-            ['conversation_bulk_action_runs', 'conversation_id', 'conversation_search', $conversationIds],
-            ['ticket_bulk_action_runs', 'ticket_id', 'ticket_search', $ticketIds],
-        ] as [$table, $itemKey, $searchKey, $ids]) {
-            if ($ids === []) {
-                continue;
-            }
+        foreach ($this->footprint->bulkRunsSelecting($accountId, $conversationIds, $ticketIds) as $run) {
+            $query = $run['return_query'];
+            unset($query[$run['search_key']]);
 
-            $erased = array_flip($ids);
-
-            DB::table($table)
-                ->where('account_id', $accountId)
-                ->whereNotNull('return_query')
-                ->select(['id', 'item_count', 'changed_count', 'changes', 'item_ids', 'return_query'])
-                ->chunkById(500, function (Collection $runs) use ($table, $itemKey, $searchKey, $erased): void {
-                    foreach ($runs as $run) {
-                        $query = json_decode((string) $run->return_query, true);
-                        $changes = json_decode((string) $run->changes, true);
-
-                        if (! is_array($query) || ! array_key_exists($searchKey, $query) || ! is_array($changes)) {
-                            continue;
-                        }
-
-                        $selected = $run->item_ids === null ? null : json_decode((string) $run->item_ids, true);
-                        $touched = collect($changes)->contains(
-                            fn (mixed $change): bool => isset($erased[(int) data_get($change, $itemKey)]),
-                        ) || (is_array($selected)
-                            ? collect($selected)->contains(fn (mixed $id): bool => isset($erased[(int) $id]))
-                            : (int) $run->item_count > (int) $run->changed_count);
-
-                        if ($touched) {
-                            unset($query[$searchKey]);
-                            DB::table($table)->where('id', $run->id)->update([
-                                'return_query' => json_encode($query, JSON_THROW_ON_ERROR),
-                            ]);
-                        }
-                    }
-                });
+            DB::table($run['table'])->where('id', $run['id'])->update([
+                'return_query' => json_encode($query, JSON_THROW_ON_ERROR),
+            ]);
         }
     }
 
@@ -1162,37 +1104,11 @@ final class VisitorEraser
      */
     private function clearWebhookResponses(int $siteId, array $supportCodes, array $ticketIds): void
     {
-        if ($supportCodes === [] && $ticketIds === []) {
-            return;
+        $ids = $this->footprint->webhookDeliveryIdsWithResponse($siteId, $supportCodes, $ticketIds);
+
+        foreach (array_chunk($ids, 500) as $chunk) {
+            OutboundWebhookDelivery::query()->whereIn('id', $chunk)->update(['response_body' => null]);
         }
-
-        $codes = array_flip($supportCodes);
-        $tickets = array_flip($ticketIds);
-
-        OutboundWebhookDelivery::query()
-            ->where('site_id', $siteId)
-            ->whereNotNull('response_body')
-            ->select(['id', 'payload'])
-            ->chunkById(500, function (EloquentCollection $deliveries) use ($codes, $tickets): void {
-                $ids = $deliveries
-                    ->filter(function (OutboundWebhookDelivery $delivery) use ($codes, $tickets): bool {
-                        $code = data_get($delivery->payload, 'resource.support_code')
-                            ?? data_get($delivery->payload, 'resource.conversation_support_code');
-
-                        if (is_string($code) && isset($codes[$code])) {
-                            return true;
-                        }
-
-                        return data_get($delivery->payload, 'resource.type') === 'ticket'
-                            && isset($tickets[(int) data_get($delivery->payload, 'resource.id')]);
-                    })
-                    ->pluck('id')
-                    ->all();
-
-                if ($ids !== []) {
-                    OutboundWebhookDelivery::query()->whereIn('id', $ids)->update(['response_body' => null]);
-                }
-            });
     }
 
     /**
@@ -1234,185 +1150,49 @@ final class VisitorEraser
     /**
      * A job that exhausted its retries is kept with its payload and the
      * exception it died on, and a mail server's rejection quotes the address
-     * it refused. Both are free text, and say nothing of the site or account
-     * a job was for, so they are searched only for what names this person
-     * wherever it appears: their email address, one mailbox, and their
-     * support codes, unique across the install. A host or browser ID is
-     * unique only within its site, so it would find other sites' visitors
-     * too. Each must appear as a whole token, so a longer code or address
-     * that merely contains it is not a match.
+     * it refused, so one that names the person goes (§1). A store on another
+     * connection or outside the database is not part of this transaction.
      *
-     * Wherever the operator keeps them: a database store on its own
-     * connection is searched there, and a file or DynamoDB store through the
-     * provider every store implements. A store on another connection or
-     * outside the database is not part of this transaction.
-     *
-     * @param  list<string>  $identifiers
+     * @param  list<string>  $identifiers  from VisitorFootprint::installWideIdentifiers()
      */
     private function deleteFailedJobsNaming(array $identifiers): void
     {
-        $identifiers = array_values(array_unique(array_filter(
-            array_map(fn (string $identifier): string => trim($identifier), $identifiers),
-            fn (string $identifier): bool => mb_strlen($identifier) >= 6,
-        )));
-        $driver = config('queue.failed.driver');
+        $ids = array_column($this->footprint->failedJobsNaming($identifiers), 'id');
 
-        if ($identifiers === [] || $driver === null || $driver === 'null') {
+        if ($ids === []) {
             return;
         }
 
-        if (in_array($driver, ['database', 'database-uuids'], true)) {
-            $this->deleteFailedJobRowsNaming($identifiers);
+        if (in_array(config('queue.failed.driver'), ['database', 'database-uuids'], true)) {
+            $connection = DB::connection(config('queue.failed.database') ?: null);
+            $table = (string) (config('queue.failed.table') ?: 'failed_jobs');
+
+            foreach (array_chunk($ids, 500) as $chunk) {
+                $connection->table($table)->whereIn('id', $chunk)->delete();
+            }
 
             return;
         }
 
         $failer = app('queue.failer');
 
-        foreach ($failer->all() as $job) {
-            if ($this->namesAny(data_get($job, 'payload').' '.data_get($job, 'exception'), $identifiers)) {
-                $failer->forget(data_get($job, 'id'));
-            }
-        }
-    }
-
-    /** @param  list<string>  $identifiers */
-    private function deleteFailedJobRowsNaming(array $identifiers): void
-    {
-        $connection = DB::connection(config('queue.failed.database') ?: null);
-        $table = (string) (config('queue.failed.table') ?: 'failed_jobs');
-
-        if (! $connection->getSchemaBuilder()->hasTable($table)) {
-            return;
-        }
-
-        // LIKE finds the candidates on any database; the whole-token check
-        // that decides is made here, the same for every store. In chunks: a
-        // long history has a support code per conversation, and each adds
-        // terms and bindings to the statement.
-        $doomed = [];
-
-        foreach (array_chunk($identifiers, 50) as $chunk) {
-            $query = $connection->table($table);
-            $grammar = $query->getGrammar();
-            $query->where(function (Builder $query) use ($grammar, $chunk): void {
-                foreach ($chunk as $identifier) {
-                    foreach (['payload', 'exception'] as $column) {
-                        $query->orWhereRaw('LOWER('.$grammar->wrap($column).') LIKE LOWER(?) ESCAPE ?', [LiteralLike::pattern($identifier), '\\']);
-                    }
-                }
-            });
-
-            foreach ($query->get(['id', 'payload', 'exception']) as $job) {
-                if ($this->namesAny($job->payload.' '.$job->exception, $chunk)) {
-                    $doomed[(int) $job->id] = true;
-                }
-            }
-        }
-
-        foreach (array_chunk(array_keys($doomed), 500) as $ids) {
-            $connection->table($table)->whereIn('id', $ids)->delete();
+        foreach ($ids as $id) {
+            $failer->forget($id);
         }
     }
 
     /**
-     * Whether the text names one of the identifiers as a whole token, not as
-     * part of a longer address or code.
-     *
-     * @param  list<string>  $identifiers
-     */
-    private function namesAny(string $text, array $identifiers): bool
-    {
-        foreach ($identifiers as $identifier) {
-            $pattern = '/(?<![\\p{L}\\p{N}._%+-])'.preg_quote($identifier, '/').'(?![\\p{L}\\p{N}_%+-]|\\.[\\p{L}\\p{N}])/iu';
-
-            if (preg_match($pattern, $text) === 1) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Rows naming the visitor, and rows already detached from a pruned
-     * presence row but still keyed by this person's browser.
-     *
      * @param  list<string>  $anonymousIds
      */
     private function deleteProactiveDeliveries(int $siteId, int $visitorId, array $anonymousIds): int
     {
-        $keys = array_map(
-            fn (string $anonymousId): string => ProactiveVisitorKey::for($siteId, $anonymousId),
-            $anonymousIds,
-        );
+        $ids = $this->footprint->proactiveDeliveryIds($siteId, $visitorId, $anonymousIds);
+        $deleted = 0;
 
-        $deleted = DB::table('proactive_message_deliveries')
-            ->where('site_id', $siteId)
-            ->where('visitor_id', $visitorId)
-            ->delete();
-
-        foreach (array_chunk($keys, 500) as $chunk) {
-            $deleted += DB::table('proactive_message_deliveries')
-                ->where('site_id', $siteId)
-                ->whereIn('visitor_key', $chunk)
-                ->delete();
+        foreach (array_chunk($ids, 500) as $chunk) {
+            $deleted += DB::table('proactive_message_deliveries')->whereIn('id', $chunk)->delete();
         }
 
         return $deleted;
-    }
-
-    /**
-     * @param  \Illuminate\Database\Eloquent\Builder<Model>  $query
-     * @param  list<int>  $values
-     * @return list<int>
-     */
-    private function idsIn(\Illuminate\Database\Eloquent\Builder $query, string $column, array $values): array
-    {
-        $ids = [];
-
-        foreach (array_chunk($values, 500) as $chunk) {
-            $ids = [...$ids, ...$this->ints((clone $query)->whereIn($column, $chunk)->pluck('id'))];
-        }
-
-        return $ids;
-    }
-
-    /**
-     * @param  \Illuminate\Database\Eloquent\Builder<Model>  $query
-     * @param  list<int>  $values
-     */
-    private function countIn(\Illuminate\Database\Eloquent\Builder $query, string $column, array $values): int
-    {
-        $count = 0;
-
-        foreach (array_chunk($values, 500) as $chunk) {
-            $count += (clone $query)->whereIn($column, $chunk)->count();
-        }
-
-        return $count;
-    }
-
-    /**
-     * Run a statement against an id list in chunks, so a long history stays
-     * under every driver's bound-parameter limit.
-     *
-     * @param  list<int>  $values
-     * @param  callable(Builder): mixed  $statement
-     */
-    private function whereInChunks(Builder $query, string $column, array $values, callable $statement): void
-    {
-        foreach (array_chunk($values, 500) as $chunk) {
-            $statement((clone $query)->whereIn($column, $chunk));
-        }
-    }
-
-    /**
-     * @param  Collection<int, mixed>  $values
-     * @return list<int>
-     */
-    private function ints(Collection $values): array
-    {
-        return $values->map(fn (mixed $value): int => (int) $value)->values()->all();
     }
 }

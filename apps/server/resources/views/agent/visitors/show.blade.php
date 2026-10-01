@@ -456,6 +456,21 @@
     @endif
 
     @if ($canHandleDataRequests)
+    <section class="section" aria-labelledby="visitor-export-heading">
+        <div class="section-header">
+            <h2 id="visitor-export-heading">{{ __('visitor_export.section.heading') }}</h2>
+            <span class="lede">{{ __('visitor_export.section.lede') }}</span>
+        </div>
+
+        <p>{{ __('visitor_export.section.body') }}</p>
+        @error('export')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+
+        <form method="POST" action="{{ route('dashboard.visitors.data-export', $visitor) }}" class="section-actions">
+            @csrf
+            <button type="submit" class="button">{{ __('visitor_export.section.link') }}</button>
+        </form>
+    </section>
+
     <section class="section" aria-labelledby="visitor-erasure-heading">
         <div class="section-header">
             <h2 id="visitor-erasure-heading">{{ __('visitor_erasure.section.heading') }}</h2>
