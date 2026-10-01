@@ -82,7 +82,7 @@
                     </div>
                 </div>
 
-                <label class="automation-enabled" for="requires_available_agent">
+                <label class="check-row automation-enabled" for="requires_available_agent">
                     <input type="hidden" name="requires_available_agent" value="0">
                     <input id="requires_available_agent" name="requires_available_agent" type="checkbox" value="1" @checked(old('requires_available_agent', $proactiveMessageRule?->requires_available_agent ?? true))>
                     <span>
@@ -111,7 +111,7 @@
                 </div>
             </fieldset>
 
-            <label class="automation-enabled" for="is_enabled">
+            <label class="check-row automation-enabled" for="is_enabled">
                 <input type="hidden" name="is_enabled" value="0">
                 <input id="is_enabled" name="is_enabled" type="checkbox" value="1" @checked(old('is_enabled', $proactiveMessageRule?->is_enabled ?? false))>
                 <span>

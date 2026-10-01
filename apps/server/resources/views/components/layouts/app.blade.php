@@ -1957,6 +1957,94 @@
             margin-top: 22px;
         }
 
+        /* The pager (resources/views/vendor/pagination/tailwind.blade.php)
+           closes the card it sits in, under the table or list it pages. */
+        .wf-pager {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px 16px;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .wf-pager__summary {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .wf-pager__summary strong {
+            color: var(--text);
+            font-weight: 650;
+        }
+
+        .wf-pager__controls,
+        .wf-pager__pages {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .wf-pager__step,
+        .wf-pager__page {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            min-width: 36px;
+            min-height: 36px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        a.wf-pager__step:hover,
+        a.wf-pager__page:hover {
+            background: var(--surface-muted);
+        }
+
+        a.wf-pager__step:focus-visible,
+        a.wf-pager__page:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .wf-pager__page[aria-current="page"] {
+            background: var(--wf-ink);
+            border-color: var(--wf-ink);
+            color: var(--wf-ink-invert);
+        }
+
+        .wf-pager__step[aria-disabled="true"] {
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        .wf-pager__gap {
+            padding: 0 4px;
+            color: var(--muted);
+        }
+
+        .wf-pager__chevron {
+            flex: none;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* A phone pages one step at a time; the summary says where it is. */
+        @media (max-width: 640px) {
+            .wf-pager__pages {
+                display: none;
+            }
+        }
+
         .text-link {
             color: var(--accent-strong);
             font-weight: 700;
@@ -2500,6 +2588,28 @@
             background: var(--surface);
             padding: 16px 20px;
             box-shadow: 0 0 0 1px var(--border);
+        }
+
+        /* Forms lay their fields out on the same grid, but its 1px gap and
+           hairline belong to tiles that draw their own ring and padding:
+           fields left on them touched, sat under a second rule, and the
+           first one rode 18px above the rest, the only one without a
+           field's top margin. Fields get real gaps and one shared top
+           line, and the grid keeps a field's spacing from anything visible
+           before it. A POST form's token and method inputs come first but
+           draw nothing, so they do not count. */
+        .meta-grid:has(> .field) {
+            gap: 18px 16px;
+            border-top: 0;
+            background: none;
+        }
+
+        :not(input[type="hidden"]) ~ .meta-grid:has(> .field) {
+            margin-top: 18px;
+        }
+
+        .meta-grid > .field {
+            margin-top: 0;
         }
 
         .meta-label {
