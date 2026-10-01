@@ -30,11 +30,21 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-01
+
 **No operator action required.** Pull and restart. Five migrations run
 themselves: they add the erasure ledger table, with each erased contact's site
 key, and keep its rows when their account is removed; add a table of alert
 emails on their way to the mail server; and let each bulk-action run record
 every item it selected.
+
+**Contacts can be erased, or shown everything held about them, when they
+ask.** These are the two data requests a support desk meets most: to be
+forgotten, and to see what is kept. Both are on the contact's profile, both
+need the new **Handle data requests** permission, and both leave an audit
+entry that records how much, never what. Erasures also survive a restore from
+backup. [ADR 0026](docs/decisions/0026-erasing-and-exporting-a-visitor.md)
+records the design, and what neither can reach.
 
 ### Added
 
@@ -91,15 +101,16 @@ every item it selected.
   - their tickets with notes and linked issues;
   - the proactive messages shown to them;
   - the alerts and audit entries about them;
-  - text kept in passing that quotes them, and platform-operator access to
-    their data.
+  - text kept in passing that can be tied to them, and platform-operator
+    access to their data.
 
   Agents and operators appear by role, not by name, and a `README.txt` says
   what is included and what is not. Contact notes are included, so review
   the archive before sending it. Every file describes the same moment, and an
   erasure that starts meanwhile waits for the export to finish. It needs the
   same **Handle data requests** permission as erasure, and each export leaves
-  an audit entry with counts only. See
+  an audit entry with counts only. A history larger than one archive holds
+  (65,535 files, or about 3.5 GB in all) is refused rather than cut short. See
   [ADR 0026 §7](docs/decisions/0026-erasing-and-exporting-a-visitor.md).
 
 ### Changed
