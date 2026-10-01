@@ -74,16 +74,18 @@ final class ErasureReapplier
         $this->ledger->markReapplyOutstanding();
 
         $this->ledger->backfill();
-        // After the backfill, so only a volume that knows of no erasure at
-        // all, from this database or its own history, counts as new: one that
-        // cannot know about erasures made after the archive was taken.
-        $fresh = ! $this->ledger->holdsEntries();
 
         // An entry this database cannot answer for stays pending: if the load
         // fails, this database is still the live one, and the erasure may
         // never have happened. afterRestore() settles it once the load has
         // succeeded.
         $settled = $this->ledger->reconcile(assumeCommitted: false, restoredSinceErasure: $earlier);
+
+        // After the backfill and the settling, so only a volume that knows of
+        // no erasure at all, from this database or its own history, counts as
+        // new: one that cannot know about erasures made after the archive was
+        // taken. An entry for an erasure that rolled back is not history.
+        $fresh = ! $this->ledger->holdsEntries();
 
         return ['fresh_volume' => $fresh, 'unconfirmed' => $settled['unconfirmed']];
     }

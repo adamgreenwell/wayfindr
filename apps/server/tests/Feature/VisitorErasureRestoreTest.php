@@ -511,6 +511,22 @@ test('a restore onto a volume that never held the ledger says what it cannot re-
         ->assertSuccessful();
 });
 
+test('a new volume holding only an erasure that rolled back still counts as new', function (): void {
+    $f = ledgerFixture();
+    exec('rm -rf '.escapeshellarg(ledgerPath()));
+    // The process died between writing the entry and taking it back: the
+    // erasure never committed, so there is no row.
+    app(ErasureLedger::class)->writePending(ErasureLedger::entry(
+        (string) Str::uuid(), (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], (int) $f['admin']->id, now()->toIso8601ZuluString(), [],
+    ));
+
+    restoreArchive(fn () => null)
+        ->expectsOutputToContain('This storage volume holds no erasure records')
+        ->assertSuccessful();
+
+    expect(ledgerFiles('.json'))->toBe([], 'the entry of an erasure that never committed was kept');
+});
+
 test('an erasure is still known to a new volume after its account is removed', function (): void {
     $f = ledgerFixture();
     $archived = archivedRows([
