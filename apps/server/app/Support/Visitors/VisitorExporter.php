@@ -31,7 +31,9 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Notifications\TicketAssigned;
 use App\Support\Database\StableReadTransaction;
+use App\Support\Zip\ArchiveTooLarge;
 use App\Support\Zip\StoredZipWriter;
 use ArrayObject;
 use BackedEnum;
@@ -68,7 +70,11 @@ final class VisitorExporter
     use DetectsConcurrencyErrors;
     use QueriesIdsInChunks;
 
-    /** Comfortably inside the 4 GiB a ZIP file without ZIP64 can hold. */
+    /**
+     * Comfortably inside the 4 GiB a ZIP file without ZIP64 can hold. The
+     * files are counted against it before anything is written, and the
+     * archive is held to it as it is written: text can outgrow it too.
+     */
     public const MAX_BYTES = 3_500_000_000;
 
     /**
@@ -298,7 +304,10 @@ final class VisitorExporter
     /** @var array<int, string> */
     private array $userRoles = [];
 
-    public function __construct(private readonly VisitorFootprint $footprint) {}
+    public function __construct(
+        private readonly VisitorFootprint $footprint,
+        private readonly int $maxBytes = self::MAX_BYTES,
+    ) {}
 
     /**
      * Build the archive into a temporary file the caller serves and removes.
@@ -380,7 +389,7 @@ final class VisitorExporter
         $scope = $this->footprint->scope($visitor);
         $this->assertFits($scope);
 
-        $zip = new StoredZipWriter($path);
+        $zip = new StoredZipWriter($path, $this->maxBytes);
 
         try {
             [$files, $pruned, $withheld] = $this->writeAttachments($zip, $visitor, $scope);
@@ -402,14 +411,16 @@ final class VisitorExporter
         } catch (Throwable $e) {
             $zip->abandon();
 
-            throw $e;
+            throw $e instanceof ArchiveTooLarge ? new VisitorExportRefused(VisitorExportRefused::TOO_LARGE) : $e;
         }
 
         return ['site_id' => (int) $site->id, 'counts' => $counts, 'pruned' => array_values($pruned), 'withheld' => array_values($withheld)];
     }
 
     /**
-     * Refused before anything is written, rather than half way through.
+     * Refused before anything is written, rather than half way through, for
+     * what can be counted first: the entries and the files. Text cannot be
+     * without reading it, so the writer refuses it as it goes.
      *
      * @param  array{conversation_ids: list<int>, attachment_ids: list<int>, ticket_ids: list<int>}  $scope
      */
@@ -422,7 +433,7 @@ final class VisitorExporter
             $bytes += (int) ConversationMessageAttachment::query()->whereIn('id', $chunk)->sum('size_bytes');
         }
 
-        if ($entries > StoredZipWriter::MAX_ENTRIES || $bytes > self::MAX_BYTES) {
+        if ($entries > StoredZipWriter::MAX_ENTRIES || $bytes > $this->maxBytes) {
             throw new VisitorExportRefused(VisitorExportRefused::TOO_LARGE);
         }
     }
@@ -626,6 +637,7 @@ final class VisitorExporter
         $this->json($zip, 'alerts.json', [
             'alerts' => $this->rowsById(DatabaseNotification::query(), $ids, 'notifications', fn (DatabaseNotification $notification, array $row): array => [
                 ...$row,
+                'data' => self::assignedByKind($notification, $row['data']),
                 'recipient' => 'agent',
             ]),
         ]);
@@ -1047,6 +1059,22 @@ final class VisitorExporter
         }
 
         return $value;
+    }
+
+    /**
+     * A ticket alert stored before alerts recorded who assigned the ticket as
+     * a kind names an integration or Wayfindr in its assigner's place, which
+     * is not an agent: the kind is read back from that name.
+     */
+    private static function assignedByKind(DatabaseNotification $notification, mixed $data): mixed
+    {
+        $name = data_get($notification->data, 'assigned_by_name');
+
+        if (! is_array($data) || ! is_string($name) || array_key_exists('assigned_by_type', $data)) {
+            return $data;
+        }
+
+        return [...$data, 'assigned_by_name' => TicketAssigned::actorTypeFromName($name)];
     }
 
     /**

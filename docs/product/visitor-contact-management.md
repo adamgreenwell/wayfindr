@@ -154,7 +154,8 @@ transaction under a shared lock on the site, which erasure takes exclusively,
 and builds the ZIP inside that window before the download starts. A contact
 erased or merged while the export waited for the lock is refused rather than
 exported. A history past what one archive holds (65,535 files, or about 3.5 GB
-of attachments) is refused before anything is written. Each export writes a
+in all) is refused, before anything is written when its files alone are too
+many or too large. Each export writes a
 `visitor.exported` audit event with counts only.
 
 ## Erasing a contact

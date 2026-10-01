@@ -355,7 +355,10 @@ Delivery 3 settled these details:
 - **No zip extension.** The runtime does not require one, so the archive is
   written by `StoredZipWriter`: stored entries, each one's checksum written
   back into its header, and no ZIP64. A history past 65,535 files or about
-  3.5 GB of attachments is refused before anything is written.
+  3.5 GB of attachments is refused before anything is written. Text cannot be
+  measured without reading it, so the writer holds the whole archive to the
+  same 3.5 GB as it writes, and a history whose text outgrows it is refused
+  the same way, its partial archive removed.
 - **Every column decided.** `VisitorExporter::COLUMNS` lists every column of
   every table the export reads, as exported or with the reason it is not.
   Its test holds the list to the live schema, so a column added later is left

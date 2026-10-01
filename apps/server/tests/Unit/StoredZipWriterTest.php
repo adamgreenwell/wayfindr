@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Zip\ArchiveTooLarge;
 use App\Support\Zip\StoredZipWriter;
 
 function storedZipPath(): string
@@ -71,4 +72,21 @@ test('entries are written one at a time', function (): void {
         $zip->abandon();
         unlink($path);
     }
+});
+
+test('an archive is held to the size its caller allows as it is written', function (): void {
+    $path = storedZipPath();
+    $zip = new StoredZipWriter($path, 1024);
+
+    try {
+        $zip->addFromString('small.txt', str_repeat('a', 512));
+
+        // Past the allowance part way through an entry, not only at the end.
+        expect(fn () => $zip->addFromString('large.txt', str_repeat('b', 1024)))->toThrow(ArchiveTooLarge::class);
+    } finally {
+        $zip->abandon();
+        unlink($path);
+    }
+
+    expect(fn () => new StoredZipWriter($path, StoredZipWriter::MAX_BYTES + 1))->toThrow(InvalidArgumentException::class);
 });

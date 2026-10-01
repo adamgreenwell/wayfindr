@@ -15,8 +15,9 @@ use RuntimeException;
  * Entries are stored, not compressed, and each one's checksum and size are
  * written back into its header once its data is in: the file is seekable, so
  * no data descriptor is needed, and every unzip tool reads the result. There
- * is no ZIP64, so an archive is refused past 65,535 entries or 4 GiB; callers
- * check their size first.
+ * is no ZIP64, so an archive is refused past 65,535 entries or 4 GiB, or the
+ * smaller size its caller allows, with ArchiveTooLarge: callers check what
+ * they can count first, and the writer holds the rest to it as it goes.
  */
 final class StoredZipWriter
 {
@@ -42,8 +43,12 @@ final class StoredZipWriter
 
     private readonly int $dosDate;
 
-    public function __construct(string $path)
+    public function __construct(string $path, private readonly int $maxBytes = self::MAX_BYTES)
     {
+        if ($maxBytes < 1 || $maxBytes > self::MAX_BYTES) {
+            throw new InvalidArgumentException('An archive without ZIP64 holds between 1 byte and 4 GiB.');
+        }
+
         $handle = @fopen($path, 'w+b');
 
         if (! is_resource($handle)) {
@@ -93,7 +98,7 @@ final class StoredZipWriter
         self::assertName($name);
 
         if (count($this->entries) >= self::MAX_ENTRIES) {
-            throw new RuntimeException('The archive would hold more entries than a ZIP file without ZIP64 can.');
+            throw new ArchiveTooLarge('The archive would hold more entries than a ZIP file without ZIP64 can.');
         }
 
         $offset = $this->position();
@@ -128,7 +133,7 @@ final class StoredZipWriter
         $crc = (int) hexdec(hash_final($entry['hash']));
 
         if ($entry['size'] > self::MAX_BYTES) {
-            throw new RuntimeException("{$entry['name']} is larger than a ZIP file without ZIP64 can hold.");
+            throw new ArchiveTooLarge("{$entry['name']} is larger than a ZIP file without ZIP64 can hold.");
         }
 
         $end = $this->position();
@@ -221,8 +226,8 @@ final class StoredZipWriter
             $remaining = substr($remaining, $written);
         }
 
-        if ($this->position() > self::MAX_BYTES) {
-            throw new RuntimeException('The archive would be larger than a ZIP file without ZIP64 can hold.');
+        if ($this->position() > $this->maxBytes) {
+            throw new ArchiveTooLarge('The archive would be larger than its writer allows.');
         }
     }
 

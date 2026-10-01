@@ -97,8 +97,23 @@ class TicketAssigned extends Notification implements ShouldQueue
             'priority' => $this->ticket->priority,
             'site_name' => $this->ticket->site->name,
             'assigned_by_name' => $this->assignmentActorName(),
+            'assigned_by_type' => $this->assignmentActorType(),
             'url' => route('dashboard.tickets.show', $this->ticket, false),
         ];
+    }
+
+    /**
+     * Who assigned the ticket, as a kind rather than a name, read from an
+     * alert stored before alerts recorded it: the name is the integration's
+     * or Wayfindr's in exactly the shape assignmentActorName() writes it.
+     */
+    public static function actorTypeFromName(string $name): string
+    {
+        return match (true) {
+            $name === 'Wayfindr' => 'system',
+            str_starts_with($name, 'Integration “') && str_ends_with($name, '”') => 'integration',
+            default => 'agent',
+        };
     }
 
     private function assignmentActorName(): string
@@ -107,6 +122,15 @@ class TicketAssigned extends Notification implements ShouldQueue
             $this->assignedBy instanceof ApiToken => 'Integration “'.$this->assignedBy->name.'”',
             $this->assignedBy instanceof User => $this->assignedBy->name,
             default => 'Wayfindr',
+        };
+    }
+
+    private function assignmentActorType(): string
+    {
+        return match (true) {
+            $this->assignedBy instanceof ApiToken => 'integration',
+            $this->assignedBy instanceof User => 'agent',
+            default => 'system',
         };
     }
 }

@@ -9,6 +9,7 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\AutomationMacro;
 use App\Models\BreakGlassGrant;
@@ -22,8 +23,10 @@ use App\Models\ConversationMessageAttachment;
 use App\Models\ConversationReplyDelivery;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\TicketAssigned;
 use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorExporter;
+use App\Support\Visitors\VisitorFootprint;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -578,6 +581,55 @@ test('a history too large for one archive is refused before anything is written'
         ->post(route('dashboard.visitors.data-export', $f['visitor']))
         ->assertRedirect(route('dashboard.visitors.show', $f['visitor']))
         ->assertSessionHasErrors(['export' => __('visitor_export.errors.too_large')]);
+});
+
+test('a history whose text outgrows the archive is refused, and nothing is left behind', function (): void {
+    $f = exportFixture();
+    // Its files fit, so the refusal before writing lets it through, and the
+    // archive it needs is one byte more than it is allowed.
+    ConversationMessageAttachment::query()->where('conversation_id', $f['conversation']->id)->update(['size_bytes' => 1]);
+    $response = $this->actingAs($f['admin'])->post(route('dashboard.visitors.data-export', $f['visitor']))->assertOk();
+    $needed = (int) filesize($response->baseResponse->getFile()->getPathname());
+    @unlink($response->baseResponse->getFile()->getPathname());
+    $this->app->bind(VisitorExporter::class, fn ($app): VisitorExporter => new VisitorExporter($app->make(VisitorFootprint::class), $needed - 1));
+    $recorded = AuditEvent::query()->where('action', 'visitor.exported')->count();
+    $before = glob(sys_get_temp_dir().'/wayfindr-export-*') ?: [];
+
+    $this->actingAs($f['admin'])
+        ->post(route('dashboard.visitors.data-export', $f['visitor']))
+        ->assertRedirect(route('dashboard.visitors.show', $f['visitor']))
+        ->assertSessionHasErrors(['export' => __('visitor_export.errors.too_large')]);
+
+    expect(glob(sys_get_temp_dir().'/wayfindr-export-*') ?: [])->toBe($before, 'a refused export left its archive behind')
+        ->and(AuditEvent::query()->where('action', 'visitor.exported')->count())->toBe($recorded, 'a refused export was recorded as made');
+});
+
+test('a ticket alert says what kind of assigner it was, not that every one was an agent', function (): void {
+    $f = exportFixture();
+    $token = ApiToken::factory()->for($f['account'])->create(['name' => 'QZTOKENQZ']);
+    // An agent the name alone would mistake for routing: why alerts now
+    // record the kind.
+    $namesake = User::factory()->for($f['account'])->create(['name' => 'Wayfindr']);
+
+    foreach ([$token, null, $f['agent'], $namesake] as $assignedBy) {
+        $f['admin']->notify(new TicketAssigned($f['ticket'], $assignedBy));
+    }
+
+    // And as alerts stored before they recorded the kind did.
+    foreach (['Integration “QZTOKENQZ”', 'Wayfindr', $f['agent']->name] as $name) {
+        DB::table('notifications')->insert([
+            'id' => (string) Str::uuid(), 'type' => TicketAssigned::class,
+            'notifiable_type' => $f['admin']->getMorphClass(), 'notifiable_id' => $f['admin']->id,
+            'data' => json_encode(['kind' => 'ticket_assigned', 'ticket_id' => $f['ticket']->id, 'assigned_by_name' => $name]),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    $alerts = exportArchive($f['admin'], $f['visitor'])['alerts.json'];
+    $kinds = collect(json_decode($alerts, true)['alerts'])->pluck('data.assigned_by_name')->filter()->sort()->values()->all();
+
+    expect($kinds)->toBe(['agent', 'agent', 'agent', 'integration', 'integration', 'system', 'system'])
+        ->and(str_contains($alerts, 'QZTOKENQZ'))->toBeFalse('alerts.json names the integration that assigned the ticket');
 });
 
 test('the export reads under a shared lock on the site, taken before anything else', function (): void {
