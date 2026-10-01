@@ -1,13 +1,14 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 30, 2026. For an agent (or engineer) picking up
+*Living document — last updated October 1, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§21](#21-published-100--september-30-2026)** for
-the current release, then [§20](#20-797-closed--september-29-2026) for how its
-acceptance gate closed. Then §5 (conventions) and §7 (gotchas). Sections 8–19
-are dated snapshots, kept for their evidence rather than their currency.
+**Taking the baton? Start at [§22](#22-published-110--october-1-2026)** for
+the current release, then [§21](#21-published-100--september-30-2026) for 1.0.0
+and [§20](#20-797-closed--september-29-2026) for how its acceptance gate closed.
+Then §5 (conventions) and §7 (gotchas). Sections 8–21 are dated snapshots, kept
+for their evidence rather than their currency.
 
 ---
 
@@ -41,11 +42,11 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v1.0.0` published September 30 at tag
-`d6e5875e`, with the manifest and multi-architecture image at
-`sha256:47b697666e9bd7380cbbf39157d54a5a89b5e7071b0503cc22bf8c3aa27e222d`
-(§21). The previous release, `v0.11.0`, published September 29 at `2bb7d5e3`
-(§19). Current `main` begins `1.1.0-dev`.
+**Release truth comes first.** Public `v1.1.0` published October 1 at tag
+`9b634b23`, with the manifest and multi-architecture image at
+`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`
+(§22). The previous release, `v1.0.0`, published September 30 at `d6e5875e`
+(§21). Current `main` begins `1.2.0-dev`.
 
 The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
 direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
@@ -376,13 +377,13 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Use the published `v1.0.0` artifact as the release baseline.** The guarded
-   tag, public release, manifest, and image digest are verified (§21), and so
-   were `v0.11.0`'s (§19), `v0.10.0`'s (§17) and `v0.9.0`'s (§16); keep
-   hosted-runner proof distinct from the older `v0.3.2` bare-metal matrix and
-   `v0.7.0` cold sandbox run. Host-managed PHP upgrades from before `v0.9.0`
-   still owe that release's scoped runtime action, carried in `v1.0.0`'s
-   history; the published image is exempt. From 1.0.0 the number itself is the
+1. **Use the published `v1.1.0` artifact as the release baseline.** The guarded
+   tag, public release, manifest, and image digest are verified (§22), and so
+   were `v1.0.0`'s (§21), `v0.11.0`'s (§19), `v0.10.0`'s (§17) and `v0.9.0`'s
+   (§16); keep hosted-runner proof distinct from the older `v0.3.2` bare-metal
+   matrix and `v0.7.0` cold sandbox run. Host-managed PHP upgrades from before
+   `v0.9.0` still owe that release's scoped runtime action, carried in
+   `v1.1.0`'s history; the published image is exempt. From 1.0.0 the number itself is the
    operator-action signal (ADR 0012): anything that needs an operator's hands
    now means a new major.
 
@@ -398,8 +399,8 @@ Ordered by real dogfood value and dependency, not feature novelty.
    (§20), and the owner decided that was enough without a non-author upgrade.
    #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
 
-4. **Visitor erasure and export (ADR 0026).** All three deliveries are in
-   Unreleased. Delivery 1, erasing a contact:
+4. **Visitor erasure and export (ADR 0026).** All three deliveries shipped in
+   `v1.1.0` (§22). Delivery 1, erasing a contact:
    - `VisitorEraser`;
    - the `handle_data_requests` permission;
    - the `visitor_erasures` ledger;
@@ -1453,6 +1454,67 @@ contract measures against the commit, so nothing needed re-dating.
 **Not done by the release, and not implied by it:**
 - the Forge stage deploy;
 - the `northcoastmedia/wayfindr` fork sync;
+- the public site;
+- the published wiki mirror;
+- closing #994.
+
+## 22. Published 1.1.0 — October 1, 2026
+
+[`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0) is
+public at tag `9b634b23f65c767221331133e3ccd60c9c3ed5f9`, published by the
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
+on its second attempt. The image digest is
+`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`, and
+the `1.1` and `latest` aliases point at it. It needs no operator action. Five
+migrations run themselves.
+
+**It is ADR 0026.** Erasing a contact (#1092), erasures re-applied after a
+restore (#1093) and exporting everything held about a contact (#1094), with the
+ADR itself (#1091) and the release commit (#1095). A minor: it adds features
+and self-migrating schema, and nothing needs an operator's hands. The hourly
+`wayfindr:finish-erasures` runs on the existing scheduler, and the ledger's
+default path is inside the storage volume Compose stacks already persist.
+
+**The first tag push was refused, as it should be.** The owner pushed `v1.1.0`
+at 14:16, about four minutes before the exact-SHA `main` CI run
+([36874543165](https://github.com/adamgreenwell/wayfindr/actions/runs/36874543165))
+finished at 14:21. The workflow's "Verify full main CI for the release commit"
+step refused, and nothing was published. Re-running the failed jobs once CI had
+passed published the release. A tag pushed early is safe, but it costs a
+re-run, so wait for the agent to confirm that run before pushing. The refusal
+was meant to list the CI run it saw, and that listing crashed on a jq quoting
+error. #1096 fixed it, and the release contract test now runs that step's own
+script against a stand-in `gh`.
+
+**The public artifact then passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)
+and a [`v0.2.0 → v1.1.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36881550403).**
+Both:
+- ran all five new migrations;
+- passed the support loop, backup/restore and restart;
+- read `v1.1.0` from authenticated `/operator` after install and after restore.
+
+The upgrade resolved the published digest, and `1.1.0/backups-queue-consumer`
+retired itself. Its restore printed delivery 2's warning that the storage
+volume holds no erasure records. The clean install's first attempt stopped
+before installing anything: GitHub's releases API returned HTTP 403 to the
+installer's anonymous lookup from the shared runner, and the installer refused
+cleanly. The re-run passed.
+
+**The release PR came from `release/1.1.0`, with the owner's approval.** The
+session's designated branch still carried #1094's history, already
+squash-merged, and the session refuses a force push. A fresh branch is the
+non-destructive way through: after a squash merge, ask before reusing a branch
+name.
+
+**For the next release:**
+- `VERSION` is `1.2.0`, so source builds report `1.2.0-dev`.
+- `release.json` is unchanged: no actions, and the backups notice stands.
+- Anything that needs an operator's hands is a 2.0.0.
+
+**Not done by the release, and not implied by it:**
+- the Forge stage deploy (the owner synced the `northcoastmedia/wayfindr` fork
+  on October 1);
 - the public site;
 - the published wiki mirror;
 - closing #994.
