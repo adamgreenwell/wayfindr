@@ -461,6 +461,46 @@ test('a snapshot a concurrent change spoils is taken again', function (): void {
         ->and($entries)->toHaveKey('visitor.json');
 });
 
+test('a file an agent has not sent yet is not theirs to receive, but their own unsent upload is', function (): void {
+    $f = exportFixture();
+    $draft = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create([
+        'conversation_message_id' => null, 'original_filename' => 'QZDRAFTQZ.png',
+        'uploaded_by_type' => $f['agent']->getMorphClass(), 'uploaded_by_id' => $f['agent']->id,
+        'status' => ConversationMessageAttachment::STATUS_READY,
+    ]);
+    Storage::disk('attachments')->put($draft->storage_key, 'QZDRAFTQZ binary');
+    $own = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create([
+        'conversation_message_id' => null, 'original_filename' => 'mine.png', 'status' => ConversationMessageAttachment::STATUS_READY,
+    ]);
+    Storage::disk('attachments')->put($own->storage_key, 'their own');
+
+    $entries = exportArchive($f['admin'], $f['visitor']);
+
+    foreach ($entries as $name => $contents) {
+        expect(str_contains($name.$contents, 'QZDRAFTQZ'))->toBeFalse("{$name} holds a file an agent has not sent");
+    }
+
+    expect($entries["attachments/{$own->id}-mine.png"] ?? null)->toBe('their own');
+});
+
+test('a saved search that cannot be tied to the person is not handed to them', function (): void {
+    $f = exportFixture();
+    // From before runs recorded what they selected, and it skipped an item:
+    // erasure clears its search to be safe, but it may be about anyone.
+    DB::table('conversation_bulk_action_runs')->insert([
+        'account_id' => $f['account']->id, 'triggered_by_user_id' => $f['admin']->id, 'action' => 'close',
+        'item_count' => 2, 'changed_count' => 1, 'item_ids' => null,
+        'changes' => json_encode([['conversation_id' => $f['kept']->id, 'before' => ['status' => 'open'], 'after' => ['status' => 'closed']]]),
+        'return_query' => json_encode(['conversation_search' => 'QZLEGACYQZ someone else']),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $entries = exportArchive($f['admin'], $f['visitor']);
+
+    $this->assertStringNotContainsString('QZLEGACYQZ', $entries['incidental.json'], 'a search that may be about someone else was handed to the person');
+    expect($entries['incidental.json'])->toContain('robin '.VisitorHistory::MARKER);
+});
+
 test('a contact erased while the export was being read is not exported', function (): void {
     $f = exportFixture();
     $erased = false;

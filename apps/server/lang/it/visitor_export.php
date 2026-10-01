@@ -39,6 +39,7 @@ return [
             'le email già inviate;',
             'ciò che il fornitore IA ha conservato;',
             'ciò che le integrazioni API hanno già recuperato;',
+            'i file caricati da un agente per una risposta non ancora inviata;',
             'i log, il testo dei job non riusciti che non la nomina direttamente e l’infrastruttura del gestore.',
         ],
         'counts_heading' => 'Quanto contiene',

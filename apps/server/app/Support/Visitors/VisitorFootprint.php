@@ -192,17 +192,19 @@ final class VisitorFootprint
     }
 
     /**
-     * Bulk-action runs whose saved queue search found the person (§4): what
-     * the agent typed to find the work, which may be their name or email. A
-     * run found them if it selected one of their items, changed or not:
-     * `item_ids` lists the selection, `changes` only what changed. A run
+     * Bulk-action runs whose saved queue search may have found the person
+     * (§4): what the agent typed to find the work, which may be their name or
+     * email. A run found them if it selected one of their items, changed or
+     * not: `item_ids` lists the selection, `changes` only what changed. A run
      * from before `item_ids` cannot say what it skipped, so one that skipped
-     * anything counts too. The runs name their items only inside JSON, read
+     * anything may have found them too, and is marked as not attributed:
+     * erasure clears it to be safe, and export, which would hand it to the
+     * person, leaves it out. The runs name their items only inside JSON, read
      * in PHP like the notifications.
      *
      * @param  list<int>  $conversationIds
      * @param  list<int>  $ticketIds
-     * @return list<array{table: string, id: int, search_key: string, return_query: array<string, mixed>}>
+     * @return list<array{table: string, id: int, search_key: string, return_query: array<string, mixed>, attributed: bool}>
      */
     public function bulkRunsSelecting(int $accountId, array $conversationIds, array $ticketIds): array
     {
@@ -232,14 +234,13 @@ final class VisitorFootprint
                         }
 
                         $items = $run->item_ids === null ? null : json_decode((string) $run->item_ids, true);
-                        $touched = collect($changes)->contains(
+                        $attributed = collect($changes)->contains(
                             fn (mixed $change): bool => isset($selected[(int) data_get($change, $itemKey)]),
-                        ) || (is_array($items)
-                            ? collect($items)->contains(fn (mixed $id): bool => isset($selected[(int) $id]))
-                            : (int) $run->item_count > (int) $run->changed_count);
+                        ) || (is_array($items) && collect($items)->contains(fn (mixed $id): bool => isset($selected[(int) $id])));
+                        $unknowable = ! is_array($items) && (int) $run->item_count > (int) $run->changed_count;
 
-                        if ($touched) {
-                            $found[] = ['table' => $table, 'id' => (int) $run->id, 'search_key' => $searchKey, 'return_query' => $query];
+                        if ($attributed || $unknowable) {
+                            $found[] = ['table' => $table, 'id' => (int) $run->id, 'search_key' => $searchKey, 'return_query' => $query, 'attributed' => $attributed];
                         }
                     }
                 });

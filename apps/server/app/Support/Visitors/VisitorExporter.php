@@ -371,7 +371,7 @@ final class VisitorExporter
         $zip = new StoredZipWriter($path);
 
         try {
-            [$files, $pruned, $withheld] = $this->writeAttachments($zip, $scope);
+            [$files, $pruned, $withheld] = $this->writeAttachments($zip, $visitor, $scope);
             $counts = [
                 ...$this->writeVisitor($zip, $visitor),
                 ...$this->writeConversations($zip, $visitor, $scope, $files),
@@ -426,7 +426,7 @@ final class VisitorExporter
      * @param  array{attachment_ids: list<int>}  $scope
      * @return array{0: array<int, string>, 1: array<int, string>, 2: array<int, string>}
      */
-    private function writeAttachments(StoredZipWriter $zip, array $scope): array
+    private function writeAttachments(StoredZipWriter $zip, Visitor $visitor, array $scope): array
     {
         $files = [];
         $pruned = [];
@@ -434,6 +434,10 @@ final class VisitorExporter
 
         foreach (array_chunk($scope['attachment_ids'], 500) as $chunk) {
             foreach (ConversationMessageAttachment::query()->whereIn('id', $chunk)->orderBy('id')->get() as $attachment) {
+                if (! self::belongsToThem($attachment, $visitor)) {
+                    continue;
+                }
+
                 $name = 'attachments/'.$attachment->id.'-'.self::safeName((string) $attachment->original_filename, 'file');
 
                 if (! $attachment->isReady()) {
@@ -516,11 +520,11 @@ final class VisitorExporter
 
                         return [...$row, 'sender' => $this->role($message->sender_type, $message->sender_id, $visitorId)];
                     }),
-                    'attachments' => $this->rows(ConversationMessageAttachment::query()->where('conversation_id', $id), 'conversation_message_attachments', fn (ConversationMessageAttachment $attachment, array $row): array => [
+                    'attachments' => $this->rows(ConversationMessageAttachment::query()->where('conversation_id', $id), 'conversation_message_attachments', fn (ConversationMessageAttachment $attachment, array $row): ?array => self::belongsToThem($attachment, $visitor) ? [
                         ...$row,
                         'uploaded_by' => $this->role($attachment->uploaded_by_type, $attachment->uploaded_by_id, $visitorId),
                         'file' => $files[(int) $attachment->id] ?? null,
-                    ]),
+                    ] : null),
                     'reply_deliveries' => $this->rows(
                         ConversationReplyDelivery::query()->whereIn('conversation_message_id', ConversationMessage::query()->select('id')->where('conversation_id', $id)),
                         'conversation_reply_deliveries',
@@ -686,7 +690,12 @@ final class VisitorExporter
     {
         $accountId = (int) $site->account_id;
         $webhooks = $this->footprint->webhookDeliveryIdsWithResponse((int) $site->id, $scope['support_codes'], $scope['ticket_ids']);
-        $runs = $this->footprint->bulkRunsSelecting($accountId, $scope['conversation_ids'], $scope['ticket_ids']);
+        // Only runs that provably selected their work: an older run that
+        // cannot say whom it found may hold a search about someone else.
+        $runs = array_values(array_filter(
+            $this->footprint->bulkRunsSelecting($accountId, $scope['conversation_ids'], $scope['ticket_ids']),
+            fn (array $run): bool => $run['attributed'],
+        ));
         $jobs = $this->footprint->failedJobsNaming($this->footprint->installWideIdentifiers($visitor, $scope['support_codes']));
 
         // The runs on their conversations go with them; those on their
@@ -886,16 +895,21 @@ final class VisitorExporter
     }
 
     /**
+     * A decorator adds to a row, or returns null to leave it out.
+     *
      * @param  Builder<covariant Model>  $query
-     * @param  (callable(Model, array<string, mixed>): array<string, mixed>)|null  $decorate
+     * @param  (callable(Model, array<string, mixed>): ?array<string, mixed>)|null  $decorate
      * @return iterable<array<string, mixed>>
      */
     private function rows(Builder $query, string $table, ?callable $decorate = null): iterable
     {
         foreach ($query->lazyById(500) as $model) {
             $row = $this->row($table, $model);
+            $row = $decorate === null ? $row : $decorate($model, $row);
 
-            yield $decorate === null ? $row : $decorate($model, $row);
+            if ($row !== null) {
+                yield $row;
+            }
         }
     }
 
@@ -1021,6 +1035,17 @@ final class VisitorExporter
     private function requestedBy(Model $model, array $row): array
     {
         return [...$row, 'requested_by' => $this->userRole($model->getAttribute('requested_by_id'))];
+    }
+
+    /**
+     * A file that is part of their conversation: sent with a message, or
+     * their own upload not sent yet. An agent's upload not yet sent is a
+     * draft of a reply, which the download path shows to nobody but its
+     * uploader, so it is not theirs to receive.
+     */
+    private static function belongsToThem(ConversationMessageAttachment $attachment, Visitor $visitor): bool
+    {
+        return $attachment->isBound() || $attachment->wasUploadedBy($visitor);
     }
 
     /** Who acted, by role: the person themselves, or which kind of user. */

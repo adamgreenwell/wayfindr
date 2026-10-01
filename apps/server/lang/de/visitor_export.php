@@ -39,6 +39,7 @@ return [
             'bereits versendete E-Mails;',
             'was der KI-Anbieter gespeichert hat;',
             'was API-Integrationen bereits abgerufen haben;',
+            'Dateien, die ein Agent für eine noch nicht gesendete Antwort hochgeladen hat;',
             'Logs, Text fehlgeschlagener Jobs, der die Person nicht direkt nennt, und die Infrastruktur des Betreibers.',
         ],
         'counts_heading' => 'Wie viel enthalten ist',

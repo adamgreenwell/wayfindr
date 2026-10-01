@@ -38,6 +38,7 @@ return [
             'mail already sent;',
             'what the AI provider kept;',
             'what API integrations already fetched;',
+            'files an agent uploaded to a reply that has not been sent;',
             'logs, failed-job text that does not name them directly, and the operator’s infrastructure.',
         ],
         'counts_heading' => 'How much is included',

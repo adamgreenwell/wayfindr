@@ -335,9 +335,12 @@ test('a restore from before an erasure erases the person again, and their files'
         ->expectsOutputToContain('Erasures re-applied: 1 contact(s), from 1 of the 1 erasure(s) in the ledger.')
         ->assertSuccessful();
 
+    // Not ->not->toContain() with a message: it is variadic, so the message
+    // becomes a second needle and the negation always passes.
+    $this->assertStringNotContainsString('Robin', (string) $f['ticket']->fresh()->subject, 'the restored ticket kept the person\'s words');
+
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('the restore brought the person back for good')
         ->and(Conversation::query()->whereKey($f['conversation']->id)->exists())->toBeFalse()
-        ->and($f['ticket']->fresh()->subject)->not->toContain('Robin', 'the restored ticket kept the person\'s words')
         ->and(Storage::disk('attachments')->exists($f['attachment']->storage_key))->toBeFalse('the restored file of an erased person is still on disk')
         ->and(VisitorErasure::query()->where('public_id', $receipt)->count())->toBe(1, 'the ledger row did not come back under its receipt')
         ->and(AuditEvent::query()->where('action', 'visitor.erasure_reapplied')->sole()->metadata['receipt'])->toBe($receipt)

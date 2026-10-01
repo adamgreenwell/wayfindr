@@ -139,6 +139,8 @@ one contact's whole history:
 | `attachments/` | The files themselves |
 | `README.txt` | What is included, what is not, counts, any file removed before it could be read, and any file withheld because the malware scanner holds it or it never finished uploading |
 
+A file an agent has uploaded to a reply but not yet sent is not included, and
+neither is a saved bulk-action search that cannot be tied to this contact.
 Agents, platform operators and integrations are named by role, not by name or
 ID, including inside audit metadata, alerts and cobrowse records: their identity
 is data about them, and the operator adds it where their law requires naming
