@@ -397,7 +397,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
 
 3. **1.0.0 shipped (§21).** #797 closed with a human non-author's install
    (§20), and the owner decided that was enough without a non-author upgrade.
-   #994, the 1.0.0 scope issue, is still open: closing it is the owner's call.
+   #994, the 1.0.0 scope issue, closed on October 1; its
+   [closing comment](https://github.com/adamgreenwell/wayfindr/issues/994#issuecomment-5937119179)
+   records how each part of its scope was met.
 
 4. **Visitor erasure and export (ADR 0026).** All three deliveries shipped in
    `v1.1.0` (§22). Delivery 1, erasing a contact:
@@ -1517,4 +1519,4 @@ name.
   on October 1);
 - the public site;
 - the published wiki mirror;
-- closing #994.
+- closing #994, which the owner did later the same day.
