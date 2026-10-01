@@ -506,7 +506,8 @@ final class ErasureLedger
             ->all();
     }
 
-    private function databaseCanAnswer(): bool
+    /** Whether this database has the ledger table: an archive may predate it. */
+    public function databaseCanAnswer(): bool
     {
         try {
             return Schema::hasTable('visitor_erasures');

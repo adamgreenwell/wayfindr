@@ -570,6 +570,42 @@ test('a finished restore lets recovery run, though the worker that ran it lives 
     expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse('a finished restore kept recovery locked out');
 });
 
+test('the scheduled run settles nothing while a restore is under way', function (): void {
+    $f = ledgerFixture();
+    $restoring = app(ErasureReapplier::class);
+    $restoring->beforeRestore();
+    // An erasure that wrote its entry and then rolled back: no row, and
+    // with the gate up a settlement would keep it as done.
+    $receipt = (string) Str::uuid();
+    app(ErasureLedger::class)->writePending(ErasureLedger::entry(
+        $receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], null, now()->toIso8601ZuluString(), [],
+    ));
+
+    $this->artisan('wayfindr:finish-erasures')
+        ->expectsOutputToContain('A restore is under way.')
+        ->assertSuccessful();
+
+    expect(ledgerFiles('.pending.json'))->toBe([$receipt.'.pending.json'], 'the scheduled run settled an entry inside a restore that was under way');
+
+    $restoring->abandon();
+    $restoring->finishRestore();
+});
+
+test('the scheduled run removes files listed on the volume while the database predates the ledger table', function (): void {
+    $f = ledgerFixture();
+    $receipt = (string) Str::uuid();
+    app(ErasureLedger::class)->record(ErasureLedger::entry(
+        $receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], null, now()->toIso8601ZuluString(),
+        [['disk' => 'attachments', 'key' => 'erased/older-archive.png']],
+    ));
+    Storage::disk('attachments')->put('erased/older-archive.png', 'binary');
+    Schema::drop('visitor_erasures');
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(Storage::disk('attachments')->exists('erased/older-archive.png'))->toBeFalse('the scheduled run stopped at a database older than the ledger table');
+});
+
 test('an erasure the database cannot answer for stays pending when the load fails', function (): void {
     $f = ledgerFixture();
     $receipt = (string) Str::uuid();

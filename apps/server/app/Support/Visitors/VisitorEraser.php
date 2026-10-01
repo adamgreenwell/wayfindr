@@ -435,7 +435,10 @@ final class VisitorEraser
     public function removePendingFiles(string $receiptId): int
     {
         $entry = $this->ledger->find($receiptId);
-        $row = VisitorErasure::query()->where('public_id', $receiptId)->first(['id', 'pending_files']);
+        // A restored archive may predate the ledger table; the volume still
+        // lists what to remove.
+        $hasTable = $this->ledger->databaseCanAnswer();
+        $row = $hasTable ? VisitorErasure::query()->where('public_id', $receiptId)->first(['id', 'pending_files']) : null;
         $removed = [];
         $remaining = 0;
 
@@ -469,11 +472,13 @@ final class VisitorEraser
             $this->ledger->updatePendingFiles($receiptId, $kept);
         }
 
-        DB::transaction(function () use ($receiptId, $kept): void {
-            $row = VisitorErasure::query()->where('public_id', $receiptId)->lockForUpdate()->first();
-            $left = $kept($row?->pending_files ?? []);
-            $row?->forceFill(['pending_files' => $left === [] ? null : $left])->save();
-        });
+        if ($hasTable) {
+            DB::transaction(function () use ($receiptId, $kept): void {
+                $row = VisitorErasure::query()->where('public_id', $receiptId)->lockForUpdate()->first();
+                $left = $kept($row?->pending_files ?? []);
+                $row?->forceFill(['pending_files' => $left === [] ? null : $left])->save();
+            });
+        }
 
         return $remaining;
     }

@@ -27,6 +27,24 @@ class FinishErasuresCommand extends Command
 
     public function handle(ErasureLedger $ledger, ErasureReapplier $erasures, VisitorEraser $eraser): int
     {
+        $exitCode = self::SUCCESS;
+
+        // All of it outside any restore: one under way settles its own
+        // erasures, may not have loaded anything yet, and anything settled
+        // meanwhile would be read from the database it is replacing.
+        $ran = $erasures->duringRecovery(function () use ($ledger, $erasures, $eraser, &$exitCode): void {
+            $exitCode = $this->finish($ledger, $erasures, $eraser);
+        });
+
+        if (! $ran) {
+            $this->line('A restore is under way. It settles its own erasures, and the next run picks up anything it leaves.');
+        }
+
+        return $exitCode;
+    }
+
+    private function finish(ErasureLedger $ledger, ErasureReapplier $erasures, VisitorEraser $eraser): int
+    {
         $failed = false;
 
         // Settled first: a failed erasure's list of binaries names files that
@@ -96,7 +114,8 @@ class FinishErasuresCommand extends Command
         $receipts = collect($ledger->committed())
             ->filter(fn (array $entry): bool => ErasureLedger::files($entry['pending_files'] ?? []) !== [])
             ->pluck('receipt')
-            ->merge(VisitorErasure::query()->whereNotNull('pending_files')->pluck('public_id'))
+            // An archive that predates the ledger table has none to read yet.
+            ->merge($ledger->databaseCanAnswer() ? VisitorErasure::query()->whereNotNull('pending_files')->pluck('public_id') : [])
             ->map(fn (mixed $receipt): string => (string) $receipt)
             ->unique()
             ->values();

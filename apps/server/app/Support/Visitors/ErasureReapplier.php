@@ -30,6 +30,9 @@ final class ErasureReapplier
     /** @var resource|null The restore lock, while this restore is under way. */
     private $restoreLock = null;
 
+    /** @var resource|null The restore lock, while recovery holds it. */
+    private $recoveryLock = null;
+
     public function __construct(
         private readonly ErasureLedger $ledger,
         private readonly VisitorEraser $eraser,
@@ -196,26 +199,52 @@ final class ErasureReapplier
             return null;
         }
 
-        // A restore under way settles its own erasures, and may not have
-        // loaded anything yet: re-applying now would find nobody to erase
-        // and lift its gate.
-        $lock = $this->ledger->lockRestore(wait: false);
+        $result = null;
 
-        if ($lock === null) {
-            return null;
-        }
-
-        try {
+        $this->duringRecovery(function () use (&$result): void {
             if (! $this->ledger->reapplyOutstanding() || ! $this->schemaIsCurrent()) {
-                return null;
+                return;
             }
 
             $this->ledger->reconcile();
+            $result = $this->reapplyAll();
+        });
 
-            return $this->reapplyAll();
+        return $result;
+    }
+
+    /**
+     * Run ledger work outside any restore: settling, backfilling,
+     * re-applying, removing files. A restore under way settles its own
+     * erasures and may not have loaded anything yet, so work done meanwhile
+     * would read the wrong database: it is skipped, and false returned. The
+     * restore lock is held throughout, so no restore starts meanwhile
+     * either. Calls made from inside $work run inside the same hold.
+     */
+    public function duringRecovery(callable $work): bool
+    {
+        if (is_resource($this->recoveryLock)) {
+            $work();
+
+            return true;
+        }
+
+        $lock = $this->ledger->lockRestore(wait: false);
+
+        if ($lock === null) {
+            return false;
+        }
+
+        $this->recoveryLock = $lock;
+
+        try {
+            $work();
         } finally {
             $this->ledger->unlockRestore($lock);
+            $this->recoveryLock = null;
         }
+
+        return true;
     }
 
     /**
