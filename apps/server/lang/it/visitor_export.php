@@ -30,7 +30,7 @@ return [
             'break_glass.json: gli accessi del gestore della piattaforma ai suoi dati, con la motivazione.',
             'attachments/: i file condivisi nelle sue conversazioni.',
         ],
-        'roles' => 'Le persone sono indicate per ruolo, non per nome: «visitor» è la persona stessa, mentre «agent», «platform operator», «integration» e «system» indicano chi altro ha agito. L’identità del personale coinvolto è un dato che riguarda il personale stesso; l’installazione la aggiunge dove la legge richiede di indicare chi ha visto i dati.',
+        'roles' => 'Le persone sono indicate per ruolo, non per nome: «visitor» è la persona stessa, mentre «agent», «platform operator», «integration» e «system» indicano chi altro ha agito, oppure «unknown» dove un record meno recente non consente di stabilirlo. L’identità del personale coinvolto è un dato che riguarda il personale stesso; l’installazione la aggiunge dove la legge richiede di indicare chi ha visto i dati.',
         'review' => 'Il gestore dell’installazione verifica questo archivio prima di inviarlo e può rimuovere tutto ciò che la normativa applicabile gli consente di trattenere.',
         'not_reached_heading' => 'Cosa questo archivio non può contenere',
         'not_reached' => [

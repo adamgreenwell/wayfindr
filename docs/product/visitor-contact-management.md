@@ -146,7 +146,8 @@ when it names one of their support codes, not only their email address.
 Agents, platform operators and integrations are named by role, not by name or
 ID, including inside audit metadata, alerts and cobrowse records: their identity
 is data about them, and the operator adds it where their law requires naming
-who saw the data. Contact notes are included, so review the archive before
+who saw the data. A ticket alert stored before this release that cannot tell an
+agent from Wayfindr's routing or an integration says "unknown". Contact notes are included, so review the archive before
 sending it and remove anything your law lets you withhold.
 
 Every file describes one moment. The export reads in one repeatable-read

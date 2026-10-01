@@ -30,7 +30,7 @@ return [
             'break_glass.json: Zugriffe des Plattformbetreibers auf die Daten der Person, mit Begründung.',
             'attachments/: die in den Unterhaltungen geteilten Dateien.',
         ],
-        'roles' => 'Personen werden mit ihrer Rolle genannt, nicht mit Namen: „visitor“ ist die Person selbst, und „agent“, „platform operator“, „integration“ und „system“ geben an, wer sonst gehandelt hat. Wer von den Mitarbeitenden beteiligt war, ist eine Angabe über diese Mitarbeitenden; die Installation ergänzt sie, wo das Recht verlangt, zu nennen, wer die Daten gesehen hat.',
+        'roles' => 'Personen werden mit ihrer Rolle genannt, nicht mit Namen: „visitor“ ist die Person selbst, und „agent“, „platform operator“, „integration“ und „system“ geben an, wer sonst gehandelt hat, oder „unknown“, wo ein älterer Eintrag das nicht erkennen lässt. Wer von den Mitarbeitenden beteiligt war, ist eine Angabe über diese Mitarbeitenden; die Installation ergänzt sie, wo das Recht verlangt, zu nennen, wer die Daten gesehen hat.',
         'review' => 'Der Betreiber der Installation prüft dieses Archiv vor dem Versand und darf alles entfernen, was nach geltendem Recht zurückgehalten werden darf.',
         'not_reached_heading' => 'Was dieses Archiv nicht enthalten kann',
         'not_reached' => [

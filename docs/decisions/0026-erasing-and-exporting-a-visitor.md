@@ -365,7 +365,12 @@ Delivery 3 settled these details:
   out, and fails, until someone decides. Columns and metadata keys that name a
   user are replaced by a role: `visitor`, `agent`, `platform operator`,
   `integration` or `system`. `VisitorExporter::IDENTITY_KEYS` lists the keys,
-  and a test holds it to every identity-shaped key the code writes. A key with
+  and a test holds it to every identity-shaped key the code writes. Where the
+  same object records the kind of user as `<prefix>_type`, that is the role:
+  ticket alerts record `assigned_by_type` from this delivery on. An older
+  alert has only the assigner's name, and a name in Wayfindr's or an
+  integration's shape is one an agent can also have, so it says `unknown`
+  rather than guess. A key with
   no role to put in its place is left out instead: `VisitorExporter::OMITTED_KEYS`
   drops a conversation's `agent_typing`, which agents are typing, keyed by
   their user IDs and naming them, and left behind by an agent who disconnects

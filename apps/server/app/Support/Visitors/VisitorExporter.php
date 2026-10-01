@@ -1063,8 +1063,8 @@ final class VisitorExporter
 
     /**
      * A ticket alert stored before alerts recorded who assigned the ticket as
-     * a kind names an integration or Wayfindr in its assigner's place, which
-     * is not an agent: the kind is read back from that name.
+     * a kind has only the assigner's name, and Wayfindr's or an integration's
+     * is not an agent's: the kind is what that name can prove.
      */
     private static function assignedByKind(DatabaseNotification $notification, mixed $data): mixed
     {

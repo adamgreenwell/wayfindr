@@ -607,7 +607,7 @@ test('a history whose text outgrows the archive is refused, and nothing is left 
 test('a ticket alert says what kind of assigner it was, not that every one was an agent', function (): void {
     $f = exportFixture();
     $token = ApiToken::factory()->for($f['account'])->create(['name' => 'QZTOKENQZ']);
-    // An agent the name alone would mistake for routing: why alerts now
+    // An agent the name alone cannot tell from routing: why alerts now
     // record the kind.
     $namesake = User::factory()->for($f['account'])->create(['name' => 'Wayfindr']);
 
@@ -615,7 +615,8 @@ test('a ticket alert says what kind of assigner it was, not that every one was a
         $f['admin']->notify(new TicketAssigned($f['ticket'], $assignedBy));
     }
 
-    // And as alerts stored before they recorded the kind did.
+    // And as alerts stored before they recorded the kind did: only a name
+    // that is not Wayfindr's or an integration's shape says what it was.
     foreach (['Integration “QZTOKENQZ”', 'Wayfindr', $f['agent']->name] as $name) {
         DB::table('notifications')->insert([
             'id' => (string) Str::uuid(), 'type' => TicketAssigned::class,
@@ -625,11 +626,13 @@ test('a ticket alert says what kind of assigner it was, not that every one was a
         ]);
     }
 
-    $alerts = exportArchive($f['admin'], $f['visitor'])['alerts.json'];
+    $entries = exportArchive($f['admin'], $f['visitor']);
+    $alerts = $entries['alerts.json'];
     $kinds = collect(json_decode($alerts, true)['alerts'])->pluck('data.assigned_by_name')->filter()->sort()->values()->all();
 
-    expect($kinds)->toBe(['agent', 'agent', 'agent', 'integration', 'integration', 'system', 'system'])
-        ->and(str_contains($alerts, 'QZTOKENQZ'))->toBeFalse('alerts.json names the integration that assigned the ticket');
+    expect($kinds)->toBe(['agent', 'agent', 'agent', 'integration', 'system', 'unknown', 'unknown'])
+        ->and(str_contains($alerts, 'QZTOKENQZ'))->toBeFalse('alerts.json names the integration that assigned the ticket')
+        ->and($entries['README.txt'])->toContain('“unknown”');
 });
 
 test('the export reads under a shared lock on the site, taken before anything else', function (): void {

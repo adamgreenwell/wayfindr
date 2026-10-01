@@ -29,7 +29,7 @@ return [
             'break_glass.json: access to their data by the platform operator, and why.',
             'attachments/: the files shared in their conversations.',
         ],
-        'roles' => 'People are named by role, not by name: “visitor” is the person themselves, and “agent”, “platform operator”, “integration” and “system” say who else acted. The identity of the staff involved is data about them; the installation adds it where the law requires naming who saw the data.',
+        'roles' => 'People are named by role, not by name: “visitor” is the person themselves, and “agent”, “platform operator”, “integration” and “system” say who else acted, or “unknown” where an older record cannot tell which. The identity of the staff involved is data about them; the installation adds it where the law requires naming who saw the data.',
         'review' => 'The installation’s operator reviews this archive before sending it, and may remove anything their law lets them withhold.',
         'not_reached_heading' => 'What this archive cannot include',
         'not_reached' => [

@@ -103,17 +103,17 @@ class TicketAssigned extends Notification implements ShouldQueue
     }
 
     /**
-     * Who assigned the ticket, as a kind rather than a name, read from an
-     * alert stored before alerts recorded it: the name is the integration's
-     * or Wayfindr's in exactly the shape assignmentActorName() writes it.
+     * Who assigned the ticket, as a kind rather than a name, for an alert
+     * stored before alerts recorded it, as far as the name can prove it. A
+     * name in the shape assignmentActorName() gives Wayfindr or an
+     * integration is one an agent can also have, so it says "unknown"; any
+     * other name is only ever an agent's.
      */
     public static function actorTypeFromName(string $name): string
     {
-        return match (true) {
-            $name === 'Wayfindr' => 'system',
-            str_starts_with($name, 'Integration “') && str_ends_with($name, '”') => 'integration',
-            default => 'agent',
-        };
+        return $name === 'Wayfindr' || (str_starts_with($name, 'Integration “') && str_ends_with($name, '”'))
+            ? 'unknown'
+            : 'agent';
     }
 
     private function assignmentActorName(): string
