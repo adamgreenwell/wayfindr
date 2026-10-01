@@ -935,8 +935,11 @@ final class VisitorExporter
         foreach (array_chunk($ids, 500) as $chunk) {
             foreach ((clone $query)->whereIn('id', $chunk)->orderBy('id')->get() as $model) {
                 $row = $this->row($table, $model);
+                $row = $decorate === null ? $row : $decorate($model, $row);
 
-                yield $decorate === null ? $row : $decorate($model, $row);
+                if ($row !== null) {
+                    yield $row;
+                }
             }
         }
     }

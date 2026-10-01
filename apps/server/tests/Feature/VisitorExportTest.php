@@ -502,8 +502,11 @@ test('a file an agent has not sent yet is not theirs to receive, but their own u
         expect(str_contains($name.$contents, 'QZDRAFTQZ'))->toBeFalse("{$name} holds a file an agent has not sent");
     }
 
+    $events = json_decode($entries['audit.json'], true)['events'];
+
     expect($entries["attachments/{$own->id}-mine.png"] ?? null)->toBe('their own')
-        ->and($entries['audit.json'])->toContain('their-own-rejected.exe');
+        ->and($entries['audit.json'])->toContain('their-own-rejected.exe')
+        ->and(array_filter($events, fn (mixed $event): bool => ! is_array($event)))->toBe([], 'audit.json lists a left-out event as a null');
 });
 
 test('a failed job that names them only by an email address another contact can share is not exported', function (): void {
