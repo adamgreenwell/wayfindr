@@ -2595,14 +2595,16 @@
            fields left on them touched, sat under a second rule, and the
            first one rode 18px above the rest, the only one without a
            field's top margin. Fields get real gaps and one shared top
-           line, and the grid keeps a field's spacing from what precedes it. */
+           line, and the grid keeps a field's spacing from anything visible
+           before it. A POST form's token and method inputs come first but
+           draw nothing, so they do not count. */
         .meta-grid:has(> .field) {
             gap: 18px 16px;
             border-top: 0;
             background: none;
         }
 
-        .meta-grid:has(> .field):not(:first-child) {
+        :not(input[type="hidden"]) ~ .meta-grid:has(> .field) {
             margin-top: 18px;
         }
 
