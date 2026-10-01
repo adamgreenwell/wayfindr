@@ -31,6 +31,7 @@ use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorIdentityMerger;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -756,6 +757,30 @@ test('a ledger inside an attachment disk is refused before anything is erased or
         ->assertFailed();
 
     expect($loaded)->toBeFalse('the restore replaced the database with its ledger inside a disk it purges');
+});
+
+test('the orphan sweep leaves a ledger inside an attachment disk alone, and says so', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    // The operator moves the ledger under the attachment disk's root, past
+    // the orphan sweep's grace period, where no attachment row names it.
+    $root = sys_get_temp_dir().'/wf-attachments-root-'.bin2hex(random_bytes(6));
+    mkdir($root, 0700, true);
+    rename(ledgerPath(), $root.'/erasure-ledger');
+    config()->set('filesystems.disks.attachments.root', $root);
+    config()->set('wayfindr.erasure.ledger_path', $root.'/erasure-ledger');
+    Storage::forgetDisk('attachments');
+    touch($root."/erasure-ledger/{$receipt}.json", now()->subDay()->getTimestamp());
+
+    try {
+        $exitCode = Artisan::call('wayfindr:sweep-orphaned-attachments');
+
+        expect(is_file($root."/erasure-ledger/{$receipt}.json"))->toBeTrue('the orphan sweep deleted the erasure ledger')
+            ->and($exitCode)->not->toBe(0)
+            ->and(Artisan::output())->toContain('is inside the attachment disk [attachments]');
+    } finally {
+        exec('rm -rf '.escapeshellarg($root));
+    }
 });
 
 test('an unreadable ledger entry nothing can repair keeps the restore from reporting success', function (): void {

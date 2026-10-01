@@ -500,9 +500,10 @@ So copy `storage/app/erasure-ledger/` wherever your archives go, and put it
 back in place on the new volume **before** restoring. An older copy is still
 useful: it covers every erasure up to when it was taken. Set
 `WAYFINDR_ERASURE_LEDGER_PATH` to keep the ledger somewhere else on persistent
-storage, outside attachment storage: backups copy the attachment disks and a
-restore purges them, so Wayfindr refuses to erase, or to restore, with the
-ledger inside one.
+storage, outside attachment storage: backups copy the attachment disks, a
+restore purges them, and the hourly orphan sweep deletes any file there that no
+attachment names. So Wayfindr refuses to erase or to restore with the ledger
+inside one, and the sweep stops before deleting orphaned files and says why.
 
 If a ledger file is damaged, a restore reports it by name, exits non-zero, and
 keeps re-application outstanding. Put the file back from a copy, then run
