@@ -412,7 +412,11 @@ Ordered by real dogfood value and dependency, not feature novelty.
      ends of a restore;
    - `ErasureReapplier`, which `RestoreService` calls to move the visitor ID
      sequence and erase again;
-   - `ReapplyErasuresAfterMigrating`, for an archive older than the code.
+   - `ReapplyErasuresAfterMigrating`, for an archive whose schema differs
+     from the code;
+   - `RefuseServingWhileErasuresAreOutstanding`, a global 503 (except `/up`)
+     while the ledger marks re-application outstanding, like the ADR 0013
+     release gate beside it.
 
    `VisitorErasureRestoreTest` restores a stand-in archive that brings the
    person back. Every test gets its own ledger directory from

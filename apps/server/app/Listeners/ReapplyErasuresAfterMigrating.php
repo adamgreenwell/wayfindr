@@ -51,6 +51,10 @@ class ReapplyErasuresAfterMigrating
             $result['entries'],
         ));
 
+        if ($result['unverifiable'] !== []) {
+            $event->output->writeln('<comment>These erasures name restored contacts but were recorded without their site\'s key, so they were left as they are. Check each by its receipt: '.implode(', ', $result['unverifiable']).'</comment>');
+        }
+
         if ($result['failed'] !== null) {
             $event->output->writeln('<error>Some erasures could not be re-applied yet: '.$result['failed'].' Keep the app in maintenance mode and run php artisan wayfindr:finish-erasures.</error>');
         }

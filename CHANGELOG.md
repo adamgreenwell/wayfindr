@@ -30,10 +30,10 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull and restart. Three migrations run
-themselves: they add the erasure ledger table and a table of alert emails on
-their way to the mail server, and let each bulk-action run record every item
-it selected.
+**No operator action required.** Pull and restart. Four migrations run
+themselves: they add the erasure ledger table, with each erased contact's site
+key, and a table of alert emails on their way to the mail server, and let each
+bulk-action run record every item it selected.
 
 ### Added
 
@@ -74,8 +74,10 @@ it selected.
   and one from a newer release once that release is deployed. The console
   restore keeps the site in maintenance mode until then. If
   erasing again fails, the restore says so and exits with an error, and the
-  next migrate or scheduled run tries again. Keep that directory alongside
-  your backups: a restore onto a new storage volume cannot re-apply erasures
+  next migrate or scheduled run tries again. Until erasures are re-applied,
+  Wayfindr answers every request except its health check with a 503 that
+  says so, however the deploy treats maintenance mode. Keep that directory
+  alongside your backups: a restore onto a new storage volume cannot re-apply erasures
   made after its archive was taken, and warns that it cannot.
   `WAYFINDR_ERASURE_LEDGER_PATH` moves the directory.
 

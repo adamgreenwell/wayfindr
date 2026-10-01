@@ -150,7 +150,7 @@ class RestoreService
      *     restored_disks: list<string>,
      *     unconfigured_disks: list<string>,
      *     integrity: array{verified: int, dangling: list<array{id: int, disk: string, key: string}>, external: array<string, int>},
-     *     erasures: array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null},
+     *     erasures: array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>},
      * }
      */
     public function restore(string $archivePath, bool $force = false): array
@@ -274,6 +274,7 @@ class RestoreService
                     'visitors' => 0,
                     'deferred' => false,
                     'failed' => $exception->getMessage(),
+                    'unverifiable' => [],
                 ];
             }
 

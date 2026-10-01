@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * identifiers, the actor, counts and a receipt reference. Never a name,
  * email, browser ID or any of the content that was erased.
  */
-#[Fillable(['public_id', 'account_id', 'site_id', 'erased_visitor_id', 'merged_visitor_ids', 'actor_id', 'counts', 'pending_files', 'erased_at'])]
+#[Fillable(['public_id', 'account_id', 'site_id', 'site_public_key', 'erased_visitor_id', 'merged_visitor_ids', 'actor_id', 'counts', 'pending_files', 'erased_at'])]
 final class VisitorErasure extends Model
 {
     /** @return array<string, string> */

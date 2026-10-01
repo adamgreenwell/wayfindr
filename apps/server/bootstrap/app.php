@@ -20,6 +20,7 @@ use App\Console\Commands\TranslateCatalogueCommand;
 use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Http\Middleware\RefuseServingWhileErasuresAreOutstanding;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use App\Http\Middleware\RefuseUnreadableJson;
 use App\Http\Middleware\SerializeAgentBroadcastAuthorization;
@@ -89,6 +90,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // (ADR 0013). Appended globally rather than to a route group, because a
         // release that is not fit to serve is not fit to serve anything.
         $middleware->append(RefuseServingWithUnmetRequirements::class);
+
+        // And while a restore's erasures are not re-applied yet (ADR 0026 §8):
+        // the restored database holds contacts who asked to be erased.
+        $middleware->append(RefuseServingWhileErasuresAreOutstanding::class);
 
         // After the session is available, so there is an agent to read a
         // language preference from. Web only: the widget carries its own

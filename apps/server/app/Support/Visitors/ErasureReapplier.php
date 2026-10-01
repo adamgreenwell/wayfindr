@@ -83,7 +83,7 @@ final class ErasureReapplier
      * outstanding on the ledger until then, and the next scheduled
      * wayfindr:finish-erasures also tries.
      *
-     * @return array{entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null}
+     * @return array{entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null, unverifiable: list<string>}
      */
     public function afterRestore(): array
     {
@@ -99,6 +99,7 @@ final class ErasureReapplier
                 'visitors' => 0,
                 'deferred' => true,
                 'failed' => null,
+                'unverifiable' => [],
             ];
         }
 
@@ -109,7 +110,7 @@ final class ErasureReapplier
      * Re-application a restore left outstanding, once the schema has caught
      * up. Null when none is outstanding, or the schema is still behind.
      *
-     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}|null
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null, unverifiable: list<string>}|null
      */
     public function reapplyOutstanding(): ?array
     {
@@ -123,7 +124,7 @@ final class ErasureReapplier
     }
 
     /**
-     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null}
+     * @return array{entries: int, reapplied: int, visitors: int, failed: string|null, unverifiable: list<string>}
      */
     private function reapplyAll(): array
     {
@@ -148,8 +149,20 @@ final class ErasureReapplier
             );
         }
 
+        $unverifiable = [];
+
         foreach ($entries as $entry) {
             if (array_intersect(ErasureLedger::lineage($entry), $present) === []) {
+                continue;
+            }
+
+            // Recorded before entries kept their site's key, by a site since
+            // purged. Nothing can show the matching rows are this install's,
+            // so they are left, and named, rather than risk erasing someone
+            // else's contact.
+            if (! is_string($entry['site_public_key'] ?? null) || $entry['site_public_key'] === '') {
+                $unverifiable[] = (string) $entry['receipt'];
+
                 continue;
             }
 
@@ -179,6 +192,7 @@ final class ErasureReapplier
             'reapplied' => $reapplied,
             'visitors' => $visitors,
             'failed' => $failures === [] ? null : implode(' ', $failures),
+            'unverifiable' => $unverifiable,
         ];
     }
 

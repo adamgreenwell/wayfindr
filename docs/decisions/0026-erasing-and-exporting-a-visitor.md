@@ -430,9 +430,12 @@ predates it, so later backups carry it, and writes a `visitor.erasure_reapplied`
 audit event with counts only.
 
 Delivery 2 settled four details:
-- **The entry also records the site's public key**, and re-application
-  requires the restored site to match it as well as the ID. An archive from
-  another installation can hold a site, and visitors, under the same IDs.
+- **The entry also records the site's public key**, and re-application finds
+  the restored site by it, and by the ID when there is one. An archive from
+  another installation can hold a site, and visitors, under the same IDs. The
+  ledger row keeps the key too, since a purged site nulls its `site_id`. An
+  entry with no key cannot prove its site: it is not re-applied, and the
+  restore names it.
 - **Re-application runs only for a restore.** The restore records on the
   volume that it is outstanding, before the load, and clears that once it
   succeeds. Nothing else starts it, so an ID reused by a dump loaded some
@@ -449,6 +452,12 @@ Delivery 2 settled four details:
 - **A failure is reported as its own thing.** The restore says the people
   erased since the archive may be back, exits non-zero, and leaves
   re-application outstanding for the next run.
+- **Nothing is served while re-application is outstanding.** A deploy cannot
+  be trusted to hold maintenance mode: a standard Forge deploy restores the
+  site when `migrate` fails, and the container's migration loop crash-loops on
+  a failure that is not transient. So, like the release gate of ADR 0013,
+  the app answers every request but its health check with a 503 until the
+  ledger records the work as done.
 
 A restore onto a **fresh** volume, such as disaster recovery onto new hardware,
 has no ledger directory. Restore then warns that erasures recorded after the

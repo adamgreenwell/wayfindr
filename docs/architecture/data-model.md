@@ -58,9 +58,11 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   to the person who asked, and the storage keys of any attachment binaries
   not yet removed. Those keys are written inside the erasure's transaction,
   so a crash after the commit cannot lose them. Never a name, email or
-  anything that was erased. Each row also exists as a file under
-  `storage/app/erasure-ledger/` on the storage volume, with the site's public
-  key and without the counts. Backups do not carry that directory, so a
+  anything that was erased. It keeps the site's public key as well as its
+  ID, because purging the site nulls the ID and a restore needs the key to
+  tell this install's site from another's. Each row also exists as a file
+  under `storage/app/erasure-ledger/` on the storage volume, without the
+  counts. Backups do not carry that directory, so a
   restore can erase again anyone its archive predates (ADR 0026 §8), and puts
   a missing row back under its receipt when it does.
 - `alert_mail_sends`: agent alert mail between its last check before SMTP and

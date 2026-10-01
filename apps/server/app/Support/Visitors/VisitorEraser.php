@@ -227,6 +227,7 @@ final class VisitorEraser
                     'public_id' => $receiptId,
                     'account_id' => $accountId,
                     'site_id' => $site->id,
+                    'site_public_key' => $site->public_key,
                     'erased_visitor_id' => $erased['visitor_id'],
                     'merged_visitor_ids' => $erased['merged_ids'],
                     'actor_id' => $actor->id,
@@ -317,7 +318,7 @@ final class VisitorEraser
         }
 
         $reapplied = DB::transaction(function () use ($entry, $receiptId, $lineage): ?array {
-            $site = $this->siteOf($entry, $lineage);
+            $site = $this->siteOf($entry);
 
             if ($site === null) {
                 return null;
@@ -361,6 +362,7 @@ final class VisitorEraser
                     'public_id' => $receiptId,
                     'account_id' => $accountId,
                     'site_id' => $site->id,
+                    'site_public_key' => $site->public_key,
                     'erased_visitor_id' => (int) $entry['erased_visitor_id'],
                     'merged_visitor_ids' => array_values(array_diff($lineage, [(int) $entry['erased_visitor_id']])),
                     // The agent who erased may postdate the restored database.
@@ -479,32 +481,28 @@ final class VisitorEraser
     /**
      * The site an entry's visitors are on, when it is this install's. An
      * archive from another install can hold a site, and visitors, under the
-     * same IDs, so the site's public key has to match too. An entry recorded
-     * from a ledger row after its site was purged has neither, and is held to
-     * its account instead.
+     * same IDs, so the site is found by its public key, which is random per
+     * site, and must also have the recorded ID when there is one. An entry
+     * that records no key cannot prove its site, and is never re-applied:
+     * erasing someone else's contact is the worse mistake.
      *
      * @param  array<string, mixed>  $entry
-     * @param  list<int>  $lineage
      */
-    private function siteOf(array $entry, array $lineage): ?Site
+    private function siteOf(array $entry): ?Site
     {
-        $accountId = (int) ($entry['account_id'] ?? 0);
-        $siteId = is_int($entry['site_id'] ?? null)
-            ? $entry['site_id']
-            : Visitor::query()
-                ->whereIn('id', $lineage)
-                ->whereIn('site_id', Site::query()->select('id')->where('account_id', $accountId))
-                ->value('site_id');
+        $key = $entry['site_public_key'] ?? null;
 
-        $site = $siteId === null ? null : Site::query()->find($siteId);
-
-        if ($site === null) {
+        if (! is_string($key) || $key === '') {
             return null;
         }
 
-        $key = $entry['site_public_key'] ?? null;
+        $site = Site::query()->where('public_key', $key)->first();
 
-        return (is_string($key) ? $site->public_key === $key : (int) $site->account_id === $accountId) ? $site : null;
+        if ($site === null || (is_int($entry['site_id'] ?? null) && (int) $site->id !== $entry['site_id'])) {
+            return null;
+        }
+
+        return $site;
     }
 
     /**

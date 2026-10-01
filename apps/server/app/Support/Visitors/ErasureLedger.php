@@ -334,15 +334,25 @@ final class ErasureLedger
             ->each(function (VisitorErasure $erasure) use (&$written): void {
                 $receipt = (string) $erasure->public_id;
 
-                // A committed file that cannot be read is repaired from the
-                // row, which says the same thing.
-                if (is_file($this->pendingPath($receipt))
-                    || (is_file($this->committedPath($receipt)) && $this->read($this->committedPath($receipt), $receipt) !== null)) {
+                $pending = $this->pendingPath($receipt);
+                $committed = $this->committedPath($receipt);
+
+                // A readable pending entry is reconciliation's to settle.
+                if (is_file($pending) && $this->read($pending, $receipt) !== null) {
                     return;
                 }
 
-                $this->record(self::entryFor($erasure));
-                $written++;
+                // A file that cannot be read, pending or committed, is
+                // repaired from the row, which says the same thing; the row
+                // exists only because the erasure committed.
+                if (! is_file($committed) || $this->read($committed, $receipt) === null) {
+                    $this->record(self::entryFor($erasure));
+                    $written++;
+                }
+
+                if (is_file($pending) && ! @unlink($pending)) {
+                    throw new RuntimeException("Could not remove the damaged entry {$pending}, which {$receipt}.json replaces.");
+                }
             });
 
         if (! $this->exists()) {
@@ -385,10 +395,15 @@ final class ErasureLedger
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * The entry a ledger row describes. The row keeps its site's public key
+     * itself, since its site may have been purged since.
+     *
+     * @return array<string, mixed>
+     */
     public static function entryFor(VisitorErasure $erasure): array
     {
-        return self::entry(
+        $entry = self::entry(
             (string) $erasure->public_id,
             (int) $erasure->account_id,
             $erasure->site,
@@ -398,6 +413,12 @@ final class ErasureLedger
             $erasure->erased_at?->toIso8601ZuluString() ?? gmdate('Y-m-d\TH:i:s\Z'),
             self::files($erasure->pending_files ?? []),
         );
+
+        if (is_string($erasure->site_public_key) && $erasure->site_public_key !== '') {
+            $entry['site_public_key'] = $erasure->site_public_key;
+        }
+
+        return $entry;
     }
 
     /**

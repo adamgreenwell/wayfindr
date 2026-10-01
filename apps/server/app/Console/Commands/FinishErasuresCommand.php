@@ -63,6 +63,10 @@ class FinishErasuresCommand extends Command
             if ($reapplied !== null) {
                 $this->line("Erasures re-applied after a restore: {$reapplied['visitors']} contact(s).");
 
+                if ($reapplied['unverifiable'] !== []) {
+                    $this->warn('These erasures name restored contacts but were recorded without their site\'s key, so they were left as they are. Check each by its receipt: '.implode(', ', $reapplied['unverifiable']));
+                }
+
                 if ($reapplied['failed'] !== null) {
                     $this->error('Some erasures could not be re-applied yet, and the next run tries again: '.$reapplied['failed']);
                     $failed = true;

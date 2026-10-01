@@ -461,9 +461,16 @@ The console restore keeps the site in maintenance mode until then.
 
 If erasing again **fails**, the people erased since the archive was taken may
 be back. The restore says so, and the command exits non-zero. The next
-`migrate` or hourly scheduled run tries again. Keep the app in maintenance mode,
-fix the cause the message names, then run
-`php artisan wayfindr:finish-erasures` yourself and read its output.
+`migrate` or hourly scheduled run tries again. Fix the cause the message names,
+then run `php artisan wayfindr:finish-erasures` yourself and read its output.
+
+**Until erasures are re-applied, Wayfindr does not serve them.** From the start
+of a restore until its erasures are done, every request except the `/up`
+health check gets a 503 saying a restore's erasures are outstanding. That holds
+whether or not maintenance mode is on, and whatever a deploy does with it. The
+health check still answers, so the container is not restarted on a loop. It
+lifts by itself once `migrate`, the scheduled run or your own
+`wayfindr:finish-erasures` has re-applied everything.
 
 **Keep the ledger alongside your backups.** A restore onto a **new** storage
 volume, such as disaster recovery onto new hardware, has no ledger to read.

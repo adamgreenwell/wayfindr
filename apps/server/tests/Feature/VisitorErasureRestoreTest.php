@@ -594,6 +594,76 @@ test('an archive from a newer release waits for that release', function (): void
         ->and(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue();
 });
 
+test('nothing is served while a restore\'s erasures are outstanding, except the health check', function (): void {
+    $this->get('/up')->assertOk();
+    expect($this->get('/login')->status())->not->toBe(503);
+
+    app(ErasureLedger::class)->markReapplyOutstanding();
+
+    $this->get('/login')
+        ->assertStatus(503)
+        ->assertSee('contacts erased since it was taken have not been erased again', false);
+    $this->get('/up')->assertOk();
+
+    app(ErasureLedger::class)->clearReapplyOutstanding();
+
+    expect($this->get('/login')->status())->not->toBe(503, 'the site stayed down after the erasures were re-applied');
+});
+
+test('an erasure whose site was purged is re-applied by the site\'s key', function (): void {
+    $f = ledgerFixture();
+    $archived = archivedRows(['visitors' => [(int) $f['visitor']->id]]);
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    // As a site purge leaves the row, and with the volume's copy lost.
+    DB::table('visitor_erasures')->where('public_id', $receipt)->update(['site_id' => null]);
+    exec('rm -rf '.escapeshellarg(ledgerPath()));
+
+    restoreArchive(fn () => putArchivedRowsBack($archived))
+        ->expectsOutputToContain('Erasures re-applied: 1 contact(s)')
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeFalse();
+});
+
+test('an erasure that cannot prove its site is never re-applied, and is named', function (): void {
+    $f = ledgerFixture();
+    $receipt = (string) Str::uuid();
+    $entry = ErasureLedger::entry($receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], null, now()->toIso8601ZuluString(), []);
+    $entry['site_public_key'] = null;
+    app(ErasureLedger::class)->record($entry);
+    app(ErasureLedger::class)->markReapplyOutstanding();
+
+    $this->artisan('wayfindr:finish-erasures')
+        ->expectsOutputToContain("recorded without their site's key, so they were left as they are. Check each by its receipt: {$receipt}")
+        ->assertSuccessful();
+
+    expect(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue('a contact was erased on an ID match alone')
+        ->and(app(VisitorEraser::class)->reapply($entry))->toBe(0, 're-applying an entry with no site key erased by ID alone')
+        ->and(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue();
+});
+
+test('ledger rows written before the site key was kept get it from their site', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    $migration = require database_path('migrations/2026_10_01_090000_add_site_public_key_to_visitor_erasures.php');
+    $migration->down();
+    $migration->up();
+
+    expect(VisitorErasure::query()->where('public_id', $receipt)->value('site_public_key'))->toBe($f['site']->public_key, 'an existing row was left without its site\'s key');
+});
+
+test('a damaged pending entry whose erasure committed is rebuilt from its row', function (): void {
+    $f = ledgerFixture();
+    $receipt = app(VisitorEraser::class)->erase($f['admin'], $f['visitor'])->public_id;
+    rename(ledgerPath()."/{$receipt}.json", ledgerPath()."/{$receipt}.pending.json");
+    file_put_contents(ledgerPath()."/{$receipt}.pending.json", '{"receipt": ');
+
+    $this->artisan('wayfindr:finish-erasures')->assertSuccessful();
+
+    expect(ledgerFiles('.pending.json'))->toBe([], 'a damaged pending entry was left to block every restore')
+        ->and(app(ErasureLedger::class)->find($receipt))->toMatchArray(['erased_visitor_id' => (int) $f['visitor']->id]);
+});
+
 test('the in-app restore keeps the site down until erasures are re-applied', function (array $erasures, bool $down, string $message): void {
     config()->set('app.maintenance.driver', 'cache');
     config()->set('app.maintenance.store', 'array');
