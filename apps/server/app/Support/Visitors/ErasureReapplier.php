@@ -276,6 +276,19 @@ final class ErasureReapplier
             );
         }
 
+        // One still pending is an erasure reconciliation could not settle:
+        // the database would not answer, or its site stayed locked. It may be
+        // one this restore undid, so it holds the work open too, and the next
+        // run settles it.
+        $unsettled = array_map(fn (array $entry): string => (string) ($entry['receipt'] ?? ''), $this->ledger->pending());
+
+        if ($unsettled !== []) {
+            $failures[] = sprintf(
+                'These erasures could not be settled yet: %s. The next run of php artisan wayfindr:finish-erasures tries again.',
+                implode(', ', $unsettled),
+            );
+        }
+
         $unverifiable = [];
 
         foreach ($entries as $entry) {

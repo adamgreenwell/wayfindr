@@ -30,6 +30,7 @@ use App\Support\Visitors\ErasureReapplier;
 use App\Support\Visitors\VisitorEraser;
 use App\Support\Visitors\VisitorIdentityMerger;
 use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -757,6 +758,29 @@ test('a ledger inside an attachment disk is refused before anything is erased or
         ->assertFailed();
 
     expect($loaded)->toBeFalse('the restore replaced the database with its ledger inside a disk it purges');
+});
+
+test('an erasure recovery cannot settle keeps a restore\'s re-application outstanding', function (): void {
+    $f = ledgerFixture();
+    // A restore loaded and stopped short, leaving an entry its erasure never
+    // got to settle, for a contact the archive brought back.
+    $receipt = (string) Str::uuid();
+    app(ErasureLedger::class)->writePending(ErasureLedger::entry(
+        $receipt, (int) $f['account']->id, $f['site'], (int) $f['visitor']->id, [], (int) $f['admin']->id, now()->toIso8601ZuluString(), [],
+    ));
+    app(ErasureLedger::class)->markReapplyOutstanding();
+    // Settling it fails: the database will not say whether it committed.
+    DB::listen(function (QueryExecuted $query): void {
+        if (str_contains($query->sql, 'visitor_erasures') && str_contains($query->sql, 'exists')) {
+            throw new RuntimeException('lock timeout');
+        }
+    });
+
+    $this->artisan('wayfindr:finish-erasures')->run();
+
+    expect(app(ErasureLedger::class)->reapplyOutstanding())->toBeTrue('an erasure nobody could settle was treated as done')
+        ->and(ledgerFiles('.pending.json'))->toBe([$receipt.'.pending.json'])
+        ->and(Visitor::query()->whereKey($f['visitor']->id)->exists())->toBeTrue();
 });
 
 test('the orphan sweep leaves a ledger inside an attachment disk alone, and says so', function (): void {

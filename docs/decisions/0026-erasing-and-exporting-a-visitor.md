@@ -469,7 +469,9 @@ Delivery 2 settled these details:
   discarded: the restored database cannot answer for it. The same holds for
   every reconciliation while a restore's re-application is outstanding, so a
   restore that fails after its load and before that step leaves nothing for
-  a later run, or a later restore, to discard.
+  a later run, or a later restore, to discard. An entry no run can settle
+  yet, because the database will not answer, holds the work open as a
+  failure until one can.
 - **Nothing is served while re-application is outstanding.** A deploy cannot
   be trusted to hold maintenance mode: a standard Forge deploy restores the
   site when `migrate` fails, and the container's migration loop crash-loops on
