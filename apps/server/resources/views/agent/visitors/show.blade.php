@@ -56,8 +56,23 @@
                 </div>
             @endif
         </div>
+    </section>
 
-        @if ($canViewConversations || $canManageTickets)
+    @if ($canViewConversations || $canManageTickets)
+    <section class="section" aria-labelledby="visitor-history-heading">
+        <div class="section-header">
+            <h2 id="visitor-history-heading">{{ __('visitors.history.heading') }}</h2>
+            <span class="lede">
+                @if ($canViewConversations)
+                    {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
+                @endif
+                @if ($canViewConversations && $canManageTickets) · @endif
+                @if ($canManageTickets)
+                    {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                @endif
+            </span>
+        </div>
+
         <div class="section-header">
             <strong>{{ __('visitors.snapshot.heading') }}</strong>
             <span class="readiness-status" data-status="{{ $supportSnapshot['tone'] }}">
@@ -93,10 +108,80 @@
                 @endif
             </div>
         </div>
+
+        @if ($canViewConversations)
+        <div class="section-header">
+            <strong>{{ __('visitors.history.conversations') }}</strong>
+            <span class="lede">{{ trans_choice('visitors.counts.shown_conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}</span>
+        </div>
+
+        @if ($conversations->isEmpty())
+            <div class="empty empty-state">
+                <strong>{{ __('visitors.history.no_conversations_heading') }}</strong>
+                {{ __('visitors.history.no_conversations_body') }}
+            </div>
+        @else
+            <div class="timeline-list">
+                @foreach ($conversations as $conversation)
+                    <article class="timeline-item">
+                        <div class="timeline-content">
+                            <a class="text-link" @if ($conversation->subject) lang="" @endif href="{{ route('dashboard.conversations.show', $conversation->support_code) }}">
+                                {{ $conversation->subject ?? __('visitors.history.untitled_conversation') }}
+                            </a>
+                            <div class="timeline-meta">
+                                <span lang="">{{ $conversation->support_code }}</span>
+                                <span>{{ __('conversations.detail.statuses.'.$conversation->status) }}</span>
+                                <span>{{ __('visitors.history.owner') }}: @if ($conversation->assignedAgent)<span lang="">{{ $conversation->assignedAgent->name }}</span>@else{{ __('visitors.history.unassigned') }}@endif</span>
+                                <span>{{ __('visitors.history.last_activity', ['elapsed' => $conversation->last_message_at?->diffForHumans() ?? $conversation->created_at->diffForHumans()]) }}</span>
+                            </div>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        @endif
         @endif
 
+        @if ($canManageTickets)
         <div class="section-header">
-            <strong>{{ __('visitors.references.heading') }}</strong>
+            <strong>{{ __('visitors.history.tickets') }}</strong>
+            <span class="lede">{{ trans_choice('visitors.counts.shown_tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
+        </div>
+
+        @if ($tickets->isEmpty())
+            <div class="empty empty-state">
+                <strong>{{ __('visitors.history.no_tickets_heading') }}</strong>
+                {{ __('visitors.history.no_tickets_body') }}
+            </div>
+        @else
+            <div class="timeline-list">
+                @foreach ($tickets as $ticket)
+                    <article class="timeline-item">
+                        <div class="timeline-content">
+                            <a class="text-link" lang="" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                {{ $ticket->subject }}
+                            </a>
+                            <div class="timeline-meta">
+                                <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
+                                <span>{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
+                                <span>{{ __('tickets.priorities.'.$ticket->priority) }}</span>
+                                <span>{{ __('visitors.history.owner') }}: @if ($ticket->assignee)<span lang="">{{ $ticket->assignee->name }}</span>@else{{ __('visitors.history.unassigned') }}@endif</span>
+                                @if ($canViewConversations && $ticket->conversation)
+                                    <span>{{ __('visitors.history.support_code') }}: <span lang="">{{ $ticket->conversation->support_code }}</span></span>
+                                @endif
+                                <span>{{ __('visitors.history.updated', ['elapsed' => $ticket->updated_at->diffForHumans()]) }}</span>
+                            </div>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        @endif
+        @endif
+    </section>
+    @endif
+
+    <section class="section" aria-labelledby="visitor-references-heading">
+        <div class="section-header">
+            <h2 id="visitor-references-heading">{{ __('visitors.references.heading') }}</h2>
             <span class="lede">{{ __('visitors.references.lede') }}</span>
         </div>
 
@@ -366,91 +451,6 @@
                     @endforeach
                 </div>
             @endif
-        @endif
-    </section>
-    @endif
-
-    @if ($canViewConversations || $canManageTickets)
-    <section class="section" aria-labelledby="visitor-history-heading">
-        <div class="section-header">
-            <h2 id="visitor-history-heading">{{ __('visitors.history.heading') }}</h2>
-            <span class="lede">
-                @if ($canViewConversations)
-                    {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
-                @endif
-                @if ($canViewConversations && $canManageTickets) · @endif
-                @if ($canManageTickets)
-                    {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
-                @endif
-            </span>
-        </div>
-
-        @if ($canViewConversations)
-        <div class="section-header">
-            <strong>{{ __('visitors.history.conversations') }}</strong>
-            <span class="lede">{{ trans_choice('visitors.counts.shown_conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}</span>
-        </div>
-
-        @if ($conversations->isEmpty())
-            <div class="empty empty-state">
-                <strong>{{ __('visitors.history.no_conversations_heading') }}</strong>
-                {{ __('visitors.history.no_conversations_body') }}
-            </div>
-        @else
-            <div class="timeline-list">
-                @foreach ($conversations as $conversation)
-                    <article class="timeline-item">
-                        <div class="timeline-content">
-                            <a class="text-link" @if ($conversation->subject) lang="" @endif href="{{ route('dashboard.conversations.show', $conversation->support_code) }}">
-                                {{ $conversation->subject ?? __('visitors.history.untitled_conversation') }}
-                            </a>
-                            <div class="timeline-meta">
-                                <span lang="">{{ $conversation->support_code }}</span>
-                                <span>{{ __('conversations.detail.statuses.'.$conversation->status) }}</span>
-                                <span>{{ __('visitors.history.owner') }}: @if ($conversation->assignedAgent)<span lang="">{{ $conversation->assignedAgent->name }}</span>@else{{ __('visitors.history.unassigned') }}@endif</span>
-                                <span>{{ __('visitors.history.last_activity', ['elapsed' => $conversation->last_message_at?->diffForHumans() ?? $conversation->created_at->diffForHumans()]) }}</span>
-                            </div>
-                        </div>
-                    </article>
-                @endforeach
-            </div>
-        @endif
-        @endif
-
-        @if ($canManageTickets)
-        <div class="section-header">
-            <strong>{{ __('visitors.history.tickets') }}</strong>
-            <span class="lede">{{ trans_choice('visitors.counts.shown_tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
-        </div>
-
-        @if ($tickets->isEmpty())
-            <div class="empty empty-state">
-                <strong>{{ __('visitors.history.no_tickets_heading') }}</strong>
-                {{ __('visitors.history.no_tickets_body') }}
-            </div>
-        @else
-            <div class="timeline-list">
-                @foreach ($tickets as $ticket)
-                    <article class="timeline-item">
-                        <div class="timeline-content">
-                            <a class="text-link" lang="" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                {{ $ticket->subject }}
-                            </a>
-                            <div class="timeline-meta">
-                                <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
-                                <span>{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
-                                <span>{{ __('tickets.priorities.'.$ticket->priority) }}</span>
-                                <span>{{ __('visitors.history.owner') }}: @if ($ticket->assignee)<span lang="">{{ $ticket->assignee->name }}</span>@else{{ __('visitors.history.unassigned') }}@endif</span>
-                                @if ($canViewConversations && $ticket->conversation)
-                                    <span>{{ __('visitors.history.support_code') }}: <span lang="">{{ $ticket->conversation->support_code }}</span></span>
-                                @endif
-                                <span>{{ __('visitors.history.updated', ['elapsed' => $ticket->updated_at->diffForHumans()]) }}</span>
-                            </div>
-                        </div>
-                    </article>
-                @endforeach
-            </div>
-        @endif
         @endif
     </section>
     @endif

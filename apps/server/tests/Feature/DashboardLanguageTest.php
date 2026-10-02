@@ -779,7 +779,7 @@ test('the sites directory and new-site form follow the agent language without cl
         'last page URL' => '//span[normalize-space(text())="https://hilfe.example/datenpunkt"]',
         'assigned agent name' => '//span[normalize-space(text())="Ada Datenpunkt"]',
         'search value' => '//input[@id="site_search"]',
-        'search filter chip value' => '//span[contains(@class, "filter-chip")]//span[normalize-space(text())="Datenpunkt"]',
+        'search filter chip value' => '//a[contains(@class, "filter-chip")]//span[normalize-space(text())="Datenpunkt"]',
     ] as $label => $query) {
         $node = $xpath->query($query)->item(0);
 

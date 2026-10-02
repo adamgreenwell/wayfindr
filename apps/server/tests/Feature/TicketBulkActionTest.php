@@ -30,7 +30,7 @@ test('the ticket queue exposes accessible multi-selection and an exact no-write 
     $second = Ticket::factory()->for($account)->for($site)->create(['subject' => 'Second request']);
     $second->labels()->attach($label);
 
-    $this->actingAs($agent)
+    $queue = $this->actingAs($agent)
         ->get(route('dashboard.tickets.index'))
         ->assertOk()
         ->assertSee('data-ticket-bulk-form', false)
@@ -38,6 +38,20 @@ test('the ticket queue exposes accessible multi-selection and an exact no-write 
         ->assertSee('name="ticket_ids[]"', false)
         ->assertSee('aria-label="Select ticket: First request"', false)
         ->assertSee('Review changes');
+
+    // Responsive presentation must share the interaction targets: a second
+    // hidden checkbox would double the bulk count and selected ticket IDs.
+    $document = new DOMDocument;
+    @$document->loadHTML((string) $queue->getContent());
+    $xpath = new DOMXPath($document);
+
+    expect($xpath->query('//input[@data-ticket-select-all]')->length)->toBe(1)
+        ->and($xpath->query('//input[@data-ticket-select]')->length)->toBe(2)
+        ->and($xpath->query('//a[@data-agent-shortcut-open]')->length)->toBe(2);
+
+    foreach ([$first, $second] as $ticket) {
+        expect($xpath->query('//input[@data-ticket-select and @value="'.$ticket->id.'"]')->length)->toBe(1);
+    }
 
     $response = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
         'ticket_ids' => [$first->id, $second->id],

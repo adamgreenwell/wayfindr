@@ -2011,10 +2011,6 @@ class AgentSiteController extends Controller
         return [$actor, $site];
     }
 
-    /**
-     * @param  Collection<int, Site>  $sites
-     * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
-     */
     private function siteMatchesStateFilter(Site $site, string $state): bool
     {
         return match ($state) {
@@ -2024,6 +2020,10 @@ class AgentSiteController extends Controller
         };
     }
 
+    /**
+     * @param  Collection<int, Site>  $sites
+     * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool, href: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
+     */
     private function filteredSites(Collection $sites, Request $request, bool $canViewSupportWork): array
     {
         $stateOptions = [
@@ -2072,12 +2072,14 @@ class AgentSiteController extends Controller
             ->filter(fn (Site $site): bool => $this->siteMatchesInstallFilter($site, $install))
             ->values();
         $activeFilters = [];
+        $filterValues = compact('search', 'workload', 'install', 'state');
 
         if ($search !== '') {
             $activeFilters[] = [
                 'label' => __('sites.index.filters.search'),
                 'value' => $search,
                 'value_is_authored' => true,
+                'href' => $this->siteFilterUrl($filterValues, ['search' => '']),
             ];
         }
 
@@ -2086,6 +2088,7 @@ class AgentSiteController extends Controller
                 'label' => __('sites.index.filters.workload'),
                 'value' => $workloadOptions[$workload],
                 'value_is_authored' => false,
+                'href' => $this->siteFilterUrl($filterValues, ['workload' => 'all']),
             ];
         }
 
@@ -2094,6 +2097,7 @@ class AgentSiteController extends Controller
                 'label' => __('sites.index.filters.install'),
                 'value' => $installOptions[$install],
                 'value_is_authored' => false,
+                'href' => $this->siteFilterUrl($filterValues, ['install' => 'all']),
             ];
         }
 
@@ -2104,6 +2108,7 @@ class AgentSiteController extends Controller
                 'label' => __('sites.index.filters.state'),
                 'value' => $stateOptions[$state],
                 'value_is_authored' => false,
+                'href' => $this->siteFilterUrl($filterValues, ['state' => 'active']),
             ];
         }
 
@@ -2209,7 +2214,7 @@ class AgentSiteController extends Controller
     }
 
     /**
-     * @param  array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
+     * @param  array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool, href: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
      * @return array{heading: array{key: string, parameters: array<string, string>}, detail: string, actions: list<array{label: string, url: string}>}
      */
     private function siteEmptyState(array $siteFilters, bool $canCreateSite): array
@@ -2453,8 +2458,8 @@ class AgentSiteController extends Controller
     }
 
     /**
-     * @param  array{search: string, workload: string, install: string}  $siteFilters
-     * @param  array{search?: string, workload?: string, install?: string}  $overrides
+     * @param  array{search: string, workload: string, install: string, state: string}  $siteFilters
+     * @param  array{search?: string, workload?: string, install?: string, state?: string}  $overrides
      */
     private function siteFilterUrl(array $siteFilters, array $overrides = []): string
     {

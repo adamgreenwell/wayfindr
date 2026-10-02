@@ -79,6 +79,13 @@ return [
         'count' => '{1} :count sezione|[2,*] :count sezioni',
         'aria' => 'Sezioni dei dettagli del sito',
         'jump' => 'Vai a',
+        'groups' => [
+            'site' => 'Sito e installazione',
+            'support' => 'Assistenza e instradamento',
+            'widget' => 'Finestra di chat',
+            'privacy' => 'Visitatori e privacy',
+            'lifecycle' => 'Ciclo di vita del sito',
+        ],
         'sections' => [
             'site' => 'Sito',
             'snippet' => 'Snippet di installazione',

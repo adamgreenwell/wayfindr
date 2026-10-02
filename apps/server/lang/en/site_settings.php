@@ -78,6 +78,13 @@ return [
         'count' => '{1} :count section|[2,*] :count sections',
         'aria' => 'Site detail sections',
         'jump' => 'Jump to',
+        'groups' => [
+            'site' => 'Site and install',
+            'support' => 'Support and routing',
+            'widget' => 'Widget',
+            'privacy' => 'Visitors and privacy',
+            'lifecycle' => 'Site lifecycle',
+        ],
         'sections' => [
             'site' => 'Site',
             'snippet' => 'Install snippet',
