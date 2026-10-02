@@ -214,11 +214,47 @@ test('directory readers without contact management cannot make a bulk export', f
         ->get(route('dashboard.visitors.index'))
         ->assertOk()
         ->assertSee('Visible Contact')
-        ->assertDontSee('Export CSV');
+        ->assertDontSee('Export CSV')
+        ->assertDontSee('Export boundary');
 
     $this->actingAs($agent)
         ->get(route('dashboard.visitors.export'))
         ->assertForbidden();
+});
+
+test('collapsed export guidance keeps invalid filter feedback visible and associated with its control', function (): void {
+    $w = visitorIndexWorld();
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'seats',
+        'label' => 'Seat count',
+        'type' => VisitorAttributeType::Number,
+    ]);
+
+    $html = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'seats',
+            'attribute_value' => 'many',
+        ]))
+        ->assertOk()
+        ->assertDontSee(route('dashboard.visitors.export'))
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML((string) $html);
+    $xpath = new DOMXPath($document);
+    $guidance = $xpath->query('//details[@id="visitor-export-boundary-heading"]')->item(0);
+
+    expect($guidance)->not->toBeNull();
+    expect($guidance->hasAttribute('open'))->toBeFalse()
+        ->and($xpath->evaluate('normalize-space(summary)', $guidance))->toBe(__('visitors.export.boundary_heading'))
+        ->and($guidance->textContent)->toContain(__('visitors.export.boundary_fields'), __('visitors.export.boundary_scope', ['count' => 500]));
+
+    $control = $xpath->query('//input[@id="attribute-value"]')->item(0);
+    expect($control->getAttribute('aria-invalid'))->toBe('true')
+        ->and(preg_split('/\s+/', trim($control->getAttribute('aria-describedby'))))->toBe(['attribute-filter-help', 'attribute-filter-error'])
+        ->and($xpath->query('//*[@id="attribute-filter-error"]/ancestor::details')->length)->toBe(0)
+        ->and($xpath->query('//*[@id="attribute-filter-help"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@id="attribute-filter-error"]')->length)->toBe(1);
 });
 
 test('an invalid typed filter cannot widen a contact export', function (): void {

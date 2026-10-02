@@ -24,97 +24,78 @@
         </p>
     @endif
 
-    @if ($canManageContacts)
-        <section class="section" aria-labelledby="visitor-export-boundary-heading">
-            <div class="section-header">
-                <h2 id="visitor-export-boundary-heading">{{ __('visitors.export.boundary_heading') }}</h2>
-                <span class="lede">{{ __('visitors.export.boundary_lede') }}</span>
-            </div>
-            <div class="notice-copy">
-                <p>{{ __('visitors.export.boundary_fields') }}</p>
-                <p>{{ __('visitors.export.boundary_scope', ['count' => 500]) }}</p>
-            </div>
-        </section>
-    @endif
+    <section aria-labelledby="visitor-filters-heading">
+        <h2 id="visitor-filters-heading" class="sr-only">{{ __('visitors.filters.heading') }}</h2>
 
-    <section class="section" aria-labelledby="visitor-filters-heading">
-        <div class="section-header">
-            <div>
-                <h2 id="visitor-filters-heading">{{ __('visitors.filters.heading') }}</h2>
-                <p class="lede">{{ __('visitors.filters.hint') }}</p>
+        <form class="wf-filters" method="GET" action="{{ route('dashboard.visitors.index') }}">
+            <div class="wf-filter wf-filter-search">
+                <label for="search">{{ __('visitors.filters.search') }}</label>
+                <input id="search" name="search" type="search" value="{{ $search }}" @if ($search !== '') lang="" @endif placeholder="{{ __('visitors.filters.placeholder') }}">
+                <span class="wf-filter-help">{{ __('visitors.filters.hint') }}</span>
             </div>
-        </div>
 
-        <form class="section-form" method="GET" action="{{ route('dashboard.visitors.index') }}">
-            <div class="meta-grid">
-                <div class="field">
-                    <label for="search">{{ __('visitors.filters.search') }}</label>
-                    <input id="search" name="search" type="search" value="{{ $search }}" @if ($search !== '') lang="" @endif placeholder="{{ __('visitors.filters.placeholder') }}">
-                </div>
+            <div class="wf-filter">
+                <label for="site">{{ __('visitors.filters.site') }}</label>
+                <select id="site" name="site">
+                    <option value="">{{ __('visitors.filters.any_site') }}</option>
+                    @foreach ($sites as $option)
+                        <option value="{{ $option->id }}" lang="" @selected($siteId === $option->id)>{{ $option->name }}</option>
+                    @endforeach
+                </select>
+            </div>
 
-                <div class="field">
-                    <label for="site">{{ __('visitors.filters.site') }}</label>
-                    <select id="site" name="site">
-                        <option value="">{{ __('visitors.filters.any_site') }}</option>
-                        @foreach ($sites as $option)
-                            <option value="{{ $option->id }}" lang="" @selected($siteId === $option->id)>{{ $option->name }}</option>
-                        @endforeach
+            <div class="wf-filter">
+                <label for="presence">{{ __('visitors.filters.last_seen') }}</label>
+                <select id="presence" name="presence">
+                    <option value="all" @selected($presence === 'all')>{{ __('visitors.filters.any_time') }}</option>
+                    @foreach (\App\Support\Visitors\VisitorPresence::states() as $state)
+                        <option value="{{ $state }}" @selected($presence === $state)>
+                            {{ __('presence.'.$state) }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="wf-filter">
+                <label for="attribute">{{ __('visitor_attributes.filters.attribute') }}</label>
+                <select id="attribute" name="attribute">
+                    <option value="">{{ __('visitor_attributes.filters.any_attribute') }}</option>
+                    @foreach ($attributeDefinitions as $definition)
+                        <option value="{{ $definition->key }}" lang="" @selected($attributeKey === $definition->key)>{{ $definition->label }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            @php($selectedAttribute = $attributeDefinitions->firstWhere('key', $attributeKey))
+            <div class="wf-filter">
+                <label for="attribute-value">{{ __('visitor_attributes.filters.value') }}</label>
+                @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Boolean)
+                    <select id="attribute-value" name="attribute_value" aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif" @if ($attributeFilterInvalid) aria-invalid="true" @endif>
+                        <option value="">—</option>
+                        <option value="true" @selected($attributeValue === 'true')>{{ __('visitor_attributes.profile.yes') }}</option>
+                        <option value="false" @selected($attributeValue === 'false')>{{ __('visitor_attributes.profile.no') }}</option>
                     </select>
-                </div>
-
-                <div class="field">
-                    <label for="presence">{{ __('visitors.filters.last_seen') }}</label>
-                    <select id="presence" name="presence">
-                        <option value="all" @selected($presence === 'all')>{{ __('visitors.filters.any_time') }}</option>
-                        @foreach (\App\Support\Visitors\VisitorPresence::states() as $state)
-                            <option value="{{ $state }}" @selected($presence === $state)>
-                                {{ __('presence.'.$state) }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="attribute">{{ __('visitor_attributes.filters.attribute') }}</label>
-                    <select id="attribute" name="attribute">
-                        <option value="">{{ __('visitor_attributes.filters.any_attribute') }}</option>
-                        @foreach ($attributeDefinitions as $definition)
-                            <option value="{{ $definition->key }}" lang="" @selected($attributeKey === $definition->key)>{{ $definition->label }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                @php($selectedAttribute = $attributeDefinitions->firstWhere('key', $attributeKey))
-                <div class="field">
-                    <label for="attribute-value">{{ __('visitor_attributes.filters.value') }}</label>
-                    @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Boolean)
-                        <select id="attribute-value" name="attribute_value" aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif" @if ($attributeFilterInvalid) aria-invalid="true" @endif>
-                            <option value="">—</option>
-                            <option value="true" @selected($attributeValue === 'true')>{{ __('visitor_attributes.profile.yes') }}</option>
-                            <option value="false" @selected($attributeValue === 'false')>{{ __('visitor_attributes.profile.no') }}</option>
-                        </select>
-                    @else
-                        <input
-                            id="attribute-value"
-                            name="attribute_value"
-                            type="text"
-                            @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Number) inputmode="decimal" @endif
-                            value="{{ $attributeValue }}"
-                            maxlength="160"
-                            placeholder="{{ __('visitor_attributes.filters.value_placeholder') }}"
-                            aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif"
-                            @if ($attributeFilterInvalid) aria-invalid="true" @endif
-                            lang=""
-                        >
-                    @endif
-                    <p id="attribute-filter-help" class="field-help">{{ __('visitor_attributes.filters.help') }}</p>
-                    @if ($attributeFilterInvalid)
-                        <p id="attribute-filter-error" class="field-error">{{ __('visitor_attributes.filters.invalid') }}</p>
-                    @endif
-                </div>
+                @else
+                    <input
+                        id="attribute-value"
+                        name="attribute_value"
+                        type="text"
+                        @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Number) inputmode="decimal" @endif
+                        value="{{ $attributeValue }}"
+                        maxlength="160"
+                        placeholder="{{ __('visitor_attributes.filters.value_placeholder') }}"
+                        aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif"
+                        @if ($attributeFilterInvalid) aria-invalid="true" @endif
+                        lang=""
+                    >
+                @endif
+                <span id="attribute-filter-help" class="wf-filter-help">{{ __('visitor_attributes.filters.help') }}</span>
+                @if ($attributeFilterInvalid)
+                    <p id="attribute-filter-error" class="field-error">{{ __('visitor_attributes.filters.invalid') }}</p>
+                @endif
             </div>
 
-            <div class="section-actions">
+            <div class="wf-filter-actions">
                 <button class="button" type="submit">{{ __('visitors.filters.submit') }}</button>
                 <a class="button secondary" href="{{ route('dashboard.visitors.index') }}">{{ __('visitors.filters.clear') }}</a>
                 @if ($canManageContacts)
@@ -184,7 +165,8 @@
                                     @endif
                                 </td>
                                 <td>
-                                    <span class="readiness-status" data-status="{{ $visitor->presenceState() === 'active' ? 'ready' : 'manual' }}">
+                                    <span class="wf-queue-mark" @if ($visitor->presenceState() === 'active') data-tone="live" @endif>
+                                        @if ($visitor->presenceState() === 'active')<i aria-hidden="true"></i>@endif
                                         {{ __('presence.'.($visitor->presenceState() === 'unknown' ? 'not_reported' : $visitor->presenceState())) }}
                                     </span>
                                     <span class="lede">
@@ -205,4 +187,12 @@
             {{ $visitors->links() }}
         @endif
     </section>
+
+    @if ($canManageContacts)
+        <x-details-disclosure id="visitor-export-boundary-heading" :summary="__('visitors.export.boundary_heading')">
+            <p class="lede">{{ __('visitors.export.boundary_lede') }}</p>
+            <p>{{ __('visitors.export.boundary_fields') }}</p>
+            <p>{{ __('visitors.export.boundary_scope', ['count' => 500]) }}</p>
+        </x-details-disclosure>
+    @endif
 </x-layouts.app>

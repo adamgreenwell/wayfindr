@@ -252,6 +252,19 @@
             line-height: 1.5;
         }
 
+        /* The vendored Sans family stops at 600. Headings and emphasis use
+           that real face rather than the browser's default bold weight. */
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        b,
+        strong {
+            font-weight: 600;
+        }
+
         a {
             color: var(--accent-strong);
         }
@@ -317,7 +330,7 @@
         .wf-mark-name {
             font-family: var(--wf-font-mono);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 500;
             letter-spacing: 0.14em;
             text-transform: uppercase;
         }
@@ -895,6 +908,7 @@
         .wf-lane-count {
             font-family: var(--wf-font-mono);
             font-size: 11px;
+            font-weight: 500;
             font-variant-numeric: tabular-nums;
             color: var(--wf-muted);
         }
@@ -904,7 +918,6 @@
            where every number is coloured has no signal in it. */
         .wf-lane-count[data-tone="waiting"] {
             color: var(--wf-signal-stop);
-            font-weight: 600;
         }
 
         /* A second row of lanes for a queue with more than one axis. Tickets
@@ -930,7 +943,9 @@
         .wf-filters {
             display: flex;
             flex-wrap: wrap;
-            align-items: flex-end;
+            /* Help text belongs below its control. It must not push the
+               other controls down to the bottom of a taller column. */
+            align-items: flex-start;
             gap: var(--wf-space-3);
             padding: var(--wf-space-3) 0 var(--wf-space-4);
         }
@@ -940,6 +955,7 @@
             flex-direction: column;
             gap: 4px;
             min-width: 0;
+            max-width: 100%;
         }
 
         .wf-filter > label {
@@ -974,8 +990,12 @@
 
         .wf-filter-actions {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: var(--wf-space-2);
+            max-width: 100%;
+            /* Match the label-and-gap space above the adjacent controls. */
+            padding-top: calc(var(--wf-space-4) + var(--wf-space-1));
         }
 
         .wf-filter-actions .button {
@@ -998,6 +1018,15 @@
 
         .wf-filters + .section {
             margin-top: 0;
+        }
+
+        .section > .wf-filters {
+            padding: var(--wf-space-3) var(--wf-space-5) var(--wf-space-4);
+        }
+
+        .section > .filter-summary {
+            margin: 0;
+            padding: 0 var(--wf-space-5) var(--wf-space-4);
         }
 
         .wf-queue-summary {
@@ -1815,14 +1844,14 @@
             padding: 0;
             margin-bottom: 6px;
             font-size: 0.9rem;
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .field label {
             display: block;
             margin-bottom: 6px;
             font-size: 0.9rem;
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .field input,
@@ -1834,6 +1863,7 @@
             padding: 11px 12px;
             background: var(--wf-surface);
             color: var(--text);
+            font-size: 1rem;
         }
 
         .field textarea {
@@ -1867,7 +1897,7 @@
         }
 
         .field-help {
-            margin: 8px 0 0;
+            margin: var(--wf-space-2) 0 0;
             color: var(--muted);
             font-size: 0.9rem;
         }
@@ -1875,8 +1905,8 @@
         .check-row {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-top: 16px;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-4);
             color: var(--muted);
         }
 
@@ -1977,7 +2007,7 @@
 
         .wf-pager__summary strong {
             color: var(--text);
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .wf-pager__controls,
@@ -2047,7 +2077,7 @@
 
         .text-link {
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
             text-decoration: none;
         }
 
@@ -2064,6 +2094,29 @@
 
         .section[id] {
             scroll-margin-top: 96px;
+        }
+
+        /* Card content shares one inset, whether it is copy, a legend, or
+           actions. Forms and tables retain their own established padding. */
+        .section-body {
+            padding: var(--wf-space-5);
+        }
+
+        .section > .section-body {
+            margin: 0;
+        }
+
+        .section-body > :first-child {
+            margin-top: 0;
+        }
+
+        .section-body > :last-child {
+            margin-bottom: 0;
+        }
+
+        .section-body .empty {
+            margin: 0;
+            padding: 0;
         }
 
         /* Every site-map chip targets an `#...-heading` on an <h2>, and only
@@ -2192,7 +2245,7 @@
 
         .tabs__badge {
             font-size: 12px;
-            font-weight: 700;
+            font-weight: 600;
             line-height: 1;
             padding: 4px 8px;
             border-radius: 999px;
@@ -2342,6 +2395,7 @@
         .chart-legend {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: var(--wf-space-2);
             font-size: var(--wf-text-ui);
             color: var(--wf-muted);
@@ -2446,7 +2500,7 @@
         .status-message {
             margin: 20px 0 0;
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
         }
 
         /* Closing the desk early is an operational act, not configuration, so
@@ -2479,12 +2533,20 @@
             padding: 20px;
         }
 
-        .section-form .field:first-child {
+        /* Hidden CSRF, method and return inputs precede the first field in
+           POST forms. They draw no content, so only visible siblings add the
+           usual field gap. Nested field groups keep their existing reset. */
+        .section-form .field:first-child,
+        .section-form > .field {
             margin-top: 0;
         }
 
+        .section-form > :not(input[type="hidden"], [hidden]) ~ .field {
+            margin-top: 18px;
+        }
+
         .section-form .button {
-            margin-top: 16px;
+            margin-top: var(--wf-space-4);
         }
 
         .automation-rule-basics {
@@ -2507,7 +2569,7 @@
 
         .automation-builder > legend {
             padding: 0 8px 0 0;
-            font-weight: 700;
+            font-weight: 600;
         }
 
         .automation-builder-row {
@@ -2621,7 +2683,7 @@
 
         .meta-value {
             display: block;
-            font-weight: 700;
+            font-weight: 600;
             margin-top: 4px;
             overflow-wrap: anywhere;
         }
@@ -2728,7 +2790,7 @@
 
             .management-action {
                 color: var(--accent-strong);
-                font-weight: 700;
+                font-weight: 600;
                 white-space: nowrap;
             }
 
@@ -2860,7 +2922,7 @@
             padding: 0 10px;
             color: var(--muted);
             font-size: 0.82rem;
-            font-weight: 700;
+            font-weight: 600;
             white-space: nowrap;
         }
 
@@ -2895,12 +2957,12 @@
 
         .readiness-action {
             color: var(--text);
-            font-weight: 650;
+            font-weight: 600;
         }
 
         /* An action with no link is one this reader cannot take -- the instance
-           group, where the answer is always "ask your operator". At 650 on full
-           text colour it was louder than the teal links above it, so the panel
+           group, where the answer is always "ask your operator". At full text
+           colour it was louder than the teal links above it, so the panel
            emphasised what the reader could not do over what they could. */
         .readiness-instance-checks .readiness-action:not(:has(a)) {
             /* Muted, but still heavier than the `.lede` detail line above it --
@@ -3060,7 +3122,7 @@
             color: var(--text);
             display: inline-flex;
             font-size: 0.86rem;
-            font-weight: 700;
+            font-weight: 600;
             gap: 8px;
             min-height: 34px;
             padding: 0 12px;
@@ -3101,7 +3163,21 @@
             border: 1px solid var(--border);
             border-radius: 4px;
             color: var(--text);
-            padding: 1px 4px;
+            padding: 1px var(--wf-space-1);
+            font-family: var(--wf-font-mono);
+            font-weight: 400;
+        }
+
+        /* Mono ships regular and medium. Resetting code itself also prevents
+           a bold link or label from asking it for an unvendored 600 face. */
+        b code,
+        strong code,
+        code b,
+        code strong,
+        .text-link code,
+        .code-block b,
+        .code-block strong {
+            font-weight: 500;
         }
 
         .support-reference {
@@ -3120,7 +3196,7 @@
             cursor: pointer;
             display: inline-flex;
             font-size: 0.76rem;
-            font-weight: 700;
+            font-weight: 600;
             min-height: 28px;
             padding: 0 8px;
         }
@@ -3144,6 +3220,8 @@
             border-top: 1px solid var(--border);
             background: var(--surface-muted);
             color: var(--text);
+            font-family: var(--wf-font-mono);
+            font-weight: 400;
             font-size: 0.88rem;
             line-height: 1.55;
             white-space: pre;
@@ -3337,7 +3415,7 @@
 
         .message-seen {
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
             white-space: nowrap;
         }
 
@@ -3461,7 +3539,7 @@
             color: var(--muted);
             cursor: pointer;
             font-size: 1.05rem;
-            font-weight: 700;
+            font-weight: 600;
             line-height: 1;
             padding: 0 2px;
         }
@@ -3480,7 +3558,7 @@
             color: var(--muted);
             cursor: pointer;
             font-size: 0.85rem;
-            font-weight: 700;
+            font-weight: 600;
             padding: 10px 14px;
         }
 
