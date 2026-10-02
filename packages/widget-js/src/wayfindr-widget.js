@@ -3547,7 +3547,14 @@
         // one mid-send would desync the chips and reset the idempotency key.
         removeEl.disabled = composerBusy;
         removeEl.addEventListener('click', function () {
+          var ownedFocus = doc.activeElement === removeEl;
           removePendingAttachment(attachment.localId);
+
+          // Removing the focused chip would otherwise drop keyboard focus
+          // out of the panel. Attach stays available without opening a keyboard.
+          if (ownedFocus && !rootEl.contains(removeEl)) {
+            attachButton.focus();
+          }
         });
         item.appendChild(removeEl);
 
@@ -8713,7 +8720,7 @@
       '.wayfindr-widget{isolation:isolate}',
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
-      '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__launcher,.wayfindr-widget__send,.wayfindr-widget__intake-submit{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__launcher{position:relative;min-height:48px;padding:0 18px}',
       // Logical properties, so a left-positioned launcher still follows an
       // RTL language rather than fighting it -- see the widget language work.
@@ -8727,8 +8734,9 @@
       // the whole difference, measured at 120px on a phone.
       '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px;align-items:flex-start}',
       '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;inset-inline-end:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
-      '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
-      '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
+      '.wayfindr-widget__send,.wayfindr-widget__intake-submit{min-height:40px;padding:0 14px;border-radius:6px}',
+      '.wayfindr-widget__intake-submit{justify-self:start}',
+      '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover,.wayfindr-widget__intake-submit:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid var(--wf-rule);border-top:3px solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 20px 55px rgba(8,37,34,.2);min-height:0;overflow:auto}',
       '.wayfindr-widget__panel>*{flex-shrink:0}',
@@ -8740,8 +8748,8 @@
       '.wayfindr-widget__intake-intro{margin:0;color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__intake-fields{display:grid;gap:8px}',
       '.wayfindr-widget__intake label{display:grid;gap:4px;color:var(--wf-muted);font-size:12px}',
-      '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px}',
-      '.wayfindr-widget__intake-error{margin:0;color:var(--wf-signal-attention);font-size:12px}',
+      '.wayfindr-widget__intake input{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:16px/1.4 var(--wf-font-sans)}',
+      '.wayfindr-widget__intake-error{margin:0;color:color-mix(in srgb, var(--wf-signal-stop) 80%, var(--wf-ink));font-size:12px}',
       // The rating prompt sits where the composer would be, in the same
       // surface the intake form uses -- it is a question the desk is asking,
       // not a message in the transcript.
@@ -8754,11 +8762,11 @@
       // so the border thickens as well as changing hue.
       '.wayfindr-widget__rating-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
       '.wayfindr-widget__rating-label{margin:0;color:var(--wf-muted);font-size:12px}',
-      '.wayfindr-widget__rating-comment{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:inherit;font-size:13px;resize:vertical}',
+      '.wayfindr-widget__rating-comment{min-width:0;padding:8px 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);font:16px/1.4 var(--wf-font-sans);resize:vertical}',
       '.wayfindr-widget__rating-send{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-send:hover:not(:disabled){border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-send:disabled{opacity:0.55;cursor:default}',
-      '.wayfindr-widget__rating-status{margin:0;color:var(--wf-signal-stop);font-size:12px}',
+      '.wayfindr-widget__rating-status{margin:0;color:color-mix(in srgb, var(--wf-signal-stop) 80%, var(--wf-ink));font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
@@ -8821,7 +8829,8 @@
       '.wayfindr-widget__form{display:grid;gap:10px;padding:16px}',
       '.wayfindr-widget__label{font-size:13px;font-weight:700}',
       '.wayfindr-widget__textarea{width:100%;resize:vertical;border:1px solid var(--wf-rule);border-radius:6px;padding:10px;background:var(--wf-surface);color:var(--wf-ink);font:16px/1.4 var(--wf-font-sans)}',
-      '.wayfindr-widget__textarea:focus{outline:3px solid color-mix(in srgb, var(--wf-brand) 22%, transparent);border-color:var(--wf-brand)}',
+      '.wayfindr-widget__intake input:focus,.wayfindr-widget__rating-comment:focus,.wayfindr-widget__textarea:focus,.wayfindr-widget__help-input:focus{outline:2px solid var(--wf-ink);outline-offset:2px;border-color:var(--wf-brand)}',
+      '.wayfindr-widget__launcher:focus-visible,.wayfindr-widget__close:focus-visible,.wayfindr-widget__intake-submit:focus-visible,.wayfindr-widget__rating-score:focus-visible,.wayfindr-widget__rating-send:focus-visible,.wayfindr-widget__send:focus-visible,.wayfindr-widget__attach:focus-visible,.wayfindr-widget__attach-chip-remove:focus-visible,.wayfindr-widget__refresh:focus-visible{outline:2px solid var(--wf-ink);outline-offset:2px}',
       '.wayfindr-widget__textarea:disabled{background:var(--wf-paper);color:var(--wf-muted);cursor:wait}',
       '.wayfindr-widget__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
       '.wayfindr-widget__refresh{min-height:40px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 14px/1 var(--wf-font-sans)}',
@@ -8832,7 +8841,7 @@
       '.wayfindr-widget__cobrowse-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
       '.wayfindr-widget__help{display:flex;flex-direction:column;gap:6px;padding:12px 16px;border-bottom:1px solid var(--wf-rule)}',
       '.wayfindr-widget__help-label{color:var(--wf-muted);font:700 11px/1 var(--wf-font-sans);letter-spacing:.06em;text-transform:uppercase}',
-      '.wayfindr-widget__help-input{min-height:36px;padding:0 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-paper);color:var(--wf-ink);font:400 14px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__help-input{min-height:36px;padding:0 10px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-paper);color:var(--wf-ink);font:400 16px/1.4 var(--wf-font-sans)}',
       '.wayfindr-widget__help-status{margin:0;color:var(--wf-muted);font-size:12px;line-height:1.4}',
       '.wayfindr-widget__help-results{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}',
       '.wayfindr-widget__help-result{width:100%;text-align:left;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--wf-ink);cursor:pointer;font:500 14px/1.3 var(--wf-font-sans)}',
@@ -8850,7 +8859,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__close{min-width:44px;min-height:44px}.wayfindr-widget__attach-chip-remove{min-width:44px;min-height:44px;flex-shrink:0}.wayfindr-widget__intake input,.wayfindr-widget__help-input,.wayfindr-widget__intake-submit,.wayfindr-widget__rating-score,.wayfindr-widget__rating-send,.wayfindr-widget__send,.wayfindr-widget__attach,.wayfindr-widget__refresh{min-height:44px}}',
     ].join('');
 
     doc.head.appendChild(style);

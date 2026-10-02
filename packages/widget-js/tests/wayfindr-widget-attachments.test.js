@@ -566,6 +566,55 @@ test('removing a ready chip deletes the server-side upload', async () => {
   widget.destroy();
 });
 
+test('removing a focused chip keeps the panel keyboard usable without stealing other focus', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><button id="outside">Host page action</button><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-docs',
+    storage: memoryStorage(),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: composerFetchMock([]),
+  });
+
+  t.after(() => {
+    widget.destroy();
+    dom.window.close();
+  });
+  widget.open();
+  await settle();
+
+  const fileInput = widget.root.querySelector('.wayfindr-widget__file-input');
+  const addFile = () => {
+    Object.defineProperty(fileInput, 'files', { value: [new dom.window.File(['x'], 'shot.png', { type: 'image/png' })], configurable: true });
+    fileInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    return widget.root.querySelector('.wayfindr-widget__attach-chip-remove');
+  };
+
+  const remove = addFile();
+  remove.focus();
+  remove.click();
+
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
+  assert.equal(dom.window.document.activeElement, widget.root.querySelector('.wayfindr-widget__attach'), 'focused removal returns to the stable Attach action');
+  dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(widget.root.querySelector('.wayfindr-widget__panel').hidden, true, 'Escape still reaches the panel after removal');
+
+  widget.open();
+  const unfocusedRemove = addFile();
+  const outside = dom.window.document.querySelector('#outside');
+  outside.focus();
+  unfocusedRemove.click();
+
+  assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0);
+  assert.equal(dom.window.document.activeElement, outside, 'an unfocused removal leaves existing focus alone');
+});
+
 test('removing a chip is a no-op while a send is in flight', async () => {
   if (typeof globalThis.File !== 'function') {
     return;
