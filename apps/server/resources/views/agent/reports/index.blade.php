@@ -25,37 +25,34 @@
             <h2 id="report-filters-heading">{{ __('reports.range.heading') }}</h2>
             <span class="lede">{{ $siteId ? __('reports.range.one_site') : __('reports.range.all_sites') }}</span>
         </div>
-        <form class="section-form" method="GET" action="{{ route('dashboard.reports.index') }}">
-            <div class="meta-grid">
-                <div class="meta-item">
-                    <label class="meta-label" for="report_days">{{ __('reports.range.period') }}</label>
-                    <select id="report_days" name="report_days">
-                        @foreach ($windowChoices as $choice)
-                            <option value="{{ $choice }}" @selected($window->days === $choice)>{{ trans_choice('reports.range.last_days', $choice, ['count' => \App\Support\ReaderNumber::count($choice)]) }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="meta-item">
-                    <label class="meta-label" for="report_site">{{ __('reports.range.site') }}</label>
-                    <select id="report_site" name="report_site">
-                        <option value="">{{ __('reports.range.all_sites') }}</option>
-                        @foreach ($activeSites as $site)
-                            <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
-                        @endforeach
-                        @if ($archivedSites->isNotEmpty())
-                            <optgroup label="{{ __('reports.range.archived_sites') }}">
-                                @foreach ($archivedSites as $site)
-                                    <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
-                                @endforeach
-                            </optgroup>
-                        @endif
-                    </select>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">{{ __('reports.range.report') }}</span>
-                    <button class="button" type="submit">{{ __('reports.range.apply') }}</button>
-                    <a class="button secondary" href="{{ route('dashboard.reports.index') }}">{{ __('reports.range.reset') }}</a>
-                </div>
+        <form class="wf-filters" method="GET" action="{{ route('dashboard.reports.index') }}">
+            <div class="wf-filter">
+                <label for="report_days">{{ __('reports.range.period') }}</label>
+                <select id="report_days" name="report_days">
+                    @foreach ($windowChoices as $choice)
+                        <option value="{{ $choice }}" @selected($window->days === $choice)>{{ trans_choice('reports.range.last_days', $choice, ['count' => \App\Support\ReaderNumber::count($choice)]) }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="wf-filter">
+                <label for="report_site">{{ __('reports.range.site') }}</label>
+                <select id="report_site" name="report_site">
+                    <option value="">{{ __('reports.range.all_sites') }}</option>
+                    @foreach ($activeSites as $site)
+                        <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
+                    @endforeach
+                    @if ($archivedSites->isNotEmpty())
+                        <optgroup label="{{ __('reports.range.archived_sites') }}">
+                            @foreach ($archivedSites as $site)
+                                <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
+                            @endforeach
+                        </optgroup>
+                    @endif
+                </select>
+            </div>
+            <div class="wf-filter-actions">
+                <button class="button" type="submit">{{ __('reports.range.apply') }}</button>
+                <a class="button secondary" href="{{ route('dashboard.reports.index') }}">{{ __('reports.range.reset') }}</a>
             </div>
         </form>
     </section>
@@ -181,7 +178,7 @@
                     </div>
                 @endif
                 @if ($firstResponse['awaiting'] > 0)
-                    <p class="lede">{{ trans_choice('reports.conversations.response.awaiting', $firstResponse['awaiting'], ['count' => \App\Support\ReaderNumber::count($firstResponse['awaiting'])]) }}</p>
+                    <p class="lede section-body">{{ trans_choice('reports.conversations.response.awaiting', $firstResponse['awaiting'], ['count' => \App\Support\ReaderNumber::count($firstResponse['awaiting'])]) }}</p>
                 @endif
             </section>
 
@@ -289,7 +286,7 @@
                         </table>
                     </div>
                     @if (count($slaHistory['recent']) === 25)
-                        <p class="lede">{{ __('reports.sla.latest_only') }}</p>
+                        <p class="lede section-body">{{ __('reports.sla.latest_only') }}</p>
                     @endif
                 @endif
             </section>
@@ -354,7 +351,7 @@
                             @endforeach
                         </div>
                         </div>
-                    <p class="chart-legend">
+                    <p class="chart-legend section-body">
                         <span class="chart-key chart-key--opened"></span> {{ __('reports.counts.created_label') }}
                         <span class="chart-key chart-key--closed"></span> {{ __('reports.counts.tickets_closed_label') }}
                         <span class="lede">{{ __('reports.charts.tallest_day', ['count' => \App\Support\ReaderNumber::count($ticketChart['max'])]) }}</span>
@@ -588,7 +585,7 @@
                         </table>
                     </div>
                     @if ($satisfaction['answered'] < 10)
-                        <p class="lede">{{ __('reports.satisfaction.small_sample') }}</p>
+                        <p class="lede section-body">{{ __('reports.satisfaction.small_sample') }}</p>
                     @endif
                 @endif
             </section>
@@ -618,7 +615,7 @@
                                         <td>{{ __('reports.satisfaction.'.$comment['score']) }}</td>
                                         {{-- Visitor-authored, so escaped like any other visitor text and
                                              never used as a link label. --}}
-                                        <td lang="">{{ $comment['comment'] }}</td>
+                                        <td class="cell-wrap report-comment" lang="">{{ $comment['comment'] }}</td>
                                         <td>
                                             <a lang="" href="{{ route('dashboard.conversations.show', $comment['support_code']) }}">{{ $comment['support_code'] }}</a>
                                         </td>
@@ -628,9 +625,11 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="lede">{{ trans_choice('reports.comments.latest', count($ratingComments), ['count' => \App\Support\ReaderNumber::count(count($ratingComments))]) }}</p>
+                    <p class="lede section-body">{{ trans_choice('reports.comments.latest', count($ratingComments), ['count' => \App\Support\ReaderNumber::count(count($ratingComments))]) }}</p>
                 @endif
             </section>
         </x-tab-panel>
     </x-tabs>
+
+    @include('agent.reports.partials.chart-scroll-script')
 </x-layouts.app>

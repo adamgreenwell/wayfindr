@@ -2477,6 +2477,11 @@
             overflow-wrap: anywhere;
         }
 
+        .report-comment {
+            min-width: 20ch;
+            max-width: 48ch;
+        }
+
         .proactive-rules-table th,
         .proactive-rules-table td,
         .proactive-rules-table .table-note {
