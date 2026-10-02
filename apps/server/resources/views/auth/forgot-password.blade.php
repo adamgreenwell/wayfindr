@@ -5,12 +5,10 @@
             <p class="lede">We will email you a link to set a new one.</p>
 
             @if (session('status'))
-                <div class="notice-copy">
-                    <p>{{ session('status') }}</p>
-                </div>
+                <p class="status-message" role="status">{{ session('status') }}</p>
             @endif
 
-            <form method="POST" action="{{ route('password.email') }}">
+            <form class="auth-form" method="POST" action="{{ route('password.email') }}" aria-labelledby="forgot-heading">
                 @csrf
 
                 <div class="field">
@@ -23,8 +21,7 @@
                         value="{{ old('email') }}"
                         required
                         autofocus
-                    aria-describedby="@error('email') email-error @enderror"
-                    @error('email') aria-invalid="true" @enderror
+                        @error('email') aria-describedby="email-error" aria-invalid="true" @enderror
                     >
                     @error('email')
                         <p id="email-error" class="field-error">{{ $message }}</p>
@@ -39,7 +36,7 @@
                 your colleagues receive mail either, ask your operator to check the mail settings.
             </p>
 
-            <p><a class="text-link" href="{{ route('login') }}">Back to sign in</a></p>
+            <p class="auth-footer"><a class="text-link" href="{{ route('login') }}">Back to sign in</a></p>
         </section>
     </main>
 </x-layouts.app>

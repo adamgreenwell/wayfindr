@@ -1767,6 +1767,26 @@
             line-height: 1.3;
         }
 
+        .auth-form {
+            margin-top: var(--wf-space-5);
+        }
+
+        .auth-form > .field {
+            margin-top: 0;
+        }
+
+        .auth-form > :not(input[type="hidden"], [hidden]) ~ .field {
+            margin-top: 18px;
+        }
+
+        .auth-form .button.full {
+            margin-top: var(--wf-space-5);
+        }
+
+        .auth-footer {
+            margin: var(--wf-space-5) 0 0;
+        }
+
         /* The product's only <hr> sits on login, and nothing styled it: a 2px
            inset groove at #808080, a colour no token defines and which is wrong
            in both themes. Through the tokens it matches the card's own edge. */
@@ -2475,6 +2495,11 @@
         .cell-wrap .table-note {
             white-space: normal;
             overflow-wrap: anywhere;
+        }
+
+        .report-comment {
+            min-width: 20ch;
+            max-width: 48ch;
         }
 
         .proactive-rules-table th,

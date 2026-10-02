@@ -93,6 +93,14 @@
                 }));
             }
 
+            function updateTabHash(tabId) {
+                // Keyboard and pointer choices must agree with the fragment:
+                // it takes priority over session memory on the next page load.
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, '', '#tab-' + tabId);
+                }
+            }
+
             function initTabs(container) {
                 var buttons = Array.prototype.slice.call(container.querySelectorAll('[role="tab"]'));
 
@@ -100,9 +108,7 @@
                     button.addEventListener('click', function () {
                         activateTab(container, button.dataset.tab, false);
                         // Keep the active tab addressable without scrolling the page.
-                        if (window.history && window.history.replaceState) {
-                            window.history.replaceState(null, '', '#tab-' + button.dataset.tab);
-                        }
+                        updateTabHash(button.dataset.tab);
                     });
 
                     button.addEventListener('keydown', function (event) {
@@ -121,6 +127,7 @@
                         if (targetIndex !== null) {
                             event.preventDefault();
                             activateTab(container, buttons[targetIndex].dataset.tab, true);
+                            updateTabHash(buttons[targetIndex].dataset.tab);
                         }
                     });
                 });

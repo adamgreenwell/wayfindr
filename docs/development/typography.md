@@ -54,6 +54,12 @@ card bodies and filter feedback. Compact queues retain their density; mobile
 ticket rows prioritize work context and disclose secondary fields. These source
 conventions do not establish runtime visual acceptance.
 
+Sign-in, recovery, reset, and two-factor forms use `.auth-form` and
+`.auth-footer` for the same card rhythm, including when hidden fields come
+first. Reports use the shared filter row and card-body spacing for secondary
+notes. Visitor comments wrap within a bounded column; long date charts retain
+their chronological order and open at the latest days once they overflow.
+
 ## Licence
 
 SIL Open Font License 1.1 -- `OFL.txt`, shipped alongside the fonts as the

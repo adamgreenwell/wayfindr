@@ -11,17 +11,17 @@
                  word that the reset worked, and no way to tell which password to
                  type. --}}
             @if (session('status'))
-                <div class="notice-copy">
+                <p class="status-message" role="status">
                     {{-- `__()` returns a non-key string unchanged, so this costs
                          nothing for the literals PasswordResetController flashes
                          and stops a raw key ever reaching the page. The rule is
                          in docs/product/dashboard-language.md: a flash belongs to
                          the destination, not the controller. --}}
-                    <p>{{ __(session('status')) }}</p>
-                </div>
+                    {{ __(session('status')) }}
+                </p>
             @endif
 
-            <form method="POST" action="{{ route('login.store') }}">
+            <form class="auth-form" method="POST" action="{{ route('login.store') }}" aria-labelledby="login-heading">
                 @csrf
 
                 <div class="field">
@@ -34,8 +34,7 @@
                         value="{{ old('email') }}"
                         required
                         autofocus
-                    aria-describedby="@error('email') email-error @enderror"
-                    @error('email') aria-invalid="true" @enderror
+                        @error('email') aria-describedby="email-error" aria-invalid="true" @enderror
                     >
                     @error('email')
                         <p id="email-error" class="field-error">{{ __($message) }}</p>
@@ -49,8 +48,7 @@
                         name="password"
                         type="password"
                         autocomplete="current-password"
-                        aria-describedby="@error('password') password-error @enderror"
-                        @error('password') aria-invalid="true" @enderror
+                        @error('password') aria-describedby="password-error" aria-invalid="true" @enderror
                         required
                     >
                     @error('password')
@@ -66,14 +64,14 @@
                 <button class="button full" type="submit">Sign in</button>
             </form>
 
-            <p><a class="text-link" href="{{ route('password.request') }}">Forgotten your password?</a></p>
+            <p class="auth-footer"><a class="text-link" href="{{ route('password.request') }}">Forgotten your password?</a></p>
 
             <hr>
 
-            <h2>Single sign-on</h2>
+            <h2 id="sso-heading">Single sign-on</h2>
             <p class="lede">Use your organization's identity provider with your Wayfindr account slug.</p>
 
-            <form method="POST" action="{{ route('oidc.redirect') }}">
+            <form class="auth-form" method="POST" action="{{ route('oidc.redirect') }}" aria-labelledby="sso-heading">
                 @csrf
 
                 <div class="field">
@@ -91,8 +89,7 @@
                              setup/create's free-text account name.) --}}
                         autocomplete="off"
                         value="{{ old('account_slug') }}"
-                        aria-describedby="@error('account_slug') account_slug-error @enderror"
-                        @error('account_slug') aria-invalid="true" @enderror
+                        @error('account_slug') aria-describedby="account_slug-error" aria-invalid="true" @enderror
                         required
                     >
                     @error('account_slug')
