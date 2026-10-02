@@ -445,8 +445,8 @@ test('site index filters visible sites by search workload and install health', f
     ]);
     Conversation::factory()->for($restrictedSite)->for($restrictedVisitor)->create(['status' => 'open']);
 
-    $this->actingAs($agent)
-        ->get('/dashboard/sites?site_search=docs&site_workload=active&site_install=live')
+    $response = $this->actingAs($agent)
+        ->get('/dashboard/sites?site_search=docs&site_workload=active&site_install=live&site_state=all')
         ->assertOk()
         ->assertSee('Site filters')
         ->assertSee('1 shown of 3 visible')
@@ -458,6 +458,28 @@ test('site index filters visible sites by search workload and install health', f
         ->assertSee('Docs Platform')
         ->assertSee('Live')
         ->assertDontSee('Docs Archive')
+        ->assertDontSee('Marketing Site')
+        ->assertDontSee('Docs Restricted');
+
+    $removalUrls = [
+        'Search' => route('dashboard.sites.index', ['site_workload' => 'active', 'site_install' => 'live', 'site_state' => 'all']),
+        'Workload' => route('dashboard.sites.index', ['site_search' => 'docs', 'site_install' => 'live', 'site_state' => 'all']),
+        'Install' => route('dashboard.sites.index', ['site_search' => 'docs', 'site_workload' => 'active', 'site_state' => 'all']),
+        'State' => route('dashboard.sites.index', ['site_search' => 'docs', 'site_workload' => 'active', 'site_install' => 'live']),
+    ];
+
+    foreach ($response->viewData('siteFilters')['active'] as $filter) {
+        expect($filter['href'])->toBe($removalUrls[$filter['label']]);
+        $response->assertSee('href="'.e($filter['href']).'"', false);
+    }
+
+    // Clearing install health keeps search, workload and state. The stale
+    // matching site returns, while quiet and inaccessible sites stay absent.
+    $this->get($removalUrls['Install'])
+        ->assertOk()
+        ->assertSee('2 shown of 3 visible')
+        ->assertSee('Docs Platform')
+        ->assertSee('Docs Archive')
         ->assertDontSee('Marketing Site')
         ->assertDontSee('Docs Restricted');
 
@@ -1103,7 +1125,7 @@ test('site settings pairs its narrow panels two to a row', function (): void {
         ->and($wide->getAttribute('aria-labelledby'))->toBe('identity-verification-heading');
 });
 
-test('the install snippet is the first thing on site settings', function (): void {
+test('site settings navigation precedes install guidance and the settings it indexes', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
     $site = Site::factory()->for($account)->create([
@@ -1111,17 +1133,14 @@ test('the install snippet is the first thing on site settings', function (): voi
         'domain' => 'docs.example.test',
     ]);
 
-    // Position, not presence. The snippet is the reason most visits to this page
-    // happen (#985) and it used to sit below readiness and the site context;
-    // asserting only that it renders would not notice it sliding back down.
-    // Ids rather than headings because 'Install snippet' is also the map's own
-    // chip label for it, and a heading assertion would match either.
+    // Navigation has to be available before the guidance it helps readers
+    // skip. Ids distinguish the actual sections from their own link labels.
     $this->actingAs($admin)
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSeeInOrder([
-            'id="install-snippet-heading"',
             'id="site-map-heading"',
+            'id="install-snippet-heading"',
             'id="site-context-heading"',
             'id="support-access-heading"',
         ], false);
@@ -1143,6 +1162,15 @@ test('the site map lists sections in the order the page renders them', function 
     preg_match_all('/class="filter-chip" href="#([a-z-]+)"/', $html, $chips);
 
     expect($chips[1])->not->toBeEmpty('the site map rendered no chips; this guard is checking nothing');
+    expect($chips[1])->toContain(
+        'inbound-email-heading',
+        'widget-appearance-heading',
+        'widget-language-heading',
+        'support-hours-heading',
+        'identity-verification-heading',
+        'visitor-intake-heading',
+        'privacy-settings-heading',
+    );
 
     $positions = [];
 

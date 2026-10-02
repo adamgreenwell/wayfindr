@@ -2119,6 +2119,26 @@
             padding: 0;
         }
 
+        .site-settings-nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+            gap: var(--wf-space-5);
+            padding: var(--wf-space-5);
+        }
+
+        .site-settings-nav__group {
+            min-width: 0;
+        }
+
+        .site-settings-nav__group > .meta-label {
+            margin: 0 0 var(--wf-space-2);
+        }
+
+        .site-settings-nav .filter-chips {
+            justify-content: flex-start;
+            margin: 0;
+        }
+
         /* Every site-map chip targets an `#...-heading` on an <h2>, and only
            `.section[id]` carried a scroll margin -- three sections on that page
            have an id, the rest are labelled by `aria-labelledby`. So six of the
