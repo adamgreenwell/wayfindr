@@ -489,10 +489,9 @@ if [[ "$ticket_code" != "200" ]]; then
     exit 1
 fi
 
-# The ticket detail layout has grown over time; use the stable structural
-# landmark that proves the current ticket workspace rendered instead of older
-# feature copy that may move between tabs.
-assert_contains "$ticket_page" "Ticket brief" "ticket detail"
+# The work-state heading exists in both the older upgrade baseline and current
+# ticket workspace. Its ID survives copy, language and summary-layout changes.
+assert_contains "$ticket_page" 'id="ticket-work-state-heading"' "ticket detail"
 assert_contains "$ticket_page" "$support_code" "ticket detail"
 
 echo "Support-loop smoke passed."
