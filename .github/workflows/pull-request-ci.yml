@@ -166,6 +166,9 @@ jobs:
       - name: Test the widget's minified build
         run: npm run test:dist --prefix packages/widget-js
 
+      - name: Test dashboard keyboard interactions
+        run: node --test apps/server/tests/BrowserScripts/*.test.cjs
+
       - name: Test the concurrent-agent capacity harness guards
         run: make reverb-capacity-test
 

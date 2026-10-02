@@ -255,6 +255,8 @@
                         return;
                     }
 
+                    var ownedFocus = document.activeElement === removeEl;
+
                     removed = true;
                     settleUpload();
 
@@ -268,6 +270,12 @@
 
                     if (attachmentsList.children.length === 0) {
                         attachmentsList.hidden = true;
+                    }
+
+                    // Removing a keyboard-focused chip must leave the agent
+                    // at a usable control in this composer.
+                    if (ownedFocus && attachButton) {
+                        attachButton.focus();
                     }
                 });
                 chip.appendChild(removeEl);
