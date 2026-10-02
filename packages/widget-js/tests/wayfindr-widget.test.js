@@ -121,10 +121,12 @@ test('injects responsive panel styles so the composer stays reachable on short s
   assert.ok(css.includes('max-height:calc(100dvh - 24px)'), 'mobile panel is viewport-height bounded');
 });
 
-test('uses a mobile-safe composer font size that does not trigger focus zoom', () => {
+test('keeps editable widget text at the mobile focus-zoom threshold', (t) => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://docs.example.test/install',
   });
+
+  t.after(() => dom.window.close());
 
   Wayfindr.init({
     document: dom.window.document,
@@ -137,13 +139,16 @@ test('uses a mobile-safe composer font size that does not trigger focus zoom', (
     fetch: async () => jsonResponse(404, { message: 'Not used' }),
   });
 
-  const css = dom.window.document.querySelector('#wayfindr-widget-styles').textContent;
+  const rules = Array.from(dom.window.document.querySelector('#wayfindr-widget-styles').sheet.cssRules);
 
-  assert.match(
-    css,
-    /\.wayfindr-widget__textarea\{[^}]*font:16px\/1\.4/,
-    'composer text should stay at or above the iOS focus-zoom threshold',
-  );
+  // JSDOM does not resolve var() in font shorthands reliably. Read the parsed
+  // declaration so this checks the mobile threshold without fixing its spelling.
+  for (const selector of ['.wayfindr-widget__intake input', '.wayfindr-widget__textarea', '.wayfindr-widget__rating-comment', '.wayfindr-widget__help-input']) {
+    const rule = rules.find((candidate) => candidate.selectorText?.split(',').map((value) => value.trim()).includes(selector));
+    assert.ok(rule, `${selector} should have an explicit text style`);
+    const fontSize = rule.style.getPropertyValue('font-size') || rule.style.getPropertyValue('font').match(/(?:^|\s)(\d+(?:\.\d+)?)px(?:\/|\s|$)/)?.[1];
+    assert.ok(parseFloat(fontSize) >= 16, `${selector} text should stay at or above the iOS focus-zoom threshold`);
+  }
 });
 
 test('shows calm empty-state copy before a widget conversation starts', () => {
