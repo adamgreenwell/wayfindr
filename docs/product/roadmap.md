@@ -4,8 +4,10 @@ This roadmap is directional and should not include private business strategy.
 
 The latest public release is
 [`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0)
-(October 1, 2026). Current `main` identifies the next development line as
-`1.2.0-dev`.
+(October 1, 2026). The next patch release is being prepared as `1.1.1`, with
+candidate source builds identified as `1.1.1-dev`. The patch fixes dashboard and widget
+consistency, mobile controls, keyboard context, and release diagnostics; it
+has no migrations or required operator action. It is not published yet.
 
 `v1.1.0` repeated both hosted-runner paths on October 1: a
 [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)

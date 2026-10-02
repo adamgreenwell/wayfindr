@@ -172,7 +172,8 @@ From 1.0.0 the version number carries the operator-action signal, as
 See the [release notes](CHANGELOG.md). If you are several releases behind, read
 each release in between. `v0.11.0` carries a session-secret security fix, and
 `v0.10.0` sends an email reply backlog left over from `v0.9.0`.
-Current `main` identifies its next development line as `1.2.0-dev`.
+The next patch release is being prepared as `1.1.1`; `v1.1.0` remains the latest
+published release. Source builds of the release candidate identify as `1.1.1-dev`.
 
 The public `v1.1.0` artifact passed a
 [fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)

@@ -1,13 +1,14 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated October 1, 2026. For an agent (or engineer) picking up
+*Living document — last updated October 2, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§22](#22-published-110--october-1-2026)** for
-the current release, then [§21](#21-published-100--september-30-2026) for 1.0.0
+**Taking the baton? Start at [§23](#23-111-preparation--october-2-2026)** for
+release preparation, then [§22](#22-published-110--october-1-2026) for the
+current public release and [§21](#21-published-100--september-30-2026) for 1.0.0
 and [§20](#20-797-closed--september-29-2026) for how its acceptance gate closed.
-Then §5 (conventions) and §7 (gotchas). Sections 8–21 are dated snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–22 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -31,7 +32,7 @@ differentiator.
 
 ---
 
-## 2. Current state (September 24, 2026)
+## 2. Current state (October 2, 2026)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -46,7 +47,12 @@ rule for carrying release actions into the eventual stable artifact.
 `9b634b23`, with the manifest and multi-architecture image at
 `sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`
 (§22). The previous release, `v1.0.0`, published September 30 at `d6e5875e`
-(§21). Current `main` begins `1.2.0-dev`.
+(§21). The next patch release is being prepared as `1.1.1`, with candidate
+source builds identified as `1.1.1-dev` (§23).
+The patch fixes dashboard and widget consistency, mobile controls, keyboard
+context, and release diagnostics. It has no migrations or required operator
+action. The published release remains `v1.1.0` until the guarded publisher
+finishes and its artifacts are verified.
 
 The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
 direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
@@ -1520,3 +1526,24 @@ name.
 - the public site;
 - the published wiki mirror;
 - closing #994, which the owner did later the same day.
+
+## 23. 1.1.1 preparation — October 2, 2026
+
+The owner selected **1.1.1** for the UI consistency fixes. Its scope comes from
+#1100 (dashboard typography, spacing, and work context), #1101 (widget forms
+and mobile controls), and #1102 (Reports, authentication, and keyboard flows),
+alongside #1097's form-grid and pagination fix and #1096's release-guard
+diagnostic fix. These fix existing behavior; there are no new migrations,
+runtime requirements, or required operator actions.
+
+`VERSION` and the dated changelog now name `1.1.1`. The matching declaration in
+`releases/history.json` is generated from `release.json`, whose actions remain
+empty and whose existing backups notice remains intact. The dated §22 record
+of beginning `1.2.0-dev` after 1.1.0 is retained as historical evidence.
+
+The latest public release remains **v1.1.0**. Before pushing `v1.1.1`, follow
+`RELEASING.md`: check the publishing contract after the release commit and
+require a successful complete push/main CI run for that exact SHA. Tagging,
+public artifacts, staging deployment, and the public site and Wiki mirrors
+are separate results to verify. Local previews and automated UI checks do not
+establish physical iPhone or hands-on VoiceOver acceptance.
