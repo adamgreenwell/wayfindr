@@ -30,6 +30,40 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-02
+
+**No operator action required.** Pull and restart. This release has no migrations.
+
+### Fixed
+
+- **Dashboard text, forms, and pagination follow the same layout rules.**
+  Font families and weights are consistent, editing controls are easier to
+  read, and hidden form fields no longer add a gap above the first visible
+  field. Pagination shows one layout at a time with correctly sized arrows,
+  including in visitor history and automation run lists.
+- **Visitor, ticket, and site pages put the work in a clearer order.**
+  Visitor history comes before export guidance, tickets show their work context
+  without repeating status details, and phone queues keep secondary fields
+  available without crowding each row. Site settings group related controls,
+  and filters and card bodies use consistent spacing.
+- **Reports use a compact filter row and wrap long visitor comments.**
+  Secondary notes align with their card bodies. Long Volume and Tickets charts
+  open on recent activity while retaining their chronological order; later
+  tab changes and resizes preserve the reader's manual scrolling.
+- **Authentication forms use consistent spacing and clearer feedback.**
+  Sign-in, single sign-on, recovery, reset, and two-factor forms have distinct
+  accessible names and correctly associated help, status, and error text.
+  Dashboard tabs changed with arrow keys, Home, or End now keep that selection
+  after a refresh.
+- **Widget forms and controls are easier to use on phones.**
+  Editing text is consistently readable, focus indicators are clearer, and
+  attachment and close controls have more room. Removing a focused attachment
+  returns focus to Attach in both the widget and dashboard replies.
+- **Release checks correctly identify the CI run preventing publication.**
+  Pushing a release tag before its main-branch CI finishes still refuses to
+  publish, and now reports the run instead of failing while formatting that
+  diagnostic. The publication requirements are unchanged.
+
 ## [1.1.0] - 2026-10-01
 
 **No operator action required.** Pull and restart. Five migrations run

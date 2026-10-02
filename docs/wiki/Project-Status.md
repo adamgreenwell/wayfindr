@@ -2,7 +2,8 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.1.0` (October 1, 2026).
+The latest public release is `v1.1.0` (October 1, 2026). The next patch release
+is being prepared as `1.1.1`; it is not published yet.
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
