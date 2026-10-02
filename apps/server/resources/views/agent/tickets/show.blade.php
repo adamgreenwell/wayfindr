@@ -21,9 +21,6 @@
 
             @php
                 $ticketTiming = $ticket->queueTimingContext();
-                $ticketReplyVisibility = $canViewLinkedConversation
-                    ? $ticket->replyVisibility()
-                    : ['tone' => 'manual'];
                 $ticketLifecycleNote = $ticket->latestLifecycleNote();
                 // One label, resolved in the controller, in the precedence the
                 // visitors list and the other two surfaces use. This put the
@@ -38,60 +35,6 @@
                     || $visitorContext['started_page_url']
                     || $visitorContext['host_context'] !== [];
             @endphp
-            <section class="section agent-brief" aria-labelledby="ticket-agent-brief-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="ticket-agent-brief-heading">{{ __('ticket_detail.brief.heading') }}</h2>
-                        <p class="lede" lang="">{{ $ticket->subject }}</p>
-                    </div>
-                    <span class="readiness-status" data-status="{{ $ticketReplyVisibility['tone'] }}">
-                        {{ __('tickets.row.'.$ticket->attentionLabelKey()) }}
-                    </span>
-                </div>
-
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('ticket_detail.common.owner') }}</span>
-                        <span class="meta-value" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('ticket_detail.common.priority') }}</span>
-                        <span class="meta-value">{{ __('tickets.priorities.'.$ticket->priority) }}</span>
-                    </div>
-                    @foreach ($slaStates as $slaState)
-                        <div class="meta-item">
-                            <span class="meta-label">{{ $slaState['metric_label'] }}</span>
-                            <span class="readiness-status" data-status="{{ $slaState['tone'] }}">{{ $slaState['label'] }}</span>
-                            <span class="lede">{{ $slaState['detail'] }}</span>
-                        </div>
-                    @endforeach
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('ticket_detail.common.category') }}</span>
-                        <span class="meta-value">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('ticket_detail.common.reference') }}</span>
-                        <span class="meta-value">
-                            @if ($canViewLinkedConversation && $ticket->conversation)
-                                <x-support-code-reference
-                                    :code="$ticket->conversation->support_code"
-                                    :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
-                                />
-                            @else
-                                {{ __('ticket_detail.reference', ['id' => $ticket->id]) }}
-                            @endif
-                        </span>
-                    </div>
-                </div>
-
-                @if ($canViewLinkedConversation && $ticket->conversation)
-                    <div class="section-form-row">
-                        <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                            {{ __('ticket_detail.brief.open_conversation') }}
-                        </a>
-                    </div>
-                @endif
-            </section>
             @php
                 $ticketWorkspaceTabs = [
                     ['id' => 'work', 'label' => __('ticket_detail.tabs.work')],
@@ -122,16 +65,44 @@
             <section class="section" aria-labelledby="ticket-work-state-heading">
                 <div class="section-header">
                     <h2 id="ticket-work-state-heading">{{ __('ticket_detail.work.heading') }}</h2>
-                    <span class="lede">{{ __('tickets.row.'.$ticket->attentionLabelKey()) }}</span>
+                    <div class="section-form-row">
+                        <span class="wf-queue-state" @if (in_array($ticket->attentionState(), ['needs_reply', 'needs_owner'], true)) data-tone="waiting" @endif>
+                            <i aria-hidden="true"></i>{{ __('tickets.row.'.$ticket->attentionLabelKey()) }}
+                        </span>
+                        @if ($canViewLinkedConversation && $ticket->conversation)
+                            <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
+                                {{ __('ticket_detail.brief.open_conversation') }}
+                            </a>
+                        @endif
+                    </div>
                 </div>
 
                 <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('ticket_detail.common.owner') }}</span>
+                        <span class="meta-value" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('ticket_detail.common.priority') }}</span>
+                        <span class="meta-value">{{ __('tickets.priorities.'.$ticket->priority) }}</span>
+                    </div>
+                    @foreach ($slaStates as $slaState)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $slaState['metric_label'] }}</span>
+                            <span class="readiness-status" data-status="{{ $slaState['tone'] }}">{{ $slaState['label'] }}</span>
+                            <span class="lede">{{ $slaState['detail'] }}</span>
+                        </div>
+                    @endforeach
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('ticket_detail.common.category') }}</span>
+                        <span class="meta-value">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
+                    </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.status') }}</span>
                         <span class="meta-value">{{ __('tickets.statuses.'.$ticket->status) }}</span>
                     </div>
                     @if ($ticketLifecycleNote)
-                        <div class="meta-item">
+                        <div class="meta-item ticket-work-context">
                             <span class="meta-label">{{ __('ticket_detail.work.lifecycle_note') }}</span>
                             <span class="meta-value">{{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}</span>
                             <span class="lede" lang="">{{ $ticketLifecycleNote['body'] }}</span>
@@ -145,7 +116,7 @@
                             </span>
                         </div>
                     @endif
-                    <div class="meta-item">
+                    <div class="meta-item ticket-work-context">
                         <span class="meta-label">{{ __('ticket_detail.common.timing') }}</span>
                         <span class="meta-value">{{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}</span>
                         <span class="lede">{{ $ticketTiming['wait_since']

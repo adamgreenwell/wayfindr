@@ -2672,6 +2672,15 @@
             box-shadow: 0 0 0 1px var(--border);
         }
 
+        .ticket-work-context {
+            grid-column: 1 / -1;
+        }
+
+        .ticket-work-context .meta-value {
+            display: inline;
+            margin-right: var(--wf-space-2);
+        }
+
         /* Forms lay their fields out on the same grid, but its 1px gap and
            hairline belong to tiles that draw their own ring and padding:
            fields left on them touched, sat under a second rule, and the
@@ -3838,6 +3847,234 @@
                 grid-template-columns: 1fr;
             }
         }
+        /* Tickets keep one checkbox and one shortcut link per row at every
+           width. Secondary columns share their renderer with a mobile-only
+           native disclosure; the desktop table keeps its original columns. */
+        .wf-ticket-queue .wf-ticket-mobile-label,
+        .wf-ticket-queue .wf-ticket-mobile-details {
+            display: none;
+        }
+
+        .wf-ticket-select-all,
+        .wf-ticket-select {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        @media (max-width: 700px) {
+            #tickets [data-ticket-bulk-form] .wf-bulk-toolbar select {
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .wf-ticket-queue-wrap {
+                overflow: visible;
+            }
+
+            .wf-ticket-queue,
+            .wf-ticket-queue thead,
+            .wf-ticket-queue tbody {
+                display: block;
+                width: 100%;
+            }
+
+            .wf-ticket-queue thead tr {
+                display: block;
+            }
+
+            /* Keep column headings available to assistive technology while
+               leaving the original select-all control in reach on phones. */
+            .wf-ticket-queue thead th:not(.wf-queue-select) {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                clip-path: inset(50%);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .wf-ticket-queue thead .wf-ticket-mobile-details {
+                display: block;
+            }
+
+            .wf-ticket-queue thead .wf-queue-select {
+                display: block;
+                width: 100%;
+                padding: var(--wf-space-2) var(--wf-space-3);
+                text-align: left;
+            }
+
+            .wf-ticket-select-all {
+                gap: var(--wf-space-2);
+                min-height: 44px;
+                cursor: pointer;
+            }
+
+            .wf-ticket-select {
+                justify-content: center;
+                width: 44px;
+                min-height: 44px;
+                cursor: pointer;
+            }
+
+            .wf-ticket-queue tbody tr {
+                display: grid;
+                grid-template-columns: 44px minmax(0, 1fr);
+                gap: var(--wf-space-2) var(--wf-space-2);
+                margin-top: var(--wf-space-3);
+                padding: var(--wf-space-3);
+                border: var(--wf-border) solid var(--wf-rule);
+                border-left: var(--wf-rail) solid var(--wf-row-site, var(--wf-rule-firm));
+                background: var(--wf-surface);
+            }
+
+            .wf-ticket-queue tbody td {
+                grid-column: 2;
+                min-width: 0;
+                width: auto;
+                padding: 0;
+                border: 0;
+                font-size: 13.5px;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue tbody .wf-ticket-secondary {
+                display: none;
+            }
+
+            .wf-ticket-queue tbody tr:hover td,
+            .wf-ticket-queue [data-queue-bulk-row][data-selected] td {
+                background: transparent;
+            }
+
+            .wf-ticket-queue tbody .wf-queue-select {
+                grid-column: 1;
+                grid-row: 1;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                width: 44px;
+                padding: 0;
+            }
+
+            .wf-ticket-queue input[data-queue-select],
+            .wf-ticket-queue input[data-queue-select-all] {
+                width: 24px;
+                height: 24px;
+                margin: var(--wf-space-2);
+                flex: none;
+            }
+
+            .wf-ticket-queue tbody .wf-queue-subject {
+                grid-row: 1;
+                min-width: 0;
+                border-left: 0;
+                font-size: 1rem;
+            }
+
+            .wf-ticket-queue .wf-queue-subject > a {
+                display: block;
+                padding-block: var(--wf-space-2);
+            }
+
+            .wf-ticket-queue .wf-ticket-status {
+                grid-row: 2;
+            }
+
+            .wf-ticket-queue .wf-ticket-next-step {
+                grid-row: 3;
+            }
+
+            .wf-ticket-queue .wf-ticket-owner {
+                grid-row: 4;
+            }
+
+            .wf-ticket-queue .wf-ticket-timing {
+                grid-row: 5;
+            }
+
+            .wf-ticket-queue tbody .wf-ticket-mobile-details {
+                display: block;
+                grid-row: 6;
+            }
+
+            .wf-ticket-queue .wf-ticket-mobile-label {
+                display: block;
+                color: var(--wf-muted);
+                font-family: var(--wf-font-cond);
+                font-size: var(--wf-text-label);
+                font-weight: 600;
+            }
+
+            .wf-ticket-queue .wf-queue-preview,
+            .wf-ticket-queue .wf-queue-assignee,
+            .wf-ticket-queue .wf-queue-cobrowse,
+            .wf-ticket-queue .wf-queue-state,
+            .wf-ticket-queue .wf-queue-site,
+            .wf-ticket-queue .wf-queue-mark {
+                max-width: 100%;
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue .wf-queue-preview {
+                font-size: 12.5px;
+            }
+
+            .wf-ticket-queue .wf-queue-state,
+            .wf-ticket-queue .wf-queue-site,
+            .wf-ticket-queue .wf-queue-mark {
+                align-items: baseline;
+            }
+
+            .wf-ticket-queue .wf-ticket-detail-list {
+                display: grid;
+                gap: var(--wf-space-3);
+                margin: 0;
+            }
+
+            .wf-ticket-detail-list dt {
+                color: var(--wf-muted);
+                font-size: var(--wf-text-label);
+                font-weight: 600;
+            }
+
+            .wf-ticket-detail-list dd {
+                margin: var(--wf-space-1) 0 0;
+            }
+
+            .wf-ticket-queue .ticket-label-chip {
+                max-width: 100%;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue .details-disclosure__summary {
+                min-height: 44px;
+                padding: var(--wf-space-3);
+            }
+
+            .wf-ticket-queue [data-queue-bulk-row][data-selected] {
+                background: color-mix(in srgb, var(--wf-brand) 9%, var(--wf-surface));
+            }
+
+            .wf-ticket-queue [data-agent-shortcut-row][data-shortcut-active] {
+                outline: 2px solid var(--wf-brand);
+                outline-offset: 2px;
+            }
+
+            .wf-ticket-queue [data-agent-shortcut-row][data-shortcut-active] td:first-child {
+                box-shadow: none;
+            }
+        }
+
     </style>
 </head>
 <body>

@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-test('ticket brief and work state stay lean', function (): void {
+test('ticket work summary stays lean', function (): void {
     [$agent, $site, $visitor, $conversation] = ticketWorkStateContext();
 
     $ticket = Ticket::factory()
@@ -32,10 +32,9 @@ test('ticket brief and work state stay lean', function (): void {
     $response = $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        // The brief: identity + routing facts and the one useful jump.
-        ->assertSeeInOrder(['Ticket brief', 'Owner', 'Priority', 'Category', 'Reference', 'Open conversation'])
-        // The work state: status, timing — no ambient previews or coaching.
-        ->assertSeeInOrder(['Work state', 'Status', 'Timing']);
+        // One summary carries the routing facts, status, timing and useful jump.
+        ->assertSeeInOrder(['Work state', 'Open conversation', 'Owner', 'Priority', 'Category', 'Status', 'Timing'])
+        ->assertDontSee('Ticket brief');
 
     // The coaching surfaces are gone from the task page.
     $response->assertDontSee('Next action')
