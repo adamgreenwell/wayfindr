@@ -122,6 +122,7 @@
                             @endforeach
                         </div>
                     </div>
+                    <div class="section-body">
                     <p class="chart-legend">
                         <span class="chart-key chart-key--opened"></span> {{ __('reports.counts.opened_label') }}
                         <span class="chart-key chart-key--closed"></span> {{ __('reports.counts.closed_label') }}
@@ -130,6 +131,7 @@
                     <p class="lede">
                         <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'daily']) }}">{{ __('reports.conversations.volume.export') }}</a>
                     </p>
+                    </div>
                 @endif
             </section>
 
@@ -138,6 +140,7 @@
                     <h2 id="report-queue-heading">{{ __('reports.conversations.queue.heading') }}</h2>
                     <span class="lede">{{ __('reports.conversations.queue.lede') }}</span>
                 </div>
+                <div class="section-body">
                 @if ($queueHealth['needs_reply'] === 0)
                     <p class="empty">{{ __('reports.conversations.queue.empty') }}</p>
                 @else
@@ -147,6 +150,7 @@
                     ]) !!}</p>
                 @endif
                 <p class="lede">{{ trans_choice('reports.conversations.queue.threshold', $queueHealth['threshold_minutes'], ['count' => \App\Support\ReaderNumber::count($queueHealth['threshold_minutes'])]) }}</p>
+                </div>
             </section>
         </x-tab-panel>
 
@@ -527,7 +531,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="lede">{{ __('reports.agents.deactivated_detail') }}
+                    <p class="lede section-body">{{ __('reports.agents.deactivated_detail') }}
                         <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'agents']) }}">{{ __('reports.agents.export') }}</a>
                     </p>
                 @endif

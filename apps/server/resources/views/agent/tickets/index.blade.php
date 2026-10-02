@@ -268,29 +268,33 @@
                             <button class="button secondary" type="button" data-queue-bulk-clear data-ticket-bulk-clear disabled>{{ __('tickets.bulk.clear') }}</button>
                         </div>
 
-                        <div class="table-wrap">
-                            <table class="wf-queue" data-agent-shortcut-queue>
-                            <thead>
-                                <tr>
-                                    <th class="wf-queue-select" scope="col">
-                                        <input type="checkbox" data-queue-select-all data-ticket-select-all aria-label="{{ __('tickets.bulk.select_all') }}">
+                        <div class="table-wrap wf-ticket-queue-wrap">
+                            <table class="wf-queue wf-ticket-queue" role="table" data-agent-shortcut-queue>
+                            <thead role="rowgroup">
+                                <tr role="row">
+                                    <th role="columnheader" class="wf-queue-select" scope="col">
+                                        <label class="wf-ticket-select-all">
+                                            <input type="checkbox" data-queue-select-all data-ticket-select-all aria-label="{{ __('tickets.bulk.select_all') }}">
+                                            <span class="wf-ticket-mobile-label">{{ __('tickets.bulk.select_all') }}</span>
+                                        </label>
                                     </th>
-                                    <th scope="col">{{ __('tickets.columns.subject') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.subject') }}</th>
                                     @if ($canViewTicketConversations)
-                                        <th scope="col">{{ __('tickets.columns.latest_activity') }}</th>
+                                        <th role="columnheader" scope="col">{{ __('tickets.columns.latest_activity') }}</th>
                                     @endif
-                                    <th scope="col">{{ __('tickets.columns.site') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.status') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.category') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.labels') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.priority') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.assignee') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.next_step') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.external_issue') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.timing') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.site') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.status') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.category') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.labels') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.priority') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.assignee') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.next_step') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.external_issue') }}</th>
+                                    <th role="columnheader" scope="col">{{ __('tickets.columns.timing') }}</th>
+                                    <th role="columnheader" class="wf-ticket-mobile-details" scope="col">{{ __('ticket_detail.tabs.details') }}</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody role="rowgroup">
                                 @foreach ($tickets as $ticket)
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
@@ -326,18 +330,20 @@
                                             'detail' => 'Wayfindr is the only tracker for this ticket.',
                                         ];
                                     @endphp
-                                    <tr data-agent-shortcut-row data-queue-bulk-row data-ticket-bulk-row>
-                                        <td class="wf-queue-select">
-                                            <input
-                                                type="checkbox"
-                                                name="ticket_ids[]"
-                                                value="{{ $ticket->id }}"
-                                                data-queue-select
-                                                data-ticket-select
-                                                aria-label="{{ __('tickets.bulk.select_ticket', ['subject' => $ticket->subject]) }}"
-                                            >
+                                    <tr role="row" style="--wf-row-site: var({{ $ticket->site->resolvedColor()->cssVariable() }})" data-agent-shortcut-row data-queue-bulk-row data-ticket-bulk-row>
+                                        <td role="cell" class="wf-queue-select">
+                                            <label class="wf-ticket-select">
+                                                <input
+                                                    type="checkbox"
+                                                    name="ticket_ids[]"
+                                                    value="{{ $ticket->id }}"
+                                                    data-queue-select
+                                                    data-ticket-select
+                                                    aria-label="{{ __('tickets.bulk.select_ticket', ['subject' => $ticket->subject]) }}"
+                                                >
+                                            </label>
                                         </td>
-                                        <td class="wf-queue-subject" style="--wf-row-site: var({{ $ticket->site->resolvedColor()->cssVariable() }})">
+                                        <td role="cell" class="wf-queue-subject" style="--wf-row-site: var({{ $ticket->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}" data-agent-shortcut-open>
                                                 {{ $ticket->subject }}
                                             </a>
@@ -355,59 +361,36 @@
                                             @endif
                                         </td>
                                         @if ($canViewTicketConversations)
-                                            <td class="ticket-activity-preview">
-                                                <span class="wf-queue-cobrowse">{{ $previewLabel }}</span>
-                                                <span class="wf-queue-preview" title="{{ $previewBody }}">
-                                                    {{ $previewBody }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
-                                                </span>
-                                                @if ($activityPreview['reply_visibility'])
-                                                    <span class="wf-queue-preview">
-                                                        {{ __('tickets.row.reply_visibility') }}
-                                                        @php
-                                                            $cue = $activityPreview['reply_visibility']['cue'] ?? null;
-                                                        @endphp
-                                                        <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $cue ? __('tickets.read_state.'.$cue['key']) : __('tickets.row.no_linked_conversation') }}</span>
-                                                        {{ $cue
-                                                            ? ($cue['seen_at']
-                                                                ? __('tickets.read_state.detail_seen', ['elapsed' => $cue['seen_at']->diffForHumans()])
-                                                                : __('tickets.read_state.'.$cue['detail_key']))
-                                                            : __('tickets.row.reply_visibility_none') }}
-                                                    </span>
-                                                @endif
+                                            <td role="cell" class="ticket-activity-preview wf-ticket-secondary">
+                                                @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'activity'])
                                             </td>
                                         @endif
-                                        <td>
-                                            <span class="wf-queue-site">
-                                                <span class="wf-site-dot" style="background: var({{ $ticket->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
-                                                {{ $ticket->site->name }}
-                                            </span>
+                                        <td role="cell" class="wf-ticket-secondary">
+                                            @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'site'])
                                         </td>
-                                        <td><span class="wf-queue-cobrowse">{{ __('tickets.statuses.'.$ticket->status) }}</span></td>
+                                        <td role="cell" class="wf-ticket-status">
+                                            <span class="wf-ticket-mobile-label" aria-hidden="true">{{ __('tickets.columns.status') }}</span>
+                                            <span class="wf-queue-cobrowse">{{ __('tickets.statuses.'.$ticket->status) }}</span>
+                                        </td>
                                         {{-- From the catalogue, keyed by the value on the row. TicketCategory's
                                              own labels stay English for the surfaces not yet extracted. --}}
-                                        <td><span class="wf-queue-cobrowse">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span></td>
-                                        <td>
-                                            @if ($ticket->labels->isEmpty())
-                                                <span class="wf-queue-cobrowse">{{ __('tickets.row.none') }}</span>
-                                            @else
-                                                <div class="ticket-label-list">
-                                                    @foreach ($ticket->labels as $label)
-                                                        <x-ticket-label-chip :label="$label" :ticket-status="$ticketStatus" />
-                                                    @endforeach
-                                                </div>
-                                            @endif
+                                        <td role="cell" class="wf-ticket-secondary">
+                                            @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'category'])
                                         </td>
-                                        <td>
-                                            <span class="wf-queue-cobrowse" @if ($ticket->priority === 'urgent' || $ticket->priority === 'high') data-tone="attention" @endif>
-                                                {{ __('tickets.priorities.'.$ticket->priority) }}
-                                            </span>
+                                        <td role="cell" class="wf-ticket-secondary">
+                                            @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'labels'])
                                         </td>
-                                        <td>
+                                        <td role="cell" class="wf-ticket-secondary">
+                                            @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'priority'])
+                                        </td>
+                                        <td role="cell" class="wf-ticket-owner">
+                                            <span class="wf-ticket-mobile-label" aria-hidden="true">{{ __('tickets.columns.assignee') }}</span>
                                             <span class="wf-queue-assignee" @if (! $ticket->assignee) data-unassigned="true" @endif>
                                                 {{ $ticket->assignee?->name ?? __('tickets.row.unassigned') }}
                                             </span>
                                         </td>
-                                        <td>
+                                        <td role="cell" class="wf-ticket-next-step">
+                                            <span class="wf-ticket-mobile-label" aria-hidden="true">{{ __('tickets.columns.next_step') }}</span>
                                             <span class="wf-queue-state" @if (in_array($ticket->attentionState(), ['needs_reply', 'needs_owner'], true)) data-tone="waiting" @endif>
                                                 <i aria-hidden="true"></i>{{ __('tickets.row.'.$ticket->attentionLabelKey()) }}
                                             </span>
@@ -423,21 +406,11 @@
                                                 <span class="wf-queue-preview">{{ $ticketLifecycleNote['actor_key'] ? __('tickets.row.'.$ticketLifecycleNote['actor_key']) : $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}</span>
                                             @endif
                                         </td>
-                                        <td>
-                                            <span class="wf-queue-cobrowse" @if ($ticketExternalIssueState['tone'] !== 'manual') data-tone="{{ $ticketExternalIssueState['tone'] === 'ready' ? 'live' : 'attention' }}" @endif>
-                                                {{ $ticketExternalIssueState['label'] }}
-                                            </span>
-                                            <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['detail'] }}">{{ $ticketExternalIssueState['detail'] }}</span>
-                                            @if ($ticketExternalIssueState['attempt'])
-                                                <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['attempt']['body'] }}">
-                                                    {{ __('tickets.row.latest_attempt') }} <x-translated-feedback :feedback="$ticketExternalIssueState['attempt']['label_feedback']" />: <x-translated-feedback :feedback="$ticketExternalIssueState['attempt']['body_feedback']" />
-                                                </span>
-                                                @if ($ticketExternalIssueState['attempt']['occurred_at'])
-                                                    <span class="wf-queue-preview">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>
-                                                @endif
-                                            @endif
+                                        <td role="cell" class="wf-ticket-secondary">
+                                            @include('agent.tickets.partials.queue-secondary-field', ['queueField' => 'external'])
                                         </td>
-                                        <td class="wf-queue-when">
+                                        <td role="cell" class="wf-queue-when wf-ticket-timing">
+                                            <span class="wf-ticket-mobile-label" aria-hidden="true">{{ __('tickets.columns.timing') }}</span>
                                             {{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}
                                             <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
                                             @if ($slaState)
@@ -446,6 +419,22 @@
                                                 </span>
                                                 <span class="wf-queue-preview">{{ $slaState['detail'] }}</span>
                                             @endif
+                                        </td>
+                                        {{-- One selection checkbox and shortcut link per ticket; only
+                                             secondary display fields are repeated in the mobile disclosure. --}}
+                                        <td role="cell" class="wf-ticket-mobile-details">
+                                            <x-details-disclosure :summary="__('ticket_detail.tabs.details')">
+                                                <dl class="wf-ticket-detail-list">
+                                                    @foreach (['site', 'priority', 'category', 'labels', 'activity', 'external'] as $queueField)
+                                                        @if ($queueField !== 'activity' || $canViewTicketConversations)
+                                                            <div>
+                                                                <dt>{{ __('tickets.columns.'.match ($queueField) { 'activity' => 'latest_activity', 'external' => 'external_issue', default => $queueField }) }}</dt>
+                                                                <dd>@include('agent.tickets.partials.queue-secondary-field', ['queueField' => $queueField])</dd>
+                                                            </div>
+                                                        @endif
+                                                    @endforeach
+                                                </dl>
+                                            </x-details-disclosure>
                                         </td>
                                     </tr>
                                 @endforeach

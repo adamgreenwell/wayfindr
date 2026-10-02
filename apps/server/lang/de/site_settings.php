@@ -79,6 +79,13 @@ return [
         'count' => '{1} :count Bereich|[2,*] :count Bereiche',
         'aria' => 'Bereiche der Website-Details',
         'jump' => 'Springen zu',
+        'groups' => [
+            'site' => 'Website und Installation',
+            'support' => 'Support und Weiterleitung',
+            'widget' => 'Chatfenster',
+            'privacy' => 'Besuchende und Datenschutz',
+            'lifecycle' => 'Website-Lebenszyklus',
+        ],
         'sections' => [
             'site' => 'Website',
             'snippet' => 'Installations-Snippet',

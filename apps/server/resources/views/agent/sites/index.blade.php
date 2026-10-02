@@ -1,7 +1,6 @@
 <x-layouts.app :title="__('sites.document_title')" :agent="$agent" :account="$account">
     <x-page-header :title="__('sites.title')" :subtitle="__('sites.subtitle')">
         <x-slot:actions>
-            <span class="lede">{{ $siteFilters['summary_label'] }}</span>
             @if ($canCreateSite)
                 <a class="button secondary" href="{{ route('dashboard.sites.create') }}">{{ __('sites.add_site') }}</a>
             @endif
@@ -83,7 +82,6 @@
 
             <div class="wf-filter-actions">
                 <button class="button" type="submit">{{ __('sites.index.filters.apply') }}</button>
-                <span class="wf-filter-help">{{ $siteFilters['summary_label'] }}</span>
             </div>
         </form>
 
@@ -94,14 +92,15 @@
             </div>
             <div class="filter-chips">
                 @forelse ($siteFilters['active'] as $filter)
-                    <span class="filter-chip">
+                    <a class="filter-chip" href="{{ $filter['href'] }}">
                         {{ $filter['label'] }}:
                         @if ($filter['value_is_authored'])
                             <span lang="">{{ $filter['value'] }}</span>
                         @else
                             {{ $filter['value'] }}
                         @endif
-                    </span>
+                        <span aria-hidden="true">x</span>
+                    </a>
                 @empty
                     <span class="filter-chip">{{ __('sites.index.filters.none') }}</span>
                 @endforelse

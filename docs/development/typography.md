@@ -33,6 +33,27 @@ Latin, Greek and Cyrillic in one file each, which is what a support desk staffed
 in more than one language needs, and 380 KB total is a one-time cached cost on an
 application agents keep open all day.
 
+## Dashboard usage
+
+Use the generated font stacks for the job each family does:
+
+- `--wf-font-sans` for body text and controls: regular 400, medium 500, and
+  semibold 600 for headings, labels, and emphasis.
+- `--wf-font-cond` at 600 for the compact navigation and queue headings.
+- `--wf-font-mono` for code, commands, support codes, and machine identifiers:
+  regular 400, with medium 500 for emphasis.
+
+Choose a shipped weight rather than requesting 650 or 700 and relying on browser
+matching or synthetic bold. Native controls inherit the dashboard family;
+ordinary `.field` editing controls use `1rem` (16px at the default root size),
+while compact queue controls keep their own density.
+
+The dashboard consistency pass aligns these families and weights, removes the
+extra first-field gap caused by hidden form inputs, and uses shared spacing for
+card bodies and filter feedback. Compact queues retain their density; mobile
+ticket rows prioritize work context and disclose secondary fields. These source
+conventions do not establish runtime visual acceptance.
+
 ## Licence
 
 SIL Open Font License 1.1 -- `OFL.txt`, shipped alongside the fonts as the

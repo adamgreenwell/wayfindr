@@ -376,7 +376,7 @@ test('the section controls carry the design system button class', function (): v
     // Unclassed submits render as native OS push buttons next to the styled
     // controls either side of them (ADR 0014). Asserted rather than eyeballed,
     // since nothing else in the suite renders this section.
-    $section = str($body)->after('identity-verification-heading')->before('</section>')->toString();
+    $section = str($body)->after('aria-labelledby="identity-verification-heading">')->before('</section>')->toString();
 
     expect($section)->toContain('<button class="button" type="submit"')
         ->and($section)->toContain('class="button secondary" type="submit"');

@@ -23,10 +23,12 @@
                         <span class="meta-label">{{ __('account.context.sites') }}</span>
                         <span class="meta-value">{{ trans_choice('account.context.site_count', $siteCount, ['count' => \App\Support\ReaderNumber::count($siteCount)]) }}</span>
                     </div>
+                    @if ($visibleSiteCount !== $siteCount)
                     <div class="meta-item">
                         <span class="meta-label">{{ __('account.context.visible') }}</span>
                         <span class="meta-value">{{ trans_choice('account.context.site_count', $visibleSiteCount, ['count' => \App\Support\ReaderNumber::count($visibleSiteCount)]) }}</span>
                     </div>
+                    @endif
                     <div class="meta-item">
                         <span class="meta-label">{{ __('account.context.assignments') }}</span>
                         <span class="meta-value">{{ trans_choice('account.context.assignment_count', $supportAssignmentCount, ['count' => \App\Support\ReaderNumber::count($supportAssignmentCount)]) }}</span>
@@ -51,11 +53,13 @@
                             <div class="meta-item">
                                 <span class="meta-label">{{ $metric['label'] }}</span>
                                 <span class="meta-value">{{ $metric['value'] }}</span>
+                                @if ($metric['tone'] !== 'ready')
                                 <span class="lede">
                                     <span class="readiness-status" data-status="{{ $metric['tone'] }}">
                                         {{ __('account.external.tones.'.$metric['tone']) }}
                                     </span>
                                 </span>
+                                @endif
                                 @if (! empty($metric['href']) && ! empty($metric['action']))
                                     <p class="readiness-action">
                                         <a class="text-link" href="{{ $metric['href'] }}">{{ $metric['action'] }}</a>

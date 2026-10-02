@@ -26,6 +26,96 @@
                 </p>
             @endif
 
+            @php
+                $latestVisitor = $site->latestVisitor;
+                $lastPageUrl = $canViewSupportWork
+                    ? data_get($latestVisitor?->metadata, 'last_page_url')
+                    : null;
+                $selectedSupportAgentIds = collect(old('support_agent_ids', $supportAgentIds))
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $selectedCapabilities = collect(old('capabilities', ['create_issue']))
+                    ->filter()
+                    ->map(fn ($capability) => (string) $capability)
+                    ->all();
+                $siteMapGroups = [
+                    [
+                        'key' => 'site',
+                        'label' => __('site_settings.map.groups.site'),
+                        'sections' => [
+                            ['label' => __('site_settings.archived.heading'), 'href' => '#site-archived-heading', 'visible' => $site->isArchived()],
+                            ['label' => __('site_settings.map.sections.snippet'), 'href' => '#install-snippet-heading'],
+                            ['label' => __('site_settings.map.sections.site'), 'href' => '#site-context-heading'],
+                        ],
+                    ],
+                    [
+                        'key' => 'support',
+                        'label' => __('site_settings.map.groups.support'),
+                        'sections' => [
+                            ['label' => __('site_settings.map.sections.access'), 'href' => '#support-access-heading'],
+                            ['label' => __('site_settings.map.sections.automatic_routing'), 'href' => '#automatic-routing-heading'],
+                            ['label' => __('site_settings.inbound.heading'), 'href' => '#inbound-email-heading'],
+                            ['label' => __('site_settings.map.sections.routing'), 'href' => '#external-issue-routing-heading'],
+                            ['label' => __('site_settings.external.health_heading'), 'href' => '#external-issue-health-heading', 'visible' => $canManageTickets],
+                            ['label' => __('site_settings.map.sections.data'), 'href' => '#data-responsibility-heading'],
+                        ],
+                    ],
+                    [
+                        'key' => 'widget',
+                        'label' => __('site_settings.map.groups.widget'),
+                        'sections' => [
+                            ['label' => __('site_settings.appearance.heading'), 'href' => '#widget-appearance-heading'],
+                            ['label' => __('site_settings.language.heading'), 'href' => '#widget-language-heading'],
+                            ['label' => __('site_settings.hours.heading'), 'href' => '#support-hours-heading'],
+                            ['label' => __('site_settings.map.sections.rating'), 'href' => '#rating-prompt-heading'],
+                        ],
+                    ],
+                    [
+                        'key' => 'privacy',
+                        'label' => __('site_settings.map.groups.privacy'),
+                        'sections' => [
+                            ['label' => __('site_settings.identity_verification.heading'), 'href' => '#identity-verification-heading'],
+                            ['label' => __('site_settings.intake.heading'), 'href' => '#visitor-intake-heading'],
+                            ['label' => __('site_settings.map.sections.presence'), 'href' => '#presence-settings-heading'],
+                            ['label' => __('site_settings.map.sections.privacy'), 'href' => '#privacy-settings-heading'],
+                        ],
+                    ],
+                    [
+                        'key' => 'lifecycle',
+                        'label' => __('site_settings.map.groups.lifecycle'),
+                        'sections' => [
+                            ['label' => __('site_settings.retire.heading'), 'href' => '#retire-site-heading', 'visible' => ! $site->isArchived() && $agent->can('archive', $site)],
+                            ['label' => __('site_settings.purge.heading'), 'href' => '#purge-site-heading', 'visible' => $site->isArchived() && $agent->can('purge', $site)],
+                        ],
+                    ],
+                ];
+                $siteMapGroups = collect($siteMapGroups)
+                    ->map(fn (array $group): array => [...$group, 'sections' => array_values(array_filter($group['sections'], fn (array $section): bool => $section['visible'] ?? true))])
+                    ->filter(fn (array $group): bool => $group['sections'] !== [])
+                    ->all();
+                $siteMapSectionCount = collect($siteMapGroups)->sum(fn (array $group): int => count($group['sections']));
+            @endphp
+
+            <section class="section" aria-labelledby="site-map-heading">
+                <div class="section-header">
+                    <h2 id="site-map-heading">{{ __('site_settings.map.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('site_settings.map.count', $siteMapSectionCount, ['count' => \App\Support\ReaderNumber::count($siteMapSectionCount)]) }}</span>
+                </div>
+
+                <nav class="site-settings-nav" aria-label="{{ __('site_settings.map.aria') }}">
+                    @foreach ($siteMapGroups as $siteMapGroup)
+                        <div class="site-settings-nav__group" aria-labelledby="site-map-{{ $siteMapGroup['key'] }}-heading">
+                            <h3 id="site-map-{{ $siteMapGroup['key'] }}-heading" class="meta-label">{{ $siteMapGroup['label'] }}</h3>
+                            <div class="filter-chips">
+                                @foreach ($siteMapGroup['sections'] as $siteMapSection)
+                                    <a class="filter-chip" href="{{ $siteMapSection['href'] }}">{{ $siteMapSection['label'] }}</a>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
+                </nav>
+            </section>
+
             @if ($site->isArchived())
                 <section class="section" aria-labelledby="site-archived-heading">
                     <div class="section-header">
@@ -103,53 +193,6 @@
             @if ($agent->isPlatformOperator())
                 <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
             @endif
-
-
-            @php
-                $latestVisitor = $site->latestVisitor;
-                $lastPageUrl = $canViewSupportWork
-                    ? data_get($latestVisitor?->metadata, 'last_page_url')
-                    : null;
-                $selectedSupportAgentIds = collect(old('support_agent_ids', $supportAgentIds))
-                    ->map(fn ($id) => (int) $id)
-                    ->all();
-                $selectedCapabilities = collect(old('capabilities', ['create_issue']))
-                    ->filter()
-                    ->map(fn ($capability) => (string) $capability)
-                    ->all();
-                $siteMapSections = [
-                    ['label' => __('site_settings.map.sections.snippet'), 'href' => '#install-snippet-heading'],
-                    ['label' => __('site_settings.map.sections.site'), 'href' => '#site-context-heading'],
-                    ['label' => __('site_settings.map.sections.access'), 'href' => '#support-access-heading'],
-                    ['label' => __('site_settings.map.sections.automatic_routing'), 'href' => '#automatic-routing-heading'],
-                    ['label' => __('site_settings.map.sections.routing'), 'href' => '#external-issue-routing-heading'],
-                    ['label' => __('site_settings.map.sections.data'), 'href' => '#data-responsibility-heading'],
-                    ['label' => __('site_settings.map.sections.rating'), 'href' => '#rating-prompt-heading'],
-                    ['label' => __('site_settings.map.sections.presence'), 'href' => '#presence-settings-heading'],
-                    ['label' => __('site_settings.map.sections.privacy'), 'href' => '#privacy-settings-heading'],
-                ];
-            @endphp
-
-            <section class="section" aria-labelledby="site-map-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="site-map-heading">{{ __('site_settings.map.heading') }}</h2>
-                    </div>
-                    <span class="lede">{{ trans_choice('site_settings.map.count', count($siteMapSections), ['count' => \App\Support\ReaderNumber::count(count($siteMapSections))]) }}</span>
-                </div>
-
-                <div class="filter-summary" aria-label="{{ __('site_settings.map.aria') }}">
-                    <div>
-                        <strong>{{ __('site_settings.map.jump') }}</strong>
-                    </div>
-                    <div class="filter-chips">
-                        @foreach ($siteMapSections as $siteMapSection)
-                            <a class="filter-chip" href="{{ $siteMapSection['href'] }}">{{ $siteMapSection['label'] }}</a>
-                        @endforeach
-                    </div>
-                </div>
-            </section>
-
 
 
             <section class="section" aria-labelledby="site-context-heading">

@@ -252,6 +252,19 @@
             line-height: 1.5;
         }
 
+        /* The vendored Sans family stops at 600. Headings and emphasis use
+           that real face rather than the browser's default bold weight. */
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        b,
+        strong {
+            font-weight: 600;
+        }
+
         a {
             color: var(--accent-strong);
         }
@@ -317,7 +330,7 @@
         .wf-mark-name {
             font-family: var(--wf-font-mono);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 500;
             letter-spacing: 0.14em;
             text-transform: uppercase;
         }
@@ -895,6 +908,7 @@
         .wf-lane-count {
             font-family: var(--wf-font-mono);
             font-size: 11px;
+            font-weight: 500;
             font-variant-numeric: tabular-nums;
             color: var(--wf-muted);
         }
@@ -904,7 +918,6 @@
            where every number is coloured has no signal in it. */
         .wf-lane-count[data-tone="waiting"] {
             color: var(--wf-signal-stop);
-            font-weight: 600;
         }
 
         /* A second row of lanes for a queue with more than one axis. Tickets
@@ -930,7 +943,9 @@
         .wf-filters {
             display: flex;
             flex-wrap: wrap;
-            align-items: flex-end;
+            /* Help text belongs below its control. It must not push the
+               other controls down to the bottom of a taller column. */
+            align-items: flex-start;
             gap: var(--wf-space-3);
             padding: var(--wf-space-3) 0 var(--wf-space-4);
         }
@@ -940,6 +955,7 @@
             flex-direction: column;
             gap: 4px;
             min-width: 0;
+            max-width: 100%;
         }
 
         .wf-filter > label {
@@ -974,8 +990,12 @@
 
         .wf-filter-actions {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: var(--wf-space-2);
+            max-width: 100%;
+            /* Match the label-and-gap space above the adjacent controls. */
+            padding-top: calc(var(--wf-space-4) + var(--wf-space-1));
         }
 
         .wf-filter-actions .button {
@@ -998,6 +1018,15 @@
 
         .wf-filters + .section {
             margin-top: 0;
+        }
+
+        .section > .wf-filters {
+            padding: var(--wf-space-3) var(--wf-space-5) var(--wf-space-4);
+        }
+
+        .section > .filter-summary {
+            margin: 0;
+            padding: 0 var(--wf-space-5) var(--wf-space-4);
         }
 
         .wf-queue-summary {
@@ -1815,14 +1844,14 @@
             padding: 0;
             margin-bottom: 6px;
             font-size: 0.9rem;
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .field label {
             display: block;
             margin-bottom: 6px;
             font-size: 0.9rem;
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .field input,
@@ -1834,6 +1863,7 @@
             padding: 11px 12px;
             background: var(--wf-surface);
             color: var(--text);
+            font-size: 1rem;
         }
 
         .field textarea {
@@ -1867,7 +1897,7 @@
         }
 
         .field-help {
-            margin: 8px 0 0;
+            margin: var(--wf-space-2) 0 0;
             color: var(--muted);
             font-size: 0.9rem;
         }
@@ -1875,8 +1905,8 @@
         .check-row {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-top: 16px;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-4);
             color: var(--muted);
         }
 
@@ -1977,7 +2007,7 @@
 
         .wf-pager__summary strong {
             color: var(--text);
-            font-weight: 650;
+            font-weight: 600;
         }
 
         .wf-pager__controls,
@@ -2047,7 +2077,7 @@
 
         .text-link {
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
             text-decoration: none;
         }
 
@@ -2064,6 +2094,49 @@
 
         .section[id] {
             scroll-margin-top: 96px;
+        }
+
+        /* Card content shares one inset, whether it is copy, a legend, or
+           actions. Forms and tables retain their own established padding. */
+        .section-body {
+            padding: var(--wf-space-5);
+        }
+
+        .section > .section-body {
+            margin: 0;
+        }
+
+        .section-body > :first-child {
+            margin-top: 0;
+        }
+
+        .section-body > :last-child {
+            margin-bottom: 0;
+        }
+
+        .section-body .empty {
+            margin: 0;
+            padding: 0;
+        }
+
+        .site-settings-nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+            gap: var(--wf-space-5);
+            padding: var(--wf-space-5);
+        }
+
+        .site-settings-nav__group {
+            min-width: 0;
+        }
+
+        .site-settings-nav__group > .meta-label {
+            margin: 0 0 var(--wf-space-2);
+        }
+
+        .site-settings-nav .filter-chips {
+            justify-content: flex-start;
+            margin: 0;
         }
 
         /* Every site-map chip targets an `#...-heading` on an <h2>, and only
@@ -2192,7 +2265,7 @@
 
         .tabs__badge {
             font-size: 12px;
-            font-weight: 700;
+            font-weight: 600;
             line-height: 1;
             padding: 4px 8px;
             border-radius: 999px;
@@ -2342,6 +2415,7 @@
         .chart-legend {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: var(--wf-space-2);
             font-size: var(--wf-text-ui);
             color: var(--wf-muted);
@@ -2446,7 +2520,7 @@
         .status-message {
             margin: 20px 0 0;
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
         }
 
         /* Closing the desk early is an operational act, not configuration, so
@@ -2479,12 +2553,20 @@
             padding: 20px;
         }
 
-        .section-form .field:first-child {
+        /* Hidden CSRF, method and return inputs precede the first field in
+           POST forms. They draw no content, so only visible siblings add the
+           usual field gap. Nested field groups keep their existing reset. */
+        .section-form .field:first-child,
+        .section-form > .field {
             margin-top: 0;
         }
 
+        .section-form > :not(input[type="hidden"], [hidden]) ~ .field {
+            margin-top: 18px;
+        }
+
         .section-form .button {
-            margin-top: 16px;
+            margin-top: var(--wf-space-4);
         }
 
         .automation-rule-basics {
@@ -2507,7 +2589,7 @@
 
         .automation-builder > legend {
             padding: 0 8px 0 0;
-            font-weight: 700;
+            font-weight: 600;
         }
 
         .automation-builder-row {
@@ -2590,6 +2672,15 @@
             box-shadow: 0 0 0 1px var(--border);
         }
 
+        .ticket-work-context {
+            grid-column: 1 / -1;
+        }
+
+        .ticket-work-context .meta-value {
+            display: inline;
+            margin-right: var(--wf-space-2);
+        }
+
         /* Forms lay their fields out on the same grid, but its 1px gap and
            hairline belong to tiles that draw their own ring and padding:
            fields left on them touched, sat under a second rule, and the
@@ -2621,7 +2712,7 @@
 
         .meta-value {
             display: block;
-            font-weight: 700;
+            font-weight: 600;
             margin-top: 4px;
             overflow-wrap: anywhere;
         }
@@ -2728,7 +2819,7 @@
 
             .management-action {
                 color: var(--accent-strong);
-                font-weight: 700;
+                font-weight: 600;
                 white-space: nowrap;
             }
 
@@ -2860,7 +2951,7 @@
             padding: 0 10px;
             color: var(--muted);
             font-size: 0.82rem;
-            font-weight: 700;
+            font-weight: 600;
             white-space: nowrap;
         }
 
@@ -2895,12 +2986,12 @@
 
         .readiness-action {
             color: var(--text);
-            font-weight: 650;
+            font-weight: 600;
         }
 
         /* An action with no link is one this reader cannot take -- the instance
-           group, where the answer is always "ask your operator". At 650 on full
-           text colour it was louder than the teal links above it, so the panel
+           group, where the answer is always "ask your operator". At full text
+           colour it was louder than the teal links above it, so the panel
            emphasised what the reader could not do over what they could. */
         .readiness-instance-checks .readiness-action:not(:has(a)) {
             /* Muted, but still heavier than the `.lede` detail line above it --
@@ -3060,7 +3151,7 @@
             color: var(--text);
             display: inline-flex;
             font-size: 0.86rem;
-            font-weight: 700;
+            font-weight: 600;
             gap: 8px;
             min-height: 34px;
             padding: 0 12px;
@@ -3101,7 +3192,21 @@
             border: 1px solid var(--border);
             border-radius: 4px;
             color: var(--text);
-            padding: 1px 4px;
+            padding: 1px var(--wf-space-1);
+            font-family: var(--wf-font-mono);
+            font-weight: 400;
+        }
+
+        /* Mono ships regular and medium. Resetting code itself also prevents
+           a bold link or label from asking it for an unvendored 600 face. */
+        b code,
+        strong code,
+        code b,
+        code strong,
+        .text-link code,
+        .code-block b,
+        .code-block strong {
+            font-weight: 500;
         }
 
         .support-reference {
@@ -3120,7 +3225,7 @@
             cursor: pointer;
             display: inline-flex;
             font-size: 0.76rem;
-            font-weight: 700;
+            font-weight: 600;
             min-height: 28px;
             padding: 0 8px;
         }
@@ -3144,6 +3249,8 @@
             border-top: 1px solid var(--border);
             background: var(--surface-muted);
             color: var(--text);
+            font-family: var(--wf-font-mono);
+            font-weight: 400;
             font-size: 0.88rem;
             line-height: 1.55;
             white-space: pre;
@@ -3337,7 +3444,7 @@
 
         .message-seen {
             color: var(--accent-strong);
-            font-weight: 700;
+            font-weight: 600;
             white-space: nowrap;
         }
 
@@ -3461,7 +3568,7 @@
             color: var(--muted);
             cursor: pointer;
             font-size: 1.05rem;
-            font-weight: 700;
+            font-weight: 600;
             line-height: 1;
             padding: 0 2px;
         }
@@ -3480,7 +3587,7 @@
             color: var(--muted);
             cursor: pointer;
             font-size: 0.85rem;
-            font-weight: 700;
+            font-weight: 600;
             padding: 10px 14px;
         }
 
@@ -3740,6 +3847,234 @@
                 grid-template-columns: 1fr;
             }
         }
+        /* Tickets keep one checkbox and one shortcut link per row at every
+           width. Secondary columns share their renderer with a mobile-only
+           native disclosure; the desktop table keeps its original columns. */
+        .wf-ticket-queue .wf-ticket-mobile-label,
+        .wf-ticket-queue .wf-ticket-mobile-details {
+            display: none;
+        }
+
+        .wf-ticket-select-all,
+        .wf-ticket-select {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        @media (max-width: 700px) {
+            #tickets [data-ticket-bulk-form] .wf-bulk-toolbar select {
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .wf-ticket-queue-wrap {
+                overflow: visible;
+            }
+
+            .wf-ticket-queue,
+            .wf-ticket-queue thead,
+            .wf-ticket-queue tbody {
+                display: block;
+                width: 100%;
+            }
+
+            .wf-ticket-queue thead tr {
+                display: block;
+            }
+
+            /* Keep column headings available to assistive technology while
+               leaving the original select-all control in reach on phones. */
+            .wf-ticket-queue thead th:not(.wf-queue-select) {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                clip-path: inset(50%);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .wf-ticket-queue thead .wf-ticket-mobile-details {
+                display: block;
+            }
+
+            .wf-ticket-queue thead .wf-queue-select {
+                display: block;
+                width: 100%;
+                padding: var(--wf-space-2) var(--wf-space-3);
+                text-align: left;
+            }
+
+            .wf-ticket-select-all {
+                gap: var(--wf-space-2);
+                min-height: 44px;
+                cursor: pointer;
+            }
+
+            .wf-ticket-select {
+                justify-content: center;
+                width: 44px;
+                min-height: 44px;
+                cursor: pointer;
+            }
+
+            .wf-ticket-queue tbody tr {
+                display: grid;
+                grid-template-columns: 44px minmax(0, 1fr);
+                gap: var(--wf-space-2) var(--wf-space-2);
+                margin-top: var(--wf-space-3);
+                padding: var(--wf-space-3);
+                border: var(--wf-border) solid var(--wf-rule);
+                border-left: var(--wf-rail) solid var(--wf-row-site, var(--wf-rule-firm));
+                background: var(--wf-surface);
+            }
+
+            .wf-ticket-queue tbody td {
+                grid-column: 2;
+                min-width: 0;
+                width: auto;
+                padding: 0;
+                border: 0;
+                font-size: 13.5px;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue tbody .wf-ticket-secondary {
+                display: none;
+            }
+
+            .wf-ticket-queue tbody tr:hover td,
+            .wf-ticket-queue [data-queue-bulk-row][data-selected] td {
+                background: transparent;
+            }
+
+            .wf-ticket-queue tbody .wf-queue-select {
+                grid-column: 1;
+                grid-row: 1;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                width: 44px;
+                padding: 0;
+            }
+
+            .wf-ticket-queue input[data-queue-select],
+            .wf-ticket-queue input[data-queue-select-all] {
+                width: 24px;
+                height: 24px;
+                margin: var(--wf-space-2);
+                flex: none;
+            }
+
+            .wf-ticket-queue tbody .wf-queue-subject {
+                grid-row: 1;
+                min-width: 0;
+                border-left: 0;
+                font-size: 1rem;
+            }
+
+            .wf-ticket-queue .wf-queue-subject > a {
+                display: block;
+                padding-block: var(--wf-space-2);
+            }
+
+            .wf-ticket-queue .wf-ticket-status {
+                grid-row: 2;
+            }
+
+            .wf-ticket-queue .wf-ticket-next-step {
+                grid-row: 3;
+            }
+
+            .wf-ticket-queue .wf-ticket-owner {
+                grid-row: 4;
+            }
+
+            .wf-ticket-queue .wf-ticket-timing {
+                grid-row: 5;
+            }
+
+            .wf-ticket-queue tbody .wf-ticket-mobile-details {
+                display: block;
+                grid-row: 6;
+            }
+
+            .wf-ticket-queue .wf-ticket-mobile-label {
+                display: block;
+                color: var(--wf-muted);
+                font-family: var(--wf-font-cond);
+                font-size: var(--wf-text-label);
+                font-weight: 600;
+            }
+
+            .wf-ticket-queue .wf-queue-preview,
+            .wf-ticket-queue .wf-queue-assignee,
+            .wf-ticket-queue .wf-queue-cobrowse,
+            .wf-ticket-queue .wf-queue-state,
+            .wf-ticket-queue .wf-queue-site,
+            .wf-ticket-queue .wf-queue-mark {
+                max-width: 100%;
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue .wf-queue-preview {
+                font-size: 12.5px;
+            }
+
+            .wf-ticket-queue .wf-queue-state,
+            .wf-ticket-queue .wf-queue-site,
+            .wf-ticket-queue .wf-queue-mark {
+                align-items: baseline;
+            }
+
+            .wf-ticket-queue .wf-ticket-detail-list {
+                display: grid;
+                gap: var(--wf-space-3);
+                margin: 0;
+            }
+
+            .wf-ticket-detail-list dt {
+                color: var(--wf-muted);
+                font-size: var(--wf-text-label);
+                font-weight: 600;
+            }
+
+            .wf-ticket-detail-list dd {
+                margin: var(--wf-space-1) 0 0;
+            }
+
+            .wf-ticket-queue .ticket-label-chip {
+                max-width: 100%;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            .wf-ticket-queue .details-disclosure__summary {
+                min-height: 44px;
+                padding: var(--wf-space-3);
+            }
+
+            .wf-ticket-queue [data-queue-bulk-row][data-selected] {
+                background: color-mix(in srgb, var(--wf-brand) 9%, var(--wf-surface));
+            }
+
+            .wf-ticket-queue [data-agent-shortcut-row][data-shortcut-active] {
+                outline: 2px solid var(--wf-brand);
+                outline-offset: 2px;
+            }
+
+            .wf-ticket-queue [data-agent-shortcut-row][data-shortcut-active] td:first-child {
+                box-shadow: none;
+            }
+        }
+
     </style>
 </head>
 <body>
