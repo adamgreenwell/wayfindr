@@ -2,8 +2,10 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.1.0` (October 1, 2026). The next patch release
-is being prepared as `1.1.1`; it is not published yet.
+The latest public release is `v1.1.1` (October 2, 2026), at tag `648caa1b`.
+It fixes dashboard and widget consistency, mobile controls, keyboard flows
+and release diagnostics. It has no migrations or required operator actions.
+The next development line is `1.2.0-dev`.
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
@@ -12,10 +14,17 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 [repository inbound-mail guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/inbound-mail.md).
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
-hosted runners and disposable bare-metal guests. The newest public-artifact
+hosted runners and disposable bare-metal guests. The October 1 public-artifact
 hosted runs cover a `v1.1.0` clean install and `v0.2.0 → v1.1.0` upgrade with a
 custom backup queue. The newest owner-operated bare-metal guest evidence still
 covers `v0.3.2`; see [Releases](Releases).
+
+The newest hosted public-artifact runs cover a `v1.1.1`
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
+and a [`v0.2.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36969207425).
+Both matched the published image digest, completed the support loop,
+backup/restore and stack restart, and read `v1.1.1` from authenticated
+`/operator` before and after restore.
 
 The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The
 independent-install acceptance criterion,
@@ -33,10 +42,17 @@ finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v1.1.0`
+## What's in `v1.1.1`
 
-This section describes public `v1.1.0`. Some foundation was available in older
+This section describes public `v1.1.1`. Some foundation was available in older
 releases; consult the release notes when operating one of those artifacts.
+
+`v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
+and work context are more consistent; Reports filters, long comments and chart
+scrolling are clearer; authentication feedback and keyboard tab selection stay
+in context; phone widget controls and focus after attachment removal are easier
+to use; and release checks identify the CI run blocking publication. It has no
+migrations and requires no operator action.
 
 `v1.1.0` changes, relative to `v1.0.0`: a contact can be erased on request,
 from an "Erase this contact" section on their profile that removes everything
@@ -305,12 +321,17 @@ sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
 performed by an AI agent rather than a human non-author.
 
-The `v1.1.0` tag at `9b634b23` and its
-[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
+The `v1.1.1` tag at `648caa1b` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
 verify the published manifest, multi-architecture image and digest
+(`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`), GitHub Release, and stable `1.1` and `latest` aliases.
+
+At its October 1 publication, the `v1.1.0` tag at `9b634b23` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
+verified the published manifest, multi-architecture image and digest
 (`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`),
-GitHub Release, and stable `1.1` and `latest` aliases. Separate hosted runs
-verify a
+GitHub Release, and the `1.1` and `latest` aliases at that publication. Separate
+hosted runs verify a
 [public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)
 and a
 [`v0.2.0 → v1.1.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36881550403).

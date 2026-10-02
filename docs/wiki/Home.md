@@ -3,8 +3,11 @@
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
 over the conversations and tickets it handles. The project reached `v1.0.0` on
-September 30, 2026, and the latest public release is `v1.1.0` (October 1,
-2026). It is a working support desk, but operators should still treat every
+September 30, 2026, and the latest public release is `v1.1.1` (October 2,
+2026). This patch fixes dashboard and widget consistency, mobile controls,
+keyboard flows and release diagnostics, with no migrations or required
+operator action. The next development line is `1.2.0-dev`.
+It is a working support desk, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.
 
