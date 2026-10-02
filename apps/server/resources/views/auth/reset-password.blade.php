@@ -4,7 +4,7 @@
             <h1 id="reset-heading">Choose a new password</h1>
             <p class="lede">This also signs you out everywhere else.</p>
 
-            <form method="POST" action="{{ route('password.update') }}">
+            <form class="auth-form" method="POST" action="{{ route('password.update') }}" aria-labelledby="reset-heading">
                 @csrf
                 <input type="hidden" name="token" value="{{ $token }}">
 
@@ -16,8 +16,7 @@
                         type="email"
                         autocomplete="email"
                         value="{{ old('email', $email) }}"
-                        aria-describedby="@error('email') email-error @enderror"
-                        @error('email') aria-invalid="true" @enderror
+                        @error('email') aria-describedby="email-error" aria-invalid="true" @enderror
                         required
                     >
                     @error('email')
@@ -34,8 +33,8 @@
                         autocomplete="new-password"
                         required
                         autofocus
-                    aria-describedby="password-help @error('password') password-error @enderror"
-                    @error('password') aria-invalid="true" @enderror
+                        aria-describedby="password-help @error('password') password-error @enderror"
+                        @error('password') aria-invalid="true" @enderror
                     >
                     {{-- The rule, stated before you can fail it. Neither password
                          screen said what was wanted until it rejected you. --}}
@@ -63,7 +62,7 @@
                  challenge already carry. This page rendered ZERO links, and its
                  own error on a stale token says "Request a new one" -- naming a
                  destination it gave you no way to reach. --}}
-            <p><a class="text-link" href="{{ route('password.request') }}">Request a new reset link</a></p>
+            <p class="auth-footer"><a class="text-link" href="{{ route('password.request') }}">Request a new reset link</a></p>
         </section>
     </main>
 </x-layouts.app>

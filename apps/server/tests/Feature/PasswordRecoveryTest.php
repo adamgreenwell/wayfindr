@@ -34,6 +34,13 @@ test('an agent can ask for a reset link', function (): void {
         ->assertSessionHas('status');
 
     Notification::assertSentTo($agent, ResetPasswordLink::class);
+
+    $status = (string) session('status');
+    $document = new DOMDocument;
+    $document->loadHTML((string) $this->get(route('password.request'))->assertOk()->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    expect(trim((string) (new DOMXPath($document))->evaluate('string(//main//*[@role="status"])')))
+        ->toBe($status, 'the reset-link confirmation is exposed as status feedback');
 });
 
 test('an unknown address gets the same answer as a real one', function (): void {
@@ -91,7 +98,7 @@ test('a completed reset tells you so on the page it lands on', function (): void
     // Following the redirect, not asserting on the session: a flash nothing
     // renders is exactly the defect, and assertSessionHas would have passed
     // throughout.
-    $this->followingRedirects()
+    $response = $this->followingRedirects()
         ->post(route('password.update'), [
             'token' => Password::createToken($agent),
             'email' => $agent->email,
@@ -100,6 +107,12 @@ test('a completed reset tells you so on the page it lands on', function (): void
         ])
         ->assertOk()
         ->assertSee('Your password has been reset. Sign in with it now.');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    expect(trim((string) (new DOMXPath($document))->evaluate('string(//main//*[@role="status"])')))
+        ->toBe('Your password has been reset. Sign in with it now.', 'the completed reset remains recognizable as status feedback on sign-in');
 });
 
 test('a completed reset ends the sessions that were already open', function (): void {

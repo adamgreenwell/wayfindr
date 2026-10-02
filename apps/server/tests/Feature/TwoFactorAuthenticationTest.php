@@ -145,6 +145,43 @@ test('a two-factor agent stays signed out until the challenge succeeds', functio
     $this->assertAuthenticatedAs($agent);
 });
 
+test('challenge guidance stays associated with its code input after a validation error', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'password' => Hash::make('correct-password'),
+    ]);
+    giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $assertDescriptions = static function (string $html, bool $invalid): void {
+        $document = new DOMDocument;
+        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $input = $document->getElementById('one_time_code');
+        expect($input)->not->toBeNull();
+
+        $ids = preg_split('/\s+/', trim($input->getAttribute('aria-describedby')), flags: PREG_SPLIT_NO_EMPTY);
+        $descriptions = array_map(fn (string $id): string => trim($document->getElementById($id)?->textContent ?? ''), $ids ?: []);
+
+        expect($descriptions)->toContain('Each recovery code works once.')
+            ->and($input->getAttribute('aria-invalid'))->toBe($invalid ? 'true' : '');
+
+        if ($invalid) {
+            expect($descriptions)->toContain('That authentication code is not valid.');
+        }
+    };
+
+    $assertDescriptions((string) $this->get(route('two-factor.challenge'))->assertOk()->getContent(), false);
+    $response = $this->from(route('two-factor.challenge'))
+        ->followingRedirects()
+        ->post(route('two-factor.challenge.store'), ['one_time_code' => 'not-a-code'])
+        ->assertOk();
+
+    $assertDescriptions((string) $response->getContent(), true);
+});
+
 test('a two-factor challenge expires and rechecks deactivation', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     giveAgentTwoFactor($agent);

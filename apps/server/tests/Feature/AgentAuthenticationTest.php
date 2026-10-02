@@ -18,11 +18,21 @@ test('guest is redirected from dashboard to login', function (): void {
 test('login form renders', function (): void {
     User::factory()->for(Account::factory())->create();
 
-    $this->get('/login')
+    $response = $this->get('/login')
         ->assertOk()
         ->assertSee('Agent Login')
         ->assertSee('data-agent-push-guest-cleanup', false)
         ->assertDontSee('data-agent-push-ownership-guard', false);
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $formNames = [];
+
+    foreach ((new DOMXPath($document))->query('//main//form') ?? [] as $form) {
+        $formNames[] = trim($document->getElementById($form->getAttribute('aria-labelledby'))?->textContent ?? '');
+    }
+
+    expect($formNames)->toBe(['Agent Login', 'Single sign-on'], 'the two sign-in methods need distinct form names');
 
     $source = file_get_contents(resource_path('views/components/agent-push-guest-cleanup.blade.php'));
 

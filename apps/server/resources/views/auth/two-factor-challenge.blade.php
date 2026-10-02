@@ -4,7 +4,7 @@
             <h1 id="two-factor-challenge-heading">{{ __('two_factor.challenge.heading') }}</h1>
             <p class="lede">{{ __('two_factor.challenge.lede') }}</p>
 
-            <form method="POST" action="{{ route('two-factor.challenge.store') }}">
+            <form class="auth-form" method="POST" action="{{ route('two-factor.challenge.store') }}" aria-labelledby="two-factor-challenge-heading">
                 @csrf
 
                 <div class="field">
@@ -15,10 +15,10 @@
                         autocomplete="one-time-code"
                         required
                         autofocus
-                    aria-describedby="@error('one_time_code') one_time_code-error @enderror"
-                    @error('one_time_code') aria-invalid="true" @enderror
+                        aria-describedby="one_time_code-help @error('one_time_code') one_time_code-error @enderror"
+                        @error('one_time_code') aria-invalid="true" @enderror
                     >
-                    <p class="field-help">{{ __('two_factor.challenge.help') }}</p>
+                    <p id="one_time_code-help" class="field-help">{{ __('two_factor.challenge.help') }}</p>
                     @error('one_time_code')
                         <p id="one_time_code-error" class="field-error">{{ $message }}</p>
                     @enderror
@@ -27,7 +27,7 @@
                 <button class="button full" type="submit">{{ __('two_factor.challenge.submit') }}</button>
             </form>
 
-            <p><a class="text-link" href="{{ route('login') }}">{{ __('two_factor.challenge.back') }}</a></p>
+            <p class="auth-footer"><a class="text-link" href="{{ route('login') }}">{{ __('two_factor.challenge.back') }}</a></p>
         </section>
     </main>
 </x-layouts.app>
