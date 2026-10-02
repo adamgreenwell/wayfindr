@@ -10,15 +10,27 @@ patch only fixes. The release notes and manifest remain the authoritative
 detail.
 
 The latest published release is
-[`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0).
-Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
+[`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1).
+Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
-and stable image aliases on October 1, 2026. Its protected tag resolves to
-`9b634b23`, its image resolves to
-`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`, and
-the `1.1` and `latest` image aliases point at that image. It needs no operator
-action; five migrations run themselves. It adds erasing a contact on request
-and exporting everything held about one
+and stable image aliases on October 2, 2026. Its protected tag resolves to
+`648caa1b`, its image resolves to
+`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`, and
+the `1.1` and `latest` image aliases point at that image. It needs no operator action and has no
+migrations. This patch fixes dashboard typography, form spacing, page ordering,
+reports, and authentication feedback; makes mobile widget text and controls
+easier to use; preserves keyboard tab selection and focus after attachment
+removal; and identifies the CI run that prevents a release from publishing.
+
+The previous `v1.1.0`
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
+verified that release's tagged commit, manifest, multi-architecture image,
+GitHub Release, and stable image aliases on October 1, 2026. Its protected tag
+resolves to `9b634b23`, and its image resolves to
+`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`.
+At that publication, the `1.1` and `latest` image aliases pointed at that image.
+It needs no operator action; five migrations run themselves. It adds erasing a
+contact on request and exporting everything held about one
 ([ADR 0026](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0026-erasing-and-exporting-a-visitor.md)).
 Each erasure is also recorded in `storage/app/erasure-ledger/` on the storage
 volume, which backups do not carry, so a restore erases again anyone the
@@ -33,17 +45,17 @@ are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
-- The [attached `v1.1.0` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.1.0/release-manifest.json)
+- The [attached `v1.1.1` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.1.1/release-manifest.json)
   for the required actions and advisory notices in that published artifact;
-  [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.1.0/release.json)
+  [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.1.1/release.json)
   is its source declaration.
-- [Tagged `releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.1.0/releases/history.json)
-  for the skipped-release history carried by `v1.1.0`, including the
+- [Tagged `releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.1.1/releases/history.json)
+  for the skipped-release history carried by `v1.1.1`, including the
   `v0.9.0` host-managed PHP runtime action for an install upgrading from
   before it.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
-  for the next development line. Its cleared actions do not replace the
-  published `v1.1.0` manifest.
+  for the next development line, `1.2.0-dev`. Its cleared actions do not
+  replace the published `v1.1.1` manifest.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
@@ -57,6 +69,28 @@ artifact you intend to run.
 
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
+
+The October 2, 2026 `v1.1.1` public-artifact runs cover two hosted paths:
+
+- A [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
+  on a fresh Ubuntu 24.04 runner.
+- A [`v0.2.0 → v1.1.1` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36969207425)
+  on a separate fresh Ubuntu 24.04 runner; its second attempt passed after
+  the first stopped during Docker volume creation for the old `v0.2.0` baseline.
+
+Both resolved the published image to
+`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`,
+completed the synthetic support loop, backup/restore and stack restart, and
+read authenticated `/operator`'s `Wayfindr version: v1.1.1` after install or
+upgrade and after restore. The upgrade's `1.1.1/backups-queue-consumer` notice
+retired itself once the custom-queue worker was observed.
+
+The initial tagged harness stopped on the removed "Ticket brief" heading after
+successfully reaching `v1.1.1`. These passing runs use the corrected evidence
+harness at `0ea53947`, which checks the stable work-state heading instead.
+The public image was not rebuilt. These runs prove loopback HTTP on hosted
+runners, not bare metal, DNS/TLS, real mail, offsite backups or production
+restore.
 
 The October 1, 2026 `v1.1.0` public-artifact runs cover two hosted paths:
 

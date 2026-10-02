@@ -4,11 +4,10 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§23](#23-111-preparation--october-2-2026)** for
-release preparation, then [§22](#22-published-110--october-1-2026) for the
-current public release and [§21](#21-published-100--september-30-2026) for 1.0.0
-and [§20](#20-797-closed--september-29-2026) for how its acceptance gate closed.
-Then §5 (conventions) and §7 (gotchas). Sections 8–22 are dated snapshots, kept
+**Taking the baton? Start at [§24](#24-published-111--october-2-2026)** for
+the current release, then [§23](#23-111-preparation--october-2-2026) for its
+preparation and [§22](#22-published-110--october-1-2026) for 1.1.0.
+Then §5 (conventions) and §7 (gotchas). Sections 8–23 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -43,16 +42,21 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v1.1.0` published October 1 at tag
-`9b634b23`, with the manifest and multi-architecture image at
-`sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905`
-(§22). The previous release, `v1.0.0`, published September 30 at `d6e5875e`
-(§21). The next patch release is being prepared as `1.1.1`, with candidate
-source builds identified as `1.1.1-dev` (§23).
+**Release truth comes first.** Public `v1.1.1` published October 2 at tag
+`648caa1b`, with the manifest and multi-architecture image at
+`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`
+(§24). The previous release, `v1.1.0`, published October 1 at `9b634b23` (§22).
 The patch fixes dashboard and widget consistency, mobile controls, keyboard
 context, and release diagnostics. It has no migrations or required operator
-action. The published release remains `v1.1.0` until the guarded publisher
-finishes and its artifacts are verified.
+action. Current `main` begins `1.2.0-dev`.
+
+The public `v1.1.1` artifact passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
+and a [`v0.2.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36969207425).
+Both matched the release digest, completed the support loop, backup/restore
+and stack restart, and read `v1.1.1` from authenticated `/operator` after the
+install or upgrade and after restore. The custom-queue backups notice retired
+itself after the worker was observed.
 
 The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
 direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
@@ -383,15 +387,15 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Use the published `v1.1.0` artifact as the release baseline.** The guarded
-   tag, public release, manifest, and image digest are verified (§22), and so
-   were `v1.0.0`'s (§21), `v0.11.0`'s (§19), `v0.10.0`'s (§17) and `v0.9.0`'s
-   (§16); keep hosted-runner proof distinct from the older `v0.3.2` bare-metal
-   matrix and `v0.7.0` cold sandbox run. Host-managed PHP upgrades from before
-   `v0.9.0` still owe that release's scoped runtime action, carried in
-   `v1.1.0`'s history; the published image is exempt. From 1.0.0 the number itself is the
-   operator-action signal (ADR 0012): anything that needs an operator's hands
-   now means a new major.
+1. **Use the published `v1.1.1` artifact as the release baseline.** The guarded
+   tag, public release, manifest, and image digest are verified (§24). Earlier
+   publication and hosted-runner evidence stays specific to `v1.1.0` (§22),
+   `v1.0.0` (§21), `v0.11.0` (§19), `v0.10.0` (§17) and `v0.9.0` (§16); keep
+   it distinct from the older `v0.3.2` bare-metal matrix and `v0.7.0` cold
+   sandbox run. Host-managed PHP upgrades from before `v0.9.0` still owe that
+   release's scoped runtime action, carried in `v1.1.1`'s history; the published
+   image is exempt. From 1.0.0 the number itself is the operator-action signal
+   (ADR 0012): anything that needs an operator's hands now means a new major.
 
 2. **The account area's structural work for 1.0.0 is done (§18).** #994's
    epic, the overview that was a hub and a settings page at once, is split:
@@ -1547,3 +1551,46 @@ require a successful complete push/main CI run for that exact SHA. Tagging,
 public artifacts, staging deployment, and the public site and Wiki mirrors
 are separate results to verify. Local previews and automated UI checks do not
 establish physical iPhone or hands-on VoiceOver acceptance.
+
+## 24. Published 1.1.1 — October 2, 2026
+
+[`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1) is
+public at tag `648caa1bc47ea1644c2b2f8aa830135dfc013629`. Its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
+verified that tagged commit, the attached release manifest, multi-architecture
+image at `sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`,
+GitHub Release, and stable `1.1` and `latest` image aliases. It has no migrations and requires no operator action.
+
+The patch combines the dashboard typography, spacing, forms, work context and
+pagination fixes; widget form text, mobile controls and attachment focus;
+Reports filters, long comments and recent chart positioning; authentication
+names and associated feedback; keyboard tab persistence; and release-check
+diagnostics. It fixes existing behavior. The dated changelog records the exact
+scope.
+
+The initial tagged evidence harness reached `v1.1.1` but stopped at its old
+"Ticket brief" assertion. Commit `0ea53947` checks the stable work-state heading,
+which is also present in the older `v0.1.0` and `v0.2.0` upgrade baselines. The
+public image was not rebuilt. The upgrade's first run with that corrected
+harness stopped during old-baseline Docker volume creation; its fresh-runner
+retry passed.
+
+The public `v1.1.1` artifact passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
+and a [`v0.2.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36969207425).
+Both matched the release digest, completed the support loop, backup/restore
+and stack restart, and read `v1.1.1` from authenticated `/operator` after the
+install or upgrade and after restore. The custom-queue backups notice retired
+itself after the worker was observed.
+
+**For the next release:**
+
+- `VERSION` is `1.2.0`, so source builds report `1.2.0-dev`.
+- `release.json` has no required actions; the existing backups-worker notice
+  remains intact and prior release actions stay in `releases/history.json`.
+- Anything that needs an operator's hands is a 2.0.0.
+
+**Not implied by publication:** Forge staging deployment, the public site and
+Wiki mirrors each need their own verification. The hosted evidence is specific
+to its artifact and environment; it does not establish physical iPhone or
+hands-on VoiceOver acceptance.

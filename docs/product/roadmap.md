@@ -3,11 +3,20 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is
-[`v1.1.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0)
-(October 1, 2026). The next patch release is being prepared as `1.1.1`, with
-candidate source builds identified as `1.1.1-dev`. The patch fixes dashboard and widget
-consistency, mobile controls, keyboard context, and release diagnostics; it
-has no migrations or required operator action. It is not published yet.
+[`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1)
+(October 2, 2026), at tag `648caa1b`. Its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
+verified the manifest and multi-architecture image at `sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`.
+The patch fixes dashboard and widget consistency, mobile controls, keyboard
+context, and release diagnostics; it has no migrations or required operator
+action. Current `main` identifies the next development line as `1.2.0-dev`.
+
+`v1.1.1` passed both hosted-runner paths on October 2: a
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
+and a [`v0.2.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36969207425).
+Both matched the published digest, completed the support loop, backup/restore
+and stack restart, and read `v1.1.1` from authenticated `/operator` before and
+after restore.
 
 `v1.1.0` repeated both hosted-runner paths on October 1: a
 [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36881545824)
@@ -37,10 +46,17 @@ The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issue
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v1.1.0
+## Implemented in v1.1.1
 
-This section describes the public `v1.1.0` artifact. Some foundation also
+This section describes the public `v1.1.1` artifact. Some foundation also
 exists in older releases; the release notes define each version's boundary.
+
+`v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
+and work context are more consistent; Reports filters, long comments and chart
+scrolling are clearer; authentication feedback and keyboard tab selection stay
+in context; phone widget controls and focus after attachment removal are easier
+to use; and release checks identify the CI run blocking publication. It has no
+migrations and requires no operator action.
 
 `v1.1.0` changes, relative to `v1.0.0`: a contact can be erased on request,
 from an "Erase this contact" section on their profile that removes everything
