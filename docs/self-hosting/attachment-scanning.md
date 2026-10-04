@@ -90,8 +90,9 @@ temporary uploads on local storage when predictable request timing matters.
 Only one complete NUL-framed verdict is accepted: `stream: OK`, or an infected
 verdict with a bounded signature token. Truncated replies, extra or contradictory
 records, oversized responses and unreadable files count as scanner unavailable.
-A valid early infected verdict still rejects the upload; an early clean verdict
-cannot approve a file whose transmission did not finish.
+A valid early infected verdict still rejects the upload, including a peer reset
+after that complete infected frame arrives while upload bytes remain unread.
+An early clean verdict cannot approve a file whose transmission did not finish.
 
 - **Clean** → the upload is accepted as normal.
 - **Infected** → the upload is **rejected** ("This file was rejected by a

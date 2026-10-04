@@ -137,7 +137,7 @@ class ClamAvScanner implements AttachmentScanner
      */
     private function verdictAfterSendFailure($stream, float $deadline): ScanResult
     {
-        $response = $this->readResponse($stream, $deadline);
+        $response = $this->readResponse($stream, $deadline, preserveInterruptedInfection: true);
         $result = $response === null ? null : $this->interpret($response);
 
         return $result?->isInfected()
@@ -152,7 +152,7 @@ class ClamAvScanner implements AttachmentScanner
      *
      * @param  resource  $stream
      */
-    private function readResponse($stream, float $deadline): ?string
+    private function readResponse($stream, float $deadline, bool $preserveInterruptedInfection = false): ?string
     {
         $response = '';
 
@@ -169,6 +169,13 @@ class ClamAvScanner implements AttachmentScanner
             $buffer = @fread($stream, min(4096, self::MAX_RESPONSE_BYTES + 1 - strlen($response)));
 
             if ($buffer === false) {
+                // Linux can reset a peer that closes with unread upload bytes.
+                // Keep a complete infected frame already received after an
+                // interrupted send; a reset never makes a clean frame valid.
+                if ($preserveInterruptedInfection && feof($stream) && $this->interpret($response)->isInfected()) {
+                    return $response;
+                }
+
                 return null;
             }
 

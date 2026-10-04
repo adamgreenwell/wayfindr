@@ -166,12 +166,26 @@ test('clamav rejects incomplete oversized and contradictory socket replies', fun
 test('clamav preserves early infection but rejects early clean', function (string $reply, bool $infected): void {
     withClamdProtocolPeer(['early' => true, 'parts' => [base64_encode($reply)]], function (string $socket, string $trace, string $directory) use ($infected): void {
         [$result] = clamdProtocolScan($socket, $directory, str_repeat('A', 4 * 1024 * 1024));
-        expect($result->isInfected())->toBe($infected)->and($result->isUnavailable())->toBe(! $infected);
+        expect($result->isInfected())->toBe($infected, $result->error ?? '')->and($result->isUnavailable())->toBe(! $infected);
         if ($infected) {
             expect($result->threat)->toBe('Win.Test.EICAR_HDB-1');
         }
     });
 })->with(['early infection' => ["stream: Win.Test.EICAR_HDB-1 FOUND\0", true], 'early clean' => ["stream: OK\0", false]]);
+
+test('clamav does not preserve malformed or contradictory infection after an interrupted send', function (string $reply): void {
+    withClamdProtocolPeer(['early' => true, 'parts' => [base64_encode($reply)]], function (string $socket, string $trace, string $directory): void {
+        [$result] = clamdProtocolScan($socket, $directory, str_repeat('A', 4 * 1024 * 1024));
+        expect($result->isUnavailable())->toBeTrue()->and($result->isInfected())->toBeFalse();
+    });
+})->with([
+    'incomplete infection' => ['stream: Win.Test.EICAR_HDB-1 FOUND'],
+    'partial signature' => ["stream: Win.Test.EICAR_HDB-1 FOUN\0"],
+    'contradictory records' => ["stream: Win.Test.EICAR_HDB-1 FOUND\0stream: OK\0"],
+    'trailing bytes' => ["stream: Win.Test.EICAR_HDB-1 FOUND\0junk"],
+    'unbounded signature' => ['stream: '.str_repeat('A', 256)." FOUND\0"],
+    'oversized response' => [str_repeat('A', 4097)."\0"],
+]);
 
 test('clamav rejects partial or framed clean replies when the connection stalls', function (string $reply): void {
     withClamdProtocolPeer(['parts' => [base64_encode($reply)], 'hold_open_us' => 2_000_000], function (string $socket, string $trace, string $directory): void {
