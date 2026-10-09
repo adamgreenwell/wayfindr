@@ -428,6 +428,15 @@ return [
         'ledger_path' => env('WAYFINDR_ERASURE_LEDGER_PATH', storage_path('app/erasure-ledger')),
     ],
 
+    // These are operator-reported facts for review. Config never authenticates
+    // deployment ownership or grants access to a host helper.
+    'updates' => [
+        'installation_ownership' => env('WAYFINDR_INSTALLATION_OWNERSHIP', 'unknown'),
+        'installation_id' => env('WAYFINDR_INSTALLATION_ID'),
+        'image_reference' => env('WAYFINDR_IMAGE'),
+        'managed_policy' => [],
+    ],
+
     'release' => [
         'commit' => ReleaseIdentity::commit(),
         'version' => ReleaseIdentity::version(),

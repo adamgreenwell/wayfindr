@@ -17,6 +17,7 @@ use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\TranslateCatalogueCommand;
+use App\Console\Commands\UpdatePlanCommand;
 use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
@@ -79,6 +80,7 @@ return Application::configure(basePath: dirname(__DIR__))
         SweepOrphanedAttachmentsCommand::class,
         TranslateCatalogueCommand::class,
         UpgradeGuardCommand::class,
+        UpdatePlanCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
