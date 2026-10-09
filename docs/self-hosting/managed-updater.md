@@ -15,13 +15,18 @@ operator `start`, `history`, and `cancel` requests, with exact approved-plan,
 request, and numeric actor identities retained in its journal. Recovery remains
 an explicit root-only terminal action.
 
-These changes are development slices awaiting release and VM qualification.
-They have not been qualified as a production update mechanism.
+Optional managed updates remain under disposable-VM qualification and are not
+qualified for production use. Publishing compatible application and helper
+contracts does not by itself complete that qualification.
 
 The [U8 qualification matrix](managed-update-qualification.md) distinguishes
 synthetic harness checks from published-artifact, reboot and separate-VM restore
-evidence. Its current public-artifact gate is blocked: neither `v1.1.0` nor
-`v1.1.1` contains the application/helper contracts needed for enrollment.
+evidence. The initial recorded public-artifact gate for `v1.1.0` → `v1.1.1`
+is blocked for that span: those older images lack the application/helper
+contracts needed for enrollment. Target-bound managed execution requires a
+compatible published source release and a newer compatible published target.
+Actual VM runs provide separate qualification evidence; publication alone cannot
+establish it.
 
 ## Reviewing and following an update
 
@@ -67,9 +72,9 @@ with native-dialog keyboard/focus behavior and reduced-motion styling.
 
 ## Operator action contract
 
-U6 adds JSON endpoints under `/operator/updates`; U7 adds the review/progress
-page and a read-only latest-stable candidate endpoint. These remain development
-slices pending delivery and the separate disposable-VM qualification.
+JSON endpoints under `/operator/updates` support the review/progress page and
+the read-only latest-stable candidate check. Managed execution remains subject
+to the publication and qualification boundaries above.
 
 Every endpoint requires a current, active platform operator, the existing
 authenticated-session and MFA policy checks, and the normal web CSRF protection
@@ -182,13 +187,15 @@ The host and image architecture must agree and be `amd64` or `arm64`.
 Rootless Docker, user namespace remapping, custom Compose files, floating images,
 custom images, and prereleases are refused by enrollment.
 
-The installed application must contain `wayfindr:update-plan`,
+Enrollment requires an official published stable application image containing
+`wayfindr:update-plan`,
 `wayfindr:upgrade-window`, `wayfindr:protective-backup`, and
-`wayfindr:managed-apply`. Enrollment checks
-that these fixed commands exist before installing credentials or the service.
-Fetching the helper cannot add them to an older image.
-The draft changes need to reach an application release before an existing
-published installation can use them.
+`wayfindr:managed-apply`, plus the compatible
+`wayfindr:updater-status --protocol-contract` probe. It also requires the
+matching reviewed source distribution described below. Enrollment verifies
+these fixed commands and the protocol before installing credentials or the
+service. Fetching the helper cannot add them to an older application image or
+make that image eligible.
 
 Root must deliberately adopt and review the installation first. The directory,
 `.env`, `compose.yml`, `install.sh`, and every ancestor must be root-owned, must not be
@@ -200,9 +207,10 @@ New managed paths accept ASCII letters, numbers, slashes, dots, underscores and
 hyphens. Whitespace, control characters, Unicode, quoting, expansion syntax and
 the root directory are refused before enrollment writes.
 
-Use a reviewed root-owned distribution of these helper files, with the same
-official `docker/self-hosting/compose.yml` and guarded `scripts/self-host/install.sh`
-bytes as the installed release. The script refuses a customized or different
+Use a reviewed root-owned distribution of the installed official source
+release's helper files, with the same official
+`docker/self-hosting/compose.yml` and guarded `scripts/self-host/install.sh`
+bytes as the installation. The script refuses a customized or different
 Compose file or an older unguarded terminal controller. It never silently
 replaces `install.sh` to make an installation eligible. The distribution's
 paths and ancestors have the same ownership and write restrictions; a reviewed
