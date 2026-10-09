@@ -4,12 +4,15 @@ The host helper is an explicit opt-in for an official installer-managed Linux
 VM. It runs independently of Wayfindr's web and queue processes, so its durable
 operation record remains available when the application is unavailable.
 
-This foundation supports authenticated preparation, durable status, and an
+The helper supports authenticated preparation, durable status, and an
 explicit root-only protection rehearsal: hold new intake, drain the existing
 writers, take and independently verify a protective backup, retain private
-recovery material, then check and resume the same services. It does not replace
-an application image or apply migrations. Its advertised application
-capabilities remain `plan` and `status`; the update apply engine is a later slice.
+recovery material, then check and resume the same services. The `0.3` helper also
+supports root-only `apply` and `recover-apply` for a prepared release, with
+independent artifact verification, a fresh continuous protective hold, explicit
+migrations, and verified serving evidence. Its advertised application
+capabilities remain `plan` and `status`; application-triggered upgrades and their
+operator authorization belong to the next slice.
 
 These changes are development slices awaiting release and VM qualification.
 They have not been qualified as a production update mechanism.
@@ -29,7 +32,8 @@ Rootless Docker, user namespace remapping, custom Compose files, floating images
 custom images, and prereleases are refused by enrollment.
 
 The installed application must contain `wayfindr:update-plan`,
-`wayfindr:upgrade-window`, and `wayfindr:protective-backup`. Enrollment checks
+`wayfindr:upgrade-window`, `wayfindr:protective-backup`, and
+`wayfindr:managed-apply`. Enrollment checks
 that these fixed commands exist before installing credentials or the service.
 Fetching the helper cannot add them to an older image.
 The draft changes need to reach an application release before an existing
@@ -41,6 +45,9 @@ symlinks, and must not be writable by a group or another user. A typical managed
 location is `/opt/wayfindr`. Home directories and helper-owned directories cannot
 be used as installation paths. Enrollment does not change ownership or copy
 your application files into another location.
+New managed paths accept ASCII letters, numbers, slashes, dots, underscores and
+hyphens. Whitespace, control characters, Unicode, quoting, expansion syntax and
+the root directory are refused before enrollment writes.
 
 Use a reviewed root-owned distribution of these helper files, with the same
 official `docker/self-hosting/compose.yml` and guarded `scripts/self-host/install.sh`
@@ -89,6 +96,11 @@ connection path valid when the helper recreates its socket after a restart.
 The systemd unit preserves that directory across stop/start as well, so an
 existing container bind does not point at a removed directory. Host reboot
 resets `/run`; Docker's re-established binds require separate VM qualification.
+The generated unit retains `ProtectSystem=strict` and allows writes to the fixed
+helper configuration directory and the reviewed installation directory for
+atomic configuration promotion. State and runtime directories remain confined
+to their existing systemd-managed paths. This uses systemd's
+[file access settings](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml).
 
 ## Host-owned paths
 
@@ -99,10 +111,13 @@ resets `/run`; Docker's re-established binds require separate VM qualification.
 | `/etc/wayfindr-updater/docker/` | Empty root-owned Docker configuration; no invoking-user contexts or credentials |
 | `/usr/local/lib/wayfindr-updater/updater.py` | Root-owned helper code |
 | `/usr/local/lib/wayfindr-updater/update_protection.py` | Fixed protection and old-service recovery coordinator |
+| `/usr/local/lib/wayfindr-updater/update_apply.py` | Fixed release application and interrupted-apply recovery coordinator |
+| `/usr/local/lib/wayfindr-updater/update_artifacts.py` | Independent published release and platform-specific OCI verifier |
 | `/usr/local/lib/wayfindr-updater/protection_archive.py` | Independent streaming archive verifier; never extracts files |
 | `/usr/local/bin/wayfindr-updater` | Root-owned host CLI wrapper |
 | `/var/lib/wayfindr-updater/` | Root-only lock, durable journal, and operation state |
 | `/var/lib/wayfindr-updater/protection/<operation-uuid>/` | Root-only archive, receipt, recovery context, configuration and separate erasure-ledger custody |
+| `/var/lib/wayfindr-updater/apply/<operation-uuid>/` | Root-only apply intent, source/target state, and immutable migration/runtime receipts |
 | `/run/wayfindr-updater/updater.sock` | Local authenticated protocol; root-owned socket accessible to application GID 1000 |
 | `<installation>/.updater-enrolled` | Root-only ownership marker preventing an unsynchronized terminal upgrade |
 | `<installation>/compose.updater.yml` | Reviewed web-only helper mounts |
@@ -116,9 +131,10 @@ credentials, command output, or customer content.
 The `plan_reported` checkpoint records selected facts from the application's
 read-only planner. Protection separately checks the exact running source image,
 container identities, enrolled file hashes, and application fence. This is not
-permission to apply the target release. The later apply engine must independently
-verify canonical target provenance and compatibility before replacing an image
-or changing the schema.
+permission to apply the target release. A root-only apply request reruns the
+complete planner on the fixed source image and requires the same plan identity,
+then independently verifies the published target provenance and platform image
+before replacing an image or changing the schema.
 
 Before fencing, the helper compares the original web environment with the
 reviewed Compose environment and captured image defaults, and checks that all
@@ -193,7 +209,91 @@ from PostgreSQL's [activity statistics](https://www.postgresql.org/docs/17/monit
 
 A successful rehearsal has `operation.protection.phase = verified`,
 `custody_verified = true`, `services_recovered = true`, and `hold_owned = false`.
-The overall operation remains blocked because applying an update is unavailable.
+The overall rehearsal operation ends as `blocked` with `protection_verified`.
+That rehearsed operation cannot subsequently be applied: writes resumed after
+its backup, so applying a release requires a fresh prepared operation and a new
+backup whose hold remains continuous through the upgrade.
+
+## Root-only release application
+
+Use a fresh operation UUID from completed preparation that reached
+`plan_reported` with `execution_not_available` and has no previous protection or
+apply evidence. Request application through the running helper:
+
+```bash
+sudo wayfindr-updater apply --operation <operation-uuid>
+sudo wayfindr-updater status --operation <operation-uuid>
+sudo wayfindr-updater logs --operation <operation-uuid>
+```
+
+The request contains only an operation UUID. It cannot supply a target image,
+release tag, filesystem path, backup path, shell command or force option. The
+helper durably claims the prepared operation before dispatching its worker.
+Disconnecting the CLI does not cancel it, and repeating `apply` does not start a
+second execution. Application UID 1000 cannot invoke either mutating apply RPC,
+even with the installation credential.
+
+The helper independently verifies the official release metadata and complete
+migration history, resolves the published OCI index to the host's platform
+manifest and image configuration digest, and checks the downloaded image's
+identity. Those distinct digests are retained in public apply evidence. Download
+and artifact verification precede the service interruption.
+
+This first executor supports application-image changes with byte-identical
+published base Compose configuration. It preserves `.env`, `compose.yml`,
+`install.sh`, storage and certificate volumes. A changed base Compose file or
+changed effective database/storage/key binding refuses before migration;
+infrastructure and installer transitions need a separately reviewed path.
+Artifact checks verify published hashes and image identity; they do not claim
+independent signing-key provenance.
+
+It then repeats source/configuration binding and captures a fresh protective
+backup with all application writers stopped. The protective record reaches
+`captured`: archive custody is verified, this operation still owns the hold, and
+the old services have not resumed. A previous rehearsal or backup is not reused.
+
+Before dispatching explicit migrations on the pinned target, the journal
+commits `migration_intent`, `mutation_started = true`, and
+`apply.migration_started = true`. These flags never reset after an interrupted
+command. A failed command or unchanged migration table alone cannot prove that
+DDL did not run. Migrations and target services run under the same operation's
+hold; normal startup cannot implicitly run migrations through the entrypoint.
+
+Before starting each replacement, the helper checks its operation label,
+fresh container identity, image, environment, command, entrypoint and original
+mounts. Runtime verification includes every application service, PostgreSQL and
+Redis, live worker/scheduler processes, the Reverb listener, and a fresh HMAC
+challenge at the configured origin. It verifies the held 503 and released 200
+separately; cached health responses cannot establish success. Queue workers
+remain paused during the hold, so these checks establish fresh process/runtime
+identity without claiming that a queued customer job ran during maintenance.
+
+After target migration and runtime receipts are verified, the helper promotes
+the reviewed overlay and enrollment image/hash using the existing configuration
+schema. The durable `configuration_commit_intent` permits narrowly checked
+old/new configuration states during recovery of an interrupted two-file
+promotion. An unrelated configuration edit remains a refusal.
+
+Success requires immutable migration and runtime receipt hashes, every target
+artifact digest, verified migrations and application services, committed
+configuration, release of this operation's hold, and a verified serving origin.
+The terminal phase is `succeeded` with `apply.phase = verified` and no error.
+The protective record becomes `retained`, with `custody_verified = true`,
+`hold_owned = false`, and `services_recovered = false`: the retained backup
+belongs to the old release while the new release is serving.
+
+A failure before migration intent can become `failed_safe` only after the
+helper proves that the previous source services and origin are serving again
+and the owned hold is released. It retains the failure reason and a runtime
+receipt. Once schema mutation is possible, or command settlement, ownership or
+serving state is uncertain, the operation remains active as `recovery_required`.
+The helper does not automatically downgrade the image or restore the database.
+
+A failed final origin check attempts to reacquire this operation's hold on
+the appropriate release. Interrupted creation is reconciled from recorded
+intent and observed containers; a missing result never authorizes another
+force-recreate or migration invocation. Recovery rechecks retained artifact
+bytes and local image identity without fetching replacement metadata.
 
 ## Protective archive and recovery material
 
@@ -286,9 +386,23 @@ verified. Status/logs remain readable even if recovery cannot proceed. Never
 clear the marker or journal, run `artisan up`, force-kill a writer, or use the
 preparation-only `reconcile` command to bypass that hold.
 
-Reconciliation does not imply that a future partially applied update is safe to
-retry or roll back. Once application execution is added, uncertain schema state
-will require the explicit recovery protocol and maintenance boundary.
+An interrupted **apply** operation has its own explicit root-only recovery:
+
+```bash
+sudo systemctl start wayfindr-updater.service
+sudo wayfindr-updater status --operation <operation-uuid>
+sudo wayfindr-updater recover-apply --operation <operation-uuid>
+sudo wayfindr-updater logs --operation <operation-uuid>
+```
+
+Restarting the helper records `recovery_required` and preserves the last
+checkpoint, custody and possible-migration flags. Recovery checks command
+settlement, fixed source/target identities, receipts, enrollment transition and
+hold ownership before proceeding. It cannot use `recover-protection` or
+preparation-only `reconcile` to close an apply operation. A proven completed
+target can finish verification; ambiguous migration execution remains held for
+operator investigation instead of automatically rerunning the migration command
+or restoring an older schema.
 
 While the application is running with the overlay, its authenticated status
 command can inspect the same host record:
@@ -317,9 +431,9 @@ helper replacement, credential rotation, or unenrollment command;
 those operations require a separate ownership-aware implementation. Do not
 delete an enrollment marker or journal to clear an interrupted operation.
 
-An existing preparation-only enrollment record remains readable, but protection
-requires the additional application commands and a recorded hash of the reviewed
-overlay. Re-running enrollment cannot upgrade a `0.1` enrollment in place or
+Existing `0.1` preparation and `0.2` protection journal records remain readable.
+New enrollment requires the additional application commands and a recorded hash
+of the reviewed overlay. Re-running enrollment cannot upgrade an older enrollment in place or
 replace its helper files. Its separate replacement/unenrollment workflow has
 not been implemented.
 

@@ -436,7 +436,234 @@ test('protection status remains read only across the current helper and older jo
         ->and($result['operation'])->not->toHaveKey('protection')
         ->and(method_exists($client, 'protect'))->toBeFalse()
         ->and(method_exists($client, 'recover'))->toBeFalse();
-})->with(['0.1.0', '0.2.0']);
+})->with(['0.1.0', '0.2.0', '0.3.0']);
+
+function hostUpdaterApplyFixture(bool $complete = false): array
+{
+    return [
+        'phase' => $complete ? 'verified' : 'downloading',
+        'index_digest' => $complete ? 'sha256:'.str_repeat('c', 64) : null,
+        'platform_manifest_digest' => $complete ? 'sha256:'.str_repeat('d', 64) : null,
+        'config_digest' => $complete ? 'sha256:'.str_repeat('e', 64) : null,
+        'manifest_sha256' => $complete ? str_repeat('f', 64) : null,
+        'history_sha256' => $complete ? str_repeat('1', 64) : null,
+        'migration_receipt_sha256' => $complete ? str_repeat('2', 64) : null,
+        'runtime_receipt_sha256' => $complete ? str_repeat('3', 64) : null,
+        'migration_started' => $complete,
+        'migration_verified' => $complete,
+        'services_verified' => $complete,
+        'origin_verified' => $complete,
+        'configuration_committed' => $complete,
+        'hold_owned' => false,
+        'error' => null,
+    ];
+}
+
+function hostUpdaterApplyResponse(array $response, bool $complete = false): array
+{
+    $response['result']['helper_version'] = '0.3.0';
+    $response['result']['revision'] = 2;
+    $operation = &$response['result']['operation'];
+    $operation['executor_version'] = '0.3.0';
+    $operation['revision'] = 2;
+    $operation['phase'] = $complete ? 'succeeded' : 'downloading';
+    $operation['checkpoint'] = $complete ? 'serving_verified' : 'apply_started';
+    $operation['mutation_started'] = $complete;
+    $operation['apply'] = hostUpdaterApplyFixture($complete);
+    $operation['protection'] = hostUpdaterProtectionFixture($complete);
+    if ($complete) {
+        $response['result']['active_operation'] = null;
+        $operation['protection']['phase'] = 'retained';
+        $operation['protection']['services_recovered'] = false;
+    }
+    $operation['events'][] = ['revision' => 2, 'at' => 101, 'code' => $complete ? 'succeeded' : 'apply_started', 'phase' => $operation['phase']];
+
+    return $response;
+}
+
+test('the application can observe apply evidence without acquiring an executable action', function (bool $complete): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static fn (array $response): array => hostUpdaterApplyResponse($response, $complete);
+
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+
+    expect($result['operation']['apply']['phase'])->toBe($complete ? 'verified' : 'downloading')
+        ->and($result['operation']['mutation_started'])->toBe($complete)
+        ->and(method_exists($client, 'apply'))->toBeFalse()
+        ->and(method_exists($client, 'recoverApply'))->toBeFalse()
+        ->and($client->requests[0]['action'])->toBe('status');
+})->with([false, true]);
+
+test('apply success requires every immutable receipt and completed service origin and configuration proof', function (string $key, mixed $value): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($key, $value): array {
+        $response = hostUpdaterApplyResponse($response, true);
+        $response['result']['operation']['apply'][$key] = $value;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    ['index_digest', null], ['platform_manifest_digest', null], ['config_digest', null],
+    ['manifest_sha256', null], ['history_sha256', null],
+    ['migration_receipt_sha256', null], ['runtime_receipt_sha256', null],
+    ['migration_started', false], ['migration_verified', false], ['services_verified', false],
+    ['origin_verified', false], ['configuration_committed', false], ['hold_owned', true],
+    ['error', 'migration_ambiguous'], ['index_digest', 'sha256:'.str_repeat('a', 64)],
+]);
+
+test('apply evidence rejects unknown secrets invalid types and unsupported completion claims', function (string $key, mixed $value): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($key, $value): array {
+        $response = hostUpdaterApplyResponse($response);
+        $response['result']['operation']['apply'][$key] = $value;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    ['path', '/private/backup'], ['phase', ['applying']], ['phase', 'succeeded'],
+    ['index_digest', 'sha256:'.str_repeat('A', 64)], ['platform_manifest_digest', 'latest'],
+    ['config_digest', []], ['manifest_sha256', 1], ['history_sha256', 'secret'],
+    ['migration_receipt_sha256', 'short'], ['runtime_receipt_sha256', ['secret']],
+    ['migration_started', 1], ['migration_verified', true], ['services_verified', true],
+    ['origin_verified', true], ['configuration_committed', true], ['hold_owned', 'false'],
+    ['error', 'password=secret'], ['phase', 'verified'],
+]);
+
+test('apply terminal ownership and mutation evidence cannot contradict the public operation', function (Closure $mutate): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static fn (array $response): array => $mutate(hostUpdaterApplyResponse($response, true));
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'host ownership not released' => [static function (array $response): array {
+        $response['result']['active_operation'] = $response['result']['operation']['operation_id'];
+
+        return $response;
+    }],
+    'sticky mutation missing' => [static function (array $response): array {
+        $response['result']['operation']['mutation_started'] = false;
+
+        return $response;
+    }],
+    'protection falsely reports original recovery' => [static function (array $response): array {
+        $response['result']['operation']['protection']['services_recovered'] = true;
+
+        return $response;
+    }],
+    'source archive omitted' => [static function (array $response): array {
+        unset($response['result']['operation']['protection']);
+
+        return $response;
+    }],
+    'completion before serving proof' => [static function (array $response): array {
+        $response['result']['operation']['checkpoint'] = 'configuration_committed';
+
+        return $response;
+    }],
+]);
+
+test('pre migration safe failure preserves its reason and verified source receipt', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response): array {
+        $response = hostUpdaterApplyResponse($response);
+        $response['result']['active_operation'] = null;
+        $operation = &$response['result']['operation'];
+        $operation['phase'] = 'failed_safe';
+        $operation['checkpoint'] = 'previous_serving_verified';
+        $operation['error'] = 'download_failed';
+        $operation['apply'] = array_replace($operation['apply'], [
+            'phase' => 'fallback', 'runtime_receipt_sha256' => str_repeat('f', 64),
+            'services_verified' => true, 'origin_verified' => true, 'error' => 'download_failed',
+        ]);
+        $operation['events'][1]['code'] = 'failed_safe';
+        $operation['events'][1]['phase'] = 'failed_safe';
+
+        return $response;
+    };
+
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+    expect($result['operation']['phase'])->toBe('failed_safe')
+        ->and($result['operation']['apply']['error'])->toBe('download_failed')
+        ->and($result['operation']['mutation_started'])->toBeFalse();
+});
+
+test('recovery retains migration intent while captured custody holds old services', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response): array {
+        $response = hostUpdaterApplyResponse($response, true);
+        $operation = &$response['result']['operation'];
+        $response['result']['active_operation'] = $operation['operation_id'];
+        $operation['phase'] = $operation['apply']['phase'] = 'recovery_required';
+        $operation['checkpoint'] = 'migration_intent';
+        $operation['error'] = $operation['apply']['error'] = 'migration_ambiguous';
+        $operation['apply']['hold_owned'] = true;
+        $operation['apply']['migration_verified'] = false;
+        $operation['apply']['services_verified'] = false;
+        $operation['apply']['origin_verified'] = false;
+        $operation['apply']['configuration_committed'] = false;
+        $operation['protection']['phase'] = 'captured';
+        $operation['protection']['hold_owned'] = true;
+        $operation['events'][1]['code'] = 'recovery_required';
+        $operation['events'][1]['phase'] = 'recovery_required';
+
+        return $response;
+    };
+
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+    expect($result['operation']['apply']['migration_started'])->toBeTrue()
+        ->and($result['operation']['mutation_started'])->toBeTrue()
+        ->and($result['operation']['protection']['services_recovered'])->toBeFalse()
+        ->and($result['operation']['apply']['hold_owned'])->toBeTrue();
+});
+
+test('new apply refusal codes stay sanitized while helper capabilities remain read only', function (string $reason): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($reason): array {
+        unset($response['result']);
+        $response['ok'] = false;
+        $response['error'] = $reason;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status())->toThrow(HostUpdaterException::class, 'helper_refused:'.$reason);
+})->with([
+    'apply_unavailable', 'apply_failed', 'apply_timeout', 'download_failed', 'artifact_invalid',
+    'artifact_verification_failed', 'platform_mismatch', 'migration_failed', 'migration_ambiguous',
+    'runtime_verification_failed', 'origin_verification_failed', 'configuration_commit_failed',
+]);
+
+test('post migration checkpoint cannot omit both possible mutation flags', function (string $checkpoint): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($checkpoint): array {
+        $response = hostUpdaterApplyResponse($response);
+        $response['result']['operation']['checkpoint'] = $checkpoint;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'migration_intent', 'migrations_verified', 'target_restart_intent', 'target_services_started',
+    'runtime_verified', 'configuration_commit_intent', 'configuration_committed', 'apply_release_intent', 'serving_verified',
+]);
+
+test('custody cannot claim verified bytes without the full archive receipt', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response): array {
+        $response = hostUpdaterApplyResponse($response);
+        $response['result']['operation']['protection']['phase'] = 'backing_up';
+        $response['result']['operation']['protection']['custody_verified'] = true;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+});
 
 test('authenticated status accepts typed protection and recovery checkpoints without enabling apply', function (string $phase, string $checkpoint, string $event): void {
     $client = new HostUpdaterProtocolFixture;

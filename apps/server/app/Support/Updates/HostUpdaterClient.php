@@ -29,22 +29,48 @@ class HostUpdaterClient
         'protection_unavailable', 'protection_failed', 'protection_timeout', 'drain_timeout', 'backup_failed',
         'backup_invalid', 'custody_failed', 'recovery_required', 'source_changed', 'maintenance_present',
         'writer_unverified', 'protection_verified',
+        'apply_unavailable', 'apply_failed', 'apply_timeout', 'download_failed', 'artifact_invalid',
+        'artifact_verification_failed', 'platform_mismatch', 'migration_failed', 'migration_ambiguous',
+        'runtime_verification_failed', 'origin_verification_failed', 'configuration_commit_failed',
     ];
 
-    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked', 'protecting', 'recovery_required'];
+    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked', 'downloading', 'protecting', 'applying', 'restarting', 'verifying', 'succeeded', 'failed_safe', 'recovery_required'];
 
     private const EVENTS = [
         'operation_accepted', 'prepare_started', 'plan_reported', 'operation_blocked', 'reconciliation_required', 'interrupted_prepare',
         'protection_started', 'fenced', 'drained', 'backup_verified', 'services_resumed', 'protection_released',
         'protection_failed', 'recovery_required', 'recovery_started',
+        'apply_started', 'target_download_intent', 'target_verified', 'data_protected', 'migration_intent',
+        'migrations_verified', 'target_restart_intent', 'target_services_started', 'runtime_verified',
+        'configuration_commit_intent', 'configuration_committed', 'apply_release_intent', 'serving_verified',
+        'previous_serving_verified', 'apply_recovery_started', 'succeeded', 'failed_safe', 'apply_failed',
     ];
 
     private const CHECKPOINTS = [
         'accepted', 'prepare_started', 'plan_reported', 'protection_started', 'fenced', 'drained',
         'backup_verified', 'services_resumed', 'protection_released',
+        'apply_started', 'target_download_intent', 'target_verified', 'data_protected', 'migration_intent',
+        'migrations_verified', 'target_restart_intent', 'target_services_started', 'runtime_verified',
+        'configuration_commit_intent', 'configuration_committed', 'apply_release_intent', 'serving_verified',
+        'previous_serving_verified',
     ];
 
-    private const PROTECTION_PHASES = ['fencing', 'draining', 'backing_up', 'resuming', 'verified', 'recovery_required'];
+    private const PROTECTION_PHASES = ['fencing', 'draining', 'backing_up', 'captured', 'retained', 'resuming', 'verified', 'recovery_required'];
+
+    private const APPLY_PHASES = ['downloading', 'protecting', 'applying', 'restarting', 'verifying', 'verified', 'fallback', 'recovery_required'];
+
+    private const APPLY_ERRORS = [
+        'apply_unavailable', 'apply_failed', 'apply_timeout', 'download_failed', 'artifact_invalid',
+        'artifact_verification_failed', 'platform_mismatch', 'migration_failed', 'migration_ambiguous',
+        'runtime_verification_failed', 'origin_verification_failed', 'configuration_commit_failed',
+        'protection_failed', 'backup_failed', 'backup_invalid', 'custody_failed', 'source_changed',
+        'writer_unverified', 'configuration_changed', 'prerequisites_unmet', 'recovery_required',
+    ];
+
+    private const MUTATION_CHECKPOINTS = [
+        'migration_intent', 'migrations_verified', 'target_restart_intent', 'target_services_started',
+        'runtime_verified', 'configuration_commit_intent', 'configuration_committed', 'apply_release_intent', 'serving_verified',
+    ];
 
     private const PROTECTION_ERRORS = [
         'protection_unavailable', 'protection_failed', 'protection_timeout', 'drain_timeout', 'backup_failed',
@@ -467,6 +493,13 @@ class HostUpdaterClient
 
             $this->validateOperation($result['operation']);
 
+            $terminal = in_array($result['operation']['phase'], ['blocked', 'succeeded', 'failed_safe'], true);
+            if ($result['operation']['revision'] > $result['revision']
+                || ($terminal && $result['active_operation'] === $result['operation']['operation_id'])
+                || (! $terminal && $result['active_operation'] !== $result['operation']['operation_id'])) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+
             if (isset($parameters['operation_id']) && $result['operation']['operation_id'] !== $parameters['operation_id']) {
                 throw new HostUpdaterException('helper_response_invalid');
             }
@@ -488,6 +521,9 @@ class HostUpdaterClient
         if (array_key_exists('protection', $operation)) {
             $expected[] = 'protection';
         }
+        if (array_key_exists('apply', $operation)) {
+            $expected[] = 'apply';
+        }
 
         $this->exactKeys($operation, $expected);
 
@@ -495,18 +531,65 @@ class HostUpdaterClient
             || ! self::isUuid($operation['executor_generation']) || ! self::version($operation['executor_version'])
             || ! self::stableTag($operation['release_tag']) || ! in_array($operation['phase'], self::PHASES, true)
             || ! in_array($operation['checkpoint'], self::CHECKPOINTS, true)
-            || $operation['mutation_started'] !== false || ! self::nonnegativeInteger($operation['created_at'])
+            || ! is_bool($operation['mutation_started']) || ! self::nonnegativeInteger($operation['created_at'])
             || ! self::nonnegativeInteger($operation['updated_at']) || ! self::nonnegativeInteger($operation['revision'])
             || ($operation['error'] !== null && ! in_array($operation['error'], self::ERRORS, true))
             || ($operation['plan_id'] !== null && ! self::hex($operation['plan_id'], 64))
-            || ! is_array($operation['events']) || ! array_is_list($operation['events'])) {
+            || ! is_array($operation['events']) || ! array_is_list($operation['events'])
+            || count($operation['events']) < 1 || count($operation['events']) > 32) {
             throw new HostUpdaterException('helper_response_invalid');
         }
 
         $this->validateEvents($operation['events']);
+        $previousRevision = 0;
+        foreach ($operation['events'] as $event) {
+            if ($event['revision'] <= $previousRevision || $event['revision'] > $operation['revision']) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+            $previousRevision = $event['revision'];
+        }
+        $lastEvent = $operation['events'][array_key_last($operation['events'])];
+        if ($lastEvent['revision'] !== $operation['revision'] || $lastEvent['phase'] !== $operation['phase']) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
 
         if (array_key_exists('protection', $operation)) {
             $this->validateProtection($operation['protection']);
+        }
+
+        if (array_key_exists('apply', $operation)) {
+            $this->validateApply($operation['apply']);
+            $apply = $operation['apply'];
+            $activePhases = ['downloading', 'protecting', 'applying', 'restarting', 'verifying'];
+
+            if (! array_key_exists('protection', $operation) || $operation['source'] === null
+                || $operation['target'] === null || $operation['plan_id'] === null
+                || ! in_array($operation['phase'], [...$activePhases, 'succeeded', 'failed_safe', 'recovery_required'], true)
+                || $apply['migration_started'] !== $operation['mutation_started']
+                || (in_array($operation['phase'], $activePhases, true) && $apply['phase'] !== $operation['phase'])
+                || ($operation['phase'] === 'recovery_required' && $apply['phase'] !== 'recovery_required')
+                || (! in_array($operation['phase'], ['succeeded', 'failed_safe'], true) && in_array($apply['phase'], ['verified', 'fallback'], true))
+                || ($operation['phase'] === 'succeeded' && ($apply['phase'] !== 'verified'
+                    || ! $operation['mutation_started'] || $operation['checkpoint'] !== 'serving_verified'
+                    || $operation['error'] !== null || $operation['protection']['phase'] !== 'retained'))
+                || ($operation['phase'] === 'failed_safe' && ($apply['phase'] !== 'fallback'
+                    || $operation['checkpoint'] !== 'previous_serving_verified' || $operation['mutation_started']
+                    || $operation['protection']['hold_owned']))
+                || ($apply['index_digest'] !== null && $apply['index_digest'] !== ($operation['target']['image_digest'] ?? null))
+                || ($apply['migration_started'] && (! $operation['protection']['custody_verified']
+                    || $apply['index_digest'] === null || $apply['platform_manifest_digest'] === null
+                    || $apply['config_digest'] === null || $apply['manifest_sha256'] === null || $apply['history_sha256'] === null))
+                || (in_array($operation['checkpoint'], self::MUTATION_CHECKPOINTS, true) && ! $operation['mutation_started'])) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        } elseif ($operation['mutation_started'] || in_array($operation['phase'], ['downloading', 'applying', 'restarting', 'verifying', 'succeeded', 'failed_safe'], true)
+            || in_array($operation['checkpoint'], [
+                'apply_started', 'target_download_intent', 'target_verified', 'data_protected', 'migration_intent',
+                'migrations_verified', 'target_restart_intent', 'target_services_started', 'runtime_verified',
+                'configuration_commit_intent', 'configuration_committed', 'apply_release_intent',
+                'serving_verified', 'previous_serving_verified',
+            ], true)) {
+            throw new HostUpdaterException('helper_response_invalid');
         }
 
         if ($operation['source'] !== null) {
@@ -575,6 +658,84 @@ class HostUpdaterClient
             || ! in_array($protection['offsite_verification'], ['not-configured', 'existence-and-size'], true)
             || $protection['offsite_uploaded'] !== ($protection['offsite_verification'] === 'existence-and-size')
         )) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        if ($protection['custody_verified'] && (
+            $protection['archive_sha256'] === null || $protection['manifest_sha256'] === null
+            || $protection['archive_bytes'] === null || $protection['source_image_id'] === null
+            || $protection['local_attachment_disks'] === null || $protection['external_attachment_disks'] === null
+            || $protection['offsite_verification'] === null
+            || $protection['offsite_uploaded'] !== ($protection['offsite_verification'] === 'existence-and-size')
+        )) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        if (in_array($protection['phase'], ['captured', 'retained'], true) && (
+            $protection['archive_sha256'] === null || $protection['manifest_sha256'] === null
+            || $protection['archive_bytes'] === null || $protection['source_image_id'] === null
+            || $protection['local_attachment_disks'] === null || $protection['external_attachment_disks'] === null
+            || $protection['offsite_verification'] === null
+            || $protection['offsite_uploaded'] !== ($protection['offsite_verification'] === 'existence-and-size')
+            || ! $protection['custody_verified'] || $protection['services_recovered']
+            || $protection['hold_owned'] !== ($protection['phase'] === 'captured') || $protection['error'] !== null
+        )) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+    }
+
+    private function validateApply(mixed $apply): void
+    {
+        if (! is_array($apply)) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        $digests = ['index_digest', 'platform_manifest_digest', 'config_digest'];
+        $hashes = ['manifest_sha256', 'history_sha256', 'migration_receipt_sha256', 'runtime_receipt_sha256'];
+        $flags = ['migration_started', 'migration_verified', 'services_verified', 'origin_verified', 'configuration_committed', 'hold_owned'];
+        $this->exactKeys($apply, ['phase', ...$digests, ...$hashes, ...$flags, 'error']);
+
+        if (! in_array($apply['phase'], self::APPLY_PHASES, true)
+            || ($apply['error'] !== null && ! in_array($apply['error'], self::APPLY_ERRORS, true))) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        foreach ($digests as $key) {
+            if ($apply[$key] !== null && (! is_string($apply[$key]) || preg_match('/\Asha256:[0-9a-f]{64}\z/', $apply[$key]) !== 1)) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        }
+        foreach ($hashes as $key) {
+            if ($apply[$key] !== null && ! self::hex($apply[$key], 64)) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        }
+        foreach ($flags as $key) {
+            if (! is_bool($apply[$key])) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        }
+
+        if (($apply['migration_verified'] && (! $apply['migration_started'] || $apply['migration_receipt_sha256'] === null))
+            || ($apply['services_verified'] && $apply['runtime_receipt_sha256'] === null)
+            || ($apply['origin_verified'] && ! $apply['services_verified'])
+            || ($apply['configuration_committed'] && (! $apply['migration_verified'] || ! $apply['services_verified']))) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+        if ($apply['phase'] === 'verified') {
+            foreach ([...$digests, ...$hashes] as $key) {
+                if ($apply[$key] === null) {
+                    throw new HostUpdaterException('helper_response_invalid');
+                }
+            }
+            if (! $apply['migration_started'] || ! $apply['migration_verified'] || ! $apply['services_verified']
+                || ! $apply['origin_verified'] || ! $apply['configuration_committed'] || $apply['hold_owned']
+                || $apply['error'] !== null) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        }
+        if ($apply['phase'] === 'fallback' && ($apply['migration_started'] || $apply['migration_verified']
+            || ! $apply['services_verified'] || ! $apply['origin_verified'] || $apply['hold_owned'])) {
             throw new HostUpdaterException('helper_response_invalid');
         }
     }

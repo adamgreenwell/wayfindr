@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit installation of the restricted preparation and protection host helper.
+"""Explicit installation of the restricted preparation, protection and apply host helper.
 
 No container is started or replaced here. Existing enrollments are never changed:
 helper replacement, credential rotation, and unenrollment require their own
@@ -176,7 +176,7 @@ def inspect_install(install_dir: Path, canonical_compose: Path, docker: list[str
     # This draft helper cannot turn an older published image into a compatible
     # application. The fixed command is read-only and introduces no helper gate
     # into existing terminal updates.
-    for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+    for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply"):
         run(compose + ["exec", "-T", "web", "php", "artisan", command, "--help"])
     return image
 
@@ -295,13 +295,29 @@ def enrollment_status() -> dict:
     return {"enrolled": True, "installation_id": installation_id, "application_apply_available": False, "helper_replacement_available": False}
 
 
+def unit_install_path(install_dir: Path) -> str:
+    value = str(install_dir)
+    if not install_dir.is_absolute() or install_dir == Path("/") or ".." in install_dir.parts or re.fullmatch(r"/[A-Za-z0-9_./-]+", value) is None:
+        raise EnrollmentError("--install-dir must be an absolute canonical directory using ASCII letters, numbers, slashes, dots, underscores or hyphens; whitespace and systemd expansion syntax are unsupported.")
+    # The accepted alphabet excludes quoting, escapes, specifiers and variable
+    # expansion. Quoting this literal is safe in systemd's path-list grammar.
+    return value
+
+
+def render_unit(template: bytes, install_dir: Path) -> bytes:
+    path = unit_install_path(install_dir).encode("ascii")
+    marker = b"__WAYFINDR_INSTALL_DIR__"
+    if template.count(marker) != 1:
+        raise EnrollmentError("The reviewed systemd template has no unique installation path marker.")
+    return template.replace(marker, path)
+
+
 def enroll(install_dir: Path) -> dict:
     host_supported()
     existing = enrollment_status()
     if existing["enrolled"]:
         raise EnrollmentError("This host is already enrolled. Existing identity, credentials, code and service were preserved; use status to inspect it.")
-    if not install_dir.is_absolute() or ".." in install_dir.parts:
-        raise EnrollmentError("--install-dir must be an absolute canonical path.")
+    unit_install_path(install_dir)
     if any(install_dir == protected or protected in install_dir.parents for protected in (Path("/home"), Path("/root"), Path("/run/user"), CONFIG_DIR, STATE_DIR, CODE_DIR, Path("/run/wayfindr-updater"))):
         raise EnrollmentError("The installation must be outside protected home and helper directories; use a reviewed root-owned directory such as /opt/wayfindr.")
     # Enrollment is deliberately conservative: the daemon's future privileged
@@ -313,11 +329,14 @@ def enroll(install_dir: Path) -> dict:
         "unit": distribution / "docker/self-hosting/wayfindr-updater.service",
         "daemon": distribution / "scripts/self-host/updater.py",
         "protection": distribution / "scripts/self-host/update_protection.py",
+        "apply": distribution / "scripts/self-host/update_apply.py",
+        "artifacts": distribution / "scripts/self-host/update_artifacts.py",
         "archive": distribution / "scripts/self-host/protection_archive.py",
         "installer": distribution / "scripts/self-host/install.sh",
     }
     for source in sources.values():
         trusted(source)
+    unit = render_unit(sources["unit"].read_bytes(), install_dir)
     trusted(install_dir, "directory")
     trusted(install_dir / "compose.yml")
     trusted(install_dir / ".env")
@@ -368,13 +387,15 @@ def enroll(install_dir: Path) -> dict:
     write_new(STATE_DIR / "journal.json", json_bytes(runtime.initial_journal(installation_id)), 0o600)
     write_new(CODE_DIR / "updater.py", sources["daemon"].read_bytes(), 0o644)
     write_new(CODE_DIR / "update_protection.py", sources["protection"].read_bytes(), 0o644)
+    write_new(CODE_DIR / "update_apply.py", sources["apply"].read_bytes(), 0o644)
+    write_new(CODE_DIR / "update_artifacts.py", sources["artifacts"].read_bytes(), 0o644)
     write_new(CODE_DIR / "protection_archive.py", sources["archive"].read_bytes(), 0o644)
     write_new(CLI_FILE, b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/wayfindr-updater/updater.py "$@"\n', 0o755)
     write_new(CONFIG_DIR / "installation.json", json_bytes(config), 0o600)
     write_new(CONFIG_DIR / "credential.json", json_bytes(credential), 0o440, 1000)
     write_new(install_dir / "compose.updater.yml", overlay, 0o644)
     write_new(install_dir / ".updater-enrolled", (installation_id + "\n").encode(), 0o600)
-    write_new(UNIT_FILE, sources["unit"].read_bytes(), 0o644)
+    write_new(UNIT_FILE, unit, 0o644)
     # An interrupted enrollment retains root-owned evidence and refuses a rerun;
     # it never overwrites a credential or active helper to 'repair' the failure.
     run(["/usr/bin/systemctl", "daemon-reload"])
@@ -387,7 +408,7 @@ def enroll(install_dir: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    enrollment = commands.add_parser("enroll", help="Install the preparation/protection helper; do not start or recreate application containers.")
+    enrollment = commands.add_parser("enroll", help="Install the host updater; do not start or recreate application containers.")
     enrollment.add_argument("--install-dir", required=True, type=Path)
     commands.add_parser("status", help="Read enrollment identity without changing helper or application files.")
     options = parser.parse_args()

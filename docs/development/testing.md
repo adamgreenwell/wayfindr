@@ -147,6 +147,9 @@ protocol, journal, and enrollment regressions without enrolling a host.
 | `test-self-host-release-resolution.sh` | Release discovery distinguishes a fully paginated, authoritative absence of a usable release tag from HTTP, transport, and unreadable-response failures without using the public network. |
 | `test_host_updater.py` | Durable idempotency, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
 | `test_updater_enrollment.py` | Trusted ownership and current controller, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
+| `test_update_apply_contract.py` | Root-only UUID admission, durable claims before workers, interrupted migration intent, receipt-bound completion, safe failure evidence, strict public fields and narrow configuration transition loading. |
+| `test_update_apply.py` | Continuous snapshot-to-verification fencing, checked source fallback, all target services, stale-origin refusal, no migration replay, partial creation reconciliation, and interrupted configuration promotion. |
+| `test_update_artifacts.py` | Independent release provenance, full migration history, OCI platform/index/config identity and refusal of malformed or conflicting artifacts. |
 
 `HostUpdaterProtocolIntegrationTest` runs the real PHP client against an isolated
 Python helper on Linux, including response framing, preparation, revision

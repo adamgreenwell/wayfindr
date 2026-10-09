@@ -59,6 +59,29 @@ class EnrollmentTests(unittest.TestCase):
             with self.assertRaises(ENROLL.EnrollmentError):
                 ENROLL.host_supported()
 
+    def test_installation_path_cannot_expand_or_inject_systemd_write_access(self):
+        unsupported = ("/", "/opt/way findr", "/opt/wayfindr\nReadWritePaths=/", "/opt/wayfindr\tother",
+                       '/opt/way"findr', "/opt/wayfindr%h", "/opt/$HOME", "/opt/way\\findr",
+                       "/opt/wayfindr\x00", "/opt/wayfindr-é", "relative", "/opt/../etc")
+        for value in unsupported:
+            with self.subTest(path=value), patch.object(ENROLL, "host_supported"), patch.object(ENROLL, "enrollment_status", return_value={"enrolled": False}), patch.object(ENROLL, "trusted") as trust, patch.object(ENROLL, "write_new") as writer, patch.object(ENROLL, "inspect_install") as inspect:
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(Path(value))
+                trust.assert_not_called()
+                writer.assert_not_called()
+                inspect.assert_not_called()
+
+    def test_generated_unit_grants_only_fixed_configuration_and_literal_reviewed_installation(self):
+        template = (ROOT / "docker/self-hosting/wayfindr-updater.service").read_bytes()
+        for path in ("/opt/wayfindr", "/srv/apps/wayfindr-1.2_3"):
+            unit = ENROLL.render_unit(template, Path(path)).decode("ascii")
+            self.assertIn('ReadWritePaths=/etc/wayfindr-updater "' + path + '"', unit)
+            self.assertNotIn("__WAYFINDR_INSTALL_DIR__", unit)
+            self.assertEqual(1, unit.count("ReadWritePaths="))
+        for malformed in (template.replace(b"__WAYFINDR_INSTALL_DIR__", b"/opt/other"), template + b"__WAYFINDR_INSTALL_DIR__"):
+            with self.assertRaises(ENROLL.EnrollmentError):
+                ENROLL.render_unit(malformed, Path("/opt/wayfindr"))
+
     def test_process_mapping_requires_actual_host_uid_and_gid_1000(self):
         for uid, gid in (("1000", "1000"), ("0", "1000"), ("100000", "100000"), ("1000", "0")):
             contents = "Uid:\t" + "\t".join([uid] * 4) + "\nGid:\t" + "\t".join([gid] * 4) + "\n"
@@ -91,7 +114,7 @@ class EnrollmentTests(unittest.TestCase):
             if "inspect" in command:
                 name = next(call[-1] for call in reversed(calls) if "ps" in call)
                 return [{"Image": IMAGE_ID, "State": {"Running": True, "Pid": 123}, "HostConfig": {"UsernsMode": ""}, "Config": {"User": "wayfindr", "Labels": {"com.docker.compose.project": "wayfindr-self-hosting", "com.docker.compose.service": name}}}]
-            if command[-1] == "--help" and command[-2] in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+            if command[-1] == "--help" and command[-2] in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply"):
                 if (old_app and command[-2] == "wayfindr:update-plan") or command[-2] == missing_command:
                     raise ENROLL.EnrollmentError("Command is unavailable")
                 return "Read-only update plan"
@@ -107,15 +130,15 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual(IMAGE, self.inspect(runner))
         self.assertEqual([
             ["exec", "-T", "web", "php", "artisan", command, "--help"]
-            for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup")
-        ], [command[-7:] for command in calls[-3:]])
+            for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply")
+        ], [command[-7:] for command in calls[-4:]])
         self.assertTrue(all("up" not in command and "pull" not in command for command in calls))
         runner, _ = self.installation_fixture(old_app=True)
         with self.assertRaises(ENROLL.EnrollmentError):
             self.inspect(runner)
 
     def test_each_required_current_application_command_is_checked_readonly(self):
-        for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+        for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply"):
             with self.subTest(command=command), self.assertRaises(ENROLL.EnrollmentError):
                 runner, calls = self.installation_fixture(missing_command=command)
                 self.inspect(runner)
@@ -139,7 +162,7 @@ class EnrollmentTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
             for filename in ("compose.yml", "compose.updater.yml", "wayfindr-updater.service"):
                 (distribution / "docker/self-hosting" / filename).write_bytes((ROOT / "docker/self-hosting" / filename).read_bytes())
-            for filename in ("updater.py", "update_protection.py", "protection_archive.py"):
+            for filename in ("updater.py", "update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py"):
                 (distribution / "scripts/self-host" / filename).write_bytes((ROOT / "scripts/self-host" / filename).read_bytes())
             (distribution / "scripts/self-host/install.sh").write_bytes((ROOT / "scripts/self-host/install.sh").read_bytes())
             (install / "compose.yml").write_text("# unchanged application compose\n")
@@ -167,7 +190,7 @@ class EnrollmentTests(unittest.TestCase):
             self.assertIn((ENROLL.CONFIG_DIR / "credential.json", 0o440, 1000), writes)
             self.assertIn((ENROLL.CONFIG_DIR / "installation.json", 0o600, 0), writes)
             self.assertEqual(hashlib.sha256((install / "compose.updater.yml").read_bytes()).hexdigest(), config["overlay_sha256"])
-            for filename in ("updater.py", "update_protection.py", "protection_archive.py"):
+            for filename in ("updater.py", "update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py"):
                 self.assertIn((ENROLL.CODE_DIR / filename, 0o644, 0), writes)
                 self.assertEqual((ROOT / "scripts/self-host" / filename).read_bytes(), (ENROLL.CODE_DIR / filename).read_bytes())
             self.assertIn((install / ".updater-enrolled", 0o600, 0), writes)
@@ -177,6 +200,9 @@ class EnrollmentTests(unittest.TestCase):
             self.assertEqual({}, journal["operations"])
             self.assertIn((ENROLL.STATE_DIR / "journal.json", 0o600, 0), writes)
             self.assertTrue(all(call.args[0][0] == "/usr/bin/systemctl" for call in runner.call_args_list))
+            unit = ENROLL.UNIT_FILE.read_text()
+            self.assertIn('ReadWritePaths=/etc/wayfindr-updater "' + str(install) + '"', unit)
+            self.assertNotIn("__WAYFINDR_INSTALL_DIR__", unit)
 
     def test_existing_enrollment_is_never_replaced_or_credential_rotated(self):
         with self.synthetic_host() as (_, install, writes, _, runner):
@@ -223,12 +249,12 @@ class EnrollmentTests(unittest.TestCase):
                 self.assertEqual(count, len(writes))
                 runner.assert_not_called()
 
-    def test_both_privileged_protection_sources_require_trust_before_preparation(self):
-        for filename in ("update_protection.py", "protection_archive.py"):
+    def test_privileged_execution_sources_require_trust_before_preparation(self):
+        for filename in ("update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py"):
             with self.subTest(filename=filename), self.synthetic_host() as (_, install, writes, inspect, runner):
                 def trust(path, kind="file"):
                     if path.name == filename:
-                        raise ENROLL.EnrollmentError("Untrusted protection source")
+                        raise ENROLL.EnrollmentError("Untrusted execution source")
                 with patch.object(ENROLL, "trusted", side_effect=trust), self.assertRaises(ENROLL.EnrollmentError):
                     ENROLL.enroll(install)
                 self.assertEqual([], writes)
@@ -297,6 +323,7 @@ class EnrollmentTests(unittest.TestCase):
         for setting in ("User=root", "Group=1000", "KillMode=control-group", "RuntimeDirectoryMode=0750", "RuntimeDirectoryPreserve=yes", "StateDirectoryMode=0700", "NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=true", "PrivateTmp=true", "CapabilityBoundingSet=", "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"):
             self.assertIn(setting, unit)
         self.assertNotIn("/opt/wayfindr", unit)
+        self.assertIn('ReadWritePaths=/etc/wayfindr-updater "__WAYFINDR_INSTALL_DIR__"', unit)
         self.assertIn('WAYFINDR_UPDATER_ENABLED: "true"', overlay)
         self.assertIn("WAYFINDR_UPDATER_CREDENTIALS:", overlay)
         self.assertNotIn("WAYFINDR_UPDATER_CREDENTIAL:", overlay)

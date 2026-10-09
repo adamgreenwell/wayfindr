@@ -20,6 +20,7 @@ SERVICES = ("web", "queue", "backup-queue", "scheduler", "reverb")
 CONTAINER = re.compile(r"[0-9a-f]{64}\Z")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 STAGES = {"fence_intent", "drain_intent", "backup_intent", "resume_intent", "release_intent", "complete"}
+APPLY_OPERATOR_SETTINGS = r'$a->make(App\Support\Settings\OperatorSettings::class)->applyOverrides();'
 CAPTURE_BINDING = r'[$a["config"]->get("database"),$a["config"]->get("filesystems"),$a["config"]->get("wayfindr.attachments"),$a["config"]->get("wayfindr.backup"),$a["config"]->get("wayfindr.erasure"),App\Support\Backup\BackupService::appKeyFingerprints()]'
 DB_QUIESCENCE_SQL = "SELECT COUNT(*) AS writers FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend' AND state IS DISTINCT FROM 'idle'"
 DB_QUIESCENCE = r'''if(Illuminate\Support\Facades\DB::connection()->getDriverName()!=="pgsql"){exit(78);}$end=microtime(true)+120;do{$row=Illuminate\Support\Facades\DB::selectOne("''' + DB_QUIESCENCE_SQL + r'''");$n=$row->writers??null;if(!is_int($n)&&!(is_string($n)&&ctype_digit($n))){exit(78);}if((int)$n===0){break;}if(microtime(true)>=$end){exit(78);}usleep(250000);}while(true);'''
@@ -113,7 +114,7 @@ class DockerEngine:
 
     def effective_keys(self, container):
         # Private root capture only. Never add these bytes to RPC receipts/logs.
-        php = r'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();echo json_encode(["schema"=>1,"current"=>config("app.key"),"previous"=>(array)config("app.previous_keys",[]),"cipher"=>config("app.cipher"),"fingerprints"=>App\Support\Backup\BackupService::appKeyFingerprints(),"capture_binding_sha256"=>hash("sha256",serialize(' + CAPTURE_BINDING + r'))],JSON_THROW_ON_ERROR);'
+        php = r'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();' + APPLY_OPERATOR_SETTINGS + r'echo json_encode(["schema"=>1,"current"=>config("app.key"),"previous"=>(array)config("app.previous_keys",[]),"cipher"=>config("app.cipher"),"fingerprints"=>App\Support\Backup\BackupService::appKeyFingerprints(),"capture_binding_sha256"=>hash("sha256",serialize(' + CAPTURE_BINDING + r'))],JSON_THROW_ON_ERROR);'
         return self.call(["exec", container, "php", "-r", php], "custody_failed", json=True)
 
     def environment_map(self, items):
@@ -214,7 +215,7 @@ class DockerEngine:
         names = base64.b64encode(json.dumps(context["environment_binding"]["keys"]).encode()).decode()
         # No credentials enter argv: only names and hashes. A stale .env or
         # cached database/storage configuration refuses before backup executes.
-        php = r'$names=json_decode(base64_decode($argv[2],true),true,512,JSON_THROW_ON_ERROR);$e=[];foreach($names as $n){$v=getenv($n);if($v===false){exit(78);}$e[$n]=$v;}ksort($e);if(!hash_equals($argv[1],hash("sha256",json_encode($e,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)))){exit(78);}require "vendor/autoload.php";$a=require "bootstrap/app.php";$k=$a->make(Illuminate\Contracts\Console\Kernel::class);$k->bootstrap();if(!hash_equals($argv[3],hash("sha256",serialize(' + CAPTURE_BINDING + r')))){exit(78);}' + DB_QUIESCENCE + r'$s=$k->handle(new Symfony\Component\Console\Input\ArrayInput(["command"=>"wayfindr:protective-backup","operation"=>$argv[4],"--json"=>true]),new Symfony\Component\Console\Output\ConsoleOutput());$k->terminate(new Symfony\Component\Console\Input\ArrayInput([]),$s);exit($s);'
+        php = r'$names=json_decode(base64_decode($argv[2],true),true,512,JSON_THROW_ON_ERROR);$e=[];foreach($names as $n){$v=getenv($n);if($v===false){exit(78);}$e[$n]=$v;}ksort($e);if(!hash_equals($argv[1],hash("sha256",json_encode($e,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)))){exit(78);}require "vendor/autoload.php";$a=require "bootstrap/app.php";$k=$a->make(Illuminate\Contracts\Console\Kernel::class);$k->bootstrap();' + APPLY_OPERATOR_SETTINGS + r'if(!hash_equals($argv[3],hash("sha256",serialize(' + CAPTURE_BINDING + r')))){exit(78);}' + DB_QUIESCENCE + r'$s=$k->handle(new Symfony\Component\Console\Input\ArrayInput(["command"=>"wayfindr:protective-backup","operation"=>$argv[4],"--json"=>true]),new Symfony\Component\Console\Output\ConsoleOutput());$k->terminate(new Symfony\Component\Console\Input\ArrayInput([]),$s);exit($s);'
         try:
             code, raw = self.api.capture(self.pinned_compose(operation, image) + ["run", "--no-deps", "--pull=never", "--entrypoint", "php",
                                     "--name", self.backup_name(operation), "-T", "web", "-r", php,
@@ -484,7 +485,7 @@ class Protector:
         finally:
             wrapper.unlink(missing_ok=True)
 
-    def recover(self, directory, operation, context):
+    def recover(self, directory, operation, context, *, before_release=None):
         self.config.verify_files()
         self.engine.settled(context["containers"], operation)
         if self.engine.backup_active(operation):
@@ -520,6 +521,8 @@ class Protector:
                 if time.monotonic() >= deadline:
                     self.refusal("recovery_required")
                 time.sleep(1)
+        if before_release is not None:
+            before_release()
         self.journal.protection_checkpoint(operation, "services_resumed", {"phase": "resuming", "services_recovered": True, "hold_owned": value["held"]})
         if value["held"]:
             self.engine.settled(context["containers"], operation)
@@ -537,6 +540,39 @@ class Protector:
             final["error"] = None
         self.journal.protection_checkpoint(operation, "protection_released", final)
 
+    def capture(self, operation, *, retain_hold=False):
+        """Capture a fresh recovery point; managed apply keeps original writers stopped."""
+        directory = self.root / "protection" / operation
+        context, keys = self.baseline(operation)
+        parent = directory.parent
+        if not parent.exists():
+            parent.mkdir(mode=0o700)
+            self.fsync_directory(parent.parent)
+        if self.secure:
+            self.api.trusted(parent, directory=True)
+        directory.mkdir(mode=0o700)
+        self.fsync_directory(parent)
+        self.api.atomic_write(directory / "keys.json", keys)
+        self.persist(directory, context, "fence_intent")
+        self.api.atomic_write(directory / "image.yml", {"services": {"web": {"image": context["image"]}}})
+        self.engine.settled(context["containers"], operation)
+        self.check_window(self.engine.window(context["containers"]["web"], operation, "enter"), operation, context["source"], True)
+        self.journal.protection_checkpoint(operation, "fenced", {"phase": "draining", "hold_owned": True, "source_image_id": context["image"]})
+        self.persist(directory, context, "drain_intent")
+        self.engine.drain(context["containers"], self.drain_seconds)
+        self.check_records(context, False)
+        self.engine.writers(self.engine.dependencies())
+        self.journal.protection_checkpoint(operation, "drained", {"phase": "backing_up"})
+        self.persist(directory, context, "backup_intent")
+        self.config.verify_files()
+        receipt = self.engine.backup(operation, context["image"], context)
+        facts = self.custody(directory, operation, context, receipt)
+        self.journal.protection_checkpoint(operation, "backup_verified", {"phase": "captured" if retain_hold else "resuming", "archive_sha256": receipt["archive_sha256"],
+            "manifest_sha256": receipt["manifest_sha256"], "archive_bytes": receipt["archive_bytes"],
+            "local_attachment_disks": facts["local_attachment_disks"], "external_attachment_disks": receipt["coverage"]["external_attachment_disks"],
+            "offsite_uploaded": receipt["coverage"]["offsite_uploaded"], "offsite_verification": receipt["coverage"]["offsite_verification"], "custody_verified": True})
+        return context
+
     def __call__(self, operation, recovery=False):
         directory = self.root / "protection" / operation
         context = None
@@ -546,38 +582,19 @@ class Protector:
                 context = self.load_context(directory, operation)
                 reason = self.journal.status(operation)["operation"]["protection"]["error"] or "protection_failed"
             else:
-                context, keys = self.baseline(operation)
-                parent = directory.parent
-                if not parent.exists():
-                    parent.mkdir(mode=0o700)
-                    self.fsync_directory(parent.parent)
-                if self.secure:
-                    self.api.trusted(parent, directory=True)
-                directory.mkdir(mode=0o700)
-                self.fsync_directory(parent)
-                self.api.atomic_write(directory / "keys.json", keys)
-                self.persist(directory, context, "fence_intent")
-                self.api.atomic_write(directory / "image.yml", {"services": {"web": {"image": context["image"]}}})
-                self.engine.settled(context["containers"], operation)
-                self.check_window(self.engine.window(context["containers"]["web"], operation, "enter"), operation, context["source"], True)
-                self.journal.protection_checkpoint(operation, "fenced", {"phase": "draining", "hold_owned": True, "source_image_id": context["image"]})
-                self.persist(directory, context, "drain_intent")
-                self.engine.drain(context["containers"], self.drain_seconds)
-                self.check_records(context, False)
-                self.engine.writers(self.engine.dependencies())
-                self.journal.protection_checkpoint(operation, "drained", {"phase": "backing_up"})
-                self.persist(directory, context, "backup_intent")
-                self.config.verify_files()
-                receipt = self.engine.backup(operation, context["image"], context)
-                facts = self.custody(directory, operation, context, receipt)
-                self.journal.protection_checkpoint(operation, "backup_verified", {"phase": "resuming", "archive_sha256": receipt["archive_sha256"],
-                    "manifest_sha256": receipt["manifest_sha256"], "archive_bytes": receipt["archive_bytes"],
-                    "local_attachment_disks": facts["local_attachment_disks"], "external_attachment_disks": receipt["coverage"]["external_attachment_disks"],
-                    "offsite_uploaded": receipt["coverage"]["offsite_uploaded"], "offsite_verification": receipt["coverage"]["offsite_verification"], "custody_verified": True})
+                context = self.capture(operation)
             self.recover(directory, operation, context)
             self.journal.protection_finish(operation, "protection_verified" if self.journal.status(operation)["operation"]["protection"]["phase"] == "verified" else reason, True)
         except Exception as failure:
             reason = failure.reason if isinstance(failure, self.api.Refusal) else "protection_failed"
+            # capture() can fail after its durable fence intent. Load that
+            # context before cleanup; never mistake an unknown effect for no effect.
+            if context is None and (directory / "state.json").is_file():
+                try:
+                    context = self.load_context(directory, operation)
+                except Exception:
+                    self.journal.protection_finish(operation, reason, False)
+                    return
             # Before a persisted fence intent no app side effect was possible.
             if context is None or not (directory / "state.json").is_file():
                 if recovery:

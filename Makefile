@@ -86,6 +86,9 @@ host-updater-test:
 	python3 scripts/test_host_updater.py
 	python3 scripts/test_updater_enrollment.py
 	python3 scripts/test_update_protection.py
+	python3 scripts/test_update_artifacts.py
+	python3 scripts/test_update_apply_contract.py
+	python3 scripts/test_update_apply.py
 	python3 scripts/test_protection_source_binding.py
 	python3 scripts/test_protection_archive.py
 	python3 scripts/test-managed-upgrade-entrypoint.py

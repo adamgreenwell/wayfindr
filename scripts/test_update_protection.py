@@ -10,7 +10,10 @@ import gzip
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -541,6 +544,84 @@ class ProtectionTests(unittest.TestCase):
         self.assertEqual("php", command[command.index("--entrypoint") + 1])
         for forbidden in ("kill", "up", "migrate", "pull", "restart"):
             self.assertNotIn(forbidden, command)
+
+
+class EffectiveBindingCaptureTests(unittest.TestCase):
+    """Execute the fixed PHP with a local stub; no Laravel/provider/Docker writes."""
+
+    def test_operator_overrides_are_applied_before_private_capture_and_backup_binding(self):
+        php = shutil.which("php")
+        if not php:
+            self.skipTest("PHP unavailable for the generated-command boundary")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "vendor").mkdir()
+            (root / "bootstrap").mkdir()
+            (root / "vendor/autoload.php").write_text(r'''<?php
+namespace Illuminate\Contracts\Console {
+    class Kernel {
+        public function bootstrap() {}
+        public function handle($input, $output) { echo '{"schema":1}'; return 0; }
+        public function terminate($input, $status) {}
+    }
+}
+namespace App\Support\Settings {
+    class OperatorSettings {
+        public function applyOverrides() { $GLOBALS['fixture_config']->set('wayfindr.backup', ['disk'=>'operator']); }
+    }
+}
+namespace App\Support\Backup {
+    class BackupService { public static function appKeyFingerprints() { return [str_repeat('a',64)]; } }
+}
+namespace Illuminate\Support\Facades {
+    class DB {
+        public static function connection() { return new class { public function getDriverName() { return 'pgsql'; } }; }
+        public static function selectOne($sql) { return (object)['writers'=>0]; }
+    }
+}
+namespace Symfony\Component\Console\Input { class ArrayInput { public function __construct($args) {} } }
+namespace Symfony\Component\Console\Output { class ConsoleOutput {} }
+namespace {
+    class FixtureConfig {
+        private array $values = ['database'=>['connection'=>'fixture'], 'filesystems'=>[], 'wayfindr.attachments'=>[],
+            'wayfindr.backup'=>['disk'=>'baseline'], 'wayfindr.erasure'=>[], 'app.key'=>'fixture-key', 'app.previous_keys'=>[], 'app.cipher'=>'AES-256-CBC'];
+        public function get($key) { return $this->values[$key] ?? null; }
+        public function set($key, $value) { $this->values[$key] = $value; }
+    }
+    class FixtureApp extends \ArrayObject { public function make($class) { return new $class; } }
+    function config($key, $default=null) { return $GLOBALS['fixture_config']->get($key) ?? $default; }
+}
+''')
+            (root / "bootstrap/app.php").write_text("<?php $GLOBALS['fixture_config']=new FixtureConfig; return new FixtureApp(['config'=>$GLOBALS['fixture_config']]);")
+            commands = []
+            def capture(command, **_kwargs):
+                commands.append(command)
+                position = command.index("-r")
+                result = subprocess.run([php, *command[position:]], cwd=root, env={**os.environ, "FIXTURE_ENV": "fixture"},
+                                        capture_output=True, timeout=10)
+                return result.returncode, result.stdout
+            api = types.SimpleNamespace(**API.__dict__)
+            api.capture = capture
+            config = types.SimpleNamespace(value={"install_dir": str(root), "compose_project": "fixture"})
+            engine = PROTECT.DockerEngine(config, api, root)
+            engine.require_source = lambda *_args: None
+            engine.pinned_compose = lambda *_args: ["docker", "compose"]
+            engine.inspect = lambda *_args: {"image": IMAGE, "state": {"Running": False, "ExitCode": 0}}
+            captured = engine.effective_keys("b" * 64)
+            def binding(disk):
+                code = r'''echo hash('sha256',serialize([['connection'=>'fixture'],[],[],['disk'=>$argv[1]],[],[str_repeat('a',64)]]));'''
+                return subprocess.check_output([php, "-r", code, disk], timeout=10).decode()
+            self.assertEqual(binding("operator"), captured["capture_binding_sha256"])
+            self.assertNotEqual(binding("baseline"), captured["capture_binding_sha256"])
+            environment = hashlib.sha256(b'{"FIXTURE_ENV":"fixture"}').hexdigest()
+            context = {"containers": {}, "environment_binding": {"keys": ["FIXTURE_ENV"], "sha256": environment},
+                       "capture_binding_sha256": binding("baseline")}
+            operation = str(uuid.uuid4())
+            with self.assertRaisesRegex(UP.Refusal, "backup_failed"):
+                engine.backup(operation, IMAGE, context)
+            context["capture_binding_sha256"] = captured["capture_binding_sha256"]
+            self.assertEqual({"schema": 1}, engine.backup(operation, IMAGE, context))
+            self.assertEqual(3, len(commands))
 
 
 class DockerSettlementTests(unittest.TestCase):

@@ -350,6 +350,14 @@ namespace App\Support\Backup {
         public static function appKeyFingerprints() { return \fixture_data()["fingerprints"]; }
     }
 }
+namespace App\Support\Settings {
+    class OperatorSettings {
+        public function applyOverrides() {
+            if (!is_file("bootstrap-ran")) { throw new \RuntimeException("Settings must follow bootstrap"); }
+            file_put_contents("settings-ran", "yes");
+        }
+    }
+}
 namespace Symfony\Component\Console\Input {
     class ArrayInput {
         public function __construct(public array $arguments) {}
@@ -374,7 +382,13 @@ namespace {
     }
     class FixtureApplication extends \ArrayObject {
         public function __construct() { parent::__construct(["config" => new FixtureConfig]); }
-        public function make($class) { return new FixtureKernel; }
+        public function make($class) {
+            return match ($class) {
+                \Illuminate\Contracts\Console\Kernel::class => new FixtureKernel,
+                \App\Support\Settings\OperatorSettings::class => new \App\Support\Settings\OperatorSettings,
+                default => throw new \RuntimeException("Unexpected fixture service"),
+            };
+        }
     }
     class FixtureKernel {
         public function bootstrap() { file_put_contents("bootstrap-ran", "yes"); }
@@ -409,7 +423,8 @@ namespace {
         data_path = self.root / "fixture-data.json"
         data_path.write_text(json.dumps(configuration))
         environment = {**self.fixture.baked, **self.fixture.overrides}
-        digest_php = 'require "vendor/autoload.php";$a=require "bootstrap/app.php";echo hash("sha256",serialize(' + PROTECT.CAPTURE_BINDING + '));'
+        digest_php = (r'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();'
+                      + PROTECT.APPLY_OPERATOR_SETTINGS + 'echo hash("sha256",serialize(' + PROTECT.CAPTURE_BINDING + '));')
         digest = subprocess.run([PHP, "-r", digest_php], cwd=self.root, env=environment,
                                 text=True, capture_output=True, timeout=15)
         self.assertEqual(0, digest.returncode, digest.stderr)
@@ -425,12 +440,13 @@ namespace {
                 altered = copy.deepcopy(configuration)
                 altered[key] = ["changed-effective-setting"]
                 data_path.write_text(json.dumps(altered))
-                for name in ("bootstrap-ran", "backup-ran", "terminate-ran"):
+                for name in ("bootstrap-ran", "settings-ran", "backup-ran", "terminate-ran"):
                     (self.root / name).unlink(missing_ok=True)
                 result = subprocess.run([PHP, "-r", wrapper, *arguments], cwd=self.root, env=environment,
                                         text=True, capture_output=True, timeout=15)
                 self.assertEqual(78, result.returncode, result.stderr)
                 self.assertTrue((self.root / "bootstrap-ran").is_file())
+                self.assertTrue((self.root / "settings-ran").is_file())
                 self.assertFalse((self.root / "backup-ran").exists())
                 self.assertFalse((self.root / "terminate-ran").exists())
                 self.assertEqual("", result.stdout)
@@ -453,11 +469,12 @@ namespace {
                 altered["postgres_driver"] = "sqlite" if case == "wrong_driver" else "pgsql"
                 altered["postgres_failure"] = case == "query_error"
                 data_path.write_text(json.dumps(altered))
-                for name in ("bootstrap-ran", "query-ran", "backup-ran", "terminate-ran"):
+                for name in ("bootstrap-ran", "settings-ran", "query-ran", "backup-ran", "terminate-ran"):
                     (self.root / name).unlink(missing_ok=True)
                 result = subprocess.run([PHP, "-d", "disable_functions=time,microtime,usleep", "-r", wrapper, *arguments],
                                         cwd=self.root, env=environment, text=True, capture_output=True, timeout=15)
                 self.assertTrue((self.root / "bootstrap-ran").is_file())
+                self.assertTrue((self.root / "settings-ran").is_file())
                 if case == "idle":
                     self.assertEqual(0, result.returncode, result.stderr)
                     self.assertTrue((self.root / "query-ran").is_file())

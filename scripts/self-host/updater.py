@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-owned preparation, protective backups, and journal. No schema apply engine."""
+"""Host-owned update execution, recovery, and durable operation journal."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 PROTOCOL = 1
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
 CREDENTIAL = Path("/etc/wayfindr-updater/credential.json")
@@ -46,6 +46,14 @@ EVENTS = {"operation_accepted", "prepare_started", "plan_reported", "operation_b
 PHASES |= {"protecting", "recovery_required"}
 CHECKPOINTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released"}
 EVENTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released", "protection_failed", "recovery_required", "recovery_started"}
+APPLY_ACTIVE_PHASES = {"downloading", "protecting", "applying", "restarting", "verifying"}
+TERMINAL_PHASES = {"blocked", "succeeded", "failed_safe"}
+APPLY_CHECKPOINTS = {"apply_started", "target_download_intent", "target_verified", "data_protected", "migration_intent", "migrations_verified", "target_restart_intent", "target_services_started", "runtime_verified", "configuration_commit_intent", "configuration_committed", "apply_release_intent", "serving_verified", "previous_serving_verified"}
+MUTATION_CHECKPOINTS = {"migration_intent", "migrations_verified", "target_restart_intent", "target_services_started", "runtime_verified", "configuration_commit_intent", "configuration_committed", "apply_release_intent", "serving_verified"}
+APPLY_ERRORS = {"apply_unavailable", "apply_failed", "apply_timeout", "download_failed", "artifact_invalid", "artifact_verification_failed", "platform_mismatch", "migration_failed", "migration_ambiguous", "runtime_verification_failed", "origin_verification_failed", "configuration_commit_failed", "protection_failed", "backup_failed", "backup_invalid", "custody_failed", "source_changed", "writer_unverified", "configuration_changed", "prerequisites_unmet", "recovery_required"}
+PHASES |= APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe"}
+CHECKPOINTS |= APPLY_CHECKPOINTS
+EVENTS |= APPLY_CHECKPOINTS | {"apply_recovery_started", "succeeded", "failed_safe", "apply_failed"}
 ERRORS = {
     "authentication_failed", "request_invalid", "protocol_unsupported", "installation_mismatch",
     "replay_detected", "request_expired", "operation_busy", "idempotency_conflict",
@@ -57,6 +65,42 @@ ERRORS = {
     "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed",
     "maintenance_present", "writer_unverified", "protection_verified",
 }
+ERRORS |= APPLY_ERRORS
+
+
+def apply_state():
+    return {"phase": "downloading", "index_digest": None, "platform_manifest_digest": None, "config_digest": None,
+            "manifest_sha256": None, "history_sha256": None, "migration_receipt_sha256": None, "runtime_receipt_sha256": None,
+            "migration_started": False, "migration_verified": False, "services_verified": False, "origin_verified": False,
+            "configuration_committed": False, "hold_owned": False, "error": None}
+
+
+def validate_apply(value):
+    if not isinstance(value, dict) or set(value) != set(apply_state()):
+        raise Refusal("journal_corrupt")
+    if not isinstance(value["phase"], str) or value["phase"] not in APPLY_ACTIVE_PHASES | {"verified", "fallback", "recovery_required"}:
+        raise Refusal("journal_corrupt")
+    for key in ("index_digest", "platform_manifest_digest", "config_digest"):
+        if value[key] is not None and (not isinstance(value[key], str) or not DIGEST.fullmatch(value[key])):
+            raise Refusal("journal_corrupt")
+    for key in ("manifest_sha256", "history_sha256", "migration_receipt_sha256", "runtime_receipt_sha256"):
+        if value[key] is not None and (not isinstance(value[key], str) or not HEX.fullmatch(value[key])):
+            raise Refusal("journal_corrupt")
+    flags = ("migration_started", "migration_verified", "services_verified", "origin_verified", "configuration_committed", "hold_owned")
+    if any(type(value[key]) is not bool for key in flags) or (value["error"] is not None and (not isinstance(value["error"], str) or value["error"] not in APPLY_ERRORS)):
+        raise Refusal("journal_corrupt")
+    if value["migration_verified"] and (not value["migration_started"] or value["migration_receipt_sha256"] is None):
+        raise Refusal("journal_corrupt")
+    if value["services_verified"] and value["runtime_receipt_sha256"] is None:
+        raise Refusal("journal_corrupt")
+    if value["origin_verified"] and not value["services_verified"]:
+        raise Refusal("journal_corrupt")
+    if value["configuration_committed"] and (not value["migration_verified"] or not value["services_verified"]):
+        raise Refusal("journal_corrupt")
+    if value["phase"] == "verified" and (any(value[key] is None for key in ("index_digest", "platform_manifest_digest", "config_digest", "manifest_sha256", "history_sha256", "migration_receipt_sha256", "runtime_receipt_sha256")) or not all(value[key] for key in flags[:-1]) or value["hold_owned"] or value["error"] is not None):
+        raise Refusal("journal_corrupt")
+    if value["phase"] == "fallback" and (value["migration_started"] or value["migration_verified"] or not value["services_verified"] or not value["origin_verified"] or value["hold_owned"]):
+        raise Refusal("journal_corrupt")
 
 
 def protection_state():
@@ -69,7 +113,7 @@ def protection_state():
 def validate_protection(value):
     if not isinstance(value, dict) or set(value) != set(protection_state()):
         raise Refusal("journal_corrupt")
-    if not isinstance(value["phase"], str) or value["phase"] not in {"fencing", "draining", "backing_up", "resuming", "verified", "recovery_required"}:
+    if not isinstance(value["phase"], str) or value["phase"] not in {"fencing", "draining", "backing_up", "captured", "retained", "resuming", "verified", "recovery_required"}:
         raise Refusal("journal_corrupt")
     for key in ("archive_sha256", "manifest_sha256", "source_image_id"):
         pattern = DIGEST if key == "source_image_id" else HEX
@@ -85,7 +129,12 @@ def validate_protection(value):
     protection_errors = {"protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout", "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed", "maintenance_present", "writer_unverified", "protection_verified"}
     if any(type(value[key]) is not bool for key in ("custody_verified", "services_recovered", "hold_owned")) or (value["error"] is not None and (not isinstance(value["error"], str) or value["error"] not in protection_errors)):
         raise Refusal("journal_corrupt")
-    if value["phase"] == "verified" and (any(value[key] is None for key in ("archive_sha256", "manifest_sha256", "archive_bytes", "source_image_id", "local_attachment_disks", "external_attachment_disks", "offsite_uploaded", "offsite_verification")) or not value["custody_verified"] or not value["services_recovered"] or value["hold_owned"] or value["error"] is not None or value["offsite_uploaded"] != (value["offsite_verification"] == "existence-and-size")):
+    complete = not any(value[key] is None for key in ("archive_sha256", "manifest_sha256", "archive_bytes", "source_image_id", "local_attachment_disks", "external_attachment_disks", "offsite_uploaded", "offsite_verification")) and value["offsite_uploaded"] == (value["offsite_verification"] == "existence-and-size")
+    if value["custody_verified"] and not complete:
+        raise Refusal("journal_corrupt")
+    if value["phase"] == "verified" and (not complete or not value["custody_verified"] or not value["services_recovered"] or value["hold_owned"] or value["error"] is not None):
+        raise Refusal("journal_corrupt")
+    if value["phase"] in {"captured", "retained"} and (not complete or not value["custody_verified"] or value["hold_owned"] != (value["phase"] == "captured") or value["services_recovered"] or value["error"] is not None):
         raise Refusal("journal_corrupt")
 
 
@@ -209,7 +258,7 @@ def validate_journal(value: dict, installation_id: str) -> None:
         keys = {"operation_id", "request_id", "release_tag", "phase", "checkpoint", "executor_generation",
                 "executor_version", "mutation_started", "created_at", "updated_at", "revision", "error",
                 "source", "target", "plan_id", "events"}
-        if not isinstance(operation, dict) or set(operation) not in (keys, keys | {"protection"}) or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
+        if not isinstance(operation, dict) or set(operation) not in (keys, keys | {"protection"}, keys | {"protection", "apply"}) or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
             raise Refusal("journal_corrupt")
         if "protection" in operation:
             validate_protection(operation["protection"])
@@ -218,13 +267,35 @@ def validate_journal(value: dict, installation_id: str) -> None:
         requests.add(operation["request_id"])
         if not isinstance(operation["release_tag"], str) or TAG.fullmatch(operation["release_tag"]) is None or len(operation["release_tag"]) > 128:
             raise Refusal("journal_corrupt")
-        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", VERSION} or operation["mutation_started"] is not False:
+        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", VERSION} or type(operation["mutation_started"]) is not bool:
+            raise Refusal("journal_corrupt")
+        if "apply" in operation:
+            validate_apply(operation["apply"])
+            if operation["phase"] not in APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe", "recovery_required"} or operation["source"] is None or operation["target"] is None or operation["plan_id"] is None or operation["apply"]["migration_started"] != operation["mutation_started"]:
+                raise Refusal("journal_corrupt")
+            if operation["phase"] == "succeeded" and (operation["apply"]["phase"] != "verified" or not operation["mutation_started"] or operation["checkpoint"] != "serving_verified" or operation["error"] is not None or operation["protection"]["phase"] != "retained"):
+                raise Refusal("journal_corrupt")
+            if operation["phase"] == "failed_safe" and (operation["apply"]["phase"] != "fallback" or operation["checkpoint"] != "previous_serving_verified" or operation["mutation_started"] or operation["protection"]["hold_owned"]):
+                raise Refusal("journal_corrupt")
+            if operation["phase"] == "recovery_required" and operation["apply"]["phase"] != "recovery_required":
+                raise Refusal("journal_corrupt")
+            if operation["phase"] in APPLY_ACTIVE_PHASES and operation["apply"]["phase"] != operation["phase"]:
+                raise Refusal("journal_corrupt")
+            if operation["apply"]["index_digest"] is not None and (not isinstance(operation["target"], dict) or operation["apply"]["index_digest"] != operation["target"].get("image_digest")):
+                raise Refusal("journal_corrupt")
+            if operation["apply"]["migration_started"] and (not operation["protection"]["custody_verified"] or any(operation["apply"][key] is None for key in ("index_digest", "platform_manifest_digest", "config_digest", "manifest_sha256", "history_sha256"))):
+                raise Refusal("journal_corrupt")
+            if operation["checkpoint"] in MUTATION_CHECKPOINTS and not operation["mutation_started"]:
+                raise Refusal("journal_corrupt")
+            if operation["phase"] not in {"succeeded", "failed_safe"} and operation["apply"]["phase"] in {"verified", "fallback"}:
+                raise Refusal("journal_corrupt")
+        elif operation["mutation_started"] or operation["phase"] in (APPLY_ACTIVE_PHASES - {"protecting"}) | {"succeeded", "failed_safe"} or operation["checkpoint"] in APPLY_CHECKPOINTS:
             raise Refusal("journal_corrupt")
         if any(not integer(operation[key]) for key in ("created_at", "updated_at", "revision")) or operation["revision"] > value["revision"]:
             raise Refusal("journal_corrupt")
         if operation["error"] is not None and (not isinstance(operation["error"], str) or operation["error"] not in ERRORS):
             raise Refusal("journal_corrupt")
-        if operation["phase"] != "blocked":
+        if operation["phase"] not in TERMINAL_PHASES:
             active.append(operation_id)
         if operation["source"] is not None:
             source = operation["source"]
@@ -279,7 +350,25 @@ class Configuration:
             raise Refusal("configuration_changed")
         result = cls(value, auth["token"])
         if verify_install:
-            result.verify_files()
+            try:
+                result.verify_files()
+            except Refusal as failure:
+                if failure.reason != "configuration_changed":
+                    raise
+                try:
+                    import importlib.util
+                    import types
+                    spec = importlib.util.spec_from_file_location("wayfindr_apply_transition", Path(__file__).with_name("update_apply.py"))
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    api = types.SimpleNamespace(Refusal=Refusal, trusted=trusted, read_object=read_object,
+                                                strict_json=strict_json, encoded=encoded,
+                                                validate_journal=validate_journal, Configuration=Configuration,
+                                                CONFIG=config, CREDENTIAL=credential, STATE_DIR=STATE_DIR)
+                    if module.verify_transition(result, STATE_DIR, api) is not True:
+                        raise failure
+                except Exception:
+                    raise failure from None
         return result
 
     def verify_files(self):
@@ -387,6 +476,8 @@ class Journal:
                     operation["error"] = phase
                     if "protection" in operation:
                         operation["protection"].update(phase=phase, error=phase)
+                    if "apply" in operation:
+                        operation["apply"].update(phase=phase, error=phase)
                     self.event(value, operation, phase)
             self.commit(value)
 
@@ -468,9 +559,13 @@ class Journal:
 
     def claim_protection(self, operation_id, generation, recover=False):
         with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
             if operation_id not in self.value["operations"]:
                 raise Refusal("operation_missing")
             operation = self.value["operations"][operation_id]
+            if "apply" in operation:
+                raise Refusal("apply_unavailable")
             if self.value["active_operation"] not in {None, operation_id}:
                 raise Refusal("operation_busy")
             if recover:
@@ -493,21 +588,31 @@ class Journal:
 
     def protection_checkpoint(self, operation_id, checkpoint, facts):
         with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
             value = copy.deepcopy(self.value)
             operation = value["operations"][operation_id]
             if value["active_operation"] != operation_id or operation["phase"] != "protecting":
                 raise Refusal("recovery_required")
+            if checkpoint not in {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released"} or not isinstance(facts, dict) or not set(facts) <= set(protection_state()):
+                raise Refusal("journal_corrupt")
             operation["checkpoint"] = checkpoint
             operation["protection"].update(facts)
+            if "apply" in operation and "hold_owned" in facts:
+                operation["apply"]["hold_owned"] = facts["hold_owned"]
             self.event(value, operation, checkpoint)
             self.commit(value)
 
     def protection_finish(self, operation_id, reason, recovered, hold_owned=None):
         with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
             value = copy.deepcopy(self.value)
             operation = value["operations"][operation_id]
             if value["active_operation"] != operation_id:
                 raise Refusal("recovery_required")
+            if "apply" in operation:
+                raise Refusal("apply_unavailable")
             operation["phase"] = "blocked" if recovered else "recovery_required"
             operation["error"] = reason if recovered else "recovery_required"
             public_reason = reason if reason in {"protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout", "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed", "maintenance_present", "writer_unverified", "protection_verified"} else "protection_failed"
@@ -519,6 +624,87 @@ class Journal:
             self.event(value, operation, "protection_released" if reason == "protection_verified" and recovered else "protection_failed" if recovered else "recovery_required")
             if recovered:
                 value["active_operation"] = None
+            self.commit(value)
+
+    def claim_apply(self, operation_id, generation, recover=False):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            if operation_id not in self.value["operations"]:
+                raise Refusal("operation_missing")
+            operation = self.value["operations"][operation_id]
+            if self.value["active_operation"] not in {None, operation_id}:
+                raise Refusal("operation_busy")
+            if recover:
+                if operation["phase"] != "recovery_required" or "apply" not in operation:
+                    raise Refusal("recovery_required")
+            elif "apply" in operation:
+                return False
+            elif "protection" in operation or operation["phase"] != "blocked" or operation["error"] != "execution_not_available" or operation["checkpoint"] != "plan_reported" or any(operation[key] is None for key in ("source", "target", "plan_id")):
+                raise Refusal("apply_unavailable")
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            operation.update(phase="protecting" if recover else "downloading", executor_generation=generation, executor_version=VERSION)
+            if recover:
+                operation["apply"]["phase"] = "protecting"
+            else:
+                operation.update(checkpoint="apply_started", error=None, apply=apply_state(), protection=protection_state())
+            value["active_operation"] = value["last_operation"] = operation_id
+            self.event(value, operation, "apply_recovery_started" if recover else "apply_started")
+            self.commit(value)
+            return True
+
+    def apply_checkpoint(self, operation_id, checkpoint, facts, mutation=False):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            if value["active_operation"] != operation_id or "apply" not in operation or operation["phase"] not in APPLY_ACTIVE_PHASES:
+                raise Refusal("recovery_required")
+            if checkpoint not in APPLY_CHECKPOINTS or not isinstance(facts, dict) or not set(facts) <= set(apply_state()) or type(mutation) is not bool:
+                raise Refusal("journal_corrupt")
+            if operation["apply"]["migration_started"] and facts.get("migration_started") is False:
+                raise Refusal("journal_corrupt")
+            if operation["apply"]["error"] is not None and "error" in facts and facts["error"] is None:
+                raise Refusal("journal_corrupt")
+            operation["apply"].update(facts)
+            if "hold_owned" in facts:
+                operation["protection"]["hold_owned"] = facts["hold_owned"]
+                if operation["protection"]["phase"] == "captured" and facts["hold_owned"] is False:
+                    operation["protection"]["phase"] = "resuming"
+                if operation["protection"]["phase"] == "verified" and facts["hold_owned"] is True:
+                    operation["protection"]["phase"] = "resuming"
+            if checkpoint == "migration_intent":
+                operation["apply"]["migration_started"] = True
+                mutation = True
+            operation["mutation_started"] = operation["mutation_started"] or mutation
+            phase = operation["apply"]["phase"]
+            if phase not in APPLY_ACTIVE_PHASES:
+                raise Refusal("journal_corrupt")
+            operation.update(phase=phase, checkpoint=checkpoint)
+            self.event(value, operation, checkpoint)
+            self.commit(value)
+
+    def apply_finish(self, operation_id, reason, outcome="succeeded"):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            if value["active_operation"] != operation_id or "apply" not in operation:
+                raise Refusal("recovery_required")
+            if outcome not in {"succeeded", "failed_safe", "recovery_required"}:
+                raise Refusal("journal_corrupt")
+            if reason is not None and reason not in APPLY_ERRORS:
+                reason = "apply_failed"
+            operation.update(phase=outcome, error=None if outcome == "succeeded" else reason or "recovery_required")
+            operation["apply"].update(phase="verified" if outcome == "succeeded" else "fallback" if outcome == "failed_safe" else "recovery_required", error=None if outcome == "succeeded" else reason or "recovery_required")
+            if outcome == "succeeded":
+                operation["protection"].update(phase="retained", services_recovered=False, hold_owned=False, error=None)
+            if outcome != "recovery_required":
+                value["active_operation"] = None
+            self.event(value, operation, outcome)
             self.commit(value)
 
     def status(self, operation_id=None):
@@ -649,12 +835,13 @@ class Prepare:
 
 
 class Controller:
-    def __init__(self, config: Configuration, journal: Journal, preparer=None, protector=None):
+    def __init__(self, config: Configuration, journal: Journal, preparer=None, protector=None, applier=None):
         self.config = config
         self.journal = journal
         self.generation = str(uuid.uuid4())
         self.preparer = preparer if preparer is not None else Prepare(config)
         self.protector = protector
+        self.applier = applier
         self.nonces = {}
         self.nonce_mutex = threading.Lock()
         self.workers = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wayfindr-prepare")
@@ -689,7 +876,7 @@ class Controller:
             expected = common | {"operation_id", "cursor", "limit"}
             if not is_uuid(payload.get("operation_id")) or not integer(payload.get("cursor")) or not integer(payload.get("limit"), 1) or payload["limit"] > 100:
                 raise Refusal("request_invalid")
-        elif action in {"protect", "recover-protection"}:
+        elif action in {"protect", "recover-protection", "apply", "recover-apply"}:
             if uid != 0:
                 raise Refusal("authentication_failed")
             expected = common | {"operation_id"}
@@ -724,6 +911,13 @@ class Controller:
             created = self.journal.claim_protection(operation_id, self.generation, recover)
             if created:
                 self.workers.submit(self.protect, operation_id, recover)
+            return self.journal.status(operation_id)
+        if action in {"apply", "recover-apply"}:
+            operation_id = payload["operation_id"]
+            recover = action == "recover-apply"
+            created = self.journal.claim_apply(operation_id, self.generation, recover)
+            if created:
+                self.workers.submit(self.apply, operation_id, recover)
             return self.journal.status(operation_id)
         operation_id, created = self.journal.accept(payload["request_id"], payload["release_tag"], self.generation)
         if created:
@@ -763,6 +957,31 @@ class Controller:
             # Unknown outcomes retain operation ownership and the app's hold.
             try:
                 self.journal.protection_finish(operation_id, "protection_failed", False)
+            except Exception:
+                pass
+
+    def apply(self, operation_id, recover):
+        try:
+            applier = self.applier
+            if applier is None:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("wayfindr_apply", Path(__file__).with_name("update_apply.py"))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                import types
+                api = types.SimpleNamespace(Refusal=Refusal, capture=capture, trusted=trusted,
+                                            strict_json=strict_json, atomic_write=atomic_write,
+                                            read_object=read_object, encoded=encoded,
+                                            Configuration=Configuration, CONFIG=CONFIG,
+                                            CREDENTIAL=CREDENTIAL, STATE_DIR=STATE_DIR, VERSION=VERSION,
+                                            plan_facts=plan_facts)
+                applier = module.Applier(self.config, self.journal, STATE_DIR, api)
+            applier(operation_id, recovery=recover)
+        except Exception:
+            # A worker exception cannot prove the child mutation never began.
+            # Preserve durable ownership until explicit root recovery proves it.
+            try:
+                self.journal.apply_finish(operation_id, "apply_failed", "recovery_required")
             except Exception:
                 pass
 
@@ -879,7 +1098,7 @@ def main():
     logs.add_argument("--json", action="store_true")
     reconcile = subparsers.add_parser("reconcile")
     reconcile.add_argument("--operation", required=True)
-    for action in ("protect", "recover-protection"):
+    for action in ("protect", "recover-protection", "apply", "recover-apply"):
         command = subparsers.add_parser(action)
         command.add_argument("--operation", required=True)
     args = parser.parse_args()
@@ -892,7 +1111,7 @@ def main():
         # Recovery reads depend on trusted enrollment identity, not a healthy
         # application or unchanged Compose/.env files. Execution still verifies.
         config = Configuration.load(verify_install=args.action == "serve")
-        if args.action in {"protect", "recover-protection"}:
+        if args.action in {"protect", "recover-protection", "apply", "recover-apply"}:
             result = root_request(config, args.action, operation_id)
             print(encoded(result).decode())
         elif args.action in {"serve", "reconcile"}:

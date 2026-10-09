@@ -235,7 +235,7 @@ sys.exit(2)
                  ({"issued_at": True}, "request_invalid"), ({"issued_at": 0}, "request_expired"),
                  ({"nonce": "bad"}, "request_invalid"), ({"command": "sh"}, "request_invalid"),
                  ({"path": "/etc"}, "request_invalid"), ({"image": "custom"}, "request_invalid"),
-                 ({"action": "apply"}, "request_invalid"), ({"action": []}, "request_invalid"),
+                 ({"action": "apply"}, "authentication_failed"), ({"action": []}, "request_invalid"),
                  ({"operation_id": "bad"}, "request_invalid")]
         for change, reason in cases:
             with self.subTest(change=change):
