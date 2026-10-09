@@ -8,6 +8,7 @@ use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\HostUpdaterStatusCommand;
 use App\Console\Commands\MailTestCommand;
+use App\Console\Commands\ManagedApplyCommand;
 use App\Console\Commands\MeasureAttachmentRetentionCommand;
 use App\Console\Commands\ProtectiveBackupCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
@@ -74,6 +75,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ExpireBreakGlassGrantsCommand::class,
         HostUpdaterStatusCommand::class,
         MailTestCommand::class,
+        ManagedApplyCommand::class,
         MeasureAttachmentRetentionCommand::class,
         ProtectiveBackupCommand::class,
         PruneCobrowseContentCommand::class,
