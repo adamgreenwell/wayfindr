@@ -16,6 +16,7 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
+use Predis\Response\Status;
 use RuntimeException;
 use Symfony\Component\Console\Output\NullOutput;
 use Throwable;
@@ -256,7 +257,13 @@ class ManagedApplyCommand extends Command
     protected function verifyRedis(): void
     {
         try {
-            if (! in_array(Redis::connection()->command('ping'), [true, 'PONG', '+PONG'], true)) {
+            $answer = Redis::connection()->command('ping');
+
+            if ($answer instanceof Status) {
+                $answer = $answer->getPayload();
+            }
+
+            if (! in_array($answer, [true, 'PONG', '+PONG'], true)) {
                 throw new RuntimeException;
             }
         } catch (Throwable) {

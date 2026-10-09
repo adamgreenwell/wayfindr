@@ -79,7 +79,13 @@ VM qualification and are not yet qualified for production use. See the
   mutation, recovery retains the previous configuration and checks the source
   services; after possible mutation it preserves uncertainty for explicit
   recovery. Cleanup touches only controller-owned resources. An enrolled
-  installation refuses a competing terminal upgrade.
+  installation refuses a competing terminal upgrade and points to managed
+  updates or host recovery.
+- **Backup and restore admission coordinates authorized operating-system
+  users.** The shared empty lease uses the storage directory's group and opens
+  existing locks read-only, preserving concurrency protection across manual
+  terminal and application-worker calls. Managed holds remain private and
+  independent of the live lock.
 - **Incompatible managed targets refuse before interrupting the source.**
   The helper checks the independently verified target's application protocol
   before fencing or stopping writers and rechecks before schema admission.
@@ -92,6 +98,9 @@ VM qualification and are not yet qualified for production use. See the
   recovery. A running Reverb process or local port alone is insufficient.
   User-session authorization and the full support loop still require separate
   post-update acceptance.
+- **Managed Redis verification accepts the official image's Predis reply.**
+  A healthy `PING` result is recognized as its typed `PONG` status while other
+  statuses and arbitrary stringable objects still refuse readiness.
 - **PostgreSQL CI avoids the exhausted Docker Hub anonymous pull quota.** It
   uses the matching Docker Official Image from Amazon ECR Public while retaining
   the same PostgreSQL health checks and full test coverage.

@@ -223,12 +223,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 # Enrolled installs have a host-owned operation journal and fixed config hashes.
-# Until the common apply engine exists, a terminal controller cannot participate
-# in that ownership protocol. Refuse any marker node, including a dangling
-# symlink, before downloads, staging, or Docker access.
+# The terminal controller cannot participate in that ownership protocol. Refuse
+# any marker node, including a dangling symlink, before downloads, staging, or
+# Docker access; use the managed flow or explicit host recovery instead.
 if [ "$UPGRADE" = 1 ] &&
     { [ -e "$TARGET_DIR/.updater-enrolled" ] || [ -L "$TARGET_DIR/.updater-enrolled" ]; }; then
-    die "This installation is enrolled with the host updater. Terminal upgrades cannot bypass its operation ownership; managed apply is not available in this preparation-only helper."
+    die "This installation is enrolled with the host updater. Terminal upgrades cannot bypass its operation ownership. Use Operator → Updates for a managed update, or inspect the host updater status and recovery guidance."
 fi
 
 command -v docker >/dev/null 2>&1 || die "Docker is required. Install it from https://docs.docker.com/engine/install/ first."

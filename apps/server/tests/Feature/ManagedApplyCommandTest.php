@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
+use Predis\Response\Status;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -580,4 +581,16 @@ test('the production Redis probe requires an actual PING answer', function (mixe
         expect(fn () => (new ManagedApplyDependencyProbe)->redis())
             ->toThrow(RuntimeException::class, 'managed_apply_redis_unverified');
     }
-})->with([[true, true], ['PONG', true], ['+PONG', true], [false, false], [null, false], ['OK', false]]);
+})->with([
+    [true, true], ['PONG', true], ['+PONG', true],
+    [new Status('PONG'), true],
+    [new Status('OK'), false],
+    [new class implements Stringable
+    {
+        public function __toString(): string
+        {
+            return 'PONG';
+        }
+    }, false],
+    [false, false], [null, false], ['OK', false],
+]);
