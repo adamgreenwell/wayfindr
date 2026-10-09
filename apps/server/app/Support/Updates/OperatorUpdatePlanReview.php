@@ -10,7 +10,7 @@ class OperatorUpdatePlanReview
     public function __construct(private ReleaseCatalogClient $catalogs, private UpdatePlanner $planner) {}
 
     /** @return array<string, mixed> */
-    public function build(string $tag, InstallationCapabilities $installation): array
+    public function build(?string $tag, InstallationCapabilities $installation): array
     {
         return $this->planner->build($this->catalogs->fetch($tag), $installation)->toArray();
     }

@@ -16,6 +16,7 @@ use App\Support\Updates\ReleaseMetadataException;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
 
 /** Fixed, operator-only requests; the host independently admits every effect. */
@@ -30,6 +31,56 @@ final class OperatorUpdateController extends Controller
         private OperatorUpdateAudit $audit,
         private UpgradeGuard $guard,
     ) {}
+
+    /** The page contains local identity and routes; it never contacts the host or catalog. */
+    public function index(Request $request): Response
+    {
+        return $this->authorization->run($request, function (User $operator): Response {
+            $urls = [];
+            foreach (['capabilities', 'candidate', 'reauthenticate', 'plan', 'recheck', 'status', 'history'] as $name) {
+                $urls[$name] = route('operator.updates.'.$name);
+            }
+            foreach (['review', 'start', 'cancel', 'events'] as $name) {
+                $urls[$name] = route('operator.updates.'.$name, ['operation' => '__OPERATION__']);
+            }
+
+            return response()->view('operator.updates', ['updateBootstrap' => [
+                'schema' => 1,
+                'actor_id' => (int) $operator->getKey(),
+                'current' => [
+                    'version' => is_string(config('wayfindr.release.version')) ? config('wayfindr.release.version') : null,
+                    'commit' => is_string(config('wayfindr.release.commit')) ? config('wayfindr.release.commit') : null,
+                    'runtime_profile' => $this->guard->installationProfile(),
+                ],
+                'two_factor_required' => $operator->hasTwoFactorAuthentication(),
+                'urls' => $urls,
+            ]])->header('Cache-Control', 'no-store');
+        }, recent: false);
+    }
+
+    /** Latest stable declarations can be reviewed before any host preparation exists. */
+    public function candidate(Request $request): JsonResponse
+    {
+        $this->keys($request, []);
+
+        return $this->attempt(fn (): JsonResponse => $this->authorization->run($request, function (): JsonResponse {
+            $reason = null;
+            try {
+                $installation = $this->installation();
+            } catch (HostUpdaterException $exception) {
+                $installation = InstallationCapabilities::local($this->guard->installationProfile());
+                $reason = $exception->reason;
+            }
+            $available = $installation->managedBlockers() === [];
+
+            return $this->json([
+                'schema' => 1,
+                'review' => $this->reviews->build(null, $installation),
+                'managed_execution_available' => $available,
+                'reason' => $reason ?? ($available ? null : 'installation_ineligible'),
+            ]);
+        }, recent: false));
+    }
 
     public function capabilities(Request $request): JsonResponse
     {
@@ -215,7 +266,7 @@ final class OperatorUpdateController extends Controller
 
             return $this->json(['schema' => 1, 'reason' => $exception->reason], $refusal ? 409 : 503);
         } catch (ReleaseMetadataException $exception) {
-            return $this->json(['schema' => 1, 'reason' => $exception->reason], 503);
+            return $this->json(['schema' => 1, 'reason' => $exception->reason, 'managed_execution_available' => false], 503);
         }
     }
 

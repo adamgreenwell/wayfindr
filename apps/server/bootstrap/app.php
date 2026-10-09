@@ -130,7 +130,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // promises a 422 or a 404. Every test uses `getJson()`, which sets the
         // header, so the suite could never have shown it.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request): bool => $request->is('api/v1/*', 'operator/updates', 'operator/updates/*') || $request->expectsJson(),
+            fn (Request $request): bool => $request->is('api/v1/*')
+                || ($request->is('operator/updates', 'operator/updates/*') && ! $request->is('operator/updates/console'))
+                || $request->expectsJson(),
         );
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
             if ($request->is('operator/updates', 'operator/updates/*')) {

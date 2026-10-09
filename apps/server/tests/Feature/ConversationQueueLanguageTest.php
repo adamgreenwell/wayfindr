@@ -1754,6 +1754,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('operator.settings.backups.history'),
         route('operator.settings.backups.restore'),
         route('operator.dashboard'),
+        route('operator.updates.index'),
         route('operator.onboarding'),
         route('operator.break-glass.index'),
         route('operator.break-glass.show', $world['operator_grant']),
