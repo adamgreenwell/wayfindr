@@ -519,6 +519,16 @@ test('bounded status history and event parameters refuse unknown or excessive re
     '/operator/updates/11111111-2222-4333-8444-555555555555/events?cursor=-1',
 ]);
 
+test('malformed operation paths are rejected before any helper request', function (string $method, string $action, string $operation): void {
+    $this->actingAs($this->updateOperator);
+    $this->updateHelper->shouldNotReceive('capabilities', 'status', 'history', 'logs', 'prepare', 'start', 'cancel');
+    $path = '/operator/updates/'.$operation.'/'.$action;
+    $response = $method === 'get' ? $this->getJson($path) : operatorUpdatePost($path);
+    $response->assertNotFound()->assertHeader('Cache-Control', 'no-store, private');
+})->with([
+    ['get', 'review'], ['get', 'events'], ['post', 'start'], ['post', 'cancel'],
+])->with(['not-a-uuid', '123', 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE']);
+
 test('operator event polling uses the requested bounded cursor without writing application audit records', function (): void {
     $this->actingAs($this->updateOperator);
     $events = ['operation_id' => $this->updateOperation, 'events' => [], 'next_cursor' => 20, 'has_more' => false];

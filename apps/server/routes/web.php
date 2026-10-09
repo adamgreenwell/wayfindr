@@ -518,7 +518,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     ->name('operator.')
     ->group(function (): void {
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
-        Route::prefix('updates')->name('updates.')->group(function (): void {
+        Route::prefix('updates')->name('updates.')->where([
+            'operation' => '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',
+        ])->group(function (): void {
             Route::get('/', [OperatorUpdateController::class, 'capabilities'])->name('capabilities');
             Route::post('/reauthenticate', [OperatorUpdateController::class, 'reauthenticate'])->middleware('throttle:5,1')->name('reauthenticate');
             Route::post('/plan', [OperatorUpdateController::class, 'plan'])->middleware('throttle:10,1')->name('plan');

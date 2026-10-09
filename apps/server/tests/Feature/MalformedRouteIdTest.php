@@ -86,6 +86,11 @@ test('a malformed id in the url is a 404, not a server error', function (string 
     'break-glass close' => ['POST', '/operator/break-glass/not-a-number/close'],
     'break-glass conversation' => ['GET', '/operator/break-glass/{grant}/conversations/not-a-number'],
     'break-glass ticket' => ['GET', '/operator/break-glass/{grant}/tickets/not-a-number'],
+    // The host journal's operation key is a canonical UUID, not a DB bigint.
+    'update review' => ['GET', '/operator/updates/not-a-uuid/review'],
+    'update events' => ['GET', '/operator/updates/not-a-uuid/events'],
+    'update start' => ['POST', '/operator/updates/not-a-uuid/start'],
+    'update cancel' => ['POST', '/operator/updates/not-a-uuid/cancel'],
     // A UUID key, so a non-UUID fails the same way a non-number does.
     'alert' => ['POST', '/dashboard/alerts/not-a-uuid/read'],
     // Digits, but one more than a bigint can hold: PostgreSQL refuses the cast,
@@ -110,6 +115,7 @@ test('every route parameter that names an integer key carries the bounded patter
     $notIntegerKeys = [
         'supportCode', 'token', 'path', 'slug', 'notification',
         'connectionPublicId', 'deliveryPublicId', 'rulePublicId',
+        'operation', // Canonical host-journal UUID; the dedicated test below proves its bound.
     ];
 
     $unbounded = [];
@@ -211,5 +217,34 @@ test('every uuid route takes ascii hex only, not any unicode digit', function ()
             ->toBe($name, "A well-formed uuid no longer reaches {$name}.")
             ->and($matched($method, sprintf($uri, $unicode)))
             ->toBeNull("{$name} accepted a uuid with a non-ASCII digit, which PostgreSQL refuses to cast.");
+    }
+});
+
+test('every update operation route accepts only the helper canonical UUID contract', function (): void {
+    $routes = Route::getRoutes();
+    $matched = fn (string $method, string $uri): ?string => rescue(
+        fn () => $routes->match(Request::create($uri, $method))->getName(),
+        null,
+        report: false,
+    );
+    $uuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    $invalid = [
+        'not-a-uuid', '123', strtoupper($uuid),
+        substr_replace($uuid, '١', 0, 1), substr_replace($uuid, 'g', 0, 1),
+        substr_replace($uuid, '0', 14, 1), substr_replace($uuid, '6', 14, 1),
+        substr_replace($uuid, '7', 19, 1), substr_replace($uuid, 'c', 19, 1),
+        $uuid.'-extra',
+    ];
+
+    foreach ([
+        ['GET', 'review'], ['GET', 'events'], ['POST', 'start'], ['POST', 'cancel'],
+    ] as [$method, $action]) {
+        $name = 'operator.updates.'.$action;
+        expect($matched($method, '/operator/updates/'.$uuid.'/'.$action))->toBe($name);
+
+        foreach ($invalid as $value) {
+            expect($matched($method, '/operator/updates/'.$value.'/'.$action))
+                ->toBeNull($name.' admitted an operation outside the canonical helper UUID contract.');
+        }
     }
 });

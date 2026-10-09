@@ -237,6 +237,7 @@ final class VisitorExporter
             'agent_alert_realtime_received_version' => 'alert delivery bookkeeping',
         ],
         'audit_events' => [
+            'managed_update_event_key' => 'instance update mirror bookkeeping, unrelated to the visitor',
             'id' => true, 'account_id' => true, 'site_id' => true, 'actor_type' => self::ROLE, 'actor_id' => self::ROLE,
             'subject_type' => true, 'subject_id' => true, 'action' => true, 'metadata' => true, 'occurred_at' => true,
             'created_at' => true, 'updated_at' => true,

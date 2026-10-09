@@ -166,7 +166,8 @@ class AppServiceProvider extends ServiceProvider
      * (a conversation's public code), `token` (a password reset), `slug` (a
      * widget article), `path` (the framework's local-disk file route), and the
      * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
-     * Laravel's database notification, whose key is a UUID column.
+     * Laravel's database notification, whose key is a UUID column. `operation`
+     * is a canonical host-journal UUID constrained by the operator update group.
      *
      * Registered here rather than beside the routes because the router applies
      * a global pattern when a route is created, and this provider boots before

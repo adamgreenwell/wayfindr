@@ -93,13 +93,13 @@ afterEach(function (): void {
     File::deleteDirectory($this->updatePlanCommandDirectory);
 });
 
-test('an enrolled CLI plan obtains authenticated capabilities while execution remains unavailable', function (): void {
+test('an enrolled CLI plan with plan and status only remains ineligible for operator execution', function (string $helperVersion): void {
     config()->set('wayfindr.updates.helper_enabled', true);
     $installation = InstallationCapabilities::authenticatedHelper([
         'ownership' => 'installer-managed',
         'installation_id' => 'command-test-installation',
         'enrolled' => true,
-        'helper' => ['protocol' => 1, 'version' => '0.1.0', 'capabilities' => ['plan', 'status']],
+        'helper' => ['protocol' => 1, 'version' => $helperVersion, 'capabilities' => ['plan', 'status']],
         'managed_policy' => [],
     ], 'image', 'linux', 'amd64', 'ghcr.io/adamgreenwell/wayfindr:0.1.0');
     $client = Mockery::mock(HostUpdaterClient::class);
@@ -115,9 +115,13 @@ test('an enrolled CLI plan obtains authenticated capabilities while execution re
         ->and($plan['installation']['enrolled'])->toBeTrue()
         ->and($plan['managed']['execution_available'])->toBeFalse()
         ->and($plan['managed']['eligible'])->toBeFalse()
-        ->and($plan['managed']['blockers'])->toContain('helper_capability_missing:apply', 'helper_capability_missing:recover')
+        ->and($plan['managed']['blockers'])->toContain('helper_capability_missing:start', 'helper_capability_missing:history', 'helper_capability_missing:cancel')
         ->and($plan['managed']['blockers'])->not->toContain('helper_not_authenticated');
-});
+
+    if ($helperVersion !== InstallationCapabilities::MINIMUM_HELPER_VERSION) {
+        expect($plan['managed']['blockers'])->toContain('helper_version_unsupported');
+    }
+})->with(['0.1.0', '0.3.0', InstallationCapabilities::MINIMUM_HELPER_VERSION]);
 
 test('an enabled helper authentication failure refuses the CLI plan without falling back to claims', function (bool $json): void {
     config()->set('wayfindr.updates.helper_enabled', true);
