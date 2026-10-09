@@ -17,7 +17,7 @@ has no helper mounts. A Docker container never receives the Docker daemon socket
 ## Supported enrollment
 
 The initial helper supports one installation per Linux systemd host, with
-Python 3.11 or newer at `/usr/bin/python3`, Docker Engine, and Docker Compose
+Python 3.11 or newer at `/usr/bin/python3`, Docker Engine at `/usr/bin/docker`, and Docker Compose
 installed as a system CLI plugin. User-directory Docker plugins are not loaded
 from the helper's isolated Docker configuration.
 The host and image architecture must agree and be `amd64` or `arm64`.

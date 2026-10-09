@@ -16,7 +16,6 @@ from pathlib import Path
 import platform
 import re
 import secrets
-import shutil
 import socket
 import stat
 import struct
@@ -109,11 +108,10 @@ def run(command: list[str], *, json_output: bool = False) -> object:
 
 
 def docker_command() -> list[str]:
-    binary = shutil.which("docker", path="/usr/bin:/usr/local/bin:/bin")
-    if binary is None:
-        raise EnrollmentError("Docker Engine and the Compose plugin are required.")
-    trusted(Path(binary))
-    return [binary, "--host", "unix:///var/run/docker.sock", "--config", str(CONFIG_DIR / "docker")]
+    # Enrollment and the supervisor must select the same fixed host binary.
+    binary = Path("/usr/bin/docker")
+    trusted(binary)
+    return [str(binary), "--host", "unix:///var/run/docker.sock", "--config", str(CONFIG_DIR / "docker")]
 
 
 def inspect_install(install_dir: Path, canonical_compose: Path, docker: list[str]) -> str:
