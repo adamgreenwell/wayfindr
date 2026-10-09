@@ -482,8 +482,26 @@ test('a released or wrong typed lease cannot grant process-local migration permi
 });
 
 test('the production database probe refuses a non-PostgreSQL connection', function (): void {
-    expect(fn () => (new ManagedApplyDependencyProbe)->database())
-        ->toThrow(RuntimeException::class, 'managed_apply_database_unverified');
+    $originalDefault = config('database.default');
+    $connection = 'managed_apply_probe';
+    $originalConnection = config('database.connections.'.$connection);
+    config()->set('database.connections.'.$connection, [
+        'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    config()->set('database.default', $connection);
+
+    try {
+        expect(DB::connection()->getDriverName())->toBe('sqlite')
+            ->and(DB::connection()->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME))->toBe('sqlite');
+        expect(fn () => (new ManagedApplyDependencyProbe)->database())
+            ->toThrow(RuntimeException::class, 'managed_apply_database_unverified');
+    } finally {
+        // RefreshDatabase must roll back the original CI PostgreSQL connection.
+        config()->set('database.default', $originalDefault);
+        DB::purge($connection);
+        config()->set('database.connections.'.$connection, $originalConnection);
+    }
 });
 
 test('the production Redis probe requires an actual PING answer', function (mixed $answer, bool $valid): void {
