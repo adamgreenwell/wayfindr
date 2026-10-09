@@ -79,6 +79,11 @@ preflight still reads the published release history so it can catch required
 steps between the running and target versions. If that lookup is unavailable,
 retry when GitHub is reachable rather than skipping the safety check.
 
+Applications that include the [read-only update planner](update-plan.md) can
+review the latest stable release with `php artisan wayfindr:update-plan` before
+starting an upgrade. It reports required work and deployment ownership without
+changing files, images, or data.
+
 Upgrading later is one command. It selects the newest release, prepares its
 stack files and image, restarts, and runs new migrations automatically:
 
