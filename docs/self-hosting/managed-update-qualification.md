@@ -26,8 +26,11 @@ enrollment. The draft U1–U7 stack does not make the existing release compatibl
 A managed success span needs **two compatible published releases**, with the
 source and target satisfying the reviewed application/helper protocol and
 byte-identical supported base Compose configuration. The first compatible
-release can prove enrollment and protection; it cannot supply the second end of
-a published managed upgrade by itself.
+release can prove enrollment, idle helper reboot behavior, ordinary backups and
+an independent restore. Target-bound protection and active-operation reboot
+drills need an eligible newer published target; planning the running release
+returns `no_update_required`. One release cannot supply both ends of a published
+managed upgrade.
 
 Release/tag creation, registry publication, merging the draft stack, production
 changes and arbitrary image downgrades are separate actions. This qualification
@@ -132,7 +135,7 @@ does not pass every scenario in the row. All rows are initially **unexecuted**.
 | M10 | `helper_restart` | Interrupt the enrolled systemd helper at separately recorded preparation, drained/pre-migration and possible-migration checkpoints. Observe the changed executor generation and retained journal/hold. Use only the recovery action valid for that operation type; prove restart does not silently restart work. |
 | M11 | `vm_reboot` | Reboot the actual guest with an owned operation and repeat post-reboot verification on that same persistent installation. Record the boot ID changing, systemd service startup, retained ownership/custody, Docker state and explicit recovery result. A stack restart or hosted-runner restart is insufficient. |
 | M12 | `interrupted_migration` | Hold a synthetic migration at a deterministic database boundary and interrupt execution after durable migration intent. Observe the named migration container, immutable completion receipt if one exists, retained mutation flags and held origin. Prove ambiguous execution is not rerun or automatically downgraded; a proven completed target may finish verification through explicit recovery. |
-| M13 | `stale_services`, `broken_origin`, `broken_realtime` | Separately leave a stale role/container, break the configured origin route, and break the actual realtime path. Prove neither a healthy web container nor a cached `/up` response grants success. Test authenticated WebSocket delivery independently of a Reverb process/listener check and record the qualification gap if the executor cannot detect the injected transport failure. |
+| M13 | `stale_services`, `broken_origin`, `broken_realtime` | Separately leave a stale role/container, break the configured origin route, and break the actual realtime path. Prove neither a healthy web container nor a cached `/up` response grants success. The candidate executor requires authenticated private-channel delivery over the configured browser WebSocket endpoint while held, using a temporary channel and nonce. Independently test real delivery and user-session `/broadcasting/auth` after release; fixture checks do not prove the public transport or browser authorization on a VM. |
 | M14 | `authorization`, `protocol_boundary` | Exercise actual operator sessions with valid/expired reauthentication, missing MFA where required, wrong role/actor, stale plan and cross-operation request IDs. Test socket peer UID, invalid credential/MAC, replay/expired nonce and forbidden path/image/command fields. Prove refusals precede dispatch and public output remains redacted. |
 | M15 | `old_app_new_helper`, `new_app_old_helper` | Use actual compatible/incompatible published app/helper combinations. Prove unsupported combinations refuse before service interruption, and that supported old journal versions remain readable. Replacing helper files by hand is not an implemented upgrade workflow and cannot establish supported helper replacement. |
 | M16 | All successful and recovered scenarios; independent restore | Repeat the logical-data and binary checks after every serving success or verified source recovery. On a second fresh disposable environment, restore the exact retained archive with privately retained effective keys and the latest erasure ledger, then independently verify every restored invariant. Backup byte verification and restore success are separate records. |

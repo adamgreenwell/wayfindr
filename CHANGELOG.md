@@ -30,6 +30,72 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Proposed **1.2.0** candidate. One additive
+migration gives managed-update audit events a unique deduplication key. Ordinary
+unenrolled installations keep their existing update path; the new host helper
+requires separate, optional enrollment. Managed updates remain under disposable
+VM qualification and are not yet qualified for production use. See the
+[release-readiness sequence](docs/self-hosting/managed-update-release-readiness.md).
+
+### Added
+
+- **Review the exact next release from Operator → Updates.** Read the running
+  and proposed versions, required actions across skipped releases, prerequisites,
+  backup policy, expected interruption and recovery limits before starting any
+  host work. Read-only candidate checks do not enroll an installation or apply
+  an update. Docker, source, host-PHP, deployment-platform and hosted
+  installations receive guidance for their deployment owner.
+- **Optional independent update execution for reviewed Linux installations.**
+  An explicitly enrolled systemd host helper owns the operation, authenticated
+  local connection, durable journal and private protective archive. It verifies
+  official release bytes and platform image identity, fences intake, drains
+  writers, checks fresh backup custody, migrates once and verifies all
+  application roles and the configured origin before reporting success.
+  Unknown migration outcomes retain explicit root-only recovery; switching
+  images never substitutes for restoring the database. The application
+  container receives no Docker daemon socket.
+- **Authorized review, start, cancellation and history.** Operator controls
+  require the appropriate role, recent password confirmation and second factor
+  when enabled. Accepted work binds the exact release, plan, request and actor
+  to durable receipts and deduplicated audit events. Cancellation is available
+  before migration intent; recovery remains an explicit host-terminal action.
+- **Progress survives the expected connection loss.** The accessible update
+  dialog follows preparation, download, data protection, application, restart
+  and verification, showing elapsed time and the last confirmed host state.
+  Reopening or refreshing reads the existing operation without replaying Start.
+  Safe failure, cancellation, recovery required and uncertain status remain
+  distinct. Review and progress copy is available in English, German and Italian.
+- **Disposable-VM failure and recovery tooling.** A 25-scenario matrix, bounded
+  observation/fault controls and strict evidence validation separate synthetic
+  checks, candidate rehearsals and published qualification. Missing releases,
+  actual reboot or separate-VM restore evidence remain blocked; the tooling
+  cannot qualify an unexecuted run.
+
+### Fixed
+
+- **Terminal upgrades verify their target before activation.** The hardened
+  controller stages configuration, checks published release and image identity,
+  captures the running source and verifies the serving result. Before schema
+  mutation, recovery retains the previous configuration and checks the source
+  services; after possible mutation it preserves uncertainty for explicit
+  recovery. Cleanup touches only controller-owned resources. An enrolled
+  installation refuses a competing terminal upgrade.
+- **Incompatible managed targets refuse before interrupting the source.**
+  The helper checks the independently verified target's application protocol
+  before fencing or stopping writers and rechecks before schema admission.
+  An early refused or unsettled probe leaves the source untouched, keeps manual
+  recovery ownership and does not claim an unobserved maintenance hold or safe
+  completion.
+- **Managed verification checks the public realtime transport.** A bounded
+  private-channel probe verifies authenticated nonce delivery through the
+  configured browser WebSocket route before target success or verified source
+  recovery. A running Reverb process or local port alone is insufficient.
+  User-session authorization and the full support loop still require separate
+  post-update acceptance.
+- **PostgreSQL CI avoids the exhausted Docker Hub anonymous pull quota.** It
+  uses the matching Docker Official Image from Amazon ECR Public while retaining
+  the same PostgreSQL health checks and full test coverage.
+
 ## [1.1.1] - 2026-10-02
 
 **No operator action required.** Pull and restart. This release has no migrations.
