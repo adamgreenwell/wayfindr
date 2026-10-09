@@ -518,6 +518,21 @@ expect_success
 grep -qE '^WAYFINDR_IMAGE=ghcr.io/adamgreenwell/wayfindr:' "$CASE_DIR/active/.env" || fail 'missing image key was not added for the candidate'
 ok 'an absent image assignment is added without losing active image identity'
 
+new_case absent-image-preflight-failure preflight-failure
+sed -i.bak '/^WAYFINDR_IMAGE=/d' "$CASE_DIR/active/.env"
+rm -f "$CASE_DIR/active/.env.bak"
+cp -p "$CASE_DIR/active/.env" "$CASE_DIR/before/.env"
+run_upgrade --ref v1.1.1
+expect_failure
+expect_unchanged
+! grep -qE 'compose\|pull\|' "$CASE_DIR/calls" || fail 'absent persisted image bypassed release-history preflight before pulling'
+probe_count="$(grep -cE 'compose\|run\|' "$CASE_DIR/calls" || true)"
+[ "$probe_count" -gt 0 ] || fail 'absent persisted image did not run a real preflight probe'
+if grep -E 'compose\|run\|' "$CASE_DIR/calls" | grep -vF "image=$WF_TEST_OLD_ID" >/dev/null; then
+    fail 'absent persisted image preflight ran something other than the captured active image ID'
+fi
+ok 'an absent image assignment still checks release history using the captured active image'
+
 new_case duplicate-image success
 printf '\n  export WAYFINDR_IMAGE="ghcr.io/adamgreenwell/wayfindr:1.1.0" # final assignment wins\n' >> "$CASE_DIR/active/.env"
 run_upgrade --ref v1.1.1

@@ -1013,10 +1013,11 @@ upgrade_preflight() {
     # the target before a single check has run.
     INSTALLED_IMAGE="$(env_value WAYFINDR_IMAGE)"
 
-    if [ -z "$INSTALLED_IMAGE" ] || env_interpolated "$INSTALLED_IMAGE"; then
-        # Nothing usable to pin to, so a probe could not be trusted to run the
-        # installed release. Skipping is the honest answer; the artifact still
-        # refuses to migrate on its own.
+    if [ -z "${ACTIVE_IMAGE_ID:-}" ] &&
+        { [ -z "$INSTALLED_IMAGE" ] || env_interpolated "$INSTALLED_IMAGE"; }; then
+        # The concrete running image takes precedence in php_in_current_image().
+        # Skip only when neither it nor a usable persisted selector can pin a
+        # probe to the installed release; the artifact still guards migration.
         say "Preflight skipped: cannot tell which image is currently installed."
         printf '    %s\n' "${INSTALLED_IMAGE:-(unset)}"
         printf '    The release enforces its own requirements when it starts.\n'
