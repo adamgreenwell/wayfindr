@@ -77,9 +77,11 @@ Laravel-native hosting, or the
 mapping Wayfindr to another VPS, Docker, Coolify-style, or Laravel-capable
 host.
 
-Official Linux VM installations can review the preparation-only
+Official Linux VM installations can review the optional
 [managed updater enrollment guide](docs/self-hosting/managed-updater.md).
-Application update execution remains unavailable in this slice.
+The helper supports preparation, application updates and explicit root recovery
+on eligible enrolled hosts. Managed updates remain under disposable-VM
+qualification and are not qualified for production use.
 
 The [GitHub Wiki](https://github.com/adamgreenwell/wayfindr/wiki) provides a
 guided operator map. Detailed contracts remain in this repository, and the

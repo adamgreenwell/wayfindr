@@ -134,20 +134,26 @@ WAYFINDR_CLAMAV_SOCKET=tcp://clamav:3310
 The independent helper is an explicit enrollment for a reviewed root-owned
 installation on a Linux systemd VM. The base stack has no helper requirement or
 Docker daemon mount inside an application container. The optional updater
-overlay gives only web its authenticated status/preparation connection.
+overlay gives only web an authenticated helper connection for preparation,
+status, approved start, history and cancellation.
 
-The current development foundation adds a root-only protection rehearsal:
+The helper supports a root-only protection rehearsal:
 hold new writes, gracefully drain all five original application services, take
 and independently verify a protective backup, retain private key/configuration
 and separate erasure-ledger material, and check recovery of those same services.
-It does not replace an image or apply migrations. A failed/uncertain drain stays
-held rather than forcing a job/request to finish. There is no TTL that clears
-an interrupted operation.
+The separate application workflow verifies published release/image identity,
+migrates under a fresh protective hold and verifies the serving result. An
+uncertain schema outcome requires explicit root recovery in maintenance;
+switching images does not roll back the database. A failed/uncertain drain stays
+held rather than forcing a job/request to finish. There is no TTL that clears an
+interrupted operation.
 
 Follow the compatibility, explicit enrollment, protection, and recovery steps in
 [`managed-updater.md`](../../docs/self-hosting/managed-updater.md). The changes
-await release and VM qualification; fetching a helper cannot add its required
-commands to an older published application image. Existing enrollments are
+remain under disposable-VM qualification and are not qualified for production
+use. Enrollment requires a compatible published stable image and its matching
+reviewed source distribution; fetching a helper cannot add its required
+commands to an older application image. Existing enrollments are
 preserved, and helper replacement/unenrollment is still a separate missing
 workflow. Terminal upgrades continue to work on unenrolled installations.
 

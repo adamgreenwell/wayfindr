@@ -112,6 +112,9 @@ VM qualification and are not yet qualified for production use. See the
 - **PostgreSQL CI avoids the exhausted Docker Hub anonymous pull quota.** It
   uses the matching Docker Official Image from Amazon ECR Public while retaining
   the same PostgreSQL health checks and full test coverage.
+- **Widget test dependencies include the patched source-map library.** Lock
+  development-only `source-map-js` to 1.2.2 for CVE-2026-93749. The shipped
+  widget bundle does not include this test dependency.
 
 ## [1.1.1] - 2026-10-02
 

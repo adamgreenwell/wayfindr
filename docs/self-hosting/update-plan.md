@@ -18,15 +18,17 @@ application directory. Add `--ref=<stable-release-tag>` to review a specific
 published release instead of GitHub's latest stable release. Branches, floating
 image aliases, development versions, and prerelease targets are refused.
 
-The command is available when this change reaches the installed application;
-older published images do not gain it by fetching metadata.
+The installed application must contain the command; older published images do
+not gain it by fetching metadata.
 
 ## Reading the result
 
 The JSON receipt has schema `1` and a `plan_id` derived from all reviewed facts.
 The same facts produce the same ID; a changed source identity, release artifact,
 history, check outcome, acknowledgement, notice, or helper report changes it.
-The receipt is a review snapshot. A future executor must recheck it before use.
+The receipt is a metadata review snapshot, not an approved host-bound plan.
+Managed preparation and execution perform their own checks against the exact
+host and release artifacts before making changes.
 
 | Field | Meaning |
 | --- | --- |
@@ -62,18 +64,22 @@ establish who owns the deployment. Ownership is reported separately as
 
 `WAYFINDR_INSTALLATION_OWNERSHIP` and `WAYFINDR_INSTALLATION_ID` can describe an
 installation for review. These values are claims: configuration and serialized
-reports cannot authenticate or enroll a helper. The local command therefore
-reports managed execution unavailable. Existing terminal, Compose, host PHP,
-and platform updates acquire no helper requirement or new backup setup task.
+reports cannot authenticate or enroll a helper or establish managed eligibility.
+When the helper is enabled, the command authenticates a capability read against
+the enrolled helper. It still does not prepare or start a host operation, and
+its receipt always reports `managed.execution_available: false`. Existing
+terminal, Compose, host PHP, and platform updates acquire no helper requirement
+or new backup setup task.
 
-A future authenticated host adapter must establish installation identity,
-enrollment, helper protocol `1`, and `plan`, `apply`, `status`, and `recover`
-capabilities. The first managed path also requires Linux, `amd64` or `arm64`, an
-exact official release image, coherent source identity, and verified target
-platform evidence. Floating/custom images and unsupported or unverified
-platforms cannot enable it. The public metadata client currently reports target
-platform evidence as unavailable; image-index verification belongs to the host
-execution slices.
+The authenticated helper establishes installation identity, enrollment, helper
+protocol `1`, and its supported capabilities. The managed path also requires
+Linux, `amd64` or `arm64`, an exact official release image, coherent source
+identity, and verified target platform evidence. Floating/custom images and
+unsupported or unverified platforms cannot enable it. The public metadata
+client reports target platform evidence as unavailable; the separate host
+preparation and execution workflow verifies the image index and exact platform
+image. An authenticated capability response alone does not approve that
+host-bound plan or enable execution through this CLI command.
 
 Optional managed policy claims (`require_remote_backup` and
 `require_restore_proof`) are separate from release-required actions and are not
@@ -98,5 +104,8 @@ automatic rollback after migration.
 
 Tracked delivery: [#1109](https://github.com/adamgreenwell/wayfindr/issues/1109)
 in [the managed-update epic](https://github.com/adamgreenwell/wayfindr/issues/1107).
-The independent host helper is [#1110](https://github.com/adamgreenwell/wayfindr/issues/1110);
-operator actions and the progress UI follow after execution and recovery.
+The independent host helper is [#1110](https://github.com/adamgreenwell/wayfindr/issues/1110).
+The implemented operator review, start, and reconnecting progress workflow is
+documented in the [managed updater guide](managed-updater.md). Optional managed
+updates remain under disposable-VM qualification and are not qualified for
+production use.
