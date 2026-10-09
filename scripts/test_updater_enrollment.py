@@ -209,8 +209,9 @@ class EnrollmentTests(unittest.TestCase):
             runner.assert_not_called()
 
     def test_docker_command_discards_ambient_context_and_logs_no_secret_errors(self):
-        with patch.object(ENROLL.shutil, "which", return_value="/usr/bin/docker"), patch.object(ENROLL, "trusted"):
+        with patch.object(ENROLL, "trusted") as trust:
             self.assertEqual(["/usr/bin/docker", "--host", "unix:///var/run/docker.sock", "--config", "/etc/wayfindr-updater/docker"], ENROLL.docker_command())
+            trust.assert_called_once_with(Path("/usr/bin/docker"))
         result = types.SimpleNamespace(returncode=1, stdout="customer-content", stderr="APP_KEY=secret-value")
         with patch.object(ENROLL.subprocess, "run", return_value=result) as runner:
             with self.assertRaises(ENROLL.EnrollmentError) as error:
