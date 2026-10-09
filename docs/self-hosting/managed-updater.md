@@ -208,6 +208,11 @@ distribution staged under `/root` is suitable. These checks protect the inputs
 used by a privileged host process. No automatic download or helper self-update
 is performed.
 
+The enrollment script’s `status` command reports static host identity and
+credentials. It does not establish overlay activation, live helper connectivity
+or eligibility for a particular update. Use authenticated application status
+and the exact target plan for those checks.
+
 Enrollment reads Docker metadata through the local Engine socket with an empty
 root-owned Docker configuration. It checks the official project and all five
 running application services, their identical image identity, and their direct

@@ -270,7 +270,7 @@ def verify_started(runtime, installation_id: str, token: str) -> None:
 def enrollment_status() -> dict:
     configuration = CONFIG_DIR / "installation.json"
     if not configuration.exists():
-        return {"enrolled": False, "application_apply_available": False}
+        return {"enrolled": False}
     trusted(configuration)
     try:
         config = json.loads(configuration.read_text())
@@ -296,7 +296,7 @@ def enrollment_status() -> dict:
         raise EnrollmentError("Existing enrollment credentials are invalid; no files were changed.") from None
     if not isinstance(auth, dict) or set(auth) != {"schema", "installation_id", "token"} or type(auth.get("schema")) is not int or auth["schema"] != 1 or auth.get("installation_id") != installation_id or not isinstance(auth.get("token"), str) or re.fullmatch(r"[a-f0-9]{64}", auth["token"]) is None:
         raise EnrollmentError("Existing enrollment credentials are invalid; no files were changed.")
-    return {"enrolled": True, "installation_id": installation_id, "application_apply_available": False, "helper_replacement_available": False}
+    return {"enrolled": True, "installation_id": installation_id, "helper_replacement_available": False}
 
 
 def unit_install_path(install_dir: Path) -> str:
@@ -406,7 +406,7 @@ def enroll(install_dir: Path) -> dict:
     run(["/usr/bin/systemctl", "enable", "--now", "wayfindr-updater.service"])
     run(["/usr/bin/systemctl", "is-active", "--quiet", "wayfindr-updater.service"])
     verify_started(runtime, installation_id, credential["token"])
-    return {"enrolled": True, "installation_id": installation_id, "application_apply_available": False, "overlay": str(install_dir / "compose.updater.yml"), "activation_required": True}
+    return {"enrolled": True, "installation_id": installation_id, "overlay": str(install_dir / "compose.updater.yml"), "activation_required": True}
 
 
 def main() -> int:
