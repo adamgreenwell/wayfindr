@@ -101,6 +101,12 @@ VM qualification and are not yet qualified for production use. See the
 - **Managed Redis verification accepts the official image's Predis reply.**
   A healthy `PING` result is recognized as its typed `PONG` status while other
   statuses and arbitrary stringable objects still refuse readiness.
+- **Enrolled web mounts are prepared before Docker's boot restore.** The
+  reviewed host tmpfiles rule creates the empty socket directory before Docker
+  restarts containers. The helper preserves that directory across service
+  restarts. Enrollment refuses existing nodes at `/run/wayfindr-updater` or
+  `/etc/tmpfiles.d/wayfindr-updater.conf`; custom host rules and altered Docker
+  boot dependencies remain outside the bounded reboot proof.
 - **PostgreSQL CI avoids the exhausted Docker Hub anonymous pull quota.** It
   uses the matching Docker Official Image from Amazon ECR Public while retaining
   the same PostgreSQL health checks and full test coverage.

@@ -173,8 +173,10 @@ has no helper mounts. A Docker container never receives the Docker daemon socket
 ## Supported enrollment
 
 The initial helper supports one installation per Linux systemd host, with
-Python 3.11 or newer at `/usr/bin/python3`, Docker Engine at `/usr/bin/docker`, and Docker Compose
-installed as a system CLI plugin. User-directory Docker plugins are not loaded
+Python 3.11 or newer at `/usr/bin/python3`, Docker Engine at `/usr/bin/docker`,
+systemd-tmpfiles at `/usr/bin/systemd-tmpfiles` with its normal boot setup, and
+Docker Compose installed as a system CLI plugin. User-directory Docker plugins
+are not loaded
 from the helper's isolated Docker configuration.
 The host and image architecture must agree and be `amd64` or `arm64`.
 Rootless Docker, user namespace remapping, custom Compose files, floating images,
@@ -229,10 +231,11 @@ sudo /usr/bin/python3 scripts/self-host/enroll-updater.py enroll --install-dir /
 ```
 
 Enrollment creates host-owned identity, a random credential independent of
-`APP_KEY`, helper code, a systemd unit, an installation ownership marker, and a
-`compose.updater.yml` overlay. It enables and starts the helper after verifying
-its authenticated socket and durable startup generation. It does not recreate
-an application container or alter `.env`, the base `compose.yml`, or `install.sh`.
+`APP_KEY`, helper code, a systemd unit, a fixed tmpfiles rule, an installation
+ownership marker, and a `compose.updater.yml` overlay. It prepares and verifies
+the socket directory, enables and starts the helper, then verifies its
+authenticated socket and durable startup generation. It does not recreate an
+application container or alter `.env`, the base `compose.yml`, or `install.sh`.
 
 Review the generated overlay, then activate its web-only mounts explicitly:
 
@@ -249,7 +252,17 @@ workers receive no helper mount. Mounting the socket directory keeps the
 connection path valid when the helper recreates its socket after a restart.
 The systemd unit preserves that directory across stop/start as well, so an
 existing container bind does not point at a removed directory. Host reboot
-resets `/run`; Docker's re-established binds require separate VM qualification.
+resets `/run`. The reviewed tmpfiles rule creates the empty root-owned socket
+directory before Docker restores container binds during normal systemd boot;
+the helper starts after Docker and creates its authenticated socket inside that
+same directory. Enrollment verifies directory ownership and permissions before
+starting the helper. Existing nodes at `/run/wayfindr-updater` or
+`/etc/tmpfiles.d/wayfindr-updater.conf` refuse first enrollment; interrupted
+setup retains its evidence for explicit recovery. Custom or conflicting host
+tmpfiles rules and altered Docker boot dependencies remain outside this bounded
+proof.
+Actual enrolled application recovery after guest reboot still requires its own
+published-artifact VM qualification.
 The generated unit retains `ProtectSystem=strict` and allows writes to the fixed
 helper configuration directory and the reviewed installation directory for
 atomic configuration promotion. State and runtime directories remain confined
@@ -263,6 +276,7 @@ to their existing systemd-managed paths. This uses systemd's
 | `/etc/wayfindr-updater/installation.json` | Root-only identity, fixed installation path, official image, and reviewed file hashes |
 | `/etc/wayfindr-updater/credential.json` | Random installation credential; root-owned, readable only by root and application GID 1000 |
 | `/etc/wayfindr-updater/docker/` | Empty root-owned Docker configuration; no invoking-user contexts or credentials |
+| `/etc/tmpfiles.d/wayfindr-updater.conf` | Fixed rule file, root:root, mode 0644; creates the empty socket directory root:1000, mode 0750 before Docker's boot restore |
 | `/usr/local/lib/wayfindr-updater/updater.py` | Root-owned helper code |
 | `/usr/local/lib/wayfindr-updater/update_protection.py` | Fixed protection and old-service recovery coordinator |
 | `/usr/local/lib/wayfindr-updater/update_apply.py` | Fixed release application and interrupted-apply recovery coordinator |

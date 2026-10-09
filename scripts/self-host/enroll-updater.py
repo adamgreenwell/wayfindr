@@ -31,6 +31,10 @@ STATE_DIR = Path("/var/lib/wayfindr-updater")
 CODE_DIR = Path("/usr/local/lib/wayfindr-updater")
 CLI_FILE = Path("/usr/local/bin/wayfindr-updater")
 UNIT_FILE = Path("/etc/systemd/system/wayfindr-updater.service")
+TMPFILES_FILE = Path("/etc/tmpfiles.d/wayfindr-updater.conf")
+TMPFILES_BINARY = Path("/usr/bin/systemd-tmpfiles")
+RUNTIME_DIR = Path("/run/wayfindr-updater")
+TMPFILES_RULE = b"d /run/wayfindr-updater 0750 root 1000 -\n"
 OFFICIAL_IMAGE = re.compile(
     r"\Aghcr\.io/adamgreenwell/wayfindr:v?(?:0|[1-9][0-9]*)"
     r"\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -316,6 +320,26 @@ def render_unit(template: bytes, install_dir: Path) -> bytes:
     return template.replace(marker, path)
 
 
+def verify_runtime_directory(expected: tuple[int, int] | None = None) -> tuple[int, int]:
+    """Verify the shared empty mount directory without adopting another inode."""
+    trusted(RUNTIME_DIR, "directory")
+    descriptor = os.open(RUNTIME_DIR, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(descriptor)
+        current = RUNTIME_DIR.lstat()
+        identity = (opened.st_dev, opened.st_ino)
+        if (not stat.S_ISDIR(opened.st_mode) or not stat.S_ISDIR(current.st_mode)
+                or (current.st_dev, current.st_ino) != identity
+                or opened.st_uid != 0 or opened.st_gid != 1000
+                or current.st_uid != 0 or current.st_gid != 1000
+                or stat.S_IMODE(opened.st_mode) != 0o750 or stat.S_IMODE(current.st_mode) != 0o750
+                or (expected is not None and identity != expected)):
+            raise EnrollmentError("The updater runtime directory must remain the same root:1000 directory with mode 0750.")
+        return identity
+    finally:
+        os.close(descriptor)
+
+
 def enroll(install_dir: Path) -> dict:
     host_supported()
     existing = enrollment_status()
@@ -331,6 +355,7 @@ def enroll(install_dir: Path) -> dict:
         "compose": distribution / "docker/self-hosting/compose.yml",
         "overlay": distribution / "docker/self-hosting/compose.updater.yml",
         "unit": distribution / "docker/self-hosting/wayfindr-updater.service",
+        "tmpfiles": distribution / "docker/self-hosting/wayfindr-updater.conf",
         "daemon": distribution / "scripts/self-host/updater.py",
         "protection": distribution / "scripts/self-host/update_protection.py",
         "apply": distribution / "scripts/self-host/update_apply.py",
@@ -340,6 +365,10 @@ def enroll(install_dir: Path) -> dict:
     }
     for source in sources.values():
         trusted(source)
+    trusted(TMPFILES_BINARY)
+    tmpfiles = sources["tmpfiles"].read_bytes()
+    if tmpfiles != TMPFILES_RULE:
+        raise EnrollmentError("The reviewed tmpfiles rule must create only the fixed updater runtime directory.")
     unit = render_unit(sources["unit"].read_bytes(), install_dir)
     trusted(install_dir, "directory")
     trusted(install_dir / "compose.yml")
@@ -347,7 +376,7 @@ def enroll(install_dir: Path) -> dict:
     trusted(install_dir / "install.sh")
     if file_hash(install_dir / "install.sh") != file_hash(sources["installer"]):
         raise EnrollmentError("The installed controller must match the reviewed guarded install.sh; enrollment never silently replaces it.")
-    for path in (install_dir / ".updater-enrolled", install_dir / "compose.updater.yml", CODE_DIR, CLI_FILE, UNIT_FILE, STATE_DIR):
+    for path in (install_dir / ".updater-enrolled", install_dir / "compose.updater.yml", CODE_DIR, CLI_FILE, UNIT_FILE, STATE_DIR, TMPFILES_FILE, RUNTIME_DIR):
         if path.exists() or path.is_symlink():
             raise EnrollmentError("Existing helper artifacts require a separate recovery or replacement workflow; no artifacts were overwritten.")
         trusted(path.parent, "directory")
@@ -400,12 +429,19 @@ def enroll(install_dir: Path) -> dict:
     write_new(install_dir / "compose.updater.yml", overlay, 0o644)
     write_new(install_dir / ".updater-enrolled", (installation_id + "\n").encode(), 0o600)
     write_new(UNIT_FILE, unit, 0o644)
+    # Boot tmpfiles setup precedes normal Docker startup. Create this empty bind
+    # directory before Docker restores web, while preserving its inode across
+    # helper restarts. No Docker configuration or service is changed here.
+    write_new(TMPFILES_FILE, tmpfiles, 0o644)
+    run([str(TMPFILES_BINARY), "--create", str(TMPFILES_FILE)])
+    runtime_identity = verify_runtime_directory()
     # An interrupted enrollment retains root-owned evidence and refuses a rerun;
     # it never overwrites a credential or active helper to 'repair' the failure.
     run(["/usr/bin/systemctl", "daemon-reload"])
     run(["/usr/bin/systemctl", "enable", "--now", "wayfindr-updater.service"])
     run(["/usr/bin/systemctl", "is-active", "--quiet", "wayfindr-updater.service"])
     verify_started(runtime, installation_id, credential["token"])
+    verify_runtime_directory(runtime_identity)
     return {"enrolled": True, "installation_id": installation_id, "overlay": str(install_dir / "compose.updater.yml"), "activation_required": True}
 
 

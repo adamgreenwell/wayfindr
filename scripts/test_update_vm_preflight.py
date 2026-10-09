@@ -297,6 +297,26 @@ class PublicationGateTest(unittest.TestCase):
             tree=[entry for entry in value["tree"] if entry["path"] != "apps/server/resources/views/operator/updates.blade.php"]))
         self.blocked("helper_not_published")
 
+    def test_source_and_target_must_publish_the_boot_runtime_rule(self):
+        for role in ("source", "target"):
+            with self.subTest(role=role):
+                self.fixture = Fixture()
+                tag = self.fixture.source if role == "source" else self.fixture.target
+                self.fixture.change(self.fixture.tree_url(tag), lambda value: value.update(
+                    tree=[entry for entry in value["tree"] if entry["path"] != "docker/self-hosting/wayfindr-updater.conf"]))
+                self.blocked("helper_not_published", role=role)
+
+    def test_published_boot_runtime_rule_must_be_a_regular_file(self):
+        for role in ("source", "target"):
+            with self.subTest(role=role):
+                self.fixture = Fixture()
+                tag = self.fixture.source if role == "source" else self.fixture.target
+                def symlink_rule(value):
+                    rule = next(entry for entry in value["tree"] if entry["path"] == "docker/self-hosting/wayfindr-updater.conf")
+                    rule["mode"] = "120000"
+                self.fixture.change(self.fixture.tree_url(tag), symlink_rule)
+                self.blocked("source_tree_invalid", role=role)
+
     def test_incomplete_or_mismatched_tree_is_refused(self):
         for field, value in (("truncated", True), ("truncated", 0), ("sha", "e" * 40), ("tree", {})):
             with self.subTest(field=field, value=value):

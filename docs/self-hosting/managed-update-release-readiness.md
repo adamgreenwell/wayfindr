@@ -44,7 +44,7 @@ published artifact and an accepted installation.
 | --- | --- | --- |
 | Laravel app, managed commands and operator UI | Official multi-architecture application image | Exact release tag and commit; OCI index, selected platform manifest and configuration digests recorded separately |
 | Release manifest and retained history | Baked under `/etc/wayfindr`; public manifest/digest assets and committed history independently compared | Selected release declaration, commit and complete supported upgrade span agree |
-| Host helper, enrollment script, systemd unit and overlay template | A separately reviewed, root-owned distribution of the exact source release | Record source commit and file hashes; base `compose.yml` and guarded `install.sh` must match the installation byte-for-byte |
+| Host helper, enrollment script, systemd unit, tmpfiles rule and overlay template | A separately reviewed, root-owned distribution of the exact source release | Record source commit and file hashes; base `compose.yml` and guarded `install.sh` must match the installation byte-for-byte |
 | Enrollment identity, credentials, journal and private custody | Created on the dedicated host by explicit enrollment | Host-owned authority for that installation; never copied from another VM to imitate enrollment |
 
 The application image does **not** bake or install the host helper, systemd unit
@@ -91,7 +91,7 @@ enrollment to manufacture a passing run. Supported managed enrollment,
 systemd/socket integration and managed source-to-target execution remain gated
 on real compatible published releases.
 
-Two integration checks belong in the reviewed first source:
+These integration checks belong in the reviewed first source:
 
 - Validate the independently verified immutable target's protocol before
   fencing or stopping source writers, then recheck before schema admission.
@@ -104,8 +104,15 @@ Two integration checks belong in the reviewed first source:
   probe signs an ephemeral private channel directly while PHP intake is held;
   it does not prove a user's `/broadcasting/auth` session or the full support
   loop. Those require separate post-update acceptance on the VM.
+- Prepare the socket directory before Docker restores web's required bind
+  during normal systemd boot. A fixed root-owned tmpfiles rule creates only the
+  empty directory; the helper remains after Docker and preserves that inode
+  across service restarts. An isolated service/container probe on a real VM
+  reproduced the missing-directory failure after an actual guest reboot.
+  Corrected boot behavior and actual
+  enrolled published-source recovery remain separate evidence gates.
 
-Neither check has VM qualification merely because its synthetic regression
+These checks have no managed VM qualification merely because their synthetic regression
 tests pass. Retain the observed failure/recovery behavior independently of the
 operator dialog.
 

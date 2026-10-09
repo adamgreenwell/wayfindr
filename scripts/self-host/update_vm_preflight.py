@@ -51,6 +51,7 @@ REQUIRED_FILES = (
     "docker/self-hosting/compose.yml",
     "docker/self-hosting/compose.updater.yml",
     "docker/self-hosting/wayfindr-updater.service",
+    "docker/self-hosting/wayfindr-updater.conf",
     "apps/server/app/Console/Commands/UpdatePlanCommand.php",
     "apps/server/app/Console/Commands/UpgradeWindowCommand.php",
     "apps/server/app/Console/Commands/ProtectiveBackupCommand.php",

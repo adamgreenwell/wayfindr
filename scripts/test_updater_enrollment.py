@@ -82,6 +82,31 @@ class EnrollmentTests(unittest.TestCase):
             with self.assertRaises(ENROLL.EnrollmentError):
                 ENROLL.render_unit(malformed, Path("/opt/wayfindr"))
 
+    def test_runtime_directory_verification_uses_nofollow_and_exact_identity(self):
+        metadata = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o750, st_uid=0, st_gid=1000, st_dev=1, st_ino=2)
+        with patch.object(ENROLL, "trusted") as trust, patch.object(ENROLL.os, "open", return_value=42) as opener, patch.object(ENROLL.os, "fstat", return_value=metadata), patch.object(Path, "lstat", return_value=metadata), patch.object(ENROLL.os, "close") as closer:
+            self.assertEqual((1, 2), ENROLL.verify_runtime_directory())
+            self.assertEqual((1, 2), ENROLL.verify_runtime_directory((1, 2)))
+            opener.assert_called_with(ENROLL.RUNTIME_DIR, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            trust.assert_called_with(ENROLL.RUNTIME_DIR, "directory")
+            self.assertEqual(2, closer.call_count)
+            with self.assertRaises(ENROLL.EnrollmentError):
+                ENROLL.verify_runtime_directory((1, 3))
+
+    def test_runtime_directory_rejects_wrong_type_owner_group_mode_or_replacement(self):
+        valid = dict(st_mode=stat.S_IFDIR | 0o750, st_uid=0, st_gid=1000, st_dev=1, st_ino=2)
+        for mutation in (dict(st_mode=stat.S_IFLNK | 0o750), dict(st_mode=stat.S_IFREG | 0o750),
+                         dict(st_mode=stat.S_IFDIR | 0o770), dict(st_mode=stat.S_IFDIR | 0o2750),
+                         dict(st_uid=1000), dict(st_gid=0), dict(st_dev=3), dict(st_ino=3)):
+            for replaced in ("opened", "current"):
+                with self.subTest(mutation=mutation, replaced=replaced):
+                    opened = types.SimpleNamespace(**(valid | mutation if replaced == "opened" else valid))
+                    current = types.SimpleNamespace(**(valid | mutation if replaced == "current" else valid))
+                    with patch.object(ENROLL, "trusted"), patch.object(ENROLL.os, "open", return_value=42), patch.object(ENROLL.os, "fstat", return_value=opened), patch.object(Path, "lstat", return_value=current), patch.object(ENROLL.os, "close") as closer:
+                        with self.assertRaises(ENROLL.EnrollmentError):
+                            ENROLL.verify_runtime_directory()
+                        closer.assert_called_once_with(42)
+
     def test_process_mapping_requires_actual_host_uid_and_gid_1000(self):
         for uid, gid in (("1000", "1000"), ("0", "1000"), ("100000", "100000"), ("1000", "0")):
             contents = "Uid:\t" + "\t".join([uid] * 4) + "\nGid:\t" + "\t".join([gid] * 4) + "\n"
@@ -171,9 +196,9 @@ class EnrollmentTests(unittest.TestCase):
             host = Path(temporary)
             distribution = host / "distribution"
             install = host / "install"
-            for path in (distribution / "scripts/self-host", distribution / "docker/self-hosting", install, host / "etc", host / "var/lib", host / "usr/local/lib", host / "usr/local/bin", host / "etc/systemd/system"):
+            for path in (distribution / "scripts/self-host", distribution / "docker/self-hosting", install, host / "etc", host / "etc/tmpfiles.d", host / "run", host / "var/lib", host / "usr/local/lib", host / "usr/local/bin", host / "etc/systemd/system"):
                 path.mkdir(parents=True, exist_ok=True)
-            for filename in ("compose.yml", "compose.updater.yml", "wayfindr-updater.service"):
+            for filename in ("compose.yml", "compose.updater.yml", "wayfindr-updater.service", "wayfindr-updater.conf"):
                 (distribution / "docker/self-hosting" / filename).write_bytes((ROOT / "docker/self-hosting" / filename).read_bytes())
             for filename in ("updater.py", "update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py"):
                 (distribution / "scripts/self-host" / filename).write_bytes((ROOT / "scripts/self-host" / filename).read_bytes())
@@ -186,7 +211,19 @@ class EnrollmentTests(unittest.TestCase):
                 writes.append((path, mode, gid))
                 path.write_bytes(content)
                 path.chmod(mode)
-            with patch.object(ENROLL, "__file__", str(distribution / "scripts/self-host/enroll-updater.py")), patch.object(ENROLL, "CONFIG_DIR", host / "etc/wayfindr-updater"), patch.object(ENROLL, "STATE_DIR", host / "var/lib/wayfindr-updater"), patch.object(ENROLL, "CODE_DIR", host / "usr/local/lib/wayfindr-updater"), patch.object(ENROLL, "CLI_FILE", host / "usr/local/bin/wayfindr-updater"), patch.object(ENROLL, "UNIT_FILE", host / "etc/systemd/system/wayfindr-updater.service"), patch.object(ENROLL, "host_supported"), patch.object(ENROLL, "trusted"), patch.object(ENROLL, "docker_command", return_value=["synthetic-docker"]), patch.object(ENROLL, "inspect_install", return_value=IMAGE) as inspect, patch.object(ENROLL, "verify_started"), patch.object(ENROLL, "write_new", side_effect=writer), patch.object(ENROLL, "run") as runner:
+            def runtime_created(command, **_):
+                if command == ["/usr/bin/systemd-tmpfiles", "--create", str(ENROLL.TMPFILES_FILE)]:
+                    ENROLL.RUNTIME_DIR.mkdir(mode=0o750)
+                return ""
+            def runtime_identity(expected=None):
+                # Synthetic host files belong to the portable test user. Exact
+                # root/group/type/mode checks are exercised separately above.
+                metadata = ENROLL.RUNTIME_DIR.lstat()
+                identity = (metadata.st_dev, metadata.st_ino)
+                if expected is not None and identity != expected:
+                    raise ENROLL.EnrollmentError("Runtime directory replaced")
+                return identity
+            with patch.object(ENROLL, "__file__", str(distribution / "scripts/self-host/enroll-updater.py")), patch.object(ENROLL, "CONFIG_DIR", host / "etc/wayfindr-updater"), patch.object(ENROLL, "STATE_DIR", host / "var/lib/wayfindr-updater"), patch.object(ENROLL, "CODE_DIR", host / "usr/local/lib/wayfindr-updater"), patch.object(ENROLL, "CLI_FILE", host / "usr/local/bin/wayfindr-updater"), patch.object(ENROLL, "UNIT_FILE", host / "etc/systemd/system/wayfindr-updater.service"), patch.object(ENROLL, "TMPFILES_FILE", host / "etc/tmpfiles.d/wayfindr-updater.conf", create=True), patch.object(ENROLL, "RUNTIME_DIR", host / "run/wayfindr-updater", create=True), patch.object(ENROLL, "host_supported"), patch.object(ENROLL, "trusted"), patch.object(ENROLL, "docker_command", return_value=["synthetic-docker"]), patch.object(ENROLL, "inspect_install", return_value=IMAGE) as inspect, patch.object(ENROLL, "verify_started"), patch.object(ENROLL, "verify_runtime_directory", side_effect=runtime_identity, create=True), patch.object(ENROLL, "write_new", side_effect=writer), patch.object(ENROLL, "run", side_effect=runtime_created) as runner:
                 yield host, install, writes, inspect, runner
 
     def test_enrollment_preserves_application_files_and_creates_private_identity(self):
@@ -194,6 +231,9 @@ class EnrollmentTests(unittest.TestCase):
             before = [(install / name).read_bytes() for name in ("compose.yml", ".env", "install.sh")]
             result = ENROLL.enroll(install)
             self.assertTrue(result["activation_required"])
+            self.assertIn((ENROLL.TMPFILES_FILE, 0o644, 0), writes)
+            self.assertEqual(b"d /run/wayfindr-updater 0750 root 1000 -\n", ENROLL.TMPFILES_FILE.read_bytes())
+            self.assertEqual(["/usr/bin/systemd-tmpfiles", "--create", str(ENROLL.TMPFILES_FILE)], runner.call_args_list[0].args[0])
             self.assertEqual(before, [(install / name).read_bytes() for name in ("compose.yml", ".env", "install.sh")])
             config = json.loads((ENROLL.CONFIG_DIR / "installation.json").read_text())
             credential = json.loads((ENROLL.CONFIG_DIR / "credential.json").read_text())
@@ -212,10 +252,62 @@ class EnrollmentTests(unittest.TestCase):
             self.assertIsNone(journal["generation"])
             self.assertEqual({}, journal["operations"])
             self.assertIn((ENROLL.STATE_DIR / "journal.json", 0o600, 0), writes)
-            self.assertTrue(all(call.args[0][0] == "/usr/bin/systemctl" for call in runner.call_args_list))
+            self.assertTrue(all(call.args[0][0] == "/usr/bin/systemctl" for call in runner.call_args_list[1:]))
             unit = ENROLL.UNIT_FILE.read_text()
             self.assertIn('ReadWritePaths=/etc/wayfindr-updater "' + str(install) + '"', unit)
             self.assertNotIn("__WAYFINDR_INSTALL_DIR__", unit)
+
+    def test_runtime_preparation_precedes_enable_and_authenticated_startup_keeps_inode(self):
+        with self.synthetic_host() as (_, install, _, _, runner):
+            prepare = runner.side_effect
+            identities = []
+            def observe(command, **kwargs):
+                if command == ["/usr/bin/systemctl", "enable", "--now", "wayfindr-updater.service"]:
+                    self.assertTrue(ENROLL.TMPFILES_FILE.is_file())
+                    metadata = ENROLL.RUNTIME_DIR.lstat()
+                    self.assertEqual(0o750, stat.S_IMODE(metadata.st_mode))
+                    identities.append((metadata.st_dev, metadata.st_ino))
+                return prepare(command, **kwargs)
+            runner.side_effect = observe
+            ENROLL.enroll(install)
+            self.assertEqual(1, len(identities))
+            self.assertEqual(2, ENROLL.verify_runtime_directory.call_count)
+            self.assertEqual((identities[0],), ENROLL.verify_runtime_directory.call_args.args)
+
+        with self.synthetic_host() as (host, install, _, _, _):
+            def replace_after_authentication(*_):
+                ENROLL.RUNTIME_DIR.rename(host / "run/preserved-original")
+                ENROLL.RUNTIME_DIR.mkdir(mode=0o750)
+            with patch.object(ENROLL, "verify_started", side_effect=replace_after_authentication):
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+
+    def test_runtime_preparation_or_start_failure_retains_partial_state_and_refuses_rerun(self):
+        for phase in ("tmpfiles", "directory", "enable", "authentication"):
+            with self.subTest(phase=phase), self.synthetic_host() as (_, install, writes, _, runner):
+                prepare = runner.side_effect
+                def fail(command, **kwargs):
+                    if (phase == "tmpfiles" and command[0] == "/usr/bin/systemd-tmpfiles") or (phase == "enable" and command[1:3] == ["enable", "--now"]):
+                        raise ENROLL.EnrollmentError("Synthetic preparation failure")
+                    return prepare(command, **kwargs)
+                runner.side_effect = fail
+                if phase == "directory":
+                    ENROLL.verify_runtime_directory.side_effect = ENROLL.EnrollmentError("Unsafe runtime directory")
+                if phase == "authentication":
+                    ENROLL.verify_started.side_effect = ENROLL.EnrollmentError("Unauthenticated startup")
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+                self.assertTrue(ENROLL.TMPFILES_FILE.is_file())
+                before = {path: path.read_bytes() for path, _, _ in writes}
+                if phase in ("tmpfiles", "directory"):
+                    self.assertFalse(any(call.args[0][1:3] == ["enable", "--now"] for call in runner.call_args_list))
+                count = len(writes)
+                runner.reset_mock()
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+                self.assertEqual(count, len(writes))
+                self.assertEqual(before, {path: path.read_bytes() for path in before})
+                runner.assert_not_called()
 
     def test_existing_enrollment_is_never_replaced_or_credential_rotated(self):
         with self.synthetic_host() as (_, install, writes, _, runner):
@@ -263,7 +355,7 @@ class EnrollmentTests(unittest.TestCase):
                 runner.assert_not_called()
 
     def test_privileged_execution_sources_require_trust_before_preparation(self):
-        for filename in ("update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py"):
+        for filename in ("update_protection.py", "protection_archive.py", "update_apply.py", "update_artifacts.py", "wayfindr-updater.conf"):
             with self.subTest(filename=filename), self.synthetic_host() as (_, install, writes, inspect, runner):
                 def trust(path, kind="file"):
                     if path.name == filename:
@@ -275,11 +367,36 @@ class EnrollmentTests(unittest.TestCase):
                 inspect.assert_not_called()
                 runner.assert_not_called()
 
+    def test_tmpfiles_binary_and_destination_parents_must_be_trusted_before_preparation(self):
+        for unsafe in ("binary", "rule_parent", "runtime_parent"):
+            with self.subTest(unsafe=unsafe), self.synthetic_host() as (_, install, writes, inspect, runner):
+                target = {"binary": ENROLL.TMPFILES_BINARY, "rule_parent": ENROLL.TMPFILES_FILE.parent, "runtime_parent": ENROLL.RUNTIME_DIR.parent}[unsafe]
+                def trust(path, kind="file"):
+                    if path == target:
+                        raise ENROLL.EnrollmentError("Missing or unsafe tmpfiles prerequisite")
+                with patch.object(ENROLL, "trusted", side_effect=trust), self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+                self.assertEqual([], writes)
+                self.assertFalse(ENROLL.CONFIG_DIR.exists())
+                inspect.assert_not_called()
+                runner.assert_not_called()
+
+    def test_changed_tmpfiles_rule_cannot_add_cleanup_or_another_path(self):
+        for content in (b"D /run/wayfindr-updater 0750 root 1000 -\n", b"d /run/wayfindr-updater 0750 root 1000 1s\n", b"d /run/other 0750 root 1000 -\n", b"d /run/wayfindr-updater 0750 root 1000 -\nd /etc/other 0777 root root -\n"):
+            with self.subTest(content=content), self.synthetic_host() as (host, install, writes, inspect, runner):
+                (host / "distribution/docker/self-hosting/wayfindr-updater.conf").write_bytes(content)
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+                self.assertEqual([], writes)
+                self.assertFalse(ENROLL.CONFIG_DIR.exists())
+                inspect.assert_not_called()
+                runner.assert_not_called()
+
     def test_partial_state_or_existing_code_refuses_without_writes(self):
-        for artifact in ("state", "code", "marker", "overlay", "unit", "cli"):
+        for artifact in ("state", "code", "marker", "overlay", "unit", "cli", "tmpfiles", "runtime"):
             with self.subTest(artifact=artifact), self.synthetic_host() as (_, install, writes, inspect, runner):
-                path = {"state": ENROLL.STATE_DIR, "code": ENROLL.CODE_DIR, "marker": install / ".updater-enrolled", "overlay": install / "compose.updater.yml", "unit": ENROLL.UNIT_FILE, "cli": ENROLL.CLI_FILE}[artifact]
-                if artifact in {"state", "code"}:
+                path = {"state": ENROLL.STATE_DIR, "code": ENROLL.CODE_DIR, "marker": install / ".updater-enrolled", "overlay": install / "compose.updater.yml", "unit": ENROLL.UNIT_FILE, "cli": ENROLL.CLI_FILE, "tmpfiles": ENROLL.TMPFILES_FILE, "runtime": ENROLL.RUNTIME_DIR}[artifact]
+                if artifact in {"state", "code", "runtime"}:
                     path.mkdir()
                 else:
                     path.write_text("existing owned artifact")
@@ -288,6 +405,25 @@ class EnrollmentTests(unittest.TestCase):
                 self.assertEqual([], writes)
                 inspect.assert_not_called()
                 runner.assert_not_called()
+
+    def test_existing_runtime_or_tmpfiles_nodes_including_dangling_links_are_not_adopted(self):
+        for artifact in ("runtime", "tmpfiles"):
+            for node in ("file", "directory", "dangling_symlink"):
+                with self.subTest(artifact=artifact, node=node), self.synthetic_host() as (host, install, writes, inspect, runner):
+                    target = ENROLL.RUNTIME_DIR if artifact == "runtime" else ENROLL.TMPFILES_FILE
+                    if node == "file":
+                        target.write_text("unrelated")
+                    elif node == "directory":
+                        target.mkdir()
+                    else:
+                        target.symlink_to(host / "missing")
+                    before = target.lstat()
+                    with self.assertRaises(ENROLL.EnrollmentError):
+                        ENROLL.enroll(install)
+                    self.assertEqual(before, target.lstat())
+                    self.assertEqual([], writes)
+                    inspect.assert_not_called()
+                    runner.assert_not_called()
 
     def test_an_older_installed_controller_is_refused_before_host_preparation(self):
         with self.synthetic_host() as (_, install, writes, inspect, runner):
