@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Updates;
 
 use App\Support\Version\SemanticVersion;
+use App\Support\Version\VersionComparator;
 use Illuminate\Container\Container;
 use JsonSerializable;
 
@@ -31,7 +32,12 @@ final readonly class InstallationCapabilities implements JsonSerializable
 
     public const HELPER_PROTOCOL = 1;
 
-    public const REQUIRED_HELPER_CAPABILITIES = ['plan', 'apply', 'status', 'recover'];
+    public const MINIMUM_HELPER_VERSION = '0.4.0';
+
+    public const REQUIRED_HELPER_CAPABILITIES = ['plan', 'status', 'start', 'history', 'cancel'];
+
+    /** Legacy execution claims remain readable; they cannot enable operator actions. */
+    public const KNOWN_HELPER_CAPABILITIES = ['plan', 'apply', 'status', 'recover', 'start', 'history', 'cancel'];
 
     /**
      * @param  list<string>  $helperCapabilities
@@ -151,6 +157,13 @@ final readonly class InstallationCapabilities implements JsonSerializable
 
         if ($this->helperVersion === null) {
             $blockers[] = 'helper_version_missing';
+        } else {
+            $version = SemanticVersion::parse($this->helperVersion);
+
+            if ($version === null || $version->isDevelopment() || $version->prerelease !== [] || $version->build !== null
+                || VersionComparator::compare($this->helperVersion, self::MINIMUM_HELPER_VERSION) < 0) {
+                $blockers[] = 'helper_version_unsupported';
+            }
         }
 
         if (! $this->validHelperCapabilities) {
@@ -241,11 +254,15 @@ final readonly class InstallationCapabilities implements JsonSerializable
 
         if ($validCapabilities) {
             foreach ($capabilities as $capability) {
-                if (! is_string($capability) || ! in_array($capability, self::REQUIRED_HELPER_CAPABILITIES, true)) {
+                if (! is_string($capability) || ! in_array($capability, self::KNOWN_HELPER_CAPABILITIES, true)) {
                     $validCapabilities = false;
                     break;
                 }
             }
+        }
+
+        if ($validCapabilities && count(array_unique($capabilities)) !== count($capabilities)) {
+            $validCapabilities = false;
         }
 
         $capabilities = $validCapabilities ? array_values(array_unique($capabilities)) : [];

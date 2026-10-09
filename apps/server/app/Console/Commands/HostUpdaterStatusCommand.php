@@ -6,13 +6,14 @@ namespace App\Console\Commands;
 
 use App\Support\Updates\HostUpdaterClient;
 use App\Support\Updates\HostUpdaterException;
+use App\Support\Updates\InstallationCapabilities;
 use Illuminate\Console\Command;
 use Throwable;
 
 /** Inspection only. The independent host CLI also works while Laravel is down. */
 final class HostUpdaterStatusCommand extends Command
 {
-    protected $signature = 'wayfindr:updater-status {operation? : Operation UUID; omit to inspect the active operation} {--logs : Include the first bounded page of operation events} {--json : Emit the authenticated helper response as JSON}';
+    protected $signature = 'wayfindr:updater-status {operation? : Operation UUID; omit to inspect the active operation} {--logs : Include the first bounded page of operation events} {--json : Emit the authenticated helper response as JSON} {--protocol-contract : Emit the application protocol contract without connecting to the helper}';
 
     protected $description = 'Inspect the host updater operation without changing it';
 
@@ -21,6 +22,21 @@ final class HostUpdaterStatusCommand extends Command
         try {
             $operation = $this->argument('operation');
             $operation = is_string($operation) && $operation !== '' ? $operation : null;
+
+            if ($this->option('protocol-contract')) {
+                if ($operation !== null || $this->option('logs')) {
+                    throw new HostUpdaterException('helper_request_invalid');
+                }
+
+                $this->line(json_encode([
+                    'schema' => 1,
+                    'protocol' => InstallationCapabilities::HELPER_PROTOCOL,
+                    'minimum_helper_version' => InstallationCapabilities::MINIMUM_HELPER_VERSION,
+                    'capabilities' => InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES,
+                ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+                return self::SUCCESS;
+            }
 
             if ($this->option('logs') && $operation === null) {
                 throw new HostUpdaterException('helper_request_invalid');

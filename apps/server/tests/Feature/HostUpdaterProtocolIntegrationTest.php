@@ -211,7 +211,7 @@ test('PHP and Python agree on authenticated preparation status and revision log 
         $capabilities = $harness->client->capabilities('image');
         expect($capabilities->helperAuthenticated)->toBeTrue()
             ->and($capabilities->helperCapabilities)->toBe(['plan', 'status'])
-            ->and($capabilities->managedBlockers())->toContain('helper_capability_missing:apply', 'helper_capability_missing:recover');
+            ->and($capabilities->managedBlockers())->toContain('helper_capability_missing:start', 'helper_capability_missing:cancel');
 
         $firstRequest = '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6';
         $first = $harness->client->prepare('v0.10.0', $firstRequest);

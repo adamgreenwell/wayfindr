@@ -32,9 +32,10 @@ class HostUpdaterClient
         'apply_unavailable', 'apply_failed', 'apply_timeout', 'download_failed', 'artifact_invalid',
         'artifact_verification_failed', 'platform_mismatch', 'migration_failed', 'migration_ambiguous',
         'runtime_verification_failed', 'origin_verification_failed', 'configuration_commit_failed',
+        'plan_mismatch', 'cancel_unavailable', 'cancel_requested', 'cancelled',
     ];
 
-    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked', 'downloading', 'protecting', 'applying', 'restarting', 'verifying', 'succeeded', 'failed_safe', 'recovery_required'];
+    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked', 'downloading', 'protecting', 'applying', 'restarting', 'verifying', 'succeeded', 'failed_safe', 'cancelled', 'recovery_required'];
 
     private const EVENTS = [
         'operation_accepted', 'prepare_started', 'plan_reported', 'operation_blocked', 'reconciliation_required', 'interrupted_prepare',
@@ -44,6 +45,7 @@ class HostUpdaterClient
         'migrations_verified', 'target_restart_intent', 'target_services_started', 'runtime_verified',
         'configuration_commit_intent', 'configuration_committed', 'apply_release_intent', 'serving_verified',
         'previous_serving_verified', 'apply_recovery_started', 'succeeded', 'failed_safe', 'apply_failed',
+        'operator_started', 'cancel_requested', 'cancelled',
     ];
 
     private const CHECKPOINTS = [
@@ -65,6 +67,7 @@ class HostUpdaterClient
         'runtime_verification_failed', 'origin_verification_failed', 'configuration_commit_failed',
         'protection_failed', 'backup_failed', 'backup_invalid', 'custody_failed', 'source_changed',
         'writer_unverified', 'configuration_changed', 'prerequisites_unmet', 'recovery_required',
+        'cancel_requested', 'cancelled',
     ];
 
     private const MUTATION_CHECKPOINTS = [
@@ -98,9 +101,13 @@ class HostUpdaterClient
         }
 
         foreach ($helper['capabilities'] as $capability) {
-            if (! is_string($capability) || ! in_array($capability, InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES, true)) {
+            if (! is_string($capability) || ! in_array($capability, InstallationCapabilities::KNOWN_HELPER_CAPABILITIES, true)) {
                 throw new HostUpdaterException('helper_capabilities_invalid');
             }
+        }
+
+        if (count(array_unique($helper['capabilities'])) !== count($helper['capabilities'])) {
+            throw new HostUpdaterException('helper_capabilities_invalid');
         }
 
         $installation = InstallationCapabilities::authenticatedHelper(
@@ -115,16 +122,57 @@ class HostUpdaterClient
     }
 
     /** @return array<string, mixed> */
-    public function prepare(string $tag, string $requestId): array
+    public function prepare(string $tag, string $requestId, ?int $actorId = null): array
     {
         $version = str_starts_with($tag, 'v') ? SemanticVersion::parse(substr($tag, 1)) : null;
 
         if ($version === null || $version->isDevelopment() || $version->prerelease !== []
-            || $version->build !== null || $tag !== 'v'.$version->canonical() || ! self::isUuid($requestId)) {
+            || $version->build !== null || strlen($tag) > 128 || $tag !== 'v'.$version->canonical()
+            || ! self::isUuid($requestId) || ($actorId !== null && $actorId < 1)) {
             throw new HostUpdaterException('helper_request_invalid');
         }
 
-        return $this->request('prepare', ['request_id' => $requestId, 'release_tag' => $tag]);
+        $parameters = ['request_id' => $requestId, 'release_tag' => $tag];
+
+        if ($actorId !== null) {
+            $parameters['actor'] = ['id' => $actorId];
+        }
+
+        return $this->request('prepare', $parameters);
+    }
+
+    /** @return array<string, mixed> */
+    public function start(string $operationId, string $requestId, string $planId, int $actorId): array
+    {
+        return $this->operatorRequest('start', $operationId, $requestId, $planId, $actorId);
+    }
+
+    /** @return array<string, mixed> */
+    public function cancel(string $operationId, string $requestId, string $planId, int $actorId): array
+    {
+        return $this->operatorRequest('cancel', $operationId, $requestId, $planId, $actorId);
+    }
+
+    /** @return array<string, mixed> */
+    private function operatorRequest(string $action, string $operationId, string $requestId, string $planId, int $actorId): array
+    {
+        if (! self::isUuid($operationId) || ! self::isUuid($requestId) || ! self::hex($planId, 64) || $actorId < 1) {
+            throw new HostUpdaterException('helper_request_invalid');
+        }
+
+        return $this->request($action, [
+            'operation_id' => $operationId, 'request_id' => $requestId, 'plan_id' => $planId, 'actor' => ['id' => $actorId],
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public function history(int $cursor = 0, int $limit = 20): array
+    {
+        if ($cursor < 0 || $cursor > 1024 || $limit < 1 || $limit > 50) {
+            throw new HostUpdaterException('helper_request_invalid');
+        }
+
+        return $this->request('history', ['cursor' => $cursor, 'limit' => $limit]);
     }
 
     /** @return array<string, mixed> */
@@ -477,6 +525,44 @@ class HostUpdaterClient
             return;
         }
 
+        if ($action === 'history') {
+            $this->exactKeys($result, ['schema', 'installation_id', 'revision', 'active_operation', 'cursor', 'next_cursor', 'has_more', 'operations']);
+
+            if ($result['schema'] !== 1 || $result['installation_id'] !== $installationId
+                || ! self::nonnegativeInteger($result['revision']) || ! self::nullableUuid($result['active_operation'])
+                || $result['cursor'] !== $parameters['cursor'] || ! self::nonnegativeInteger($result['next_cursor'])
+                || $result['next_cursor'] > 1024 || ! is_bool($result['has_more'])
+                || ! is_array($result['operations']) || ! array_is_list($result['operations'])
+                || count($result['operations']) > $parameters['limit']
+                || $result['next_cursor'] !== $result['cursor'] + count($result['operations'])
+                || ($result['has_more'] && count($result['operations']) !== $parameters['limit'])) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+
+            $seen = [];
+            $previous = null;
+
+            foreach ($result['operations'] as $operation) {
+                if (! is_array($operation)) {
+                    throw new HostUpdaterException('helper_response_invalid');
+                }
+
+                $this->validateOperation($operation);
+                $this->validateOwnership($operation, $result['active_operation'], $result['revision']);
+
+                if (isset($seen[$operation['operation_id']])
+                    || ($previous !== null && ($operation['created_at'] > $previous['created_at']
+                        || ($operation['created_at'] === $previous['created_at'] && strcmp($operation['operation_id'], $previous['operation_id']) >= 0)))) {
+                    throw new HostUpdaterException('helper_response_invalid');
+                }
+
+                $seen[$operation['operation_id']] = true;
+                $previous = $operation;
+            }
+
+            return;
+        }
+
         $this->exactKeys($result, ['schema', 'installation_id', 'revision', 'helper_version', 'generation', 'heartbeat_at', 'active_operation', 'operation']);
 
         if ($result['schema'] !== 1 || $result['installation_id'] !== $installationId
@@ -493,12 +579,7 @@ class HostUpdaterClient
 
             $this->validateOperation($result['operation']);
 
-            $terminal = in_array($result['operation']['phase'], ['blocked', 'succeeded', 'failed_safe'], true);
-            if ($result['operation']['revision'] > $result['revision']
-                || ($terminal && $result['active_operation'] === $result['operation']['operation_id'])
-                || (! $terminal && $result['active_operation'] !== $result['operation']['operation_id'])) {
-                throw new HostUpdaterException('helper_response_invalid');
-            }
+            $this->validateOwnership($result['operation'], $result['active_operation'], $result['revision']);
 
             if (isset($parameters['operation_id']) && $result['operation']['operation_id'] !== $parameters['operation_id']) {
                 throw new HostUpdaterException('helper_response_invalid');
@@ -508,7 +589,34 @@ class HostUpdaterClient
                 || $result['operation']['release_tag'] !== $parameters['release_tag'])) {
                 throw new HostUpdaterException('helper_response_invalid');
             }
+
+            if ($action === 'prepare' && isset($parameters['actor'])
+                && ($result['operation']['operator']['prepare']['actor'] ?? null) !== $parameters['actor']) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+
+            if (in_array($action, ['start', 'cancel'], true)) {
+                $receipt = $result['operation']['operator'][$action] ?? null;
+
+                if (! is_array($receipt) || $result['operation']['plan_id'] !== $parameters['plan_id']
+                    || $receipt['request_id'] !== $parameters['request_id'] || $receipt['plan_id'] !== $parameters['plan_id']
+                    || $receipt['actor'] !== $parameters['actor']) {
+                    throw new HostUpdaterException('helper_response_invalid');
+                }
+            }
         } elseif (isset($parameters['operation_id']) || $action === 'prepare') {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+    }
+
+    /** @param array<string, mixed> $operation */
+    private function validateOwnership(array $operation, ?string $activeOperation, int $revision): void
+    {
+        $terminal = in_array($operation['phase'], ['blocked', 'succeeded', 'failed_safe', 'cancelled'], true);
+
+        if ($operation['revision'] > $revision
+            || ($terminal && $activeOperation === $operation['operation_id'])
+            || (! $terminal && $activeOperation !== $operation['operation_id'])) {
             throw new HostUpdaterException('helper_response_invalid');
         }
     }
@@ -523,6 +631,9 @@ class HostUpdaterClient
         }
         if (array_key_exists('apply', $operation)) {
             $expected[] = 'apply';
+        }
+        if (array_key_exists('operator', $operation)) {
+            $expected[] = 'operator';
         }
 
         $this->exactKeys($operation, $expected);
@@ -557,6 +668,10 @@ class HostUpdaterClient
             $this->validateProtection($operation['protection']);
         }
 
+        if (array_key_exists('operator', $operation)) {
+            $this->validateOperator($operation['operator'], $operation);
+        }
+
         if (array_key_exists('apply', $operation)) {
             $this->validateApply($operation['apply']);
             $apply = $operation['apply'];
@@ -564,15 +679,15 @@ class HostUpdaterClient
 
             if (! array_key_exists('protection', $operation) || $operation['source'] === null
                 || $operation['target'] === null || $operation['plan_id'] === null
-                || ! in_array($operation['phase'], [...$activePhases, 'succeeded', 'failed_safe', 'recovery_required'], true)
+                || ! in_array($operation['phase'], [...$activePhases, 'succeeded', 'failed_safe', 'cancelled', 'recovery_required'], true)
                 || $apply['migration_started'] !== $operation['mutation_started']
                 || (in_array($operation['phase'], $activePhases, true) && $apply['phase'] !== $operation['phase'])
                 || ($operation['phase'] === 'recovery_required' && $apply['phase'] !== 'recovery_required')
-                || (! in_array($operation['phase'], ['succeeded', 'failed_safe'], true) && in_array($apply['phase'], ['verified', 'fallback'], true))
+                || (! in_array($operation['phase'], ['succeeded', 'failed_safe', 'cancelled'], true) && in_array($apply['phase'], ['verified', 'fallback'], true))
                 || ($operation['phase'] === 'succeeded' && ($apply['phase'] !== 'verified'
                     || ! $operation['mutation_started'] || $operation['checkpoint'] !== 'serving_verified'
                     || $operation['error'] !== null || $operation['protection']['phase'] !== 'retained'))
-                || ($operation['phase'] === 'failed_safe' && ($apply['phase'] !== 'fallback'
+                || (in_array($operation['phase'], ['failed_safe', 'cancelled'], true) && ($apply['phase'] !== 'fallback'
                     || $operation['checkpoint'] !== 'previous_serving_verified' || $operation['mutation_started']
                     || $operation['protection']['hold_owned']))
                 || ($apply['index_digest'] !== null && $apply['index_digest'] !== ($operation['target']['image_digest'] ?? null))
@@ -592,6 +707,14 @@ class HostUpdaterClient
             throw new HostUpdaterException('helper_response_invalid');
         }
 
+        if ($operation['phase'] === 'cancelled' && (! isset($operation['operator']['cancel'])
+            || $operation['operator']['cancel']['state'] !== 'completed' || $operation['error'] !== 'cancelled'
+            || ! isset($operation['apply']) || $operation['apply']['error'] !== 'cancelled'
+            || $operation['mutation_started'] || $operation['protection']['hold_owned']
+            || ! $operation['protection']['services_recovered'])) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
         if ($operation['source'] !== null) {
             if (! is_array($operation['source'])) {
                 throw new HostUpdaterException('helper_response_invalid');
@@ -599,7 +722,7 @@ class HostUpdaterClient
 
             $this->exactKeys($operation['source'], ['version', 'commit']);
 
-            if (! self::version($operation['source']['version']) || ! self::hex($operation['source']['commit'], 40)) {
+            if (! self::version($operation['source']['version']) || ! self::commit($operation['source']['commit'])) {
                 throw new HostUpdaterException('helper_response_invalid');
             }
         }
@@ -614,8 +737,78 @@ class HostUpdaterClient
 
             if (! self::stableTag($target['tag']) || $target['tag'] !== $operation['release_tag'] || ! self::version($target['version'])
                 || $target['tag'] !== 'v'.SemanticVersion::parse($target['version'])->canonical()
-                || ! self::hex($target['commit'], 40) || ! is_string($target['image_digest'])
+                || ! self::commit($target['commit']) || ! is_string($target['image_digest'])
                 || preg_match('/\Asha256:[0-9a-f]{64}\z/', $target['image_digest']) !== 1) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+        }
+    }
+
+    private function validateActor(mixed $actor): void
+    {
+        if (! is_array($actor)) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        $this->exactKeys($actor, ['id']);
+
+        if (! is_int($actor['id']) || $actor['id'] < 1) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+    }
+
+    /** @param array<string, mixed> $operation */
+    private function validateOperator(mixed $operator, array $operation): void
+    {
+        if (! is_array($operator)) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        $this->exactKeys($operator, ['prepare', 'start', 'cancel']);
+
+        if ($operator['prepare'] === null && $operator['start'] === null && $operator['cancel'] === null) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        foreach ($operator as $action => $receipt) {
+            if ($receipt === null) {
+                continue;
+            }
+
+            if (! is_array($receipt)) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+
+            $expected = $action === 'prepare' ? ['actor', 'at', 'revision'] : ['request_id', 'plan_id', 'actor', 'at', 'revision'];
+
+            if ($action === 'cancel') {
+                $expected[] = 'state';
+            }
+
+            $this->exactKeys($receipt, $expected);
+            $this->validateActor($receipt['actor']);
+
+            if (! self::nonnegativeInteger($receipt['at']) || ! is_int($receipt['revision'])
+                || $receipt['revision'] < 1 || $receipt['revision'] > $operation['revision']
+                || ($action !== 'prepare' && (! self::isUuid($receipt['request_id']) || ! self::hex($receipt['plan_id'], 64)
+                    || $receipt['plan_id'] !== $operation['plan_id'] || ! array_key_exists('apply', $operation)))
+                || ($action === 'cancel' && (! in_array($receipt['state'], ['requested', 'completed'], true) || $operation['mutation_started']))) {
+                throw new HostUpdaterException('helper_response_invalid');
+            }
+
+            $code = match ($action) {
+                'prepare' => 'operation_accepted',
+                'start' => 'operator_started',
+                'cancel' => 'cancel_requested',
+            };
+
+            foreach ($operation['events'] as $event) {
+                if ($event['revision'] === $receipt['revision'] && ($event['code'] !== $code || $event['at'] !== $receipt['at'])) {
+                    throw new HostUpdaterException('helper_response_invalid');
+                }
+            }
+
+            if ($action === 'cancel' && $receipt['state'] === 'completed' && $operation['phase'] !== 'cancelled') {
                 throw new HostUpdaterException('helper_response_invalid');
             }
         }
@@ -784,6 +977,11 @@ class HostUpdaterClient
     private static function hex(mixed $value, int $length): bool
     {
         return is_string($value) && preg_match('/\A[0-9a-f]{'.$length.'}\z/', $value) === 1;
+    }
+
+    private static function commit(mixed $value): bool
+    {
+        return self::hex($value, 40) || self::hex($value, 64);
     }
 
     private static function version(mixed $value): bool

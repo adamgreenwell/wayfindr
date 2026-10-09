@@ -57,7 +57,7 @@ function updatePlannerInstallation(array $report = [], bool $authenticated = tru
         'enrolled' => true,
         'helper' => [
             'protocol' => InstallationCapabilities::HELPER_PROTOCOL,
-            'version' => '0.1.0',
+            'version' => InstallationCapabilities::MINIMUM_HELPER_VERSION,
             'capabilities' => InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES,
         ],
     ], $report);

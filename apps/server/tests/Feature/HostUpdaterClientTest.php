@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Support\Updates\HostUpdaterClient;
 use App\Support\Updates\HostUpdaterException;
+use App\Support\Updates\InstallationCapabilities;
 
 class HostUpdaterProtocolFixture extends HostUpdaterClient
 {
@@ -147,7 +148,7 @@ test('authenticated host capabilities bind the installation without advertising 
         ->and($capabilities->platform)->toBe('linux')
         ->and($capabilities->architecture)->toBe('amd64')
         ->and($capabilities->helperCapabilities)->toBe(['plan', 'status'])
-        ->and($capabilities->managedBlockers())->toContain('helper_capability_missing:apply', 'helper_capability_missing:recover')
+        ->and($capabilities->managedBlockers())->toContain('helper_version_unsupported', 'helper_capability_missing:start', 'helper_capability_missing:cancel')
         ->and($capabilities->toArray()['managed_update_eligible'])->toBeFalse();
 });
 
@@ -174,6 +175,399 @@ test('prepare status and bounded log requests use fresh authenticated frames wit
         ->and($client->requests[2]['cursor'])->toBe(0)
         ->and($client->requests[2]['limit'])->toBe(100);
 });
+
+function hostUpdaterOperatorResponse(array $response, array $payload): array
+{
+    $response['result']['helper_version'] = '0.4.0';
+    $operation = &$response['result']['operation'];
+    $operation['executor_version'] = '0.4.0';
+    $operation['operator'] = [
+        'prepare' => ['actor' => ['id' => 42], 'at' => 100, 'revision' => 1], 'start' => null, 'cancel' => null,
+    ];
+
+    if ($payload['action'] === 'prepare') {
+        $operation['operator']['prepare']['actor'] = $payload['actor'];
+
+        return $response;
+    }
+
+    $response = hostUpdaterApplyResponse($response);
+    $response['result']['helper_version'] = '0.4.0';
+    $operation = &$response['result']['operation'];
+    $operation['executor_version'] = '0.4.0';
+    $operation['operator'][$payload['action']] = [
+        'request_id' => $payload['request_id'], 'plan_id' => $payload['plan_id'], 'actor' => $payload['actor'],
+        'at' => 101, 'revision' => 2,
+    ];
+    $operation['events'][1]['code'] = $payload['action'] === 'start' ? 'operator_started' : 'cancel_requested';
+
+    if ($payload['action'] === 'cancel') {
+        $operation['operator']['cancel']['state'] = 'requested';
+        $operation['error'] = $operation['apply']['error'] = 'cancel_requested';
+    }
+
+    return $response;
+}
+
+test('operator prepare start and cancel bind only numeric actor IDs exact plan and idempotency IDs', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = hostUpdaterOperatorResponse(...);
+    $operationId = '1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46';
+    $requestId = 'b2b1e130-2786-49b8-92dd-6bc779bc459a';
+    $startId = '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6';
+    $cancelId = '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90';
+    $planId = str_repeat('d', 64);
+
+    $client->prepare('v0.10.0', $requestId, 42);
+    $started = $client->start($operationId, $startId, $planId, 7);
+    $cancelled = $client->cancel($operationId, $cancelId, $planId, 8);
+
+    expect(array_column($client->requests, 'action'))->toBe(['prepare', 'start', 'cancel'])
+        ->and($client->requests[0]['actor'])->toBe(['id' => 42])
+        ->and($client->requests[1]['actor'])->toBe(['id' => 7])
+        ->and($client->requests[1]['plan_id'])->toBe($planId)
+        ->and($client->requests[1]['request_id'])->toBe($startId)
+        ->and($client->requests[2]['request_id'])->toBe($cancelId)
+        ->and($started['operation']['operator']['start']['actor'])->toBe(['id' => 7])
+        ->and($cancelled['operation']['operator']['cancel']['state'])->toBe('requested')
+        ->and(json_encode($client->requests, JSON_THROW_ON_ERROR))->not->toContain('email', 'password', 'command', 'path');
+});
+
+test('new operator helpers advertise actual negotiated execution rather than legacy claims', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response): array {
+        $response['result']['helper']['version'] = '0.4.0';
+        $response['result']['helper']['capabilities'] = InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES;
+
+        return $response;
+    };
+
+    expect($client->capabilities('image')->managedBlockers())->toBe([]);
+});
+
+test('actor plan and request substitutions cannot satisfy an operator start response', function (Closure $mutate): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static fn (array $response, array $payload): array => $mutate(hostUpdaterOperatorResponse($response, $payload));
+
+    expect(fn () => $client->start('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6', str_repeat('d', 64), 7))
+        ->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'actor differs' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['actor']['id'] = 8;
+
+        return $response;
+    }],
+    'actor is a name' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['actor'] = ['name' => 'private-name'];
+
+        return $response;
+    }],
+    'actor is a numeric string' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['actor']['id'] = '7';
+
+        return $response;
+    }],
+    'wrong request' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['request_id'] = '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90';
+
+        return $response;
+    }],
+    'wrong approved plan' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['plan_id'] = str_repeat('e', 64);
+
+        return $response;
+    }],
+    'future attribution revision' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['revision'] = 3;
+
+        return $response;
+    }],
+    'wrong attributed event' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['revision'] = 1;
+        $response['result']['operation']['operator']['start']['at'] = 100;
+
+        return $response;
+    }],
+    'missing operator receipt' => [static function (array $response): array {
+        unset($response['result']['operation']['operator']);
+
+        return $response;
+    }],
+    'unexpected actor secret' => [static function (array $response): array {
+        $response['result']['operation']['operator']['start']['actor']['email'] = 'private-email';
+
+        return $response;
+    }],
+]);
+
+test('operator prepare requires matching host actor attribution', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+
+    expect(fn () => $client->prepare('v0.10.0', 'b2b1e130-2786-49b8-92dd-6bc779bc459a', 42))
+        ->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+});
+
+test('host source and target commit receipts preserve SHA-1 and SHA-256 Git identity', function (int $length): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($length): array {
+        $response['result']['operation']['source']['commit'] = str_repeat('a', $length);
+        $response['result']['operation']['target']['commit'] = str_repeat('b', $length);
+
+        return $response;
+    };
+
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+
+    expect($result['operation']['source']['commit'])->toHaveLength($length)
+        ->and($result['operation']['target']['commit'])->toHaveLength($length);
+})->with([40, 64]);
+
+test('operator metadata must agree with apply and cancellation admission invariants', function (Closure $mutate): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($mutate): array {
+        $payload = [
+            'action' => 'cancel', 'request_id' => '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90',
+            'plan_id' => str_repeat('d', 64), 'actor' => ['id' => 7],
+        ];
+
+        return $mutate(hostUpdaterOperatorResponse($response, $payload));
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'all-null receipts' => [static function (array $response): array {
+        $response['result']['operation']['operator'] = ['prepare' => null, 'start' => null, 'cancel' => null];
+
+        return $response;
+    }],
+    'cancel without apply evidence' => [static function (array $response): array {
+        $operation = &$response['result']['operation'];
+        unset($operation['apply'], $operation['protection']);
+        $operation['phase'] = 'accepted';
+        $operation['checkpoint'] = 'accepted';
+        $operation['error'] = null;
+        $operation['events'][1]['phase'] = 'accepted';
+
+        return $response;
+    }],
+    'cancel after migration intent' => [static function (array $response): array {
+        $operation = &$response['result']['operation'];
+        $operation['mutation_started'] = $operation['apply']['migration_started'] = true;
+
+        return $response;
+    }],
+]);
+
+test('invalid operator identifiers actor IDs and history bounds never reach transport', function (Closure $call): void {
+    $client = new HostUpdaterProtocolFixture;
+
+    expect(fn () => $call($client))->toThrow(HostUpdaterException::class, 'helper_request_invalid')
+        ->and($client->requests)->toBe([]);
+})->with([
+    'zero prepare actor' => [static fn (HostUpdaterClient $client) => $client->prepare('v0.10.0', 'b2b1e130-2786-49b8-92dd-6bc779bc459a', 0)],
+    'negative start actor' => [static fn (HostUpdaterClient $client) => $client->start('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6', str_repeat('d', 64), -1)],
+    'unknown plan' => [static fn (HostUpdaterClient $client) => $client->start('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6', 'latest', 7)],
+    'cancel operation traversal' => [static fn (HostUpdaterClient $client) => $client->cancel('../../secrets', '94b4b6fb-3835-43eb-8fb5-32c91e2c38c6', str_repeat('d', 64), 7)],
+    'cancel request not UUID' => [static fn (HostUpdaterClient $client) => $client->cancel('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', 'new', str_repeat('d', 64), 7)],
+    'negative history cursor' => [static fn (HostUpdaterClient $client) => $client->history(-1)],
+    'too large history cursor' => [static fn (HostUpdaterClient $client) => $client->history(1025)],
+    'empty history limit' => [static fn (HostUpdaterClient $client) => $client->history(0, 0)],
+    'unbounded history limit' => [static fn (HostUpdaterClient $client) => $client->history(0, 51)],
+]);
+
+function hostUpdaterHistoryFixture(string $installationId, int $cursor = 0): array
+{
+    $operations = [];
+
+    foreach (['2c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'] as $operationId) {
+        $operation = hostUpdaterStatusFixture($installationId, $operationId)['operation'];
+        $operation['phase'] = 'blocked';
+        $operation['checkpoint'] = 'plan_reported';
+        $operation['error'] = 'execution_not_available';
+        $operation['events'][0]['code'] = 'operation_blocked';
+        $operation['events'][0]['phase'] = 'blocked';
+        $operations[] = $operation;
+    }
+
+    $page = array_slice($operations, $cursor);
+
+    return [
+        'schema' => 1, 'installation_id' => $installationId, 'revision' => 1, 'active_operation' => null,
+        'cursor' => $cursor, 'next_cursor' => $cursor + count($page), 'has_more' => false, 'operations' => $page,
+    ];
+}
+
+test('bounded operation history preserves descending order and exact offset cursors', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response, array $payload): array {
+        $response['result'] = hostUpdaterHistoryFixture($payload['installation_id'], $payload['cursor']);
+
+        return $response;
+    };
+
+    $page = $client->history(0, 2);
+    $empty = $client->history(1024, 1);
+
+    expect(array_column($page['operations'], 'operation_id'))->toBe([
+        '2c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46',
+    ])->and($page['next_cursor'])->toBe(2)
+        ->and($empty['next_cursor'])->toBe(1024)
+        ->and($empty['operations'])->toBe([])
+        ->and($empty['has_more'])->toBeFalse()
+        ->and($client->requests[0]['limit'])->toBe(2)
+        ->and($client->requests[1]['cursor'])->toBe(1024);
+});
+
+test('operation history rejects forged ordering ownership bounds and unexpected data', function (Closure $mutate): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response, array $payload) use ($mutate): array {
+        $response['result'] = $mutate(hostUpdaterHistoryFixture($payload['installation_id']));
+
+        return $response;
+    };
+
+    expect(fn () => $client->history(0, 2))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'private page field' => [static fn (array $page): array => $page + ['path' => '/private/customer']],
+    'truthy schema' => [static fn (array $page): array => array_replace($page, ['schema' => true])],
+    'wrong installation' => [static fn (array $page): array => array_replace($page, ['installation_id' => '78d4f68c-1276-4e32-9278-a4cb75137954'])],
+    'wrong cursor' => [static fn (array $page): array => array_replace($page, ['cursor' => 1])],
+    'wrong next cursor' => [static fn (array $page): array => array_replace($page, ['next_cursor' => 3])],
+    'duplicate operation' => [static function (array $page): array {
+        $page['operations'][1] = $page['operations'][0];
+
+        return $page;
+    }],
+    'UUID ordering differs' => [static function (array $page): array {
+        $page['operations'] = array_reverse($page['operations']);
+
+        return $page;
+    }],
+    'date ordering differs' => [static function (array $page): array {
+        $page['operations'][1]['created_at'] = 101;
+
+        return $page;
+    }],
+    'operation revision exceeds journal' => [static function (array $page): array {
+        $page['revision'] = 0;
+
+        return $page;
+    }],
+    'terminal operation owns lock' => [static function (array $page): array {
+        $page['active_operation'] = $page['operations'][0]['operation_id'];
+
+        return $page;
+    }],
+    'nonterminal operation lacks lock' => [static function (array $page): array {
+        $page['operations'][0] = hostUpdaterStatusFixture($page['installation_id'], $page['operations'][0]['operation_id'])['operation'];
+
+        return $page;
+    }],
+    'oversized page' => [static function (array $page): array {
+        $page['operations'][] = $page['operations'][0];
+        $page['next_cursor'] = 3;
+
+        return $page;
+    }],
+    'empty page claims more' => [static fn (array $page): array => array_replace($page, ['operations' => [], 'next_cursor' => 0, 'has_more' => true])],
+    'unexpected operator customer field' => [static function (array $page): array {
+        $page['operations'][0]['operator'] = ['prepare' => null, 'start' => null, 'cancel' => null, 'email' => 'private-email'];
+
+        return $page;
+    }],
+]);
+
+function hostUpdaterCancelledResponse(array $response, array $payload): array
+{
+    $response = hostUpdaterOperatorResponse($response, $payload);
+    $response['result']['active_operation'] = null;
+    $response['result']['revision'] = 3;
+    $operation = &$response['result']['operation'];
+    $operation['revision'] = 3;
+    $operation['phase'] = 'cancelled';
+    $operation['checkpoint'] = 'previous_serving_verified';
+    $operation['error'] = 'cancelled';
+    $operation['operator']['cancel']['state'] = 'completed';
+    $operation['protection'] = hostUpdaterProtectionFixture(true);
+    $operation['apply'] = array_replace($operation['apply'], [
+        'phase' => 'fallback', 'error' => 'cancelled', 'runtime_receipt_sha256' => str_repeat('f', 64),
+        'services_verified' => true, 'origin_verified' => true,
+    ]);
+    $operation['events'][] = ['revision' => 3, 'at' => 102, 'code' => 'cancelled', 'phase' => 'cancelled'];
+
+    return $response;
+}
+
+test('cancelled means verified source service recovery and released maintenance ownership', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = hostUpdaterCancelledResponse(...);
+    $result = $client->cancel('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90', str_repeat('d', 64), 7);
+
+    expect($result['active_operation'])->toBeNull()
+        ->and($result['operation']['phase'])->toBe('cancelled')
+        ->and($result['operation']['operator']['cancel']['state'])->toBe('completed')
+        ->and($result['operation']['protection']['services_recovered'])->toBeTrue()
+        ->and($result['operation']['apply']['origin_verified'])->toBeTrue()
+        ->and($result['operation']['mutation_started'])->toBeFalse();
+});
+
+test('early cancellation can recover source without claiming an uncaptured archive', function (): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response, array $payload): array {
+        $response = hostUpdaterCancelledResponse($response, $payload);
+        $response['result']['operation']['protection'] = array_replace(hostUpdaterProtectionFixture(), [
+            'phase' => 'resuming', 'services_recovered' => true,
+        ]);
+
+        return $response;
+    };
+    $result = $client->cancel('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90', str_repeat('d', 64), 7);
+
+    expect($result['operation']['phase'])->toBe('cancelled')
+        ->and($result['operation']['protection']['custody_verified'])->toBeFalse()
+        ->and($result['operation']['protection']['archive_sha256'])->toBeNull()
+        ->and($result['operation']['protection']['services_recovered'])->toBeTrue();
+});
+
+test('cancellation cannot claim completion without source recovery or after schema intent', function (Closure $mutate): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static fn (array $response, array $payload): array => $mutate(hostUpdaterCancelledResponse($response, $payload));
+
+    expect(fn () => $client->cancel('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', '58c9a0d4-c9e5-43e9-8c5c-54f2293b9f90', str_repeat('d', 64), 7))
+        ->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    'request is incomplete' => [static function (array $response): array {
+        $response['result']['operation']['operator']['cancel']['state'] = 'requested';
+
+        return $response;
+    }],
+    'original services unverified' => [static function (array $response): array {
+        $response['result']['operation']['protection']['services_recovered'] = false;
+
+        return $response;
+    }],
+    'runtime receipt missing' => [static function (array $response): array {
+        $response['result']['operation']['apply']['runtime_receipt_sha256'] = null;
+
+        return $response;
+    }],
+    'origin unverified' => [static function (array $response): array {
+        $response['result']['operation']['apply']['origin_verified'] = false;
+
+        return $response;
+    }],
+    'maintenance ownership remains' => [static function (array $response): array {
+        $response['result']['operation']['apply']['hold_owned'] = true;
+
+        return $response;
+    }],
+    'schema mutation began' => [static function (array $response): array {
+        $response['result']['operation']['mutation_started'] = true;
+        $response['result']['operation']['apply']['migration_started'] = true;
+
+        return $response;
+    }],
+]);
 
 test('the helper is opt in and disabled configuration performs no transport request', function (mixed $enabled): void {
     config()->set('wayfindr.updates.helper_enabled', $enabled);

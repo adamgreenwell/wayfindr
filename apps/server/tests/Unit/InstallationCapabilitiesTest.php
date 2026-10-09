@@ -14,8 +14,8 @@ function updateCapabilityReport(array $overrides = []): array
         'enrolled' => true,
         'helper' => [
             'protocol' => 1,
-            'version' => '0.1.0',
-            'capabilities' => ['plan', 'apply', 'status', 'recover'],
+            'version' => InstallationCapabilities::MINIMUM_HELPER_VERSION,
+            'capabilities' => InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES,
         ],
         'managed_policy' => ['require_remote_backup' => true],
     ], $overrides);
@@ -52,6 +52,32 @@ test('only the trusted adapter contract admits a complete compatible fixture', f
         ->and($capabilities->managedBlockers())->toBe([])
         ->and($capabilities->toArray()['managed_update_eligible'])->toBeTrue()
         ->and($capabilities->managedPolicyClaims)->toBe(['require_remote_backup' => true]);
+});
+
+test('legacy or unstable helper versions cannot enable operator execution even with new capabilities', function (string $version): void {
+    $capabilities = trustedUpdateCapabilities(updateCapabilityReport(['helper' => ['version' => $version]]));
+
+    expect($capabilities->helperVersion)->not->toBeNull()
+        ->and($capabilities->managedBlockers())->toContain('helper_version_unsupported')
+        ->and($capabilities->toArray()['managed_update_eligible'])->toBeFalse();
+})->with(['0.1.0', '0.2.0', '0.3.0', '0.4.0-rc.1', '0.4.0+custom', '0.5.0-dev']);
+
+test('legacy apply and recovery claims remain readable without becoming start authority', function (): void {
+    $report = updateCapabilityReport();
+    $report['helper']['capabilities'] = ['plan', 'apply', 'status', 'recover'];
+    $capabilities = trustedUpdateCapabilities($report);
+
+    expect($capabilities->helperCapabilities)->toBe(['apply', 'plan', 'recover', 'status'])
+        ->and($capabilities->managedBlockers())->not->toContain('helper_capabilities_invalid')
+        ->and($capabilities->managedBlockers())->toContain('helper_capability_missing:start', 'helper_capability_missing:history', 'helper_capability_missing:cancel')
+        ->and($capabilities->toArray()['managed_update_eligible'])->toBeFalse();
+});
+
+test('duplicate helper capability claims fail closed', function (): void {
+    $report = updateCapabilityReport();
+    $report['helper']['capabilities'][] = 'start';
+
+    expect(trustedUpdateCapabilities($report)->managedBlockers())->toContain('helper_capabilities_invalid');
 });
 
 test('serializing a trusted fixture does not let an untrusted report inherit authentication', function (): void {
@@ -181,7 +207,7 @@ test('malformed helper capability reports cannot be partially accepted', functio
     $installation = trustedUpdateCapabilities($report);
 
     expect($installation->helperCapabilities)->toBe([])
-        ->and($installation->managedBlockers())->toContain('helper_capabilities_invalid', 'helper_capability_missing:apply');
+        ->and($installation->managedBlockers())->toContain('helper_capabilities_invalid', 'helper_capability_missing:start');
 })->with([
     null,
     true,
@@ -198,7 +224,7 @@ test('every required helper capability is independently negotiated', function (s
     ));
 
     expect(trustedUpdateCapabilities($report)->managedBlockers())->toContain('helper_capability_missing:'.$missing);
-})->with(['plan', 'apply', 'status', 'recover']);
+})->with(InstallationCapabilities::REQUIRED_HELPER_CAPABILITIES);
 
 test('helper protocol values must be the exact supported integer', function (mixed $protocol): void {
     $report = updateCapabilityReport();
