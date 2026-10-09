@@ -83,7 +83,9 @@ jobs:
     # and that was found by reading, not by a test.
     services:
       postgres:
-        image: postgres:17-alpine
+        # Docker's official ECR Public mirror supports anonymous pulls, avoiding
+        # Docker Hub's shared-IP pull limit before this job can even check out.
+        image: public.ecr.aws/docker/library/postgres:17-alpine
         env:
           POSTGRES_USER: wayfindr
           POSTGRES_PASSWORD: wayfindr

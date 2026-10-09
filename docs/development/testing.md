@@ -55,7 +55,11 @@ The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
 `DB_DATABASE=:memory:`), and every documented install runs PostgreSQL.
 
 **CI runs the whole suite against both.** `php-application` runs it on SQLite;
-`php-application-postgres` runs it again against a `postgres:17-alpine` service.
+`php-application-postgres` runs it again against Docker's official
+`public.ecr.aws/docker/library/postgres:17-alpine` service. The
+[official ECR Public mirror](https://aws.amazon.com/blogs/containers/docker-official-images-now-available-on-amazon-elastic-container-registry-public/)
+allows anonymous pulls without sharing Docker Hub's pull quota with other
+GitHub runners. It still has [ECR Public quotas](https://docs.aws.amazon.com/general/latest/gr/ecr-public.html).
 A query valid on only one engine now fails a job instead of shipping green.
 
 Each job also declares which engine it means through
