@@ -115,6 +115,25 @@ function hostUpdaterStatusFixture(string $installationId, ?string $operationId =
     ];
 }
 
+function hostUpdaterProtectionFixture(bool $verified = false): array
+{
+    return [
+        'phase' => $verified ? 'verified' : 'fencing',
+        'archive_sha256' => $verified ? str_repeat('a', 64) : null,
+        'manifest_sha256' => $verified ? str_repeat('b', 64) : null,
+        'archive_bytes' => $verified ? 1024 : null,
+        'source_image_id' => $verified ? 'sha256:'.str_repeat('c', 64) : null,
+        'local_attachment_disks' => $verified ? 2 : null,
+        'external_attachment_disks' => $verified ? 0 : null,
+        'offsite_uploaded' => $verified ? false : null,
+        'offsite_verification' => $verified ? 'not-configured' : null,
+        'custody_verified' => $verified,
+        'services_recovered' => $verified,
+        'hold_owned' => false,
+        'error' => null,
+    ];
+}
+
 beforeEach(function (): void {
     config()->set('wayfindr.updates.helper_enabled', true);
 });
@@ -401,6 +420,177 @@ test('log pagination uses journal revisions rather than event list offsets', fun
 
     expect($client->logs('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46', 5, 2)['next_cursor'])->toBe(11);
 });
+
+test('protection status remains read only across the current helper and older journal records', function (string $version): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($version): array {
+        $response['result']['helper_version'] = $version;
+
+        return $response;
+    };
+
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+
+    expect($result['helper_version'])->toBe($version)
+        ->and($result['operation']['executor_version'])->toBe('0.1.0')
+        ->and($result['operation'])->not->toHaveKey('protection')
+        ->and(method_exists($client, 'protect'))->toBeFalse()
+        ->and(method_exists($client, 'recover'))->toBeFalse();
+})->with(['0.1.0', '0.2.0']);
+
+test('authenticated status accepts typed protection and recovery checkpoints without enabling apply', function (string $phase, string $checkpoint, string $event): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($phase, $checkpoint, $event): array {
+        $response['result']['helper_version'] = '0.2.0';
+        $response['result']['revision'] = 2;
+        $operation = &$response['result']['operation'];
+        $operation['executor_version'] = '0.2.0';
+        $operation['revision'] = 2;
+        $operation['phase'] = $phase === 'recovery_required' ? 'recovery_required' : 'protecting';
+        $operation['checkpoint'] = $checkpoint;
+        $operation['protection'] = hostUpdaterProtectionFixture();
+        $operation['protection']['phase'] = $phase;
+        $operation['protection']['hold_owned'] = true;
+        $operation['events'][] = ['revision' => 2, 'at' => 101, 'code' => $event, 'phase' => $operation['phase']];
+
+        if ($phase === 'recovery_required') {
+            $operation['error'] = $operation['protection']['error'] = 'recovery_required';
+        }
+
+        return $response;
+    };
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+
+    expect($result['operation']['protection']['phase'])->toBe($phase)
+        ->and($result['operation']['checkpoint'])->toBe($checkpoint)
+        ->and($result['operation']['mutation_started'])->toBeFalse()
+        ->and($result['operation']['events'][1]['code'])->toBe($event);
+})->with([
+    ['fencing', 'protection_started', 'protection_started'],
+    ['draining', 'fenced', 'fenced'],
+    ['backing_up', 'drained', 'drained'],
+    ['resuming', 'backup_verified', 'backup_verified'],
+    ['resuming', 'services_resumed', 'services_resumed'],
+    ['recovery_required', 'backup_verified', 'protection_failed'],
+    ['recovery_required', 'backup_verified', 'recovery_required'],
+    ['recovery_required', 'backup_verified', 'recovery_started'],
+]);
+
+test('verified protection reports exact local archive evidence and retains external coverage limits', function (bool $remote): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($remote): array {
+        $response['result']['helper_version'] = '0.2.0';
+        $response['result']['active_operation'] = null;
+        $operation = &$response['result']['operation'];
+        $operation['executor_version'] = '0.2.0';
+        $operation['phase'] = 'blocked';
+        $operation['checkpoint'] = 'protection_released';
+        $operation['error'] = 'protection_verified';
+        $operation['protection'] = hostUpdaterProtectionFixture(true);
+        $operation['protection']['external_attachment_disks'] = 1;
+        $operation['protection']['offsite_uploaded'] = $remote;
+        $operation['protection']['offsite_verification'] = $remote ? 'existence-and-size' : 'not-configured';
+        $operation['events'][0]['code'] = 'protection_released';
+        $operation['events'][0]['phase'] = 'blocked';
+
+        return $response;
+    };
+    $result = $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46');
+
+    expect($result['operation']['protection'])->toMatchArray([
+        'phase' => 'verified', 'custody_verified' => true, 'services_recovered' => true, 'hold_owned' => false,
+        'external_attachment_disks' => 1, 'offsite_uploaded' => $remote,
+    ])->and($result['operation']['mutation_started'])->toBeFalse();
+})->with([false, true]);
+
+test('protection snapshots reject unknown fields enums secrets and untyped evidence', function (string $key, mixed $value): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($key, $value): array {
+        $response['result']['operation']['protection'] = hostUpdaterProtectionFixture();
+        $response['result']['operation']['protection'][$key] = $value;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    ['path', '/private/customer-archive'],
+    ['phase', 'applying'],
+    ['phase', ['fencing']],
+    ['archive_sha256', str_repeat('A', 64)],
+    ['manifest_sha256', ['secret']],
+    ['archive_bytes', 0],
+    ['archive_bytes', '1024'],
+    ['source_image_id', 'ghcr.io/adamgreenwell/wayfindr:latest'],
+    ['local_attachment_disks', -1],
+    ['external_attachment_disks', '0'],
+    ['offsite_uploaded', 'true'],
+    ['offsite_verification', 'restore-qualified'],
+    ['custody_verified', 1],
+    ['services_recovered', 'true'],
+    ['hold_owned', 0],
+    ['error', 'secret_customer_token'],
+]);
+
+test('verified protection cannot omit evidence or claim completion while still held', function (string $key, mixed $value): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($key, $value): array {
+        $response['result']['operation']['protection'] = hostUpdaterProtectionFixture(true);
+        $response['result']['operation']['protection'][$key] = $value;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([
+    ['archive_sha256', null],
+    ['manifest_sha256', null],
+    ['archive_bytes', null],
+    ['source_image_id', null],
+    ['local_attachment_disks', null],
+    ['external_attachment_disks', null],
+    ['offsite_uploaded', null],
+    ['offsite_uploaded', true],
+    ['offsite_verification', null],
+    ['offsite_verification', 'existence-and-size'],
+    ['custody_verified', false],
+    ['services_recovered', false],
+    ['hold_owned', true],
+    ['error', 'protection_failed'],
+]);
+
+test('a present protection object must have every field and cannot be null', function (bool $missingField): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($missingField): array {
+        $response['result']['operation']['protection'] = $missingField ? hostUpdaterProtectionFixture() : null;
+
+        if ($missingField) {
+            unset($response['result']['operation']['protection']['custody_verified']);
+        }
+
+        return $response;
+    };
+
+    expect(fn () => $client->status('1c0a7b87-e6fc-454c-a9b4-4b6d65fb5b46'))->toThrow(HostUpdaterException::class, 'helper_response_invalid');
+})->with([false, true]);
+
+test('new protection refusal codes stay sanitized without adding an executable application action', function (string $reason): void {
+    $client = new HostUpdaterProtocolFixture;
+    $client->mutateResponse = static function (array $response) use ($reason): array {
+        unset($response['result']);
+        $response['ok'] = false;
+        $response['error'] = $reason;
+
+        return $response;
+    };
+
+    expect(fn () => $client->status())->toThrow(HostUpdaterException::class, 'helper_refused:'.$reason)
+        ->and($client->requests)->toHaveCount(1);
+})->with([
+    'protection_unavailable', 'protection_failed', 'protection_timeout', 'drain_timeout', 'backup_failed',
+    'backup_invalid', 'custody_failed', 'recovery_required', 'source_changed', 'maintenance_present',
+    'writer_unverified', 'protection_verified',
+]);
 
 test('log pages reject stale events reversed revisions excess events and wrong cursors', function (Closure $mutate): void {
     $client = new HostUpdaterProtocolFixture;

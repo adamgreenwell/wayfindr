@@ -4,6 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\BackupRun;
 use App\Support\Backup\BackupRunner;
+use App\Support\Updates\ManagedUpdateGate;
+use App\Support\Updates\ManagedUpdateLease;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -14,7 +16,36 @@ class BackupCommand extends Command
 
     protected $description = 'Write a restorable backup archive (Postgres dump + local attachment binaries).';
 
-    public function handle(BackupRunner $runner): int
+    public function handle(BackupRunner $runner, ManagedUpdateGate $updates): int
+    {
+        try {
+            $lease = $updates->acquireNormal();
+        } catch (Throwable $exception) {
+            try {
+                $ordinaryContention = $exception->getMessage() === 'managed_update_busy' && ! $updates->active();
+            } catch (Throwable) {
+                $ordinaryContention = false;
+            }
+
+            if ($ordinaryContention) {
+                $this->warn('A backup or restore is already running; this run was skipped.');
+
+                return self::SUCCESS;
+            }
+
+            $this->error('Backup failed: '.$exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        try {
+            return $this->perform($runner, $lease);
+        } finally {
+            $lease->release();
+        }
+    }
+
+    private function perform(BackupRunner $runner, ManagedUpdateLease $lease): int
     {
         $destination = trim((string) $this->option('path')) ?: (string) config('wayfindr.backup.path');
 
@@ -29,7 +60,7 @@ class BackupCommand extends Command
         ]);
 
         try {
-            $result = $runner->run($run, $destination);
+            $result = $runner->run($run, $destination, $lease);
         } catch (Throwable $exception) {
             $this->error('Backup failed: '.$exception->getMessage());
 

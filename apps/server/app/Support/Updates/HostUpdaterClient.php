@@ -26,11 +26,31 @@ class HostUpdaterClient
         'journal_unavailable', 'journal_corrupt', 'journal_full', 'helper_unavailable', 'configuration_changed',
         'prepare_unavailable', 'prepare_failed', 'prepare_timeout', 'prepare_output_invalid', 'prerequisites_unmet',
         'identity_unverified', 'no_update_required', 'execution_not_available', 'reconciliation_required', 'interrupted_prepare',
+        'protection_unavailable', 'protection_failed', 'protection_timeout', 'drain_timeout', 'backup_failed',
+        'backup_invalid', 'custody_failed', 'recovery_required', 'source_changed', 'maintenance_present',
+        'writer_unverified', 'protection_verified',
     ];
 
-    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked'];
+    private const PHASES = ['accepted', 'preparing', 'reconciliation_required', 'blocked', 'protecting', 'recovery_required'];
 
-    private const EVENTS = ['operation_accepted', 'prepare_started', 'plan_reported', 'operation_blocked', 'reconciliation_required', 'interrupted_prepare'];
+    private const EVENTS = [
+        'operation_accepted', 'prepare_started', 'plan_reported', 'operation_blocked', 'reconciliation_required', 'interrupted_prepare',
+        'protection_started', 'fenced', 'drained', 'backup_verified', 'services_resumed', 'protection_released',
+        'protection_failed', 'recovery_required', 'recovery_started',
+    ];
+
+    private const CHECKPOINTS = [
+        'accepted', 'prepare_started', 'plan_reported', 'protection_started', 'fenced', 'drained',
+        'backup_verified', 'services_resumed', 'protection_released',
+    ];
+
+    private const PROTECTION_PHASES = ['fencing', 'draining', 'backing_up', 'resuming', 'verified', 'recovery_required'];
+
+    private const PROTECTION_ERRORS = [
+        'protection_unavailable', 'protection_failed', 'protection_timeout', 'drain_timeout', 'backup_failed',
+        'backup_invalid', 'custody_failed', 'recovery_required', 'source_changed', 'maintenance_present',
+        'writer_unverified', 'protection_verified',
+    ];
 
     public function capabilities(string $runtimeProfile): InstallationCapabilities
     {
@@ -463,12 +483,18 @@ class HostUpdaterClient
     /** @param array<string, mixed> $operation */
     private function validateOperation(array $operation): void
     {
-        $this->exactKeys($operation, ['operation_id', 'request_id', 'release_tag', 'phase', 'checkpoint', 'executor_generation', 'executor_version', 'mutation_started', 'created_at', 'updated_at', 'revision', 'error', 'source', 'target', 'plan_id', 'events']);
+        $expected = ['operation_id', 'request_id', 'release_tag', 'phase', 'checkpoint', 'executor_generation', 'executor_version', 'mutation_started', 'created_at', 'updated_at', 'revision', 'error', 'source', 'target', 'plan_id', 'events'];
+
+        if (array_key_exists('protection', $operation)) {
+            $expected[] = 'protection';
+        }
+
+        $this->exactKeys($operation, $expected);
 
         if (! self::isUuid($operation['operation_id']) || ! self::isUuid($operation['request_id'])
             || ! self::isUuid($operation['executor_generation']) || ! self::version($operation['executor_version'])
             || ! self::stableTag($operation['release_tag']) || ! in_array($operation['phase'], self::PHASES, true)
-            || ! in_array($operation['checkpoint'], ['accepted', 'prepare_started', 'plan_reported'], true)
+            || ! in_array($operation['checkpoint'], self::CHECKPOINTS, true)
             || $operation['mutation_started'] !== false || ! self::nonnegativeInteger($operation['created_at'])
             || ! self::nonnegativeInteger($operation['updated_at']) || ! self::nonnegativeInteger($operation['revision'])
             || ($operation['error'] !== null && ! in_array($operation['error'], self::ERRORS, true))
@@ -478,6 +504,10 @@ class HostUpdaterClient
         }
 
         $this->validateEvents($operation['events']);
+
+        if (array_key_exists('protection', $operation)) {
+            $this->validateProtection($operation['protection']);
+        }
 
         if ($operation['source'] !== null) {
             if (! is_array($operation['source'])) {
@@ -505,6 +535,47 @@ class HostUpdaterClient
                 || preg_match('/\Asha256:[0-9a-f]{64}\z/', $target['image_digest']) !== 1) {
                 throw new HostUpdaterException('helper_response_invalid');
             }
+        }
+    }
+
+    private function validateProtection(mixed $protection): void
+    {
+        if (! is_array($protection)) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        $this->exactKeys($protection, [
+            'phase', 'archive_sha256', 'manifest_sha256', 'archive_bytes', 'source_image_id',
+            'local_attachment_disks', 'external_attachment_disks', 'offsite_uploaded',
+            'offsite_verification', 'custody_verified', 'services_recovered', 'hold_owned', 'error',
+        ]);
+
+        if (! in_array($protection['phase'], self::PROTECTION_PHASES, true)
+            || ($protection['archive_sha256'] !== null && ! self::hex($protection['archive_sha256'], 64))
+            || ($protection['manifest_sha256'] !== null && ! self::hex($protection['manifest_sha256'], 64))
+            || ($protection['archive_bytes'] !== null && (! is_int($protection['archive_bytes']) || $protection['archive_bytes'] < 1))
+            || ($protection['source_image_id'] !== null && (! is_string($protection['source_image_id'])
+                || preg_match('/\Asha256:[0-9a-f]{64}\z/', $protection['source_image_id']) !== 1))
+            || ($protection['local_attachment_disks'] !== null && ! self::nonnegativeInteger($protection['local_attachment_disks']))
+            || ($protection['external_attachment_disks'] !== null && ! self::nonnegativeInteger($protection['external_attachment_disks']))
+            || ($protection['offsite_uploaded'] !== null && ! is_bool($protection['offsite_uploaded']))
+            || ! in_array($protection['offsite_verification'], [null, 'not-configured', 'existence-and-size'], true)
+            || ! is_bool($protection['custody_verified']) || ! is_bool($protection['services_recovered'])
+            || ! is_bool($protection['hold_owned'])
+            || ($protection['error'] !== null && ! in_array($protection['error'], self::PROTECTION_ERRORS, true))) {
+            throw new HostUpdaterException('helper_response_invalid');
+        }
+
+        if ($protection['phase'] === 'verified' && (
+            $protection['archive_sha256'] === null || $protection['manifest_sha256'] === null
+            || $protection['archive_bytes'] === null || $protection['source_image_id'] === null
+            || $protection['local_attachment_disks'] === null || $protection['external_attachment_disks'] === null
+            || $protection['custody_verified'] !== true || $protection['services_recovered'] !== true
+            || $protection['hold_owned'] !== false || $protection['error'] !== null
+            || ! in_array($protection['offsite_verification'], ['not-configured', 'existence-and-size'], true)
+            || $protection['offsite_uploaded'] !== ($protection['offsite_verification'] === 'existence-and-size')
+        )) {
+            throw new HostUpdaterException('helper_response_invalid');
         }
     }
 

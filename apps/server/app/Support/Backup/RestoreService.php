@@ -6,10 +6,13 @@ use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Release\ReleaseState;
 use App\Support\Settings\OperatorSettings;
+use App\Support\Updates\ManagedUpdateGate;
+use App\Support\Updates\ManagedUpdateLease;
 use App\Support\Version\SemanticVersion;
 use App\Support\Version\VersionComparator;
 use App\Support\Visitors\ErasureReapplier;
 use FilesystemIterator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -153,7 +156,42 @@ class RestoreService
      *     erasures: array{fresh_volume: bool, unconfirmed: list<string>, entries: int, reapplied: int, visitors: int, deferred: bool, failed: string|null},
      * }
      */
-    public function restore(string $archivePath, bool $force = false): array
+    public function restore(string $archivePath, bool $force = false, ?ManagedUpdateLease $lease = null): array
+    {
+        // The GUI job already owns both leases. Direct/CLI restores acquire
+        // them here, so every destructive restore follows the same admission.
+        $ownsLease = $lease === null;
+        $lease ??= app(ManagedUpdateGate::class)->acquireNormal();
+        $lock = null;
+
+        try {
+            $lease->assertNormal();
+
+            if ($ownsLease) {
+                $lock = Cache::lock(BackupRunner::LOCK_KEY, (int) config('wayfindr.backup.lock_ttl', 3900));
+
+                if (! $lock->get()) {
+                    throw new RuntimeException('A backup or restore is already running. Wait for it to finish, then try again.');
+                }
+            }
+
+            return $this->restoreHeld($archivePath, $force, $lease);
+        } finally {
+            if ($lock !== null) {
+                try {
+                    $lock->release();
+                } catch (Throwable $failure) {
+                    report($failure);
+                }
+            }
+
+            if ($ownsLease) {
+                $lease->release();
+            }
+        }
+    }
+
+    private function restoreHeld(string $archivePath, bool $force, ManagedUpdateLease $lease): array
     {
         if (! is_file($archivePath)) {
             throw new RuntimeException("Backup archive not found: {$archivePath}");
@@ -220,6 +258,7 @@ class RestoreService
             }
 
             // Replace the database with the dump (atomic — see the restorer).
+            $lease->assertNormal();
             $this->restorer->restore($dump);
 
             // FROM HERE ON, failures are partial rather than harmless -- and

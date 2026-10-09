@@ -7,3 +7,6 @@ routes.php
 routes.scanned.php
 schedule-*
 services.json
+managed-upgrade.json
+managed-upgrade.lock
+.managed-upgrade-*

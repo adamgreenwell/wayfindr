@@ -9,6 +9,7 @@ use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\HostUpdaterStatusCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\MeasureAttachmentRetentionCommand;
+use App\Console\Commands\ProtectiveBackupCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\QueueAgentRealtimeEvictionsCommand;
 use App\Console\Commands\QueueConversationReplyDeliveriesCommand;
@@ -20,8 +21,10 @@ use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\TranslateCatalogueCommand;
 use App\Console\Commands\UpdatePlanCommand;
 use App\Console\Commands\UpgradeGuardCommand;
+use App\Console\Commands\UpgradeWindowCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Http\Middleware\RefuseServingDuringManagedUpdate;
 use App\Http\Middleware\RefuseServingWhileErasuresAreOutstanding;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use App\Http\Middleware\RefuseUnreadableJson;
@@ -72,6 +75,7 @@ return Application::configure(basePath: dirname(__DIR__))
         HostUpdaterStatusCommand::class,
         MailTestCommand::class,
         MeasureAttachmentRetentionCommand::class,
+        ProtectiveBackupCommand::class,
         PruneCobrowseContentCommand::class,
         QueueAgentRealtimeEvictionsCommand::class,
         QueueConversationReplyDeliveriesCommand::class,
@@ -82,9 +86,14 @@ return Application::configure(basePath: dirname(__DIR__))
         SweepOrphanedAttachmentsCommand::class,
         TranslateCatalogueCommand::class,
         UpgradeGuardCommand::class,
+        UpgradeWindowCommand::class,
         UpdatePlanCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        // This operation-owned hold has no bypass cookies or excluded paths.
+        // Prepend it so no PHP request reaches session or route writers first.
+        $middleware->prepend(RefuseServingDuringManagedUpdate::class);
+
         // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
         // self-hosting env generator's --behind-proxy mode); everywhere else
         // this is null and no proxy is trusted.

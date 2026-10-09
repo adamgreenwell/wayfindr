@@ -18,6 +18,7 @@ use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\RestoreService;
 use App\Support\Queue\QueueConsumerHeartbeat;
 use App\Support\Settings\OperatorSettings;
+use App\Support\Updates\ManagedUpdateLease;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1766,7 +1767,7 @@ test('the restore job runs the archive and records success with a summary', func
     $backups = Mockery::mock(BackupService::class);
     $backups->shouldReceive('resolveLocalArchivePath')->andReturn('/backups/inst/x.tar.gz');
     $restores = Mockery::mock(RestoreService::class);
-    $restores->shouldReceive('restore')->once()->with('/backups/inst/x.tar.gz', true)->andReturn([
+    $restores->shouldReceive('restore')->once()->with('/backups/inst/x.tar.gz', true, Mockery::type(ManagedUpdateLease::class))->andReturn([
         'version_skew' => false,
         'archive_version' => '0.3.0',
         'running_version' => '0.3.0',
