@@ -145,8 +145,9 @@ protocol, journal, and enrollment regressions without enrolling a host.
 | `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
 | `test-self-host-classification.sh` | The installer preflight and the artifact guard classify actions identically. |
 | `test-self-host-release-resolution.sh` | Release discovery distinguishes a fully paginated, authoritative absence of a usable release tag from HTTP, transport, and unreadable-response failures without using the public network. |
-| `test_host_updater.py` | Durable idempotency, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
-| `test_updater_enrollment.py` | Trusted ownership and current controller, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
+| `test_host_updater.py` | Durable idempotency, actor/plan-bound start and cancellation, authoritative bounded history, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
+| `test_update_operator.py` | Exact plan/actor/request admission, cross-action replay refusal, concurrent start/cancel, safe cancellation seams, active-backup interruption, schema-boundary refusal, and immutable bounded host history. |
+| `test_updater_enrollment.py` | Trusted ownership and current controller, pre-write application protocol probe, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
 | `test_update_apply_contract.py` | Root-only UUID admission, durable claims before workers, interrupted migration intent, receipt-bound completion, safe failure evidence, strict public fields and narrow configuration transition loading. |
 | `test_update_apply.py` | Continuous snapshot-to-verification fencing, checked source fallback, all target services, stale-origin refusal, no migration replay, partial creation reconciliation, and interrupted configuration promotion. |
 | `test_update_artifacts.py` | Independent release provenance, full migration history, OCI platform/index/config identity and refusal of malformed or conflicting artifacts. |
@@ -159,6 +160,15 @@ operation, or production installation is changed. macOS skips the Linux peer
 credential checks; both PHP CI database lanes run them on Linux. VM enrollment,
 systemd behavior, bind mounts, and reboot recovery still need independent
 disposable-VM qualification under issue #1115.
+
+`OperatorUpdateActionsTest` enables the real web CSRF middleware and exercises
+platform/tenant separation, recent password and MFA proof, stale credential and
+role changes, exact payload/plan binding, helper refusal and external ownership,
+maintenance refusal, and host-backed status/history when SQL audit writes fail.
+The unique nullable audit key deduplicates mirrored revisions; PostgreSQL's
+failed-query state is isolated with a savepoint. These fixtures do not perform
+an actual host enrollment, published-image update, provider write, restore or
+VM/reboot drill.
 
 ### Why the dotenv and classification checks are differential tests
 

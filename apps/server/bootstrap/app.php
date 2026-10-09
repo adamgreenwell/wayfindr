@@ -36,6 +36,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpFoundation\Response;
 
 // Secret-bearing values pass through framework and dependency call frames
 // that Wayfindr cannot annotate. Omitting arguments from every exception trace
@@ -129,8 +130,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // promises a 422 or a 404. Every test uses `getJson()`, which sets the
         // header, so the suite could never have shown it.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request): bool => $request->is('api/v1/*') || $request->expectsJson(),
+            fn (Request $request): bool => $request->is('api/v1/*', 'operator/updates', 'operator/updates/*') || $request->expectsJson(),
         );
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+            if ($request->is('operator/updates', 'operator/updates/*')) {
+                $response->headers->set('Cache-Control', 'no-store');
+            }
+
+            return $response;
+        });
 
         // On a validation failure Laravel flashes the request input to the
         // session as old input. Keep operator secrets (storage, integrations,

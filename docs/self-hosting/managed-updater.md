@@ -10,12 +10,100 @@ writers, take and independently verify a protective backup, retain private
 recovery material, then check and resume the same services. The `0.3` helper also
 supports root-only `apply` and `recover-apply` for a prepared release, with
 independent artifact verification, a fresh continuous protective hold, explicit
-migrations, and verified serving evidence. Its advertised application
-capabilities remain `plan` and `status`; application-triggered upgrades and their
-operator authorization belong to the next slice.
+migrations, and verified serving evidence. The `0.4` helper adds bounded
+operator `start`, `history`, and `cancel` requests, with exact approved-plan,
+request, and numeric actor identities retained in its journal. Recovery remains
+an explicit root-only terminal action.
 
 These changes are development slices awaiting release and VM qualification.
 They have not been qualified as a production update mechanism.
+
+## Operator action contract
+
+U6 adds JSON endpoints under `/operator/updates`. The review/progress interface
+is a separate U7 slice; these endpoints alone do not add an Update button.
+
+Every endpoint requires a current, active platform operator, the existing
+authenticated-session and MFA policy checks, and the normal web CSRF protection
+for POSTs. Tenant owner/admin/agent permissions cannot authorize an instance
+update. Mutations require a password proof from the previous five minutes,
+plus a fresh TOTP or recovery code when MFA is enrolled. The proof belongs to
+the current operator and password/MFA version; credential or MFA changes
+invalidate it. Accounts without a usable local password need a local platform
+operator for this first contract.
+
+| Method | Path after `/operator/updates` | Input and behavior |
+| --- | --- | --- |
+| GET | `/` | Observe ownership, authenticated helper capabilities, execution eligibility, and manual guidance. |
+| POST | `/reauthenticate` | `current_password`, and `one_time_code` when MFA is enrolled; return a short-lived session proof. |
+| POST | `/plan`, `/recheck` | Canonical stable `release_tag` and UUID `request_id`; prepare asynchronously. Recheck creates a fresh operation without changing earlier history. |
+| GET | `/{operation}/review` | Build the full public release review and local guard evidence; its fingerprint must match the prepared host plan. |
+| POST | `/{operation}/start` | Lowercase 64-hex `plan_id` and UUID `request_id`; the server supplies the operator ID and rechecks the reviewed plan before host admission. |
+| POST | `/{operation}/cancel` | The same plan/request binding; request cancellation only while the host can still prove no schema intent. |
+| GET | `/status` | Optional UUID `operation_id`; reconcile the authoritative host snapshot. |
+| GET | `/history` | Bounded `cursor`/`limit` operation page with journal revision. Restart pagination if that revision changes. |
+| GET | `/{operation}/events` | Bounded `cursor`/`limit` redacted host events. |
+
+Unknown executable inputs, paths, image selectors, actor claims, and extra
+fields are refused. POSTs accept the normal CSRF `_token`, never an authority
+claim. Requests use exact stable tags rather than `latest`. Responses and
+errors are JSON with `Cache-Control: no-store`. An unavailable or incompatible
+helper and explicit external/hosting ownership cannot enable managed execution.
+Old preparation/status helper versions remain observable without gaining start
+authority. New enrollment probes the application's static protocol contract
+before writing host credentials or services. The staged target must satisfy
+that same fixed PHP-only protocol probe before migration admission, so an older
+application cannot complete an update and silently lose its operator controls.
+
+Start and cancellation admission receipts bind operation, reviewed plan,
+request UUID, numeric actor ID, timestamp, and host event revision. Identical
+retries reconcile the same admission; changing the target, actor, operation, or
+action under an already used request UUID is a conflict. The helper commits
+admission before scheduling execution. A duplicate start does not rerun a plan
+against an already replaced source.
+
+Cancellation is a cooperative request, not an immediate success. Download and
+protection stop at safe seams; migration intent and cancellation compete under
+the same journal mutex. Once migration intent wins, cancellation is refused and
+only explicit root recovery is available. A `cancelled` outcome requires the
+old services, release, configured origin, and released hold to be verified.
+Interruption or unknown settlement retains `recovery_required` instead of
+claiming cancellation completed.
+
+The global managed-update hold still returns HTTP 503 before session or route
+writers, including these endpoints. During that window the browser retains its
+last observed state and reconnects after the app returns. Root can inspect the
+helper and request pre-migration cancellation from the terminal; a browser
+disconnect never cancels an update.
+
+Inspect the root-owned history even while the app is unavailable:
+
+```bash
+sudo wayfindr-updater history --cursor 0 --limit 20 --json
+```
+
+For an active operation before migration intent, root can request cancellation
+using its retained plan and a fresh request UUID. Supply the local operator's
+numeric ID for attribution:
+
+```bash
+sudo wayfindr-updater cancel --operation <operation-uuid> --plan-id <approved-plan-id> \
+  --request-id <fresh-request-uuid> --actor-id <operator-id>
+sudo wayfindr-updater status --operation <operation-uuid> --json
+```
+
+Acceptance only means the request was recorded. Observe `cancelled` and the
+verified source evidence separately; `recovery_required` needs the existing
+explicit recovery workflow.
+
+The host journal is authoritative even if application audit records disappear.
+When available, status/history reads mirror validated host events into global
+`audit_events` with a unique installation/operation/revision key. The mirror
+records only numeric actors, release identities, approved plan, redacted
+evidence, phases and outcome. It includes no passwords, keys, operator names or
+customer support content, and no tenant account/site ownership. Failed mirror
+writes are reported separately and never repeat a host admission. Reads after
+the web process returns reconcile from the same retained host operation.
 
 Existing terminal updates and Docker, source, host PHP, and deployment-platform
 installations acquire no systemd or helper requirement. The base Compose file
@@ -431,7 +519,7 @@ helper replacement, credential rotation, or unenrollment command;
 those operations require a separate ownership-aware implementation. Do not
 delete an enrollment marker or journal to clear an interrupted operation.
 
-Existing `0.1` preparation and `0.2` protection journal records remain readable.
+Existing `0.1` preparation, `0.2` protection and `0.3` apply journal records remain readable.
 New enrollment requires the additional application commands and a recorded hash
 of the reviewed overlay. Re-running enrollment cannot upgrade an older enrollment in place or
 replace its helper files. Its separate replacement/unenrollment workflow has
@@ -443,6 +531,8 @@ qualify this systemd service, Unix-socket mounts, host UID mapping, or VM reboot
 behavior on a real VM. That independent qualification belongs to
 [#1115](https://github.com/adamgreenwell/wayfindr/issues/1115).
 
-Tracked delivery: [#1110](https://github.com/adamgreenwell/wayfindr/issues/1110) and
-[#1111](https://github.com/adamgreenwell/wayfindr/issues/1111) in
+Tracked delivery: [#1110](https://github.com/adamgreenwell/wayfindr/issues/1110),
+[#1111](https://github.com/adamgreenwell/wayfindr/issues/1111),
+[#1112](https://github.com/adamgreenwell/wayfindr/issues/1112) and
+[#1113](https://github.com/adamgreenwell/wayfindr/issues/1113) in
 [the managed-update epic](https://github.com/adamgreenwell/wayfindr/issues/1107).
