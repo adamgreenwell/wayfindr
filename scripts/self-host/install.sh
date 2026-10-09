@@ -31,6 +31,9 @@ TAGS_API="https://api.github.com/repos/adamgreenwell/wayfindr/tags?per_page=100"
 # The first release that publishes a release-manifest.json asset (ADR 0013).
 # Below this a missing manifest is the truth; at or above it, it is a fault.
 MANIFEST_CONTRACT_FROM="0.1.0"
+# Staged updater protocol; older release installers must not take control.
+WAYFINDR_UPGRADE_PROTOCOL=1
+ACTIVE_IMAGE_ID=""
 REF=""
 IMAGE_TAG=""
 PRERELEASE=0
@@ -148,7 +151,7 @@ env_interpolated() {
 # release this can look up.
 is_official_image() {
     case "$1" in
-        ghcr.io/adamgreenwell/wayfindr:*) return 0 ;;
+        ghcr.io/adamgreenwell/wayfindr:*|ghcr.io/adamgreenwell/wayfindr@sha256:*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -643,8 +646,21 @@ resolve_release() {
 # The prefix is captured and put back rather than normalised away, because an
 # `export` there may be load-bearing for whatever else sources this file.
 set_image() {
-    sed -i.bak -E "s#^([[:space:]]*(export[[:space:]]+)?)WAYFINDR_IMAGE=.*#\1WAYFINDR_IMAGE=$1#" "$ENV_FILE"
-    rm -f "$ENV_FILE.bak"
+    # Do not interpolate an operator's image reference into a sed program.
+    # Replace all assignments (the last one wins) and append if it was absent.
+    awk -v image="$1" '
+        /^[[:space:]]*(export[[:space:]]+)?WAYFINDR_IMAGE=/ {
+            prefix = $0
+            sub(/WAYFINDR_IMAGE=.*/, "", prefix)
+            print prefix "WAYFINDR_IMAGE=" image
+            found = 1
+            next
+        }
+        { print }
+        END { if (!found) print "WAYFINDR_IMAGE=" image }
+    ' "$ENV_FILE" > "$ENV_FILE.new"
+    cat "$ENV_FILE.new" > "$ENV_FILE"
+    rm -f "$ENV_FILE.new"
 }
 
 pin_image() {
@@ -660,8 +676,8 @@ pin_image() {
         printf '    %s\n' "$configured"
         printf '    Rewriting it would replace the expression with a literal tag.\n'
         printf '    Update it yourself to pin %s.\n' "$IMAGE_TAG"
-    elif [ -n "$IMAGE_TAG" ] && is_official_image "$configured"; then
-        set_image "ghcr.io/adamgreenwell/wayfindr:$IMAGE_TAG"
+    elif is_official_image "$configured"; then
+        set_image "ghcr.io/adamgreenwell/wayfindr:${IMAGE_TAG:-latest}"
     fi
 }
 
@@ -825,7 +841,7 @@ php_in_current_image() {
     #
     # A missing image makes the probe fail, which reads as "this image cannot
     # evaluate the preflight" and skips. That is the right answer: it cannot.
-    WAYFINDR_IMAGE="${INSTALLED_IMAGE:-${WAYFINDR_IMAGE:-}}" \
+    WAYFINDR_IMAGE="${ACTIVE_IMAGE_ID:-${INSTALLED_IMAGE:-${WAYFINDR_IMAGE:-}}}" \
         compose run --rm --no-deps --pull never -T ${env_args[@]+"${env_args[@]}"} \
         --entrypoint php web -r "$code" 2>/dev/null
 }
@@ -1065,10 +1081,16 @@ upgrade_preflight() {
         # (registry:5000/wayfindr) is not mistaken for a tag.
         local image_name
         image_name="${effective_image##*/}"
+        image_name="${image_name%%@*}"
 
         case "$image_name" in
             *:*) to="${image_name##*:}" ;;
-            *) to="" ;;
+            *)
+                case "$effective_image" in
+                    ghcr.io/adamgreenwell/wayfindr@*) to="${IMAGE_TAG:-}" ;;
+                    *) to="" ;;
+                esac
+                ;;
         esac
 
         to="${to#v}"
@@ -1908,7 +1930,7 @@ require_runnable_image() {
 compose() {
     # The compose file pins the project name (wayfindr-self-hosting), so
     # repeated runs and upgrades always converge on the same stack.
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+    docker compose --project-directory "$TARGET_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 fetch() {
@@ -1921,49 +1943,503 @@ fetch() {
     fi
 }
 
-if [ "$UPGRADE" = "1" ]; then
-    [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ] || die "No install found in $TARGET_DIR (use --dir to point at it)."
-    resolve_release
-    say "Refreshing stack files at $REF."
-    fetch docker/self-hosting/compose.yml "$COMPOSE_FILE"
+# The candidate must be identified before active files or services change.
+# Root owns the scratch directory and the Compose file/env selection.
+upgrade_identity_failed() {
+    printf 'Upgrade identity: %s\n' "$*" >&2
+    return 1
+}
 
-    # Hand off to the version we just downloaded, BEFORE anything is pulled.
-    #
-    # Without this the upgrade refreshes install.sh on disk and then carries on
-    # in the already-parsed process, so a preflight shipped in the new script
-    # would sit there unrun while the release it was written to guard is pulled
-    # and started. Re-execing is also the only safe way to overwrite a script
-    # bash is still reading: bash reads incrementally, so replacing the file
-    # underneath a running process can make it resume at the wrong offset.
-    #
-    # WAYFINDR_HANDED_OFF guards the recursion. It is exported rather than passed
-    # as an argument so it cannot collide with the operator's own flags, and it
-    # is checked before the fetch so a hand-off never re-fetches.
-    if [ -z "${WAYFINDR_HANDED_OFF:-}" ]; then
-        fetch scripts/self-host/install.sh "$TARGET_DIR/install.sh.new"
-        chmod +x "$TARGET_DIR/install.sh.new"
-        mv "$TARGET_DIR/install.sh.new" "$TARGET_DIR/install.sh"
+upgrade_manifest_identity() {
+    # Published assets are canonical JSON. Validate the complete document and
+    # read only its top-level identity. Escaped top-level keys/identity values
+    # are refused rather than allowing a JSON decoder to see a different key.
+    LC_ALL=C awk '
+        function ws(    c) {
+            while (p <= n) {
+                c = substr(j, p, 1)
+                if (c != " " && c != "\t" && c != "\r" && c != "\n") break
+                p++
+            }
+        }
+        function str(    c, e, i) {
+            if (substr(j, p, 1) != "\"") return 0
+            p++; value = ""; escaped = 0
+            while (p <= n) {
+                c = substr(j, p++, 1)
+                if (c == "\"") return 1
+                if (index(controls, c)) return 0
+                if (c != "\\") { value = value c; continue }
+                escaped = 1; e = substr(j, p++, 1)
+                if (e == "u") {
+                    for (i = 0; i < 4; i++) if (substr(j, p + i, 1) !~ /^[0-9a-fA-F]$/) return 0
+                    p += 4
+                } else if (e !~ /^[\"\\\/bfnrt]$/) return 0
+            }
+            return 0
+        }
+        function arr(depth,    c) {
+            p++; ws()
+            if (substr(j, p, 1) == "]") { p++; return 1 }
+            while (p <= n) {
+                if (!val(depth + 1)) return 0
+                ws(); c = substr(j, p++, 1)
+                if (c == "]") return 1
+                if (c != ",") return 0
+                ws()
+            }
+            return 0
+        }
+        function obj(depth,    c, key, key_escaped) {
+            p++; ws()
+            if (substr(j, p, 1) == "}") { p++; return 1 }
+            while (p <= n) {
+                if (!str()) return 0
+                key = value; key_escaped = escaped
+                if (depth == 1 && key_escaped) return 0
+                ws(); if (substr(j, p++, 1) != ":") return 0
+                ws()
+                if (depth == 1 && (key == "version" || key == "commit")) {
+                    if (++seen[key] != 1 || !str() || escaped) return 0
+                    identity[key] = value
+                } else if (!val(depth + 1)) return 0
+                ws(); c = substr(j, p++, 1)
+                if (c == "}") return 1
+                if (c != ",") return 0
+                ws()
+            }
+            return 0
+        }
+        function val(depth,    c, tail, literal) {
+            if (depth > 64) return 0
+            ws(); c = substr(j, p, 1)
+            if (c == "{") return obj(depth)
+            if (c == "[") return arr(depth)
+            if (c == "\"") return str()
+            tail = substr(j, p)
+            if (match(tail, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+            if (substr(tail, 1, 4) == "true") literal = "true"
+            else if (substr(tail, 1, 5) == "false") literal = "false"
+            else if (substr(tail, 1, 4) == "null") literal = "null"
+            else return 0
+            p += length(literal); return 1
+        }
+        BEGIN { controls = "\001\002\003\004\005\006\007\010\011\012\013\014\015\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037" }
+        { if (NR > 1) j = j "\n"; j = j $0 }
+        END {
+            p = 1; n = length(j); ws()
+            if (substr(j, p, 1) != "{" || !obj(1)) exit 1
+            ws()
+            if (p <= n || seen["version"] != 1 || seen["commit"] != 1) exit 1
+            print identity["version"] "|" identity["commit"]
+        }
+    ' "$1"
+}
 
-        say "Handing off to the refreshed installer."
-        WAYFINDR_HANDED_OFF=1 exec "$TARGET_DIR/install.sh" "${WAYFINDR_ORIGINAL_ARGS[@]}"
+upgrade_fetch_identity_asset() {
+    local curl_status curl_exit=0
+    curl_status="$(curl -sSL -o "$2" -w '%{http_code}' "$1")" || curl_exit=$?
+    UPGRADE_ASSET_STATUS="$curl_status"
+    if [ "$curl_exit" -ne 0 ]; then
+        upgrade_identity_failed "Could not download $1 (curl exit $curl_exit)."
+        return 1
+    fi
+    case "$curl_status" in
+        200|404) return 0 ;;
+        *) upgrade_identity_failed "Could not download $1 (HTTP ${curl_status:-unknown})."; return 1 ;;
+    esac
+}
+
+upgrade_digest_expected() {
+    # Digest recording began in v0.9.0. A malformed version cannot grant the
+    # pre-contract exemption. No host version-comparison runtime is needed.
+    local version="${1#v}"
+    if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+        return 0
+    fi
+    [ "${#BASH_REMATCH[1]}" -lt 9 ] && [ "${#BASH_REMATCH[2]}" -lt 9 ] || return 0
+    [ "$((10#${BASH_REMATCH[1]}))" -gt 0 ] || [ "$((10#${BASH_REMATCH[2]}))" -ge 9 ]
+}
+
+prepare_upgrade_identity() {
+    local ref="$1" image="$2" scratch="$3" manifest_identity digest asset_base selected_tag selected_digest=""
+    EXPECTED_IMAGE="$image"
+    EXPECTED_IMAGE_ID=""
+    EXPECTED_IMAGE_DIGEST_REF=""
+    EXPECTED_VERSION=""
+    EXPECTED_COMMIT=""
+    EXPECTED_MANIFEST_FILE=""
+    UPGRADE_IDENTITY_DIR="$scratch"
+    UPGRADE_IDENTITY_KIND="custom"
+    UPGRADE_LOCAL_IMAGE=0
+    UPGRADE_IDENTITY_PROBE=""
+
+    [ -n "$image" ] || { upgrade_identity_failed 'The candidate image reference is empty.'; return 1; }
+    [ -d "$scratch" ] || { upgrade_identity_failed 'The identity scratch directory does not exist.'; return 1; }
+
+    # --source-dir is an explicit local-artifact rehearsal. A locally built
+    # image has no public digest, and must never trigger an implicit pull.
+    if [ -n "${SOURCE_DIR:-}" ]; then
+        UPGRADE_LOCAL_IMAGE=1
+        say "Using the explicitly selected local image; public release provenance is unavailable."
+        return 0
     fi
 
+    # An explicit official digest still has to prove the requested published
+    # release; it must not silently inherit the custom-image exemption.
+    case "$image" in
+        ghcr.io/adamgreenwell/wayfindr@*)
+            if is_release_tag "$ref"; then
+                image="ghcr.io/adamgreenwell/wayfindr:${ref#v}@${image#*@}"
+            fi
+            ;;
+    esac
+    case "$image" in
+        ghcr.io/adamgreenwell/wayfindr:*)
+            selected_tag="${image#ghcr.io/adamgreenwell/wayfindr:}"
+            if [[ "$selected_tag" = *@* ]]; then
+                selected_digest="${selected_tag#*@}"
+                selected_tag="${selected_tag%%@*}"
+            fi
+            # Floating official selectors provide the same reduced guarantees
+            # as custom images: freeze the pulled local ID, verify its bake,
+            # and do not claim that a Git ref names a published release.
+            if [ "$selected_tag" = latest ] || [[ "$selected_tag" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                [ -z "$selected_digest" ] || { upgrade_identity_failed 'Use an exact release tag with a published digest.'; return 1; }
+                say "Floating official image: public release provenance is unavailable; its prepared local identity will be verified."
+                return 0
+            fi
+            selected_tag="${selected_tag#v}"
+            if ! is_release_tag "$ref" || [ "$selected_tag" != "${ref#v}" ]; then
+                upgrade_identity_failed "The official image selection does not match stack ref $ref. Select the same exact release with --ref and WAYFINDR_IMAGE."
+                return 1
+            fi
+            ;;
+        *)
+            say "Using the explicitly selected custom image; public release provenance is unavailable and its baked identity will be verified."
+            return 0
+            ;;
+    esac
+
+    EXPECTED_VERSION="$ref"
+    UPGRADE_IDENTITY_KIND="legacy"
+    asset_base="https://github.com/adamgreenwell/wayfindr/releases/download/$ref"
+    if ! upgrade_fetch_identity_asset "$asset_base/release-manifest.json" "$scratch/release-manifest.json"; then return 1; fi
+    if [ "$UPGRADE_ASSET_STATUS" = "200" ]; then
+        if ! manifest_identity="$(upgrade_manifest_identity "$scratch/release-manifest.json")"; then
+            upgrade_identity_failed 'The published release manifest has malformed or ambiguous identity.'
+            return 1
+        fi
+        if [ "${manifest_identity%%|*}" != "${ref#v}" ]; then
+            upgrade_identity_failed "The published manifest does not identify requested release $ref."
+            return 1
+        fi
+        EXPECTED_COMMIT="${manifest_identity#*|}"
+        if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ && ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{64}$ ]]; then
+            upgrade_identity_failed 'The published manifest has no valid full source commit.'
+            return 1
+        fi
+        EXPECTED_MANIFEST_FILE="$scratch/release-manifest.json"
+    elif upgrade_digest_expected "$ref" || [[ "$ref" != v0.1.0-alpha.* ]]; then
+        upgrade_identity_failed "The published manifest for $ref is missing."
+        return 1
+    fi
+
+    if ! upgrade_fetch_identity_asset "$asset_base/release-image-digest.txt" "$scratch/release-image-digest.txt"; then return 1; fi
+    if [ "$UPGRADE_ASSET_STATUS" = "200" ]; then
+        digest="$(cat "$scratch/release-image-digest.txt")" || return 1
+        if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            upgrade_identity_failed 'The published image digest is malformed.'
+            return 1
+        fi
+        if [ -n "$selected_digest" ] && [ "$selected_digest" != "$digest" ]; then
+            upgrade_identity_failed 'The selected image digest does not match the requested published release.'
+            return 1
+        fi
+        EXPECTED_IMAGE_DIGEST_REF="ghcr.io/adamgreenwell/wayfindr@$digest"
+        EXPECTED_IMAGE="ghcr.io/adamgreenwell/wayfindr:${ref#v}@$digest"
+        UPGRADE_IDENTITY_KIND="published"
+    elif upgrade_digest_expected "$ref" || [ -n "$selected_digest" ]; then
+        upgrade_identity_failed "The published image digest for $ref is missing; refusing to use an unverified tag."
+        return 1
+    else
+        say "Release $ref predates published image digests; verifying its baked identity and capturing the local image ID."
+    fi
+}
+
+verify_prepared_image() {
+    local image="${1:-$EXPECTED_IMAGE}" image_id repo_digests candidate_version candidate_commit probe_dir probe_failed=0
+    if ! image_id="$(docker image inspect "$image" --format '{{.Id}}')"; then
+        upgrade_identity_failed "The prepared image $image is not available locally."
+        return 1
+    fi
+    if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        upgrade_identity_failed 'Docker did not return an unambiguous candidate image ID.'
+        return 1
+    fi
+    if [ "$UPGRADE_IDENTITY_KIND" = "published" ]; then
+        if ! repo_digests="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}')"; then
+            upgrade_identity_failed 'Could not inspect the prepared image digest.'
+            return 1
+        fi
+        if ! printf '%s\n' "$repo_digests" | grep -Fx "$EXPECTED_IMAGE_DIGEST_REF" >/dev/null; then
+            upgrade_identity_failed 'The local image does not carry the requested published digest.'
+            return 1
+        fi
+    fi
+
+    EXPECTED_IMAGE_ID="$image_id"
+    probe_dir="$UPGRADE_IDENTITY_DIR"
+    if ! UPGRADE_IDENTITY_PROBE="$(docker create --pull never --entrypoint /bin/true "$image_id")"; then
+        upgrade_identity_failed 'Could not create a stopped image-identity probe.'
+        return 1
+    fi
+    if [[ ! "$UPGRADE_IDENTITY_PROBE" =~ ^[0-9a-f]{12,64}$ ]]; then
+        upgrade_identity_failed 'Docker returned an invalid identity-probe container ID.'
+        return 1
+    fi
+    docker cp "$UPGRADE_IDENTITY_PROBE:/etc/wayfindr/version" "$probe_dir/image-version" || probe_failed=1
+    docker cp "$UPGRADE_IDENTITY_PROBE:/etc/wayfindr/commit" "$probe_dir/image-commit" || probe_failed=1
+    if [ -n "$EXPECTED_MANIFEST_FILE" ]; then
+        docker cp "$UPGRADE_IDENTITY_PROBE:/etc/wayfindr/release.json" "$probe_dir/image-release.json" || probe_failed=1
+    fi
+    if ! docker rm "$UPGRADE_IDENTITY_PROBE" >/dev/null; then
+        upgrade_identity_failed 'Could not remove the stopped identity probe.'
+        return 1
+    fi
+    UPGRADE_IDENTITY_PROBE=""
+    [ "$probe_failed" -eq 0 ] || { upgrade_identity_failed 'The image has no readable baked release identity.'; return 1; }
+    candidate_version="$(cat "$probe_dir/image-version")" || return 1
+    candidate_commit="$(cat "$probe_dir/image-commit")" || return 1
+    if [[ ! "$candidate_version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+        upgrade_identity_failed 'The prepared image has no identifiable baked version.'
+        return 1
+    fi
+    if [ -n "$candidate_commit" ] && [[ ! "$candidate_commit" =~ ^[0-9a-f]{40}$ && ! "$candidate_commit" =~ ^[0-9a-f]{64}$ ]]; then
+        upgrade_identity_failed 'The prepared image has an invalid baked source commit.'
+        return 1
+    fi
+    if [ -n "$EXPECTED_VERSION" ] && [ "$candidate_version" != "$EXPECTED_VERSION" ]; then
+        upgrade_identity_failed "The prepared image reports $candidate_version; requested $EXPECTED_VERSION."
+        return 1
+    fi
+    if [ -n "$EXPECTED_COMMIT" ] && [ "$candidate_commit" != "$EXPECTED_COMMIT" ]; then
+        upgrade_identity_failed 'The prepared image source commit does not match the published release.'
+        return 1
+    fi
+    if [ -n "$EXPECTED_MANIFEST_FILE" ] && ! cmp -s "$EXPECTED_MANIFEST_FILE" "$probe_dir/image-release.json"; then
+        upgrade_identity_failed 'The prepared image manifest does not match the published release manifest.'
+        return 1
+    fi
+    EXPECTED_VERSION="$candidate_version"
+    EXPECTED_COMMIT="$candidate_commit"
+    say "Verified prepared image $EXPECTED_VERSION (${EXPECTED_COMMIT:-source commit unavailable})."
+}
+
+verify_running_upgrade() {
+    local service ids cid running actual_image count identity
+    [ -n "$EXPECTED_IMAGE_ID" ] || { upgrade_identity_failed 'No verified image identity is available.'; return 1; }
+    for service in web queue backup-queue scheduler reverb; do
+        if ! ids="$(compose ps --all -q "$service")"; then
+            upgrade_identity_failed "Could not find the $service service."
+            return 1
+        fi
+        count=0
+        for cid in $ids; do
+            count=$((count + 1))
+            running="$(docker inspect -f '{{.State.Running}}' "$cid")" || return 1
+            actual_image="$(docker inspect -f '{{.Image}}' "$cid")" || return 1
+            if [ "$running" != "true" ] || [ "$actual_image" != "$EXPECTED_IMAGE_ID" ]; then
+                upgrade_identity_failed "The $service service is not running the verified requested image."
+                return 1
+            fi
+        done
+        [ "$count" -gt 0 ] || { upgrade_identity_failed "The $service service has no running container."; return 1; }
+    done
+    # Files describe the artifact; booted Laravel config describes what the
+    # operator console and backup machinery actually report. Nonempty old env
+    # overrides can still shadow the baked identity, and must not claim success.
+    if ! identity="$(compose exec -T web php -r '
+        require "vendor/autoload.php";
+        $app = require "bootstrap/app.php";
+        $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        echo (string) config("wayfindr.release.version"), "|", (string) config("wayfindr.release.commit");
+    ')"; then
+        upgrade_identity_failed 'Could not read the running application release identity.'
+        return 1
+    fi
+    if [ "$identity" != "$EXPECTED_VERSION|$EXPECTED_COMMIT" ]; then
+        upgrade_identity_failed 'The running application version or source commit differs from the verified image. Check WAYFINDR_VERSION and WAYFINDR_COMMIT overrides.'
+        return 1
+    fi
+}
+
+cleanup_upgrade() {
+    local status=$?
+    trap - EXIT
+    # Preparation can be undone. Once startup begins, migrations may have run:
+    # retain the recovery files and never claim an automatic database rollback.
+    if [ "${UPGRADE_PROMOTING:-0}" = 1 ] && [ "${UPGRADE_RESTARTING:-0}" = 0 ]; then
+        cp -p "$UPGRADE_RECOVERY/compose.yml" "$TARGET_DIR/compose.yml" || true
+        cp -p "$UPGRADE_RECOVERY/.env" "$TARGET_DIR/.env" || true
+        if [ -f "$UPGRADE_RECOVERY/install.sh" ]; then
+            cp -p "$UPGRADE_RECOVERY/install.sh" "$TARGET_DIR/install.sh" || true
+        else
+            rm -f "$TARGET_DIR/install.sh"
+        fi
+    fi
+    if [ -n "${UPGRADE_IDENTITY_PROBE:-}" ]; then
+        docker rm "$UPGRADE_IDENTITY_PROBE" >/dev/null 2>&1 || true
+    fi
+    if [ "${UPGRADE_KEEP_STAGE:-0}" != 1 ]; then
+        rm -rf "$UPGRADE_STAGE"
+    fi
+    if [ -n "${WAYFINDR_UPGRADE_PARENT_STAGE:-}" ] &&
+        [ "${WAYFINDR_UPGRADE_PARENT_STAGE%/*}" = "$TARGET_DIR" ]; then
+        case "${WAYFINDR_UPGRADE_PARENT_STAGE##*/}" in
+            .upgrade.*) rm -rf "$WAYFINDR_UPGRADE_PARENT_STAGE" ;;
+        esac
+    fi
+    if [ -f "$TARGET_DIR/.upgrade.lock/pid" ] &&
+        [ "$(cat "$TARGET_DIR/.upgrade.lock/pid")" = "$$" ]; then
+        rm -f "$TARGET_DIR/.upgrade.lock/pid"
+        rmdir "$TARGET_DIR/.upgrade.lock" || true
+    fi
+    if [ "$status" != 0 ] && [ "${UPGRADE_RESTARTING:-0}" = 1 ]; then
+        printf '\nUpgrade did not complete. Previous files and image identity: %s\n' "$UPGRADE_RECOVERY" >&2
+        printf 'Migrations may have run. Follow the recovery instructions before restoring an older image.\n' >&2
+    fi
+    exit "$status"
+}
+
+if [ "$UPGRADE" = "1" ]; then
+    [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ] || die "No install found in $TARGET_DIR (use --dir to point at it)."
+    TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+    COMPOSE_FILE="$TARGET_DIR/compose.yml"
+    ENV_FILE="$TARGET_DIR/.env"
+    export WAYFINDR_ENV_FILE="$ENV_FILE"
+    UPGRADE_STAGE="$(mktemp -d "$TARGET_DIR/.upgrade.XXXXXXXX")"
+    chmod 700 "$UPGRADE_STAGE"
+    UPGRADE_KEEP_STAGE=0
+    UPGRADE_PROMOTING=0
+    UPGRADE_RESTARTING=0
+    trap cleanup_upgrade EXIT
+    # Serialize terminal upgrades. A crashed process leaves an explicit lock
+    # for the operator to inspect; never guess that another updater is idle.
+    if mkdir -m 700 "$TARGET_DIR/.upgrade.lock" 2>/dev/null; then
+        printf '%s\n' "$$" > "$TARGET_DIR/.upgrade.lock/pid"
+    elif [ "${WAYFINDR_HANDED_OFF:-}" != 1 ] ||
+        [ "$(cat "$TARGET_DIR/.upgrade.lock/pid" 2>/dev/null || true)" != "$$" ]; then
+        die "Another upgrade owns $TARGET_DIR/.upgrade.lock. If an updater crashed, confirm it has stopped before removing that lock."
+    fi
+    resolve_release
+
+    say "Preparing stack files at $REF; active files remain in place."
+    fetch docker/self-hosting/compose.yml "$UPGRADE_STAGE/compose.yml"
+    fetch scripts/self-host/install.sh "$UPGRADE_STAGE/release-install.sh"
+    bash -n "$UPGRADE_STAGE/release-install.sh" || die "The downloaded installer is incomplete or invalid."
+    local_protocol="$(sed -n 's/^WAYFINDR_UPGRADE_PROTOCOL=//p' "$UPGRADE_STAGE/release-install.sh")"
+    case "$local_protocol" in
+        1)
+            if [ -z "${WAYFINDR_HANDED_OFF:-}" ]; then
+                say "Handing off to the staged installer with target $REF frozen."
+                WAYFINDR_HANDED_OFF=1 WAYFINDR_UPGRADE_PARENT_STAGE="$UPGRADE_STAGE" \
+                    exec bash "$UPGRADE_STAGE/release-install.sh" "${WAYFINDR_ORIGINAL_ARGS[@]}" --ref "$REF"
+            fi
+            cp "$UPGRADE_STAGE/release-install.sh" "$UPGRADE_STAGE/install.sh"
+            ;;
+        '')
+            # Application releases predating this protocol shipped an unsafe
+            # updater. Keep the hardened controller while their own artifact
+            # remains authoritative for migration requirements.
+            say "Keeping the hardened updater for this older release."
+            if [ -f "$0" ] && grep -q '^WAYFINDR_UPGRADE_PROTOCOL=1$' "$0"; then
+                cp "$0" "$UPGRADE_STAGE/install.sh"
+            else
+                curl -fsSL "$RAW_BASE_DEFAULT/main/scripts/self-host/install.sh" -o "$UPGRADE_STAGE/install.sh"
+            fi
+            ;;
+        *) die "This release needs a newer updater protocol. Use the current installer bootstrap before retrying." ;;
+    esac
+    bash -n "$UPGRADE_STAGE/install.sh" || die "The updater could not be prepared."
+    grep -q '^WAYFINDR_UPGRADE_PROTOCOL=1$' "$UPGRADE_STAGE/install.sh" \
+        || die "The updater does not support safe staged upgrades. Use the current bootstrap."
+    chmod 755 "$UPGRADE_STAGE/install.sh"
+
+    # Probe the concrete running image, even if its original tag has moved.
+    active_cid="$(compose ps -q web)"
+    if [ -n "$active_cid" ]; then
+        ACTIVE_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$active_cid")"
+        [ -n "$ACTIVE_IMAGE_ID" ] || die "Cannot identify the currently running image."
+    fi
     upgrade_preflight
 
+    cp -p "$ENV_FILE" "$UPGRADE_STAGE/.env"
+    COMPOSE_FILE="$UPGRADE_STAGE/compose.yml"
+    ENV_FILE="$UPGRADE_STAGE/.env"
+    export WAYFINDR_ENV_FILE="$ENV_FILE"
     migrate_env
     pin_image
-    say "Pulling the release image."
-    compose pull web || say "Pull failed; keeping the current image (pre-release or locally built installs)."
-    say "Restarting the stack (migrations run automatically)."
-    compose up -d
+    effective_image="${WAYFINDR_IMAGE:-$(env_value WAYFINDR_IMAGE)}"
+    [ -n "$effective_image" ] || effective_image="ghcr.io/adamgreenwell/wayfindr:${IMAGE_TAG:-latest}"
+    env_interpolated "$effective_image" \
+        && die "Resolve the interpolated image explicitly with WAYFINDR_IMAGE before upgrading. Active files are unchanged."
+    prepare_upgrade_identity "$REF" "$effective_image" "$UPGRADE_STAGE" \
+        || die "Could not verify the selected release metadata. Active files are unchanged."
+    export WAYFINDR_IMAGE="$EXPECTED_IMAGE"
+    set_image "$EXPECTED_IMAGE"
+    compose config --quiet || die "The candidate Compose configuration is invalid. Active files are unchanged."
+    if [ "$UPGRADE_LOCAL_IMAGE" = 1 ]; then
+        say "Using the explicitly selected local source image; no registry pull."
+    else
+        say "Pulling the selected image."
+        compose pull web || die "The selected image could not be pulled. Active files are unchanged; the running stack was not restarted."
+    fi
+    verify_prepared_image "$EXPECTED_IMAGE" \
+        || die "The downloaded image does not match the selected release. Active files are unchanged."
+    # Freeze execution even for mutable custom refs, while retaining their
+    # selector in .env for the next upgrade. Record the concrete ID in recovery.
+    # Official releases retain tag@digest and remain classifiable as official.
+    if [ "$UPGRADE_IDENTITY_KIND" != published ]; then
+        export WAYFINDR_IMAGE="$EXPECTED_IMAGE_ID"
+        say "Custom or legacy image: verifying the prepared local identity; published digest guarantees are unavailable."
+    else
+        export WAYFINDR_IMAGE="$EXPECTED_IMAGE"
+    fi
+    compose config --quiet || die "The pinned Compose configuration is invalid."
 
-    # Reported only once it is actually serving. Saying "complete" over a
-    # container that refused and stopped is the one outcome worse than the
-    # refusal itself, because it sends the operator away.
+    if [ "$NO_START" = 1 ]; then
+        UPGRADE_KEEP_STAGE=1
+        say "Upgrade prepared at $UPGRADE_STAGE. Active files and services are unchanged. Rerun without --no-start to upgrade."
+        exit 0
+    fi
+
+    UPGRADE_RECOVERY="$(mktemp -d "$TARGET_DIR/.upgrade-recovery.XXXXXXXX")"
+    chmod 700 "$UPGRADE_RECOVERY"
+    cp -p "$TARGET_DIR/compose.yml" "$UPGRADE_RECOVERY/compose.yml"
+    cp -p "$TARGET_DIR/.env" "$UPGRADE_RECOVERY/.env"
+    if [ -f "$TARGET_DIR/install.sh" ]; then
+        cp -p "$TARGET_DIR/install.sh" "$UPGRADE_RECOVERY/install.sh"
+    fi
+    cp "$UPGRADE_STAGE/release-install.sh" "$UPGRADE_RECOVERY/target-release-install.sh"
+    printf 'Previous running image: %s\nTarget ref: %s\nPrepared image: %s\nPrepared Docker identity: %s\n' \
+        "${ACTIVE_IMAGE_ID:-unknown}" "$REF" "$EXPECTED_IMAGE" "$EXPECTED_IMAGE_ID" > "$UPGRADE_RECOVERY/images.txt"
+    say "Previous configuration saved at $UPGRADE_RECOVERY."
+    UPGRADE_PROMOTING=1
+    mv "$UPGRADE_STAGE/compose.yml" "$TARGET_DIR/compose.yml"
+    mv "$UPGRADE_STAGE/.env" "$TARGET_DIR/.env"
+    mv "$UPGRADE_STAGE/install.sh" "$TARGET_DIR/install.sh"
+    COMPOSE_FILE="$TARGET_DIR/compose.yml"
+    ENV_FILE="$TARGET_DIR/.env"
+    export WAYFINDR_ENV_FILE="$ENV_FILE"
+    say "Restarting the stack (migrations run automatically)."
+    UPGRADE_RESTARTING=1
+    compose up -d --pull never
     if ! await_web_start; then
         exit 78
     fi
-
+    verify_running_upgrade || die "The serving stack does not match the prepared release."
+    UPGRADE_PROMOTING=0
     say "Upgrade complete."
     exit 0
 fi
