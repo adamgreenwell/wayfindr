@@ -168,6 +168,9 @@ class Engine(FIX.Engine):
     def oneoff(self, directory, operation, state, action):
         self.calls.append(action)
         assert self.held and not self.running
+        if action == "protocol":
+            self.trip("protocol")
+            return copy.deepcopy(APPLY.OPERATOR_CONTRACT)
         if action == "assess":
             self.trip("assessment")
         if action == "migrate":
@@ -212,7 +215,7 @@ class ApplyTests(unittest.TestCase):
         self.config = Config(value, FIX.HELPER.TOKEN)
         self.configpath = self.root / "installation.json"
         UP.atomic_write(self.configpath, value)
-        self.api = types.SimpleNamespace(**vars(FIX.API), Configuration=UP.Configuration, CONFIG=self.configpath, validate_journal=UP.validate_journal)
+        self.api = types.SimpleNamespace(**vars(FIX.API), Configuration=UP.Configuration, CONFIG=self.configpath, validate_journal=UP.validate_journal, JOURNAL_MAX=UP.JOURNAL_MAX)
         self.api.plan_facts = lambda *_: ("execution_not_available", {"source": SOURCE, "target": TARGET, "plan_id": "d" * 64})
         self.journalpath = self.root / "journal.json"
         UP.atomic_write(self.journalpath, UP.initial_journal(self.config.installation_id))
@@ -403,6 +406,12 @@ class ApplyTests(unittest.TestCase):
         original = self.journal.apply_checkpoint
         def interrupted(operation, checkpoint, facts, *args, **kwargs):
             if checkpoint == "migration_intent":
+                # Read a U5 interruption produced by its former private-first
+                # ordering; U6 now admits cancellation before private intent.
+                path = self.root / "apply" / operation / "state.json"
+                state = UP.read_object(path, 1_000_000, "recovery_required")
+                state["stage"] = "migration_intent"
+                UP.atomic_write(path, state)
                 raise KeyboardInterrupt()
             return original(operation, checkpoint, facts, *args, **kwargs)
         self.journal.apply_checkpoint = interrupted

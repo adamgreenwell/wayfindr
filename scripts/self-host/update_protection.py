@@ -542,8 +542,10 @@ class Protector:
 
     def capture(self, operation, *, retain_hold=False):
         """Capture a fresh recovery point; managed apply keeps original writers stopped."""
+        self.journal.check_cancel(operation)
         directory = self.root / "protection" / operation
         context, keys = self.baseline(operation)
+        self.journal.check_cancel(operation)
         parent = directory.parent
         if not parent.exists():
             parent.mkdir(mode=0o700)
@@ -555,22 +557,27 @@ class Protector:
         self.api.atomic_write(directory / "keys.json", keys)
         self.persist(directory, context, "fence_intent")
         self.api.atomic_write(directory / "image.yml", {"services": {"web": {"image": context["image"]}}})
+        self.journal.check_cancel(operation)
         self.engine.settled(context["containers"], operation)
         self.check_window(self.engine.window(context["containers"]["web"], operation, "enter"), operation, context["source"], True)
         self.journal.protection_checkpoint(operation, "fenced", {"phase": "draining", "hold_owned": True, "source_image_id": context["image"]})
+        self.journal.check_cancel(operation)
         self.persist(directory, context, "drain_intent")
         self.engine.drain(context["containers"], self.drain_seconds)
+        self.journal.check_cancel(operation)
         self.check_records(context, False)
         self.engine.writers(self.engine.dependencies())
         self.journal.protection_checkpoint(operation, "drained", {"phase": "backing_up"})
         self.persist(directory, context, "backup_intent")
         self.config.verify_files()
+        self.journal.check_cancel(operation)
         receipt = self.engine.backup(operation, context["image"], context)
         facts = self.custody(directory, operation, context, receipt)
         self.journal.protection_checkpoint(operation, "backup_verified", {"phase": "captured" if retain_hold else "resuming", "archive_sha256": receipt["archive_sha256"],
             "manifest_sha256": receipt["manifest_sha256"], "archive_bytes": receipt["archive_bytes"],
             "local_attachment_disks": facts["local_attachment_disks"], "external_attachment_disks": receipt["coverage"]["external_attachment_disks"],
             "offsite_uploaded": receipt["coverage"]["offsite_uploaded"], "offsite_verification": receipt["coverage"]["offsite_verification"], "custody_verified": True})
+        self.journal.check_cancel(operation)
         return context
 
     def __call__(self, operation, recovery=False):

@@ -178,6 +178,10 @@ def inspect_install(install_dir: Path, canonical_compose: Path, docker: list[str
     # into existing terminal updates.
     for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply"):
         run(compose + ["exec", "-T", "web", "php", "artisan", command, "--help"])
+    contract = run(compose + ["exec", "-T", "web", "php", "artisan", "wayfindr:updater-status", "--protocol-contract"], json_output=True)
+    expected = {"schema": 1, "protocol": 1, "minimum_helper_version": "0.4.0", "capabilities": ["plan", "status", "start", "history", "cancel"]}
+    if not isinstance(contract, dict) or contract != expected or type(contract.get("schema")) is not int or type(contract.get("protocol")) is not int:
+        raise EnrollmentError("The running application does not support the reviewed operator update protocol.")
     return image
 
 
@@ -250,7 +254,7 @@ def verify_started(runtime, installation_id: str, token: str) -> None:
             if set(response) != {"protocol", "installation_id", "nonce", "ok", "result"} or type(response["protocol"]) is not int or response["protocol"] != 1 or response["installation_id"] != installation_id or response["nonce"] != nonce or response["ok"] is not True:
                 raise EnrollmentError("The helper startup response is invalid.")
             capability = response["result"]
-            if not isinstance(capability, dict) or capability.get("installation_id") != installation_id or capability.get("ownership") != "installer-managed" or capability.get("enrolled") is not True or not isinstance(capability.get("helper"), dict) or capability["helper"].get("capabilities") != ["plan", "status"]:
+            if not isinstance(capability, dict) or capability.get("installation_id") != installation_id or capability.get("ownership") != "installer-managed" or capability.get("enrolled") is not True or not isinstance(capability.get("helper"), dict) or capability["helper"].get("capabilities") != ["plan", "status", "start", "history", "cancel"]:
                 raise EnrollmentError("The helper startup capability report is invalid.")
             offline = runtime.Journal(STATE_DIR / "journal.json", installation_id).status()
             if offline.get("installation_id") != installation_id or not runtime.is_uuid(offline.get("generation")):
@@ -424,7 +428,7 @@ def main() -> int:
     if result.get("activation_required"):
         print("Review compose.updater.yml, then activate it explicitly from the installation directory:", file=sys.stderr)
         print("  sudo docker --host unix:///var/run/docker.sock --config /etc/wayfindr-updater/docker compose --env-file .env -f compose.yml -f compose.updater.yml up -d web", file=sys.stderr)
-        print("Managed application updates remain unavailable; this helper only prepares and reports status.", file=sys.stderr)
+        print("Managed application updates require a compatible enrolled helper and authorized platform operator.", file=sys.stderr)
     return 0
 
 

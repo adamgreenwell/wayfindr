@@ -84,6 +84,7 @@ wiki-sync-dry-run: wiki-test
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
 host-updater-test:
 	python3 scripts/test_host_updater.py
+	python3 scripts/test_update_operator.py
 	python3 scripts/test_updater_enrollment.py
 	python3 scripts/test_update_protection.py
 	python3 scripts/test_update_artifacts.py

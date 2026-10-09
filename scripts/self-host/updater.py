@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 PROTOCOL = 1
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
 CREDENTIAL = Path("/etc/wayfindr-updater/credential.json")
@@ -47,13 +47,13 @@ PHASES |= {"protecting", "recovery_required"}
 CHECKPOINTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released"}
 EVENTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released", "protection_failed", "recovery_required", "recovery_started"}
 APPLY_ACTIVE_PHASES = {"downloading", "protecting", "applying", "restarting", "verifying"}
-TERMINAL_PHASES = {"blocked", "succeeded", "failed_safe"}
+TERMINAL_PHASES = {"blocked", "succeeded", "failed_safe", "cancelled"}
 APPLY_CHECKPOINTS = {"apply_started", "target_download_intent", "target_verified", "data_protected", "migration_intent", "migrations_verified", "target_restart_intent", "target_services_started", "runtime_verified", "configuration_commit_intent", "configuration_committed", "apply_release_intent", "serving_verified", "previous_serving_verified"}
 MUTATION_CHECKPOINTS = {"migration_intent", "migrations_verified", "target_restart_intent", "target_services_started", "runtime_verified", "configuration_commit_intent", "configuration_committed", "apply_release_intent", "serving_verified"}
-APPLY_ERRORS = {"apply_unavailable", "apply_failed", "apply_timeout", "download_failed", "artifact_invalid", "artifact_verification_failed", "platform_mismatch", "migration_failed", "migration_ambiguous", "runtime_verification_failed", "origin_verification_failed", "configuration_commit_failed", "protection_failed", "backup_failed", "backup_invalid", "custody_failed", "source_changed", "writer_unverified", "configuration_changed", "prerequisites_unmet", "recovery_required"}
-PHASES |= APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe"}
+APPLY_ERRORS = {"apply_unavailable", "apply_failed", "apply_timeout", "download_failed", "artifact_invalid", "artifact_verification_failed", "platform_mismatch", "migration_failed", "migration_ambiguous", "runtime_verification_failed", "origin_verification_failed", "configuration_commit_failed", "protection_failed", "backup_failed", "backup_invalid", "custody_failed", "source_changed", "writer_unverified", "configuration_changed", "prerequisites_unmet", "recovery_required", "cancel_requested", "cancelled"}
+PHASES |= APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe", "cancelled"}
 CHECKPOINTS |= APPLY_CHECKPOINTS
-EVENTS |= APPLY_CHECKPOINTS | {"apply_recovery_started", "succeeded", "failed_safe", "apply_failed"}
+EVENTS |= APPLY_CHECKPOINTS | {"apply_recovery_started", "succeeded", "failed_safe", "apply_failed", "operator_started", "cancel_requested", "cancelled"}
 ERRORS = {
     "authentication_failed", "request_invalid", "protocol_unsupported", "installation_mismatch",
     "replay_detected", "request_expired", "operation_busy", "idempotency_conflict",
@@ -64,6 +64,7 @@ ERRORS = {
     "protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout",
     "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed",
     "maintenance_present", "writer_unverified", "protection_verified",
+    "plan_mismatch", "cancel_unavailable",
 }
 ERRORS |= APPLY_ERRORS
 
@@ -155,6 +156,38 @@ def is_uuid(value: object) -> bool:
 
 def integer(value: object, minimum: int = 0) -> bool:
     return type(value) is int and value >= minimum
+
+
+def valid_actor(value):
+    return isinstance(value, dict) and set(value) == {"id"} and integer(value["id"], 1) and value["id"] <= 9_223_372_036_854_775_807
+
+
+def operator_state():
+    return {"prepare": None, "start": None, "cancel": None}
+
+
+def validate_operator(value, operation, requests):
+    if not isinstance(value, dict) or set(value) != set(operator_state()) or not any(value.values()):
+        raise Refusal("journal_corrupt")
+    for action, receipt in value.items():
+        if receipt is None:
+            continue
+        keys = {"actor", "at", "revision"} if action == "prepare" else {"actor", "at", "revision", "request_id", "plan_id"} | ({"state"} if action == "cancel" else set())
+        if not isinstance(receipt, dict) or set(receipt) != keys or not valid_actor(receipt["actor"]) or not integer(receipt["at"]) or not integer(receipt["revision"], 1) or receipt["revision"] > operation["revision"]:
+            raise Refusal("journal_corrupt")
+        if action != "prepare":
+            if not is_uuid(receipt["request_id"]) or receipt["request_id"] in requests or receipt["plan_id"] != operation["plan_id"] or "apply" not in operation:
+                raise Refusal("journal_corrupt")
+            requests.add(receipt["request_id"])
+        if action == "cancel" and (not isinstance(receipt["state"], str) or receipt["state"] not in {"requested", "completed"} or operation["mutation_started"]):
+            raise Refusal("journal_corrupt")
+        recorded = next((event for event in operation["events"] if isinstance(event, dict) and event.get("revision") == receipt["revision"]), None)
+        expected_event = {"prepare": "operation_accepted", "start": "operator_started", "cancel": "cancel_requested"}[action]
+        if recorded is not None and (recorded.get("code") != expected_event or recorded.get("at") != receipt["at"]):
+            raise Refusal("journal_corrupt")
+    completed = value["cancel"] is not None and value["cancel"]["state"] == "completed"
+    if completed != (operation["phase"] == "cancelled"):
+        raise Refusal("journal_corrupt")
 
 
 def strict_json(raw: bytes, reason: str = "request_invalid") -> dict:
@@ -258,24 +291,31 @@ def validate_journal(value: dict, installation_id: str) -> None:
         keys = {"operation_id", "request_id", "release_tag", "phase", "checkpoint", "executor_generation",
                 "executor_version", "mutation_started", "created_at", "updated_at", "revision", "error",
                 "source", "target", "plan_id", "events"}
-        if not isinstance(operation, dict) or set(operation) not in (keys, keys | {"protection"}, keys | {"protection", "apply"}) or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
+        shapes = (keys, keys | {"protection"}, keys | {"protection", "apply"})
+        if not isinstance(operation, dict) or set(operation) not in (*shapes, *(shape | {"operator"} for shape in shapes)) or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
             raise Refusal("journal_corrupt")
         if "protection" in operation:
             validate_protection(operation["protection"])
         if not is_uuid(operation["request_id"]) or operation["request_id"] in requests or not is_uuid(operation["executor_generation"]):
             raise Refusal("journal_corrupt")
         requests.add(operation["request_id"])
+        if "operator" in operation:
+            validate_operator(operation["operator"], operation, requests)
+        elif operation["phase"] == "cancelled":
+            raise Refusal("journal_corrupt")
         if not isinstance(operation["release_tag"], str) or TAG.fullmatch(operation["release_tag"]) is None or len(operation["release_tag"]) > 128:
             raise Refusal("journal_corrupt")
-        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", VERSION} or type(operation["mutation_started"]) is not bool:
+        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", "0.3.0", VERSION} or type(operation["mutation_started"]) is not bool:
             raise Refusal("journal_corrupt")
         if "apply" in operation:
             validate_apply(operation["apply"])
-            if operation["phase"] not in APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe", "recovery_required"} or operation["source"] is None or operation["target"] is None or operation["plan_id"] is None or operation["apply"]["migration_started"] != operation["mutation_started"]:
+            if operation["phase"] not in APPLY_ACTIVE_PHASES | {"succeeded", "failed_safe", "cancelled", "recovery_required"} or operation["source"] is None or operation["target"] is None or operation["plan_id"] is None or operation["apply"]["migration_started"] != operation["mutation_started"]:
                 raise Refusal("journal_corrupt")
             if operation["phase"] == "succeeded" and (operation["apply"]["phase"] != "verified" or not operation["mutation_started"] or operation["checkpoint"] != "serving_verified" or operation["error"] is not None or operation["protection"]["phase"] != "retained"):
                 raise Refusal("journal_corrupt")
-            if operation["phase"] == "failed_safe" and (operation["apply"]["phase"] != "fallback" or operation["checkpoint"] != "previous_serving_verified" or operation["mutation_started"] or operation["protection"]["hold_owned"]):
+            if operation["phase"] in {"failed_safe", "cancelled"} and (operation["apply"]["phase"] != "fallback" or operation["checkpoint"] != "previous_serving_verified" or operation["mutation_started"] or operation["protection"]["hold_owned"]):
+                raise Refusal("journal_corrupt")
+            if operation["phase"] == "cancelled" and (not operation["protection"]["services_recovered"] or operation["error"] != "cancelled" or operation["apply"]["error"] != "cancelled"):
                 raise Refusal("journal_corrupt")
             if operation["phase"] == "recovery_required" and operation["apply"]["phase"] != "recovery_required":
                 raise Refusal("journal_corrupt")
@@ -287,9 +327,9 @@ def validate_journal(value: dict, installation_id: str) -> None:
                 raise Refusal("journal_corrupt")
             if operation["checkpoint"] in MUTATION_CHECKPOINTS and not operation["mutation_started"]:
                 raise Refusal("journal_corrupt")
-            if operation["phase"] not in {"succeeded", "failed_safe"} and operation["apply"]["phase"] in {"verified", "fallback"}:
+            if operation["phase"] not in {"succeeded", "failed_safe", "cancelled"} and operation["apply"]["phase"] in {"verified", "fallback"}:
                 raise Refusal("journal_corrupt")
-        elif operation["mutation_started"] or operation["phase"] in (APPLY_ACTIVE_PHASES - {"protecting"}) | {"succeeded", "failed_safe"} or operation["checkpoint"] in APPLY_CHECKPOINTS:
+        elif operation["mutation_started"] or operation["phase"] in (APPLY_ACTIVE_PHASES - {"protecting"}) | {"succeeded", "failed_safe", "cancelled"} or operation["checkpoint"] in APPLY_CHECKPOINTS:
             raise Refusal("journal_corrupt")
         if any(not integer(operation[key]) for key in ("created_at", "updated_at", "revision")) or operation["revision"] > value["revision"]:
             raise Refusal("journal_corrupt")
@@ -364,7 +404,7 @@ class Configuration:
                     api = types.SimpleNamespace(Refusal=Refusal, trusted=trusted, read_object=read_object,
                                                 strict_json=strict_json, encoded=encoded,
                                                 validate_journal=validate_journal, Configuration=Configuration,
-                                                CONFIG=config, CREDENTIAL=credential, STATE_DIR=STATE_DIR)
+                                                CONFIG=config, CREDENTIAL=credential, STATE_DIR=STATE_DIR, JOURNAL_MAX=JOURNAL_MAX)
                     if module.verify_transition(result, STATE_DIR, api) is not True:
                         raise failure
                 except Exception:
@@ -399,7 +439,7 @@ class Configuration:
         architecture = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower(), "unknown")
         return {"ownership": "installer-managed", "installation_id": self.installation_id, "enrolled": True,
                 "platform": "linux", "architecture": architecture, "image_reference": self.value["image_reference"],
-                "helper": {"protocol": PROTOCOL, "version": VERSION, "capabilities": ["plan", "status"]},
+                "helper": {"protocol": PROTOCOL, "version": VERSION, "capabilities": ["plan", "status", "start", "history", "cancel"]},
                 "managed_policy": {}}
 
 
@@ -487,15 +527,28 @@ class Journal:
             value["heartbeat_at"] = int(time.time())
             self.commit(value)
 
-    def accept(self, request_id, tag, generation):
+    def request_owner(self, request_id):
+        for operation in self.value["operations"].values():
+            if operation["request_id"] == request_id:
+                return operation, "prepare", operation.get("operator", {}).get("prepare")
+            for action in ("start", "cancel"):
+                receipt = operation.get("operator", {}).get(action)
+                if receipt is not None and receipt["request_id"] == request_id:
+                    return operation, action, receipt
+        return None
+
+    def accept(self, request_id, tag, generation, actor=None):
         with self.mutex:
             if self.failed:
                 raise Refusal("journal_unavailable")
-            for operation in self.value["operations"].values():
-                if operation["request_id"] == request_id:
-                    if operation["release_tag"] != tag:
-                        raise Refusal("idempotency_conflict")
-                    return operation["operation_id"], False
+            if actor is not None and not valid_actor(actor):
+                raise Refusal("request_invalid")
+            previous = self.request_owner(request_id)
+            if previous is not None:
+                operation, action, receipt = previous
+                if action != "prepare" or operation["release_tag"] != tag or (receipt["actor"] if receipt else None) != actor:
+                    raise Refusal("idempotency_conflict")
+                return operation["operation_id"], False
             if self.value["active_operation"] is not None:
                 raise Refusal("operation_busy")
             if len(self.value["operations"]) >= OPERATIONS_MAX:
@@ -508,9 +561,14 @@ class Journal:
                          "executor_version": VERSION, "mutation_started": False, "created_at": now,
                          "updated_at": now, "revision": 0, "error": None, "source": None, "target": None,
                          "plan_id": None, "events": []}
+            if actor is not None:
+                operation["operator"] = {**operator_state(), "prepare": {"actor": copy.deepcopy(actor), "at": now}}
             value["active_operation"] = value["last_operation"] = operation_id
             value["operations"][operation_id] = operation
             self.event(value, operation, "operation_accepted")
+            if actor is not None:
+                operation["operator"]["prepare"]["revision"] = operation["revision"]
+                operation["operator"]["prepare"]["at"] = operation["updated_at"]
             self.commit(value)
             return operation_id, True
 
@@ -626,7 +684,7 @@ class Journal:
                 value["active_operation"] = None
             self.commit(value)
 
-    def claim_apply(self, operation_id, generation, recover=False):
+    def claim_apply(self, operation_id, generation, recover=False, *, operator_request=None):
         with self.mutex:
             if self.failed:
                 raise Refusal("journal_unavailable")
@@ -649,10 +707,73 @@ class Journal:
                 operation["apply"]["phase"] = "protecting"
             else:
                 operation.update(checkpoint="apply_started", error=None, apply=apply_state(), protection=protection_state())
+                if operator_request is not None:
+                    operation.setdefault("operator", operator_state())["start"] = copy.deepcopy(operator_request)
             value["active_operation"] = value["last_operation"] = operation_id
+            if operator_request is not None:
+                self.event(value, operation, "operator_started")
+                operation["operator"]["start"]["revision"] = operation["revision"]
+                operation["operator"]["start"]["at"] = operation["updated_at"]
             self.event(value, operation, "apply_recovery_started" if recover else "apply_started")
             self.commit(value)
             return True
+
+    def start(self, operation_id, plan_id, request_id, actor, generation):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            if operation_id not in self.value["operations"]:
+                raise Refusal("operation_missing")
+            operation = self.value["operations"][operation_id]
+            previous = self.request_owner(request_id)
+            if previous is not None:
+                owned, action, receipt = previous
+                if action != "start" or owned["operation_id"] != operation_id or receipt["plan_id"] != plan_id or receipt["actor"] != actor:
+                    raise Refusal("idempotency_conflict")
+                return False
+            if operation["plan_id"] != plan_id:
+                raise Refusal("plan_mismatch")
+            if "apply" in operation:
+                raise Refusal("apply_unavailable")
+            return self.claim_apply(operation_id, generation, operator_request={"request_id": request_id, "plan_id": plan_id,
+                "actor": copy.deepcopy(actor), "at": int(time.time())})
+
+    def cancel(self, operation_id, plan_id, request_id, actor):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            if operation_id not in self.value["operations"]:
+                raise Refusal("operation_missing")
+            operation = self.value["operations"][operation_id]
+            previous = self.request_owner(request_id)
+            if previous is not None:
+                owned, action, receipt = previous
+                if action != "cancel" or owned["operation_id"] != operation_id or receipt["plan_id"] != plan_id or receipt["actor"] != actor:
+                    raise Refusal("idempotency_conflict")
+                return False
+            if operation["plan_id"] != plan_id:
+                raise Refusal("plan_mismatch")
+            if (self.value["active_operation"] != operation_id or "apply" not in operation
+                    or operation["phase"] not in {"downloading", "protecting", "applying"} or operation["mutation_started"]
+                    or operation.get("operator", {}).get("cancel") is not None):
+                raise Refusal("cancel_unavailable")
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            operation.setdefault("operator", operator_state())["cancel"] = {"request_id": request_id, "plan_id": plan_id,
+                "actor": copy.deepcopy(actor), "at": int(time.time()), "state": "requested"}
+            self.event(value, operation, "cancel_requested")
+            operation["operator"]["cancel"]["revision"] = operation["revision"]
+            operation["operator"]["cancel"]["at"] = operation["updated_at"]
+            self.commit(value)
+            return True
+
+    def check_cancel(self, operation_id):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            operation = self.value["operations"][operation_id]
+            if operation.get("operator", {}).get("cancel") is not None and not operation["mutation_started"]:
+                raise Refusal("cancel_requested")
 
     def apply_checkpoint(self, operation_id, checkpoint, facts, mutation=False):
         with self.mutex:
@@ -668,6 +789,8 @@ class Journal:
                 raise Refusal("journal_corrupt")
             if operation["apply"]["error"] is not None and "error" in facts and facts["error"] is None:
                 raise Refusal("journal_corrupt")
+            if checkpoint == "migration_intent":
+                self.check_cancel(operation_id)
             operation["apply"].update(facts)
             if "hold_owned" in facts:
                 operation["protection"]["hold_owned"] = facts["hold_owned"]
@@ -694,12 +817,18 @@ class Journal:
             operation = value["operations"][operation_id]
             if value["active_operation"] != operation_id or "apply" not in operation:
                 raise Refusal("recovery_required")
-            if outcome not in {"succeeded", "failed_safe", "recovery_required"}:
+            if outcome not in {"succeeded", "failed_safe", "cancelled", "recovery_required"}:
                 raise Refusal("journal_corrupt")
             if reason is not None and reason not in APPLY_ERRORS:
                 reason = "apply_failed"
             operation.update(phase=outcome, error=None if outcome == "succeeded" else reason or "recovery_required")
-            operation["apply"].update(phase="verified" if outcome == "succeeded" else "fallback" if outcome == "failed_safe" else "recovery_required", error=None if outcome == "succeeded" else reason or "recovery_required")
+            operation["apply"].update(phase="verified" if outcome == "succeeded" else "fallback" if outcome in {"failed_safe", "cancelled"} else "recovery_required", error=None if outcome == "succeeded" else reason or "recovery_required")
+            if outcome == "cancelled":
+                receipt = operation.get("operator", {}).get("cancel")
+                if receipt is None or operation["mutation_started"]:
+                    raise Refusal("cancel_unavailable")
+                receipt["state"] = "completed"
+                operation["error"] = operation["apply"]["error"] = "cancelled"
             if outcome == "succeeded":
                 operation["protection"].update(phase="retained", services_recovered=False, hold_owned=False, error=None)
             if outcome != "recovery_required":
@@ -729,6 +858,18 @@ class Journal:
             remaining = [event for event in events if event["revision"] > cursor]
             selected = copy.deepcopy(remaining[:limit])
             return {"operation_id": operation_id, "events": selected, "next_cursor": selected[-1]["revision"] if selected else cursor, "has_more": len(remaining) > len(selected)}
+
+    def history(self, cursor=0, limit=20):
+        with self.mutex:
+            if self.failed:
+                raise Refusal("journal_unavailable")
+            if not integer(cursor) or cursor > OPERATIONS_MAX or not integer(limit, 1) or limit > 50:
+                raise Refusal("request_invalid")
+            ordered = sorted(self.value["operations"].values(), key=lambda item: (item["created_at"], item["operation_id"]), reverse=True)
+            selected = copy.deepcopy(ordered[cursor:cursor + limit])
+            return {"schema": 1, "installation_id": self.installation_id, "revision": self.value["revision"],
+                "active_operation": self.value["active_operation"], "cursor": cursor, "next_cursor": cursor + len(selected),
+                "has_more": cursor + len(selected) < len(ordered), "operations": selected}
 
 
 def plan_facts(plan: dict, tag: str, config: Configuration):
@@ -865,8 +1006,10 @@ class Controller:
         if action == "capabilities":
             expected = common
         elif action == "prepare":
-            expected = common | {"request_id", "release_tag"}
+            expected = common | {"request_id", "release_tag"} | ({"actor"} if "actor" in payload else set())
             if not is_uuid(payload.get("request_id")) or not isinstance(payload.get("release_tag"), str) or len(payload["release_tag"]) > 128 or TAG.fullmatch(payload["release_tag"]) is None:
+                raise Refusal("request_invalid")
+            if "actor" in payload and not valid_actor(payload["actor"]):
                 raise Refusal("request_invalid")
         elif action == "status":
             expected = common | ({"operation_id"} if "operation_id" in payload else set())
@@ -875,6 +1018,14 @@ class Controller:
         elif action == "logs":
             expected = common | {"operation_id", "cursor", "limit"}
             if not is_uuid(payload.get("operation_id")) or not integer(payload.get("cursor")) or not integer(payload.get("limit"), 1) or payload["limit"] > 100:
+                raise Refusal("request_invalid")
+        elif action == "history":
+            expected = common | {"cursor", "limit"}
+            if not integer(payload.get("cursor")) or payload["cursor"] > OPERATIONS_MAX or not integer(payload.get("limit"), 1) or payload["limit"] > 50:
+                raise Refusal("request_invalid")
+        elif action in {"start", "cancel"}:
+            expected = common | {"operation_id", "plan_id", "request_id", "actor"}
+            if not is_uuid(payload.get("operation_id")) or not is_uuid(payload.get("request_id")) or not isinstance(payload.get("plan_id"), str) or not HEX.fullmatch(payload["plan_id"]) or not valid_actor(payload.get("actor")):
                 raise Refusal("request_invalid")
         elif action in {"protect", "recover-protection", "apply", "recover-apply"}:
             if uid != 0:
@@ -905,6 +1056,17 @@ class Controller:
             return self.journal.status(payload.get("operation_id"))
         if action == "logs":
             return self.journal.logs(payload["operation_id"], payload["cursor"], payload["limit"])
+        if action == "history":
+            return self.journal.history(payload["cursor"], payload["limit"])
+        if action == "start":
+            self.config.verify_files()
+            created = self.journal.start(payload["operation_id"], payload["plan_id"], payload["request_id"], payload["actor"], self.generation)
+            if created:
+                self.workers.submit(self.apply, payload["operation_id"], False)
+            return self.journal.status(payload["operation_id"])
+        if action == "cancel":
+            self.journal.cancel(payload["operation_id"], payload["plan_id"], payload["request_id"], payload["actor"])
+            return self.journal.status(payload["operation_id"])
         if action in {"protect", "recover-protection"}:
             operation_id = payload["operation_id"]
             recover = action == "recover-protection"
@@ -919,7 +1081,7 @@ class Controller:
             if created:
                 self.workers.submit(self.apply, operation_id, recover)
             return self.journal.status(operation_id)
-        operation_id, created = self.journal.accept(payload["request_id"], payload["release_tag"], self.generation)
+        operation_id, created = self.journal.accept(payload["request_id"], payload["release_tag"], self.generation, payload.get("actor"))
         if created:
             self.workers.submit(self.work, operation_id, payload["release_tag"])
         return self.journal.status(operation_id)
@@ -973,7 +1135,7 @@ class Controller:
                                             strict_json=strict_json, atomic_write=atomic_write,
                                             read_object=read_object, encoded=encoded,
                                             Configuration=Configuration, CONFIG=CONFIG,
-                                            CREDENTIAL=CREDENTIAL, STATE_DIR=STATE_DIR, VERSION=VERSION,
+                                            CREDENTIAL=CREDENTIAL, STATE_DIR=STATE_DIR, VERSION=VERSION, JOURNAL_MAX=JOURNAL_MAX,
                                             plan_facts=plan_facts)
                 applier = module.Applier(self.config, self.journal, STATE_DIR, api)
             applier(operation_id, recovery=recover)
@@ -1096,11 +1258,20 @@ def main():
     logs.add_argument("--cursor", type=int, default=0)
     logs.add_argument("--limit", type=int, default=50)
     logs.add_argument("--json", action="store_true")
+    history = subparsers.add_parser("history")
+    history.add_argument("--cursor", type=int, default=0)
+    history.add_argument("--limit", type=int, default=20)
+    history.add_argument("--json", action="store_true")
     reconcile = subparsers.add_parser("reconcile")
     reconcile.add_argument("--operation", required=True)
     for action in ("protect", "recover-protection", "apply", "recover-apply"):
         command = subparsers.add_parser(action)
         command.add_argument("--operation", required=True)
+    cancel = subparsers.add_parser("cancel")
+    cancel.add_argument("--operation", required=True)
+    cancel.add_argument("--plan-id", required=True)
+    cancel.add_argument("--request-id", required=True)
+    cancel.add_argument("--actor-id", type=int, required=True)
     args = parser.parse_args()
     try:
         if sys.version_info < (3, 11) or sys.platform != "linux" or os.geteuid() != 0:
@@ -1111,8 +1282,13 @@ def main():
         # Recovery reads depend on trusted enrollment identity, not a healthy
         # application or unchanged Compose/.env files. Execution still verifies.
         config = Configuration.load(verify_install=args.action == "serve")
-        if args.action in {"protect", "recover-protection", "apply", "recover-apply"}:
-            result = root_request(config, args.action, operation_id)
+        if args.action in {"protect", "recover-protection", "apply", "recover-apply", "cancel"}:
+            extra = {}
+            if args.action == "cancel":
+                if not HEX.fullmatch(args.plan_id) or not is_uuid(args.request_id) or not valid_actor({"id": args.actor_id}):
+                    raise Refusal("request_invalid")
+                extra = {"plan_id": args.plan_id, "request_id": args.request_id, "actor": {"id": args.actor_id}}
+            result = root_request(config, args.action, operation_id, **extra)
             print(encoded(result).decode())
         elif args.action in {"serve", "reconcile"}:
             with HostLock(STATE_DIR / "helper.lock"):
@@ -1124,7 +1300,9 @@ def main():
                     print(encoded(journal.status(operation_id)).decode())
         else:
             journal = Journal(STATE_DIR / "journal.json", config.installation_id)
-            if args.action == "logs":
+            if args.action == "history":
+                result = journal.history(args.cursor, args.limit)
+            elif args.action == "logs":
                 if args.cursor < 0 or not 1 <= args.limit <= 100:
                     raise Refusal("request_invalid")
                 result = journal.logs(operation_id, args.cursor, args.limit)
@@ -1138,11 +1316,11 @@ def main():
         return 1
 
 
-def root_request(config, action, operation_id):
+def root_request(config, action, operation_id, **extra):
     trusted(SOCKET, socket_node=True)
     payload = {"protocol": PROTOCOL, "installation_id": config.installation_id,
                "nonce": uuid.uuid4().hex, "issued_at": int(time.time()),
-               "action": action, "operation_id": operation_id}
+               "action": action, "operation_id": operation_id, **extra}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(5)
         connection.connect(str(SOCKET))

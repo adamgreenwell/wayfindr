@@ -95,7 +95,7 @@ class EnrollmentTests(unittest.TestCase):
             with self.assertRaises(ENROLL.EnrollmentError):
                 ENROLL.verify_process_identity(pid)
 
-    def installation_fixture(self, *, image=IMAGE, security=None, old_app=False, missing_command=None, service_mutation=None):
+    def installation_fixture(self, *, image=IMAGE, security=None, old_app=False, missing_command=None, service_mutation=None, protocol_contract=None):
         services = {name: {"image": image} for name in ENROLL.APP_SERVICES}
         if service_mutation:
             services["queue"].update(service_mutation)
@@ -118,6 +118,8 @@ class EnrollmentTests(unittest.TestCase):
                 if (old_app and command[-2] == "wayfindr:update-plan") or command[-2] == missing_command:
                     raise ENROLL.EnrollmentError("Command is unavailable")
                 return "Read-only update plan"
+            if command[-2:] == ["wayfindr:updater-status", "--protocol-contract"]:
+                return protocol_contract if protocol_contract is not None else {"schema": 1, "protocol": 1, "minimum_helper_version": "0.4.0", "capabilities": ["plan", "status", "start", "history", "cancel"]}
             raise AssertionError("Unexpected synthetic Docker command")
         return runner, calls
 
@@ -131,7 +133,8 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual([
             ["exec", "-T", "web", "php", "artisan", command, "--help"]
             for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup", "wayfindr:managed-apply")
-        ], [command[-7:] for command in calls[-4:]])
+        ], [command[-7:] for command in calls[-5:-1]])
+        self.assertEqual(["wayfindr:updater-status", "--protocol-contract"], calls[-1][-2:])
         self.assertTrue(all("up" not in command and "pull" not in command for command in calls))
         runner, _ = self.installation_fixture(old_app=True)
         with self.assertRaises(ENROLL.EnrollmentError):
@@ -143,6 +146,16 @@ class EnrollmentTests(unittest.TestCase):
                 runner, calls = self.installation_fixture(missing_command=command)
                 self.inspect(runner)
             self.assertEqual([command, "--help"], calls[-1][-2:])
+            self.assertTrue(all("up" not in call and "pull" not in call and "run" not in call for call in calls))
+
+    def test_old_or_unknown_app_protocol_refuses_before_enrollment_side_effects(self):
+        good = {"schema": 1, "protocol": 1, "minimum_helper_version": "0.4.0", "capabilities": ["plan", "status", "start", "history", "cancel"]}
+        for contract in ({}, {**good, "schema": True}, {**good, "protocol": True}, {**good, "protocol": 2},
+                         {**good, "minimum_helper_version": "0.3.0"}, {**good, "capabilities": ["plan", "status"]},
+                         {**good, "command": "untrusted"}, {**good, "capabilities": ["plan", "status", "start", "history", "cancel", "recover"]}):
+            with self.subTest(contract=contract), self.assertRaises(ENROLL.EnrollmentError):
+                runner, calls = self.installation_fixture(protocol_contract=contract)
+                self.inspect(runner)
             self.assertTrue(all("up" not in call and "pull" not in call and "run" not in call for call in calls))
 
     def test_custom_floating_prerelease_namespace_remap_and_mixed_services_refuse(self):
@@ -349,7 +362,7 @@ class EnrollmentTests(unittest.TestCase):
                 return struct.pack("3i", 42, peer_uid, 1000)
             def sendall(self, data):
                 request = runtime.unpack_envelope(data, token, "request")
-                self.reply = runtime.envelope({"protocol": 1, "installation_id": installation_id, "nonce": request["nonce"], "ok": True, "result": {"installation_id": installation_id, "ownership": "installer-managed", "enrolled": True, "helper": {"capabilities": ["plan", "status"]}}}, token, "response")
+                self.reply = runtime.envelope({"protocol": 1, "installation_id": installation_id, "nonce": request["nonce"], "ok": True, "result": {"installation_id": installation_id, "ownership": "installer-managed", "enrolled": True, "helper": {"capabilities": ["plan", "status", "start", "history", "cancel"]}}}, token, "response")
                 if corrupt_mac:
                     envelope = json.loads(self.reply)
                     envelope["mac"] = "0" * 64

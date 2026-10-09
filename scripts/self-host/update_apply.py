@@ -42,6 +42,8 @@ STATE_KEYS = {"schema", "installation_id", "operation_id", "plan_id", "source", 
 RECEIPT_KEYS = {"schema", "operation_id", "plan_id", "phase", "target", "binding_sha256",
                 "manifest_sha256", "history_sha256", "migrations_sha256", "release_state_sha256",
                 "pending_migrations", "guards_clear", "database_verified", "redis_verified", "hold_owned"}
+OPERATOR_CONTRACT = {"schema": 1, "protocol": 1, "minimum_helper_version": "0.4.0",
+                     "capabilities": ["plan", "status", "start", "history", "cancel"]}
 
 
 def digest(raw):
@@ -74,7 +76,7 @@ def verify_transition(config, state_dir, api):
     precise old/new configuration pair and overlay bytes.
     """
     root = Path(state_dir)
-    journal = private_object(root / "journal.json", api, 4_000_000)
+    journal = private_object(root / "journal.json", api, api.JOURNAL_MAX)
     api.validate_journal(journal, config.installation_id)
     operation = journal["active_operation"]
     if operation is None:
@@ -235,9 +237,13 @@ class Engine:
             record = self.base.inspect(name)
             if record["image"] != state["artifacts"]["config_digest"] or record["state"].get("ExitCode") != 0 or self.base.oneoff_active(name):
                 raise self.api.Refusal("migration_ambiguous")
+        elif self.base.oneoff_active(name):
+            raise self.api.Refusal("recovery_required")
         return self.api.strict_json(raw, "migration_ambiguous" if action == "migrate" else "runtime_verification_failed")
 
     def command(self, operation, state, action, source=False):
+        if action == "protocol":
+            return ["artisan", "wayfindr:updater-status", "--protocol-contract"]
         target = state["source"] if source else state["target"]
         return ["artisan", "wayfindr:managed-apply", operation, "--action=" + action,
                 "--plan-id=" + state["plan_id"], "--target-version=" + target["version"], "--commit=" + target["commit"],
@@ -302,10 +308,22 @@ class Engine:
                 self.base.commands_settled(container)
         if self.base.oneoff_active("wayfindr-updater-migration-" + operation) or self.base.oneoff_active("wayfindr-updater-fence-" + operation):
             raise self.api.Refusal("recovery_required")
+        self.operator_commands_settled(operation)
         code, raw = self.api.capture(self.staged_compose(directory) + ["run", "--rm", "--no-deps", "--pull=never", "--entrypoint", "php", "--name", "wayfindr-updater-fence-" + operation, "-T", "web", "artisan", "wayfindr:upgrade-window", operation, "--action=enter", "--json"], timeout=30)
         if code != 0:
             raise self.api.Refusal("recovery_required")
         return self.api.strict_json(raw, "recovery_required")
+
+    def operator_commands_settled(self, operation):
+        # A killed Compose client cannot prove its PHP oneoff never started.
+        # Even a created/paused probe must settle before any fence is released.
+        for action in ("protocol", "assess", "receipt", "verify"):
+            if self.base.oneoff_active("wayfindr-updater-apply-" + action + "-" + operation):
+                raise self.api.Refusal("recovery_required")
+
+    def settled(self, ids, operation):
+        self.base.settled(ids, operation)
+        self.operator_commands_settled(operation)
 
 
 class Applier:
@@ -376,7 +394,7 @@ class Applier:
         public = self.journal.status(operation)["operation"]
         apply, protection = public["apply"], public["protection"]
         allowed = {"operation_accepted", "prepare_started", "plan_reported", "operation_blocked", "apply_started",
-                   "recovery_required", "apply_recovery_started", "apply_failed"}
+                   "recovery_required", "apply_recovery_started", "apply_failed", "operator_started", "cancel_requested"}
         # Only initial admission can lack state. No later missing file, erased
         # artifact, truncated event window, or missing backup implies no effects.
         if (public["checkpoint"] != "apply_started" or public["mutation_started"]
@@ -409,6 +427,7 @@ class Applier:
             self.fail("configuration_changed")
 
     def download(self, directory, operation, state):
+        self.journal.check_cancel(operation)
         self.config.verify_files()
         self.checkpoint(operation, "target_download_intent", phase="downloading")
         plan = self.engine.full_plan(state["source_context"]["containers"]["web"], state["target"]["tag"])
@@ -420,6 +439,7 @@ class Applier:
             self.fail("platform_mismatch")
         self.mkdir(directory / "artifacts")
         state["artifacts"] = self.artifacts.prepare(state["target"], plan, architecture, directory / "artifacts")
+        self.journal.check_cancel(operation)
         if state["artifacts"]["compose_sha256"] != state["old_config"]["compose_sha256"]:
             self.fail("configuration_changed")
         # Preserve the enrolled overlay's helper bind mounts exactly. Base
@@ -478,11 +498,18 @@ class Applier:
                 self.fail("migration_ambiguous")
             value = self.engine.oneoff(directory, operation, state, "receipt")
         else:
+            self.journal.check_cancel(operation)
+            contract = self.engine.oneoff(directory, operation, state, "protocol")
+            if (not isinstance(contract, dict) or contract != OPERATOR_CONTRACT
+                    or type(contract.get("schema")) is not int or type(contract.get("protocol")) is not int):
+                self.fail("apply_unavailable")
+            self.journal.check_cancel(operation)
             self.receipt(self.engine.oneoff(directory, operation, state, "assess"), operation, state, {"assessed"})
-            # BOTH intent records precede launch. A gap is held rather than
-            # inferring no schema writes from a missing receipt/container.
-            self.persist(directory, state, "migration_intent")
+            # Serialize cancellation against schema admission in the journal.
+            # Both durable intent records still precede launch; once admission
+            # wins, even a crash before private persistence stays ambiguous.
             self.checkpoint(operation, "migration_intent", phase="applying", migration_started=True, hold_owned=True)
+            self.persist(directory, state, "migration_intent")
             value = self.engine.oneoff(directory, operation, state, "migrate")
         self.receipt(value, operation, state, {"complete"})
         verified = self.receipt(self.engine.oneoff(directory, operation, state, "verify"), operation, state, {"verified"})
@@ -653,7 +680,8 @@ class Applier:
             self.persist(directory, state, "fallback")
             self.checkpoint(operation, "previous_serving_verified", phase="protecting", services_verified=True, origin_verified=True,
                             runtime_receipt_sha256=state["runtime_receipt_sha256"], hold_owned=False)
-            self.journal.apply_finish(operation, reason, "failed_safe")
+            cancelled = self.journal.status(operation)["operation"].get("operator", {}).get("cancel") is not None
+            self.journal.apply_finish(operation, "cancelled" if cancelled else reason, "cancelled" if cancelled else "failed_safe")
         except Exception:
             # Source serving was released only after baseline verification.
             # A failed final origin proof must regain the original fence, too.
@@ -686,6 +714,7 @@ class Applier:
                 self.fallback(directory, operation, state, public["apply"]["error"] or "apply_failed")
                 return
             if not recovery:
+                self.journal.check_cancel(operation)
                 self.download(directory, operation, state)
                 self.persist(directory, state, "protect_intent")
                 context = self.protector.capture(operation, retain_hold=True)
@@ -697,6 +726,7 @@ class Applier:
                 if sorted(self.engine.dependencies()) != state["dependencies"]:
                     self.fail("source_changed")
                 self.checkpoint(operation, "data_protected", phase="applying", hold_owned=True)
+                self.journal.check_cancel(operation)
             elif not public["mutation_started"]:
                 # Private intent preceded the public write; retain ambiguity.
                 self.checkpoint(operation, "migration_intent", phase="applying", migration_started=True, hold_owned=True)
