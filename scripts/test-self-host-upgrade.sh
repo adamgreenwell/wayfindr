@@ -378,6 +378,22 @@ if grep -E 'compose\|run\|' "$CASE_DIR/calls" | grep -vF "image=$WF_TEST_OLD_ID"
 fi
 ok 'one resolved release is prepared, activated, and verified'
 
+for marker_kind in file directory dangling-symlink; do
+    new_case "enrolled-$marker_kind" normal
+    case "$marker_kind" in
+        file) printf '33333333-3333-4333-8333-333333333333\n' > "$CASE_DIR/active/.updater-enrolled" ;;
+        directory) mkdir "$CASE_DIR/active/.updater-enrolled" ;;
+        dangling-symlink) ln -s "$CASE_DIR/absent" "$CASE_DIR/active/.updater-enrolled" ;;
+    esac
+    run_upgrade --ref v1.1.1
+    expect_failure
+    expect_unchanged
+    grep -qF 'enrolled with the host updater' "$CASE_DIR/output" || fail "enrolled-$marker_kind: helper ownership refusal is unclear"
+    [ ! -s "$CASE_DIR/calls" ] || fail "enrolled-$marker_kind: refusal allowed network or Docker access"
+    ! find "$CASE_DIR/active" -name '.upgrade.*' -print | grep -q . || fail "enrolled-$marker_kind: refusal created staging or an upgrade lock"
+    ok "an enrolled $marker_kind marker refuses terminal update before preparation"
+done
+
 new_case concurrent-lock concurrent-lock
 mkdir -m 700 "$CASE_DIR/active/.upgrade.lock"
 printf '999999\n' > "$CASE_DIR/active/.upgrade.lock/pid"

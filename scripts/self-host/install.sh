@@ -222,6 +222,15 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+# Enrolled installs have a host-owned operation journal and fixed config hashes.
+# Until the common apply engine exists, a terminal controller cannot participate
+# in that ownership protocol. Refuse any marker node, including a dangling
+# symlink, before downloads, staging, or Docker access.
+if [ "$UPGRADE" = 1 ] &&
+    { [ -e "$TARGET_DIR/.updater-enrolled" ] || [ -L "$TARGET_DIR/.updater-enrolled" ]; }; then
+    die "This installation is enrolled with the host updater. Terminal upgrades cannot bypass its operation ownership; managed apply is not available in this preparation-only helper."
+fi
+
 command -v docker >/dev/null 2>&1 || die "Docker is required. Install it from https://docs.docker.com/engine/install/ first."
 docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin is required (docker compose)."
 docker info >/dev/null 2>&1 || die "The Docker daemon is not reachable. Is it running, and can your user access it?"
