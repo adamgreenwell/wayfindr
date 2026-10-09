@@ -21,7 +21,8 @@ Use it with the runtime contract in
 - `docker-entrypoint.sh` — recreates the storage tree on (possibly empty)
   volumes and, when `WAYFINDR_AUTO_MIGRATE=1`, waits for the database and
   runs migrations. The compose web service opts in, so fresh installs and
-  upgrades converge without a manual `exec`.
+  upgrades converge without a manual `exec`. Any managed-update hold marker
+  suppresses automatic migrations while the original services recover.
 - `../../scripts/self-host/generate-env.sh` — creates a starter `.env`
   with fresh application, database, and Reverb secrets.
 - `../../scripts/smoke/self-host-compose.sh` — local end-to-end smoke
@@ -127,6 +128,34 @@ and set in the env file:
 WAYFINDR_ATTACHMENT_SCANNER=clamav
 WAYFINDR_CLAMAV_SOCKET=tcp://clamav:3310
 ```
+
+## Optional managed host updater
+
+The independent helper is an explicit enrollment for a reviewed root-owned
+installation on a Linux systemd VM. The base stack has no helper requirement or
+Docker daemon mount inside an application container. The optional updater
+overlay gives only web its authenticated status/preparation connection.
+
+The current development foundation adds a root-only protection rehearsal:
+hold new writes, gracefully drain all five original application services, take
+and independently verify a protective backup, retain private key/configuration
+and separate erasure-ledger material, and check recovery of those same services.
+It does not replace an image or apply migrations. A failed/uncertain drain stays
+held rather than forcing a job/request to finish. There is no TTL that clears
+an interrupted operation.
+
+Follow the compatibility, explicit enrollment, protection, and recovery steps in
+[`managed-updater.md`](../../docs/self-hosting/managed-updater.md). The changes
+await release and VM qualification; fetching a helper cannot add its required
+commands to an older published application image. Existing enrollments are
+preserved, and helper replacement/unenrollment is still a separate missing
+workflow. Terminal upgrades continue to work on unenrolled installations.
+
+Protective archives suppress retention pruning. Their remote mirror reports
+existence and byte size; external attachment binaries and independent offsite
+custody remain separate recovery dependencies. Root-only local protection
+material is never deleted automatically, and the erasure ledger must never be
+rolled back from an old snapshot.
 
 ## Smoke test
 

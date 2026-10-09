@@ -71,6 +71,7 @@ use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
+use App\Http\Controllers\OperatorUpdateController;
 use App\Http\Controllers\OperatorWebPushSettingsController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
@@ -517,6 +518,22 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     ->name('operator.')
     ->group(function (): void {
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
+        Route::prefix('updates')->name('updates.')->where([
+            'operation' => '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',
+        ])->group(function (): void {
+            Route::get('/', [OperatorUpdateController::class, 'capabilities'])->name('capabilities');
+            Route::get('/console', [OperatorUpdateController::class, 'index'])->name('index');
+            Route::get('/candidate', [OperatorUpdateController::class, 'candidate'])->middleware('throttle:10,1')->name('candidate');
+            Route::post('/reauthenticate', [OperatorUpdateController::class, 'reauthenticate'])->middleware('throttle:5,1')->name('reauthenticate');
+            Route::post('/plan', [OperatorUpdateController::class, 'plan'])->middleware('throttle:10,1')->name('plan');
+            Route::post('/recheck', [OperatorUpdateController::class, 'plan'])->middleware('throttle:10,1')->name('recheck');
+            Route::get('/status', [OperatorUpdateController::class, 'status'])->name('status');
+            Route::get('/history', [OperatorUpdateController::class, 'history'])->name('history');
+            Route::get('/{operation}/review', [OperatorUpdateController::class, 'review'])->name('review');
+            Route::get('/{operation}/events', [OperatorUpdateController::class, 'events'])->name('events');
+            Route::post('/{operation}/start', [OperatorUpdateController::class, 'start'])->middleware('throttle:10,1')->name('start');
+            Route::post('/{operation}/cancel', [OperatorUpdateController::class, 'cancel'])->middleware('throttle:10,1')->name('cancel');
+        });
         Route::get('/onboarding', OperatorOnboardingController::class)->name('onboarding');
         Route::get('/settings/mail', [OperatorMailSettingsController::class, 'edit'])
             ->name('settings.mail.edit');

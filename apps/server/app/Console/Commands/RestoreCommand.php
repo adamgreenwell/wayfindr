@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\Backup\PartialRestoreException;
 use App\Support\Backup\RestoreService;
+use App\Support\Updates\ManagedUpdateGate;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -17,6 +18,14 @@ class RestoreCommand extends Command
 
     public function handle(RestoreService $restores): int
     {
+        // Give a clear refusal before archive extraction or confirmation
+        // output. RestoreService also checks under its lifetime lease.
+        if (app(ManagedUpdateGate::class)->active()) {
+            $this->error('A managed update owns maintenance. Nothing was restored. Inspect the host updater operation first.');
+
+            return self::FAILURE;
+        }
+
         $archive = (string) $this->argument('archive');
 
         $this->info('Restoring Wayfindr from '.$archive);

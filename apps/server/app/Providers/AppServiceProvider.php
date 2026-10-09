@@ -29,7 +29,10 @@ use App\Support\Backup\PostgresDatabaseRestorer;
 use App\Support\DatabaseKey;
 use App\Support\Release\CheckRegistry;
 use App\Support\Release\UpgradeContext;
+use App\Support\Updates\ManagedUpdateGate;
+use App\Support\Updates\ManagedUpdateMaintenanceMode;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\MaintenanceMode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\Channels\DatabaseChannel;
@@ -50,6 +53,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // The host updater owns a separate durable hold. Laravel workers and
+        // scheduled tasks must see it even when ordinary maintenance is absent.
+        $this->app->extend(MaintenanceMode::class, fn (MaintenanceMode $ordinary): MaintenanceMode => new ManagedUpdateMaintenanceMode(
+            $ordinary, $this->app->make(ManagedUpdateGate::class),
+        ));
+
         // Agent alerts are stored under a lock shared with contact erasure, so
         // one raised just before an erasure cannot land just after it quoting
         // the person (ADR 0026 §1).
@@ -157,7 +166,8 @@ class AppServiceProvider extends ServiceProvider
      * (a conversation's public code), `token` (a password reset), `slug` (a
      * widget article), `path` (the framework's local-disk file route), and the
      * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
-     * Laravel's database notification, whose key is a UUID column.
+     * Laravel's database notification, whose key is a UUID column. `operation`
+     * is a canonical host-journal UUID constrained by the operator update group.
      *
      * Registered here rather than beside the routes because the router applies
      * a global pattern when a route is created, and this provider boots before

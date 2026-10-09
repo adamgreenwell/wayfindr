@@ -3,7 +3,10 @@
 namespace App\Support\Backup;
 
 use App\Models\BackupRun;
+use App\Support\Updates\ManagedUpdateGate;
+use App\Support\Updates\ManagedUpdateLease;
 use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -32,7 +35,7 @@ class BackupRunner
      */
     public const LOCK_KEY = 'wayfindr:backup';
 
-    public function __construct(private readonly BackupService $backups) {}
+    public function __construct(private readonly BackupService $backups, private readonly ?ManagedUpdateGate $updates = null) {}
 
     /**
      * Returns the backup result, or null when this run was skipped because
@@ -41,7 +44,62 @@ class BackupRunner
      *
      * @return array{path: string, size: int, manifest: array<string, mixed>, remote: array<string, string>|null}|null
      */
-    public function run(BackupRun $run, string $destination): ?array
+    public function run(BackupRun $run, string $destination, ?ManagedUpdateLease $lease = null): ?array
+    {
+        if ($lease !== null) {
+            $lease->assertNormal();
+
+            return $this->withBackupLock($run, $destination, null);
+        }
+
+        return $this->withLocks($run, $destination);
+    }
+
+    /** An operation-owned, synchronous backup; skipping is always a failure. */
+    public function runProtective(BackupRun $run, string $destination, string $operationId): array
+    {
+        return $this->withLocks($run, $destination, $operationId)
+            ?? throw new RuntimeException('protective_backup_busy');
+    }
+
+    private function withLocks(BackupRun $run, string $destination, ?string $operationId = null): ?array
+    {
+        try {
+            $gate = $this->updates ?? app(ManagedUpdateGate::class);
+            $lease = $operationId === null ? $gate->acquireNormal() : $gate->acquireProtective($operationId);
+        } catch (Throwable $exception) {
+            if ($operationId === null && isset($gate) && $this->ordinaryContention($gate, $exception)) {
+                $this->recordFailure($run, 'Skipped: another backup or restore was already running. Wait for it to finish, then run again.');
+
+                return null;
+            }
+
+            $this->recordFailure($run, $exception->getMessage());
+
+            throw $exception;
+        }
+
+        try {
+            return $this->withBackupLock($run, $destination, $operationId);
+        } finally {
+            $lease->release();
+        }
+    }
+
+    private function ordinaryContention(ManagedUpdateGate $gate, Throwable $exception): bool
+    {
+        if ($exception->getMessage() !== 'managed_update_busy') {
+            return false;
+        }
+
+        try {
+            return ! $gate->active();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function withBackupLock(BackupRun $run, string $destination, ?string $operationId): ?array
     {
         // The lock lifetime must exceed the longest a backup can take — for the
         // scheduled command that means its whole (untimed) run, not just the
@@ -65,11 +123,15 @@ class BackupRunner
         if (! $acquired) {
             $this->recordFailure($run, 'Skipped: another backup was already running. Wait for it to finish, then run again.');
 
+            if ($operationId !== null) {
+                throw new RuntimeException('protective_backup_busy');
+            }
+
             return null;
         }
 
         try {
-            return $this->perform($run, $destination);
+            return $this->perform($run, $destination, $operationId);
         } finally {
             // Releasing must never turn a finished backup into a failure:
             // perform() has already written the archive, uploaded, pruned, and
@@ -95,10 +157,12 @@ class BackupRunner
     /**
      * @return array{path: string, size: int, manifest: array<string, mixed>, remote: array<string, string>|null}
      */
-    private function perform(BackupRun $run, string $destination): array
+    private function perform(BackupRun $run, string $destination, ?string $operationId): array
     {
         try {
-            $result = $this->backups->create($destination);
+            $result = $operationId === null
+                ? $this->backups->create($destination)
+                : $this->backups->createProtective($destination, $operationId);
             $remote = $result['remote'] ?? null;
 
             if (is_array($remote) && isset($remote['error'])) {
@@ -111,10 +175,29 @@ class BackupRunner
                     'finished_at' => now(),
                 ]);
 
+                if ($operationId !== null) {
+                    throw new RuntimeException('protective_backup_offsite_failed');
+                }
+
                 return $result;
             }
 
-            $pruned = $this->backups->pruneExpired($destination, basename($result['path']));
+            if ($operationId !== null) {
+                $result['verification'] = app(BackupArchiveVerifier::class)->verify($result['path'], $result['manifest'], $operationId);
+                $fixed = rtrim($destination, '/').'/archive.tar.gz';
+
+                // link() publishes without overwriting an existing recovery
+                // point, even if another process creates it after our check.
+                if (! @link($result['path'], $fixed)) {
+                    throw new RuntimeException('protective_backup_publish_failed');
+                }
+
+                @unlink($result['path']);
+                $result['path'] = $fixed;
+                $pruned = ['local' => 0, 'remote' => 0];
+            } else {
+                $pruned = $this->backups->pruneExpired($destination, basename($result['path']));
+            }
 
             $run->update([
                 'status' => BackupRun::STATUS_SUCCEEDED,

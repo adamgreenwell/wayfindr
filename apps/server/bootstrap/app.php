@@ -6,8 +6,11 @@ use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\ExpireBreakGlassGrantsCommand;
+use App\Console\Commands\HostUpdaterStatusCommand;
 use App\Console\Commands\MailTestCommand;
+use App\Console\Commands\ManagedApplyCommand;
 use App\Console\Commands\MeasureAttachmentRetentionCommand;
+use App\Console\Commands\ProtectiveBackupCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\QueueAgentRealtimeEvictionsCommand;
 use App\Console\Commands\QueueConversationReplyDeliveriesCommand;
@@ -17,9 +20,12 @@ use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\TranslateCatalogueCommand;
+use App\Console\Commands\UpdatePlanCommand;
 use App\Console\Commands\UpgradeGuardCommand;
+use App\Console\Commands\UpgradeWindowCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Http\Middleware\RefuseServingDuringManagedUpdate;
 use App\Http\Middleware\RefuseServingWhileErasuresAreOutstanding;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use App\Http\Middleware\RefuseUnreadableJson;
@@ -30,6 +36,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpFoundation\Response;
 
 // Secret-bearing values pass through framework and dependency call frames
 // that Wayfindr cannot annotate. Omitting arguments from every exception trace
@@ -67,8 +74,11 @@ return Application::configure(basePath: dirname(__DIR__))
         CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,
         ExpireBreakGlassGrantsCommand::class,
+        HostUpdaterStatusCommand::class,
         MailTestCommand::class,
+        ManagedApplyCommand::class,
         MeasureAttachmentRetentionCommand::class,
+        ProtectiveBackupCommand::class,
         PruneCobrowseContentCommand::class,
         QueueAgentRealtimeEvictionsCommand::class,
         QueueConversationReplyDeliveriesCommand::class,
@@ -79,8 +89,14 @@ return Application::configure(basePath: dirname(__DIR__))
         SweepOrphanedAttachmentsCommand::class,
         TranslateCatalogueCommand::class,
         UpgradeGuardCommand::class,
+        UpgradeWindowCommand::class,
+        UpdatePlanCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        // This operation-owned hold has no bypass cookies or excluded paths.
+        // Prepend it so no PHP request reaches session or route writers first.
+        $middleware->prepend(RefuseServingDuringManagedUpdate::class);
+
         // Only containerized behind-proxy installs set TRUSTED_PROXIES (the
         // self-hosting env generator's --behind-proxy mode); everywhere else
         // this is null and no proxy is trusted.
@@ -114,8 +130,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // promises a 422 or a 404. Every test uses `getJson()`, which sets the
         // header, so the suite could never have shown it.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request): bool => $request->is('api/v1/*') || $request->expectsJson(),
+            fn (Request $request): bool => $request->is('api/v1/*')
+                || ($request->is('operator/updates', 'operator/updates/*') && ! $request->is('operator/updates/console'))
+                || $request->expectsJson(),
         );
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+            if ($request->is('operator/updates', 'operator/updates/*')) {
+                $response->headers->set('Cache-Control', 'no-store');
+            }
+
+            return $response;
+        });
 
         // On a validation failure Laravel flashes the request input to the
         // session as old input. Keep operator secrets (storage, integrations,

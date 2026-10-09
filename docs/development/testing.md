@@ -29,13 +29,37 @@ part of CI.
 requires `--allow-provider` outside tests, writes only to a new private file
 outside the repository, and is never invoked by CI against a live endpoint.
 
+## Managed-update qualification harness
+
+From the repository root, run:
+
+```bash
+make managed-update-qualification-test
+```
+
+These standard-library Python tests exercise the public-artifact declaration
+gate, bounded VM controller and strict evidence validator using synthetic
+dependencies. Source-copy mutations must fail the named identity, durability
+and reboot assertions. This target is included in `make self-host-test` and PR
+CI. It does not create a VM, pull an image, interrupt a service or restore data.
+
+The [qualification guide](../self-hosting/managed-update-qualification.md)
+defines the separate published-artifact matrix, real reboot and independent
+restore requirements. A valid `blocked` or `not_run` evidence report exits `2`;
+only complete qualifying observations may exit `0`. A declaration preflight's
+`ready` result still carries `qualification: false`.
+
 ## Database Drivers in Tests
 
 The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
 `DB_DATABASE=:memory:`), and every documented install runs PostgreSQL.
 
 **CI runs the whole suite against both.** `php-application` runs it on SQLite;
-`php-application-postgres` runs it again against a `postgres:17-alpine` service.
+`php-application-postgres` runs it again against Docker's official
+`public.ecr.aws/docker/library/postgres:17-alpine` service. The
+[official ECR Public mirror](https://aws.amazon.com/blogs/containers/docker-official-images-now-available-on-amazon-elastic-container-registry-public/)
+allows anonymous pulls without sharing Docker Hub's pull quota with other
+GitHub runners. It still has [ECR Public quotas](https://docs.aws.amazon.com/general/latest/gr/ecr-public.html).
 A query valid on only one engine now fails a job instead of shipping green.
 
 Each job also declares which engine it means through
@@ -132,8 +156,18 @@ suite. Run all of it from the root:
 make self-host-test
 ```
 
-Docker is required, because two of these compare against Docker Compose's own
-behaviour rather than against an assumption about it.
+Docker is required, because these compare against Docker Compose's own
+behaviour rather than against an assumption about it. The enrolled host helper
+tests also require Python 3.11 or newer. `make host-updater-test` runs its focused
+protocol, journal, and enrollment regressions without enrolling a host.
+
+Linux CI also runs `apps/server/tests/Fixtures/managed-lease-access.php` in its
+disposable runner as root. This standalone test uses temporary files and the
+real lease/gate classes, then drops to distinct users to verify group-authorized
+admission, lifetime contention, unchanged existing inodes and permissions, and
+outsider/managed-hold refusal. It needs no app bootstrap, database or Docker
+daemon. Portable Pest checks cover ordinary creation and read-only reuse; the
+cross-user check is explicitly skipped outside an isolated Linux root runtime.
 
 | Script | What it holds down |
 | --- | --- |
@@ -143,6 +177,52 @@ behaviour rather than against an assumption about it.
 | `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
 | `test-self-host-classification.sh` | The installer preflight and the artifact guard classify actions identically. |
 | `test-self-host-release-resolution.sh` | Release discovery distinguishes a fully paginated, authoritative absence of a usable release tag from HTTP, transport, and unreadable-response failures without using the public network. |
+| `test_host_updater.py` | Durable idempotency, actor/plan-bound start and cancellation, authoritative bounded history, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
+| `test_update_operator.py` | Exact plan/actor/request admission, cross-action replay refusal, concurrent start/cancel, safe cancellation seams, active-backup interruption, schema-boundary refusal, and immutable bounded host history. |
+| `test_updater_enrollment.py` | Trusted ownership and current controller, pre-write application protocol probe, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
+| `test_update_apply_contract.py` | Root-only UUID admission, durable claims before workers, interrupted migration intent, receipt-bound completion, safe failure evidence, strict public fields and narrow configuration transition loading. |
+| `test_update_apply.py` | Continuous snapshot-to-verification fencing, checked source fallback, all target services, stale-origin refusal, no migration replay, partial creation reconciliation, and interrupted configuration promotion. |
+| `test_update_artifacts.py` | Independent release provenance, full migration history, OCI platform/index/config identity and refusal of malformed or conflicting artifacts. |
+
+`HostUpdaterProtocolIntegrationTest` runs the real PHP client against an isolated
+Python helper on Linux, including response framing, preparation, revision
+pagination, client disconnect, process loss, and journal reload. Fixture paths
+and credentials are confined to a temporary directory; no host service, Docker
+operation, or production installation is changed. macOS skips the Linux peer
+credential checks; both PHP CI database lanes run them on Linux. VM enrollment,
+systemd behavior, bind mounts, and reboot recovery still need independent
+disposable-VM qualification under issue #1115.
+
+`OperatorUpdateActionsTest` enables the real web CSRF middleware and exercises
+platform/tenant separation, recent password and MFA proof, stale credential and
+role changes, exact payload/plan binding, helper refusal and external ownership,
+maintenance refusal, and host-backed status/history when SQL audit writes fail.
+The unique nullable audit key deduplicates mirrored revisions; PostgreSQL's
+failed-query state is isolated with a savepoint. These fixtures do not perform
+an actual host enrollment, published-image update, provider write, restore or
+VM/reboot drill.
+
+`OperatorUpdateConsoleTest` covers the no-store review page, safe local bootstrap,
+read-only stable candidate assessment, current operator/MFA authority, blocked
+requirements, external ownership and missing metadata. `OperatorUpdateLanguageTest`
+checks English/German/Italian parity and rendered copy, protocol enum coverage,
+data-language markers and accessible dialog controls.
+
+The dashboard browser-script suite executes the actual update component with
+jsdom and a deterministic clock. It covers exact-operation reconnection,
+bounded backoff and deadlines, lost write replies, explicit same-request retry,
+fresh review/reauthentication, cancellation after migration intent, stale
+responses, changed installation/actor, history paging, browser Back/Forward,
+storage failure, redacted text, keyboard focus and reduced motion. Run it from
+the repository root after installing the widget's locked test dependencies:
+
+```bash
+node --test apps/server/tests/BrowserScripts/*.test.cjs
+```
+
+These browser fixtures simulate the HTTP hold and returning host evidence. They
+do not establish real service replacement, VM restart, backup restore or
+independent operator acceptance; those remain separate qualification gates.
 
 ### Why the dotenv and classification checks are differential tests
 

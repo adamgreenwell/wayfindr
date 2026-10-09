@@ -80,6 +80,7 @@ final class DashboardLanguage
         // the same catalogue but stays English on every route not yet listed,
         // preserving the one-language-per-document boundary during rollout.
         'operator.dashboard',
+        'operator.updates.index',
         'operator.onboarding',
         // The platform side of break-glass: one request page, three read-only
         // viewers, and the writes whose validation or lifecycle result renders

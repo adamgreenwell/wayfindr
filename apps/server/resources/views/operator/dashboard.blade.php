@@ -42,10 +42,9 @@
             ]" />
         </x-slot:subtitleContent>
         <x-slot:actions>
-            {{-- One call to action. The four "Configure X" buttons that used to
-                 sit here are every entry in the section sidebar beside this
-                 page, and "Back to dashboard" is in the rail and the
-                 breadcrumb. --}}
+            <a class="button secondary" href="{{ route('operator.updates.index') }}">{{ __('operator_updates.title') }}</a>
+            {{-- Updates and guided setup are the two instance workflows.
+                 Individual settings stay in the section navigation. --}}
             <a class="button" href="{{ route('operator.onboarding') }}">{{ __('operator.dashboard.guided_setup') }}</a>
         </x-slot:actions>
     </x-page-header>

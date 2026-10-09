@@ -1,0 +1,38 @@
+[Unit]
+Description=Wayfindr independent host updater
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=1000
+ExecStart=/usr/bin/python3 /usr/local/lib/wayfindr-updater/updater.py serve
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+RuntimeDirectory=wayfindr-updater
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+StateDirectory=wayfindr-updater
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/wayfindr-updater "__WAYFINDR_INSTALL_DIR__"
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

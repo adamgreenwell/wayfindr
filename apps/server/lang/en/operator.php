@@ -9,6 +9,7 @@ return [
         'back_to_console' => 'Back to operator console',
         'sections' => [
             'console' => 'Console',
+            'updates' => 'Updates',
             'onboarding' => 'Setup checklist',
             'mail' => 'Mail',
             'webpush' => 'Web Push',

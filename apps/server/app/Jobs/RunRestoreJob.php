@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Support\Backup\BackupRunner;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\RestoreService;
+use App\Support\Updates\ManagedUpdateGate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -96,6 +97,17 @@ class RunRestoreJob implements ShouldQueue
             return;
         }
 
+        // Same storage-volume admission as managed protective backups. Hold
+        // this process lease before taking the older cache lock, so a helper
+        // cannot claim a maintenance window while this restore is running.
+        try {
+            $updateLease = app(ManagedUpdateGate::class)->acquireNormal();
+        } catch (Throwable $exception) {
+            $this->record('failed', 'A managed update owns maintenance, or another backup/restore is running. Nothing was restored.');
+
+            return;
+        }
+
         // Mutually exclusive with a running backup (and any other restore).
         $lock = Cache::lock(BackupRunner::LOCK_KEY, (int) config('wayfindr.backup.lock_ttl', 3900));
 
@@ -103,12 +115,14 @@ class RunRestoreJob implements ShouldQueue
             $acquired = $lock->get();
         } catch (Throwable $exception) {
             $this->record('failed', 'Could not acquire the backup/restore lock: '.$exception->getMessage());
+            $updateLease->release();
 
             throw $exception;
         }
 
         if (! $acquired) {
             $this->record('failed', 'Skipped: a backup or restore was already running. Wait for it to finish, then try again.');
+            $updateLease->release();
 
             return;
         }
@@ -155,7 +169,7 @@ class RunRestoreJob implements ShouldQueue
             // force: the operator has already confirmed in the GUI; the guard
             // that refuses to overwrite a populated install is exactly what they
             // acknowledged.
-            $result = $restores->restore($path, force: true);
+            $result = $restores->restore($path, force: true, lease: $updateLease);
 
             // A version skew means the restored schema and the running code may
             // not match (either direction); keep the site down so the operator
@@ -213,6 +227,8 @@ class RunRestoreJob implements ShouldQueue
             } catch (Throwable $releaseException) {
                 report($releaseException);
             }
+
+            $updateLease->release();
         }
     }
 

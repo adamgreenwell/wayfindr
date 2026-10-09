@@ -79,13 +79,67 @@ preflight still reads the published release history so it can catch required
 steps between the running and target versions. If that lookup is unavailable,
 retry when GitHub is reachable rather than skipping the safety check.
 
-Upgrading later is one command — it refreshes the stack files at the newest
-release, pulls its image, restarts, and runs any new migrations
-automatically:
+Applications that include the [read-only update planner](update-plan.md) can
+review the latest stable release with `php artisan wayfindr:update-plan` before
+starting an upgrade. It reports required work and deployment ownership without
+changing files, images, or data.
+
+Upgrading later is one command. It selects the newest release, prepares its
+stack files and image, restarts, and runs new migrations automatically:
 
 ```bash
 ./wayfindr/install.sh --upgrade
 ```
+
+For an older installation, launch the current bootstrap directly to get the
+protected preparation path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --upgrade --dir ./wayfindr
+```
+
+Replace `./wayfindr` with your install directory. Add `--ref vX.Y.Z` to choose a
+specific release. An old saved installer can change files before handing control
+to its replacement; the new installer cannot undo that earlier preparation.
+An exact official image version must match the selected release ref. A branch
+or commit ref with `latest`, or an explicitly selected floating image, gets
+reduced guarantees: the installer verifies the image it actually prepared,
+without claiming it is the published release named by the ref. Custom image and
+explicit local source paths retain their own selection.
+
+The protected path prepares files in a private directory, keeps the selected
+target fixed, and runs the release preflight before activating the new stack.
+Failed downloads, preparation checks, or published-image pulls leave active
+configuration and running containers in place. Your secrets, data volumes, and
+certificates are preserved. An old release's installer is kept as a reference;
+it does not replace the hardened update controller.
+
+`--upgrade --no-start` prepares and validates the upgrade without activating it.
+The command prints where it left the private prepared files. Run the upgrade
+again without `--no-start` when ready; that run performs its checks again.
+
+Only one terminal upgrade may run per installation. If a process crashes and
+leaves `.upgrade.lock` behind, confirm that the updater has stopped before
+removing the lock directory and retrying. A blocked second attempt never removes
+another updater's lock.
+
+Before activation, the installer saves recovery copies of the active
+configuration and installer and records the previous image. These files contain
+secrets and must stay private. They are configuration recovery material, not a
+database or attachment backup. Once the restart begins, migrations may already
+have run: the installer reports a failure with the recovery location and does
+not automatically downgrade the application or restore the database.
+
+An exact published release succeeds only when web, queue, backup-queue, scheduler, and
+Reverb run the exact prepared image; the image's baked version, source commit,
+and manifest match the published release; and web health and serving checks pass.
+The running application's reported version and commit must also agree. A healthy
+old container or stale worker cannot satisfy those checks. Custom images retain
+their own image selection; the installer verifies their prepared image and
+reported identity without claiming official release provenance. The explicit local
+source-test path can use an already available local image, but a failed
+published-image pull never falls back silently to an old image.
 
 Running behind your own TLS-terminating reverse proxy? Keep the real
 `https://` URL and add `--behind-proxy`:
