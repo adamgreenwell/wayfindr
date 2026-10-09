@@ -18,6 +18,24 @@ use Throwable;
  */
 final class ReleaseState
 {
+    /** @var array<string, mixed>|null */
+    private ?array $captured = null;
+
+    /** A read-only observation for a plan; later file changes cannot alter it. */
+    public function snapshot(): self
+    {
+        $snapshot = new self;
+        $snapshot->captured = $this->read();
+
+        return $snapshot;
+    }
+
+    /** @return array<string, mixed> */
+    public function snapshotData(): array
+    {
+        return $this->read();
+    }
+
     public function path(): string
     {
         return (string) config('wayfindr.release.state_path', storage_path('app/release-state.json'));
@@ -54,6 +72,10 @@ final class ReleaseState
     /** @return array<string, mixed> */
     private function read(): array
     {
+        if ($this->captured !== null) {
+            return $this->captured;
+        }
+
         $path = $this->path();
 
         if (! is_file($path)) {
@@ -191,6 +213,10 @@ final class ReleaseState
      */
     public function forget(): bool
     {
+        if ($this->captured !== null) {
+            return false;
+        }
+
         $path = $this->path();
 
         if (! is_file($path)) {
@@ -207,6 +233,10 @@ final class ReleaseState
         bool $freshInstall = false,
         ?string $installationProfile = null,
     ): bool {
+        if ($this->captured !== null) {
+            return false;
+        }
+
         $path = $this->path();
         $dir = dirname($path);
 
