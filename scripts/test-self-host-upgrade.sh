@@ -310,6 +310,9 @@ expect_failure() {
 expect_success() {
     [ "$LAST_STATUS" -eq 0 ] || fail "${CASE_DIR##*/}: upgrade failed"
     grep -qE 'Upgrade complete' "$CASE_DIR/output" || fail "${CASE_DIR##*/}: omitted verified success"
+    if compgen -G "$CASE_DIR/active/.upgrade.*" >/dev/null; then
+        fail "${CASE_DIR##*/}: an owned preparation stage remained after success"
+    fi
 }
 
 ok() { printf '  ok  %s\n' "$1"; pass=$((pass + 1)); }
@@ -385,6 +388,39 @@ grep -qE 'Another upgrade owns' "$CASE_DIR/output" || fail 'concurrent upgrade l
 [ "$(cat "$CASE_DIR/active/.upgrade.lock/pid")" = 999999 ] || fail 'an updater removed a lock it did not own'
 ! grep -qE '^curl\|' "$CASE_DIR/calls" || fail 'locked upgrade still prepared a release'
 ok 'a concurrent upgrade refuses before preparation and preserves the other lock'
+
+new_case spoofed-lock-stage concurrent-lock
+mkdir -m 700 "$CASE_DIR/active/.upgrade.lock"
+printf '999999\n' > "$CASE_DIR/active/.upgrade.lock/pid"
+export WAYFINDR_UPGRADE_PARENT_STAGE="$CASE_DIR/active/.upgrade.lock" WAYFINDR_HANDED_OFF=1
+run_upgrade --ref v1.1.1
+unset WAYFINDR_UPGRADE_PARENT_STAGE WAYFINDR_HANDED_OFF
+expect_failure
+expect_unchanged
+[ "$(cat "$CASE_DIR/active/.upgrade.lock/pid")" = 999999 ] || fail 'ambient parent stage made cleanup remove another updater lock'
+ok 'ambient parent-stage metadata cannot remove another updater lock'
+
+new_case ambient-identity-probe stack-download-failure
+export UPGRADE_IDENTITY_PROBE=deadbeefdead
+run_upgrade --ref v1.1.1
+unset UPGRADE_IDENTITY_PROBE
+expect_failure
+expect_unchanged
+! grep -qE '^remove\|' "$CASE_DIR/calls" || fail 'ambient probe metadata made cleanup remove an unrelated container'
+ok 'ambient identity-probe metadata cannot remove an unrelated container'
+
+new_case foreign-parent-stage stack-download-failure
+foreign_stage="$CASE_DIR/active/.upgrade.abcdefgh"
+mkdir -m 700 "$foreign_stage"
+printf '999999\n' > "$foreign_stage/controller-pid"
+printf 'owned by another controller\n' > "$foreign_stage/sentinel"
+export WAYFINDR_UPGRADE_PARENT_STAGE="$foreign_stage" WAYFINDR_HANDED_OFF=1
+run_upgrade --ref v1.1.1
+unset WAYFINDR_UPGRADE_PARENT_STAGE WAYFINDR_HANDED_OFF
+expect_failure
+expect_unchanged
+grep -qF 'owned by another controller' "$foreign_stage/sentinel" || fail 'cleanup removed a preparation stage owned by another controller'
+ok 'a correctly named parent stage still requires matching controller ownership'
 
 for scenario in baked-version-mismatch baked-commit-mismatch; do
     new_case "$scenario" "$scenario"

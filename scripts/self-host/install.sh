@@ -34,6 +34,7 @@ MANIFEST_CONTRACT_FROM="0.1.0"
 # Staged updater protocol; older release installers must not take control.
 WAYFINDR_UPGRADE_PROTOCOL=1
 ACTIVE_IMAGE_ID=""
+UPGRADE_IDENTITY_PROBE=""
 REF=""
 IMAGE_TAG=""
 PRERELEASE=0
@@ -2294,11 +2295,13 @@ cleanup_upgrade() {
     if [ "${UPGRADE_KEEP_STAGE:-0}" != 1 ]; then
         rm -rf "$UPGRADE_STAGE"
     fi
+    # Internal handoff context can also arrive from the caller's environment.
+    # Only clean a private staging directory created by this same process.
     if [ -n "${WAYFINDR_UPGRADE_PARENT_STAGE:-}" ] &&
-        [ "${WAYFINDR_UPGRADE_PARENT_STAGE%/*}" = "$TARGET_DIR" ]; then
-        case "${WAYFINDR_UPGRADE_PARENT_STAGE##*/}" in
-            .upgrade.*) rm -rf "$WAYFINDR_UPGRADE_PARENT_STAGE" ;;
-        esac
+        [ "${WAYFINDR_UPGRADE_PARENT_STAGE%/*}" = "$TARGET_DIR" ] &&
+        [[ "${WAYFINDR_UPGRADE_PARENT_STAGE##*/}" =~ ^\.upgrade\.[[:alnum:]]{8}$ ]] &&
+        [ "$(cat "$WAYFINDR_UPGRADE_PARENT_STAGE/controller-pid" 2>/dev/null || true)" = "$$" ]; then
+        rm -rf "$WAYFINDR_UPGRADE_PARENT_STAGE"
     fi
     if [ -f "$TARGET_DIR/.upgrade.lock/pid" ] &&
         [ "$(cat "$TARGET_DIR/.upgrade.lock/pid")" = "$$" ]; then
@@ -2320,6 +2323,7 @@ if [ "$UPGRADE" = "1" ]; then
     export WAYFINDR_ENV_FILE="$ENV_FILE"
     UPGRADE_STAGE="$(mktemp -d "$TARGET_DIR/.upgrade.XXXXXXXX")"
     chmod 700 "$UPGRADE_STAGE"
+    printf '%s\n' "$$" > "$UPGRADE_STAGE/controller-pid"
     UPGRADE_KEEP_STAGE=0
     UPGRADE_PROMOTING=0
     UPGRADE_RESTARTING=0
