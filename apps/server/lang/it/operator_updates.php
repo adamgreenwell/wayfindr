@@ -232,7 +232,7 @@ return [
         'failed_safe' => 'L’aggiornamento non è riuscito prima delle modifiche al database. L’host ha verificato che la versione precedente stia nuovamente servendo le richieste.',
         'rolled_back' => 'L’host ha verificato il ritorno alla versione precedente prima delle modifiche al database. Questo non indica un ripristino del database.',
         'cancelled' => 'L’host ha confermato l’annullamento prima delle modifiche al database e verifichito che la versione precedente stia servendo le richieste.',
-        'recovery_required' => 'Lo stato del database o dei servizi potrebbe essere cambiato o restare incerto. La manutenzione rimane attiva finché un gestore non completa un ripristino esplicito.',
+        'recovery_required' => 'È necessario un ripristino manuale. Controlli il blocco di manutenzione registrato e lo stato dei servizi dell’host: un rifiuto iniziale può lasciare in esecuzione la versione precedente. Mantenga ogni blocco di manutenzione registrato fino al completamento del ripristino esplicito.',
         'reconciliation_required' => 'L’host deve riconcilire una preparazione interrotta. Questo non è un aggiornamento riuscito.',
         'blocked' => 'L’host non ha consentito l’esecuzione. Esamini e risolva la causa prima di verificare di nuovo.',
         'unknown' => 'Non è disponibile un esito finale verifichito. Legga lo stato attuale dell’host prima di procedere.',

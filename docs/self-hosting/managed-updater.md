@@ -103,8 +103,18 @@ helper and explicit external/hosting ownership cannot enable managed execution.
 Old preparation/status helper versions remain observable without gaining start
 authority. New enrollment probes the application's static protocol contract
 before writing host credentials or services. The staged target must satisfy
-that same fixed PHP-only protocol probe before migration admission, so an older
+that same fixed PHP-only protocol probe before fencing or draining the source,
+and again before migration admission, so an older
 application cannot complete an update and silently lose its operator controls.
+
+An incompatible or unsettled early target probe records `recovery_required`
+with no owned maintenance hold and no schema intent. The helper leaves the
+source services and configuration untouched, retains operation ownership for
+explicit root recovery, and makes no claim that source serving was independently
+verified. Inspect the recorded hold and services before acting; this early
+manual-attention state does not mean the application was placed in maintenance.
+Later failures retain any actual owned hold until explicit recovery verifies
+the appropriate serving state.
 
 Start and cancellation admission receipts bind operation, reviewed plan,
 request UUID, numeric actor ID, timestamp, and host event revision. Identical
@@ -401,8 +411,16 @@ hold; normal startup cannot implicitly run migrations through the entrypoint.
 Before starting each replacement, the helper checks its operation label,
 fresh container identity, image, environment, command, entrypoint and original
 mounts. Runtime verification includes every application service, PostgreSQL and
-Redis, live worker/scheduler processes, the Reverb listener, and a fresh HMAC
-challenge at the configured origin. It verifies the held 503 and released 200
+Redis, live worker/scheduler processes, the Reverb listener, a fresh HMAC
+challenge at the configured origin, and authenticated private-event delivery
+over the browser's configured WebSocket endpoint. The transport probe uses a
+temporary channel and nonce while this operation owns the hold. It verifies
+TLS, subscription authentication and exact event delivery within a bounded
+deadline; it writes no application records, sessions or queued jobs. A failed
+transport proof prevents target completion or source fallback release.
+The probe does not exercise Laravel user-session `/broadcasting/auth`, which
+stays fenced during maintenance; verify that path and the full support loop
+separately after release. The helper verifies the held 503 and released 200
 separately; cached health responses cannot establish success. Queue workers
 remain paused during the hold, so these checks establish fresh process/runtime
 identity without claiming that a queued customer job ran during maintenance.

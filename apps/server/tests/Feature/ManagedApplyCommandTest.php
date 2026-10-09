@@ -5,6 +5,7 @@ use App\Listeners\BlockMigrationsWithUnmetRequirements;
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Updates\ManagedMigrationContext;
+use App\Support\Updates\ManagedRealtimeProbe;
 use App\Support\Updates\ManagedUpdateGate;
 use App\Support\Visitors\ErasureLedger;
 use Illuminate\Console\Events\CommandFinished;
@@ -196,6 +197,70 @@ test('baseline verifies the current serving release without migrating or requiri
         ->and(app(ManagedUpdateGate::class)->active())->toBeTrue()
         ->and($raw)->not->toContain('private-', $this->applyRoot);
 });
+
+test('held realtime proof binds source or target identity without writing a migration receipt', function (string $version): void {
+    config()->set('wayfindr.release.version', 'v'.$version);
+    $manifest = ReleaseManifest::build([], $version, $this->applyTargetCommit);
+    file_put_contents($this->applyRoot.'/release.json', json_encode($manifest)."\n");
+    file_put_contents($this->applyRoot.'/history.json', json_encode(['schema' => 1, 'releases' => [$manifest]])."\n");
+    $state = file_get_contents(storage_path('app/release-state.json'));
+    $probe = Mockery::mock(ManagedRealtimeProbe::class);
+    $probe->shouldReceive('verify')->once();
+    app()->instance(ManagedRealtimeProbe::class, $probe);
+    [$exit, $receipt, $raw] = managedApplyReceipt('realtime', ['--target-version' => $version]);
+
+    expect($exit)->toBe(0)->and($receipt)->toBe([
+        'schema' => 1, 'operation_id' => $this->applyOperation, 'plan_id' => $this->applyPlan,
+        'phase' => 'realtime_verified', 'target' => ['version' => $version, 'commit' => $this->applyTargetCommit, 'profile' => 'image'],
+        'binding_sha256' => $this->applyCommand->binding(), 'hold_owned' => true, 'realtime_verified' => true,
+    ])->and($this->applyCommand->runs)->toBe(0)->and(file_exists($this->applyFile))->toBeFalse()
+        ->and(file_get_contents(storage_path('app/release-state.json')))->toBe($state)
+        ->and(app(ManagedUpdateGate::class)->active())->toBeTrue()
+        ->and($raw)->not->toContain('private-', 'secret', 'host', 'auth', $this->applyRoot);
+})->with(['1.1.1', '1.2.0']);
+
+test('failed realtime delivery preserves the hold and emits only the classified refusal', function (): void {
+    $probe = Mockery::mock(ManagedRealtimeProbe::class);
+    $probe->shouldReceive('verify')->once()->andThrow(new RuntimeException('managed_apply_realtime_unverified'));
+    app()->instance(ManagedRealtimeProbe::class, $probe);
+    [$exit, $receipt, $raw] = managedApplyReceipt('realtime');
+
+    expect($exit)->toBe(1)->and($receipt['reason'])->toBe('managed_apply_realtime_unverified')
+        ->and(app(ManagedUpdateGate::class)->active())->toBeTrue()
+        ->and($this->applyCommand->runs)->toBe(0)->and(file_exists($this->applyFile))->toBeFalse()
+        ->and($raw)->not->toContain('private-', $this->applyRoot);
+});
+
+test('realtime rechecks the effective binding and operation hold after transport succeeds', function (string $changed): void {
+    $probe = Mockery::mock(ManagedRealtimeProbe::class);
+    $probe->shouldReceive('verify')->once()->andReturnUsing(function () use ($changed): void {
+        if ($changed === 'binding') {
+            config()->set('database.connections.pgsql.password', 'changed-private-database-password');
+        } else {
+            unlink(app(ManagedUpdateGate::class)->markerPath());
+        }
+    });
+    app()->instance(ManagedRealtimeProbe::class, $probe);
+    [$exit, $receipt] = managedApplyReceipt('realtime');
+
+    expect($exit)->toBe(1)->and($receipt['reason'])->toBe($changed === 'binding' ? 'managed_apply_binding_mismatch' : 'managed_update_busy')
+        ->and($this->applyCommand->runs)->toBe(0)->and(file_exists($this->applyFile))->toBeFalse();
+})->with(['binding', 'hold']);
+
+test('realtime refuses wrong operation, target or binding before transport starts', function (string $field): void {
+    $probe = Mockery::mock(ManagedRealtimeProbe::class);
+    $probe->shouldNotReceive('verify');
+    app()->instance(ManagedRealtimeProbe::class, $probe);
+    [$exit, $receipt] = managedApplyReceipt('realtime', match ($field) {
+        'operation' => ['operation' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'],
+        'target' => ['--target-version' => '1.3.0'],
+        'binding' => ['--binding' => str_repeat('f', 64)],
+    });
+
+    expect($exit)->toBe(1)->and($receipt['reason'])->toBe(match ($field) {
+        'operation' => 'managed_update_busy', 'target' => 'managed_apply_target_mismatch', 'binding' => 'managed_apply_binding_mismatch',
+    })->and(app(ManagedUpdateGate::class)->active())->toBeTrue()->and($this->applyCommand->runs)->toBe(0);
+})->with(['operation', 'target', 'binding']);
 
 test('baseline refuses schema debt, serving debt, erasure debt, or an inexact source release record', function (string $failure): void {
     app(ReleaseState::class)->record('1.2.0', $this->applyTargetCommit, '1.2.0', false, 'image');

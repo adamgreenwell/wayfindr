@@ -232,7 +232,7 @@ return [
         'failed_safe' => 'The update failed before database changes. The host verified that the previous release is serving again.',
         'rolled_back' => 'The host verified a return to the previous release before database changes. This does not describe a database restore.',
         'cancelled' => 'The host confirmed cancellation before database changes and verified the previous release is serving.',
-        'recovery_required' => 'The database or service state may have changed or remains uncertain. Maintenance stays active until an operator completes explicit recovery.',
+        'recovery_required' => 'Manual recovery is required. Check the host’s recorded hold and service state: an early refusal can leave the previous release running. Keep any recorded maintenance hold until explicit recovery completes.',
         'reconciliation_required' => 'The host needs to reconcile an interrupted preparation. This is not a successful update.',
         'blocked' => 'The host did not admit execution. Review the reason and resolve it before rechecking.',
         'unknown' => 'No verified terminal outcome is available. Read the host’s current state before taking further action.',

@@ -167,10 +167,10 @@ class Engine(FIX.Engine):
 
     def oneoff(self, directory, operation, state, action):
         self.calls.append(action)
-        assert self.held and not self.running
         if action == "protocol":
             self.trip("protocol")
             return copy.deepcopy(APPLY.OPERATOR_CONTRACT)
+        assert self.held and not self.running
         if action == "assess":
             self.trip("assessment")
         if action == "migrate":
@@ -195,6 +195,15 @@ class Engine(FIX.Engine):
         if self.fault == "pending_source" and source:
             result["pending_migrations"] = 1
         return result
+
+    def realtime_receipt(self, container, operation, state, source=False):
+        self.calls.append("realtime_source" if source else "realtime_target")
+        self.trip("realtime_source" if source else "realtime_target")
+        identity = SOURCE if source else {key: TARGET[key] for key in ("version", "commit")}
+        return {"schema": 1, "operation_id": operation, "plan_id": state["plan_id"],
+                "phase": "realtime_verified", "target": {**identity, "profile": "image"},
+                "binding_sha256": state["source_context"]["capture_binding_sha256"],
+                "hold_owned": True, "realtime_verified": True}
 
 
 class ApplyTests(unittest.TestCase):
@@ -268,6 +277,153 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(TARGET["image_digest"], self.config.value["image_reference"].split("@")[1])
         self.assertNotIn(FIX.KEY, json.dumps(self.status()))
         self.assertTrue((self.root / "protection" / self.operation / "archive.tar.gz").exists())
+
+    def test_incompatible_target_protocol_refuses_before_fencing_draining_or_backup(self):
+        original = self.engine.oneoff
+        self.engine.oneoff = lambda directory, operation, state, action: {} if action == "protocol" else original(directory, operation, state, action)
+        frozen_config = copy.deepcopy(self.config.value)
+        self.apply()
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate"):
+            self.assertNotIn(forbidden, self.engine.calls, "An incompatible target must not interrupt the running source: " + forbidden)
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("apply_unavailable", self.status()["operation"]["error"])
+        self.assertFalse(self.status()["operation"]["mutation_started"])
+        self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+        self.assertFalse(self.status()["operation"]["protection"]["hold_owned"])
+        self.assertFalse(self.status()["operation"]["apply"]["services_verified"])
+        self.assertFalse(self.status()["operation"]["apply"]["origin_verified"])
+        self.assertIsNone(self.status()["operation"]["apply"]["runtime_receipt_sha256"])
+        self.assertIsNone(self.status()["operation"]["apply"]["migration_receipt_sha256"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(frozen_config, self.config.value)
+        self.assertEqual(self.engine.originals, self.engine.service_ids())
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual("downloaded", state["stage"])
+        self.assertFalse((self.root / "protection" / self.operation).exists())
+
+    def test_broken_public_realtime_cannot_complete_or_release_the_target(self):
+        self.engine.fault = "realtime_target"
+        self.apply()
+        operation = self.status()["operation"]
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertTrue(operation["mutation_started"])
+        self.assertTrue(operation["apply"]["hold_owned"])
+        self.assertTrue(self.engine.held)
+        self.assertFalse(operation["apply"]["services_verified"])
+        self.assertIsNone(operation["apply"]["runtime_receipt_sha256"])
+        self.assertNotIn("release", self.engine.calls)
+
+    def test_runtime_realtime_proof_requires_exact_operation_plan_identity_and_binding(self):
+        for field in ("schema", "operation_id", "plan_id", "target", "binding_sha256", "hold_owned", "realtime_verified", "extra"):
+            with self.subTest(field=field):
+                self.tearDown()
+                self.setUp()
+                original = self.engine.realtime_receipt
+                def changed(*args, **kwargs):
+                    result = original(*args, **kwargs)
+                    result[field] = True if field == "schema" else None
+                    return result
+                self.engine.realtime_receipt = changed
+                self.apply()
+                self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+                self.assertTrue(self.engine.held)
+                self.assertIsNone(self.status()["operation"]["apply"]["runtime_receipt_sha256"])
+                self.assertNotIn("release", self.engine.calls)
+
+    def test_success_retains_private_realtime_transport_evidence(self):
+        self.apply()
+        self.assertEqual("succeeded", self.status()["operation"]["phase"])
+        receipt = UP.read_object(self.root / "apply" / self.operation / "runtime.json", 1_000_000, "recovery_required")
+        self.assertTrue(receipt["realtime"]["realtime_verified"])
+        self.assertEqual(self.operation, receipt["realtime"]["operation_id"])
+        self.assertEqual(1, self.engine.calls.count("realtime_target"))
+
+    def test_realtime_proof_flags_require_boolean_true(self):
+        for field in ("hold_owned", "realtime_verified"):
+            for invalid in (1, 1.0, 0, "true", None):
+                with self.subTest(field=field, invalid=invalid):
+                    self.tearDown()
+                    self.setUp()
+                    original = self.engine.realtime_receipt
+                    def changed(*args, **kwargs):
+                        result = original(*args, **kwargs)
+                        result[field] = invalid
+                        return result
+                    self.engine.realtime_receipt = changed
+                    self.apply()
+                    self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+                    self.assertTrue(self.engine.held)
+                    self.assertNotIn("release", self.engine.calls)
+
+    def test_failed_source_realtime_verification_keeps_fallback_held(self):
+        self.engine.fault = "assessment"
+        original = self.engine.realtime_receipt
+        def source_failure(*args, **kwargs):
+            if args[-1] is True:
+                raise UP.Refusal("runtime_verification_failed")
+            return original(*args, **kwargs)
+        self.engine.realtime_receipt = source_failure
+        self.apply()
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertFalse(self.status()["operation"]["mutation_started"])
+        self.assertTrue(self.engine.held)
+        self.assertNotIn("release", self.engine.calls)
+
+    def test_crashed_early_protocol_probe_retains_source_and_requires_explicit_recovery_after_restart(self):
+        self.engine.crash = "protocol"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        old_generation = self.generation
+        self.journal = UP.Journal(self.journalpath, self.config.installation_id, secure=False)
+        self.generation = str(uuid.uuid4())
+        self.journal.begin_generation(self.generation)
+        self.assertNotEqual(old_generation, self.status()["generation"])
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+        self.assertFalse(self.status()["operation"]["protection"]["hold_owned"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate"):
+            self.assertNotIn(forbidden, self.engine.calls)
+        self.assertFalse((self.root / "protection" / self.operation).exists())
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("protocol"))
+        self.assertNotIn("migrate", self.engine.calls)
+
+    def test_target_protocol_is_verified_before_source_interruption_and_rechecked_before_schema(self):
+        self.apply()
+        probes = [index for index, call in enumerate(self.engine.calls) if call == "protocol"]
+        self.assertEqual(2, len(probes))
+        self.assertLess(self.engine.calls.index("artifacts"), probes[0])
+        self.assertLess(probes[0], self.engine.calls.index("enter"))
+        self.assertLess(self.engine.calls.index("backup"), probes[1])
+        self.assertLess(probes[1], self.engine.calls.index("assess"))
+        self.assertEqual("succeeded", self.status()["operation"]["phase"])
+
+    def test_changed_target_protocol_at_schema_recheck_recovers_verified_source_without_migration(self):
+        original = self.engine.oneoff
+        probes = []
+        def changed(directory, operation, state, action):
+            if action == "protocol":
+                probes.append(action)
+                if len(probes) == 2:
+                    return {}
+            return original(directory, operation, state, action)
+        self.engine.oneoff = changed
+        self.apply()
+        self.assertEqual(2, len(probes))
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertFalse(self.status()["operation"]["mutation_started"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("backup"))
+        self.assertNotIn("assess", self.engine.calls)
+        self.assertNotIn("migrate", self.engine.calls)
 
     def test_failures_before_migration_verify_and_recover_original_services(self):
         for fault in ("download", "compose_change", "assessment", "backup", "archive"):

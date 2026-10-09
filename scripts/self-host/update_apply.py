@@ -252,6 +252,9 @@ class Engine:
     def runtime_receipt(self, container, operation, state, source=False):
         return self.base.call(["exec", container, "php", *self.command(operation, state, "baseline" if source else "verify", source)], "runtime_verification_failed", timeout=90, json=True)
 
+    def realtime_receipt(self, container, operation, state, source=False):
+        return self.base.call(["exec", container, "php", *self.command(operation, state, "realtime", source)], "runtime_verification_failed", timeout=30, json=True)
+
     def all_ids(self, service):
         raw = self.base.call(["ps", "-a", "-q", "--no-trunc", "--filter", "label=com.docker.compose.project=" + self.config.value["compose_project"], "--filter", "label=com.docker.compose.service=" + service, "--filter", "label=com.docker.compose.oneoff=False"])
         result = raw.splitlines() if raw else []
@@ -492,6 +495,12 @@ class Applier:
             self.fail("artifact_verification_failed")
         return value
 
+    def operator_protocol(self, directory, operation, state):
+        contract = self.engine.oneoff(directory, operation, state, "protocol")
+        if (not isinstance(contract, dict) or contract != OPERATOR_CONTRACT
+                or type(contract.get("schema")) is not int or type(contract.get("protocol")) is not int):
+            self.fail("apply_unavailable")
+
     def migration(self, directory, operation, state, recovery):
         if recovery:
             if self.engine.oneoff_active("wayfindr-updater-migration-" + operation):
@@ -499,10 +508,7 @@ class Applier:
             value = self.engine.oneoff(directory, operation, state, "receipt")
         else:
             self.journal.check_cancel(operation)
-            contract = self.engine.oneoff(directory, operation, state, "protocol")
-            if (not isinstance(contract, dict) or contract != OPERATOR_CONTRACT
-                    or type(contract.get("schema")) is not int or type(contract.get("protocol")) is not int):
-                self.fail("apply_unavailable")
+            self.operator_protocol(directory, operation, state)
             self.journal.check_cancel(operation)
             self.receipt(self.engine.oneoff(directory, operation, state, "assess"), operation, state, {"assessed"})
             # Serialize cancellation against schema admission in the journal.
@@ -603,7 +609,19 @@ class Applier:
                     self.fail("runtime_verification_failed")
                 time.sleep(1)
         self.verify_origin(directory, operation, state, True, source)
-        value = {"schema": 1, "operation_id": operation, "plan_id": state["plan_id"], "containers": ids, "receipt": receipts["web"]}
+        realtime = self.engine.realtime_receipt(ids["web"], operation, state, source)
+        identity = state["source"] if source else {key: state["target"][key] for key in ("version", "commit")}
+        expected = {"schema": 1, "operation_id": operation, "plan_id": state["plan_id"],
+                    "phase": "realtime_verified", "target": {**identity, "profile": "image"},
+                    "binding_sha256": state["source_context"]["capture_binding_sha256"],
+                    "hold_owned": True, "realtime_verified": True}
+        if (not isinstance(realtime, dict) or realtime != expected
+                or type(realtime.get("schema")) is not int
+                or realtime.get("hold_owned") is not True
+                or realtime.get("realtime_verified") is not True):
+            self.fail("runtime_verification_failed")
+        value = {"schema": 1, "operation_id": operation, "plan_id": state["plan_id"], "containers": ids,
+                 "receipt": receipts["web"], "realtime": realtime}
         self.api.atomic_write(directory / "runtime.json", value)
         state["runtime_receipt_sha256"] = digest(self.api.encoded(value))
         if not source:
@@ -702,6 +720,7 @@ class Applier:
         directory = self.root / "apply" / operation
         state = None
         fallback_attempted = False
+        protocol_preflight_pending = False
         try:
             if recovery:
                 state = self.load(directory, operation) if (directory / "state.json").exists() or (directory / "state.json").is_symlink() else self.pre_start_recovery(directory, operation)
@@ -716,6 +735,13 @@ class Applier:
             if not recovery:
                 self.journal.check_cancel(operation)
                 self.download(directory, operation, state)
+                # target.yml is bound to the independently verified immutable
+                # config digest. Check compatibility before owning intake or
+                # stopping a source writer; migration rechecks the same target.
+                protocol_preflight_pending = True
+                self.operator_protocol(directory, operation, state)
+                protocol_preflight_pending = False
+                self.journal.check_cancel(operation)
                 self.persist(directory, state, "protect_intent")
                 context = self.protector.capture(operation, retain_hold=True)
                 frozen = state["source_context"]
@@ -747,7 +773,7 @@ class Applier:
             reason = failure.reason if isinstance(failure, self.api.Refusal) else "apply_failed"
             public = self.journal.status(operation)["operation"]
             private_intent = state is not None and state["stage"] in {"migration_intent", "migrated", "restart_intent", "runtime_verified", *PROMOTION_STAGES}
-            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted:
+            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted and not protocol_preflight_pending:
                 try:
                     self.fallback(directory, operation, state, reason)
                     return
@@ -761,6 +787,10 @@ class Applier:
                     self.checkpoint(operation, "apply_release_intent", phase="verifying", hold_owned=True)
                 except Exception:
                     pass
+            # A refused or unsettled pre-protection protocol probe leaves the
+            # source untouched. Automatic fallback would itself fence/drain it.
+            # Retain ownership for explicit recovery without claiming a verified
+            # failed-safe outcome or inventing a maintenance hold.
             # No unobserved command result or missing file qualifies for rollback.
             self.journal.apply_finish(operation, reason, "recovery_required")
 

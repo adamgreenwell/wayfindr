@@ -9,6 +9,7 @@ use App\Support\Release\ReleaseManifest;
 use App\Support\Release\ReleaseState;
 use App\Support\Release\UpgradeGuard;
 use App\Support\Updates\ManagedMigrationContext;
+use App\Support\Updates\ManagedRealtimeProbe;
 use App\Support\Updates\ManagedUpdateGate;
 use App\Support\Visitors\ErasureLedger;
 use Illuminate\Console\Command;
@@ -24,7 +25,7 @@ class ManagedApplyCommand extends Command
 {
     protected $signature = 'wayfindr:managed-apply
         {operation : Update operation UUID}
-        {--action=assess : assess, baseline, migrate, verify, or receipt}
+        {--action=assess : assess, baseline, migrate, verify, receipt, or realtime}
         {--plan-id= : Frozen plan SHA256}
         {--target-version= : Exact canonical stable target version}
         {--commit= : Full target source commit}
@@ -47,6 +48,7 @@ class ManagedApplyCommand extends Command
         'managed_apply_redis_unverified', 'managed_apply_schema_mismatch', 'managed_apply_guard_blocked',
         'managed_apply_state_mismatch', 'managed_apply_receipt_invalid', 'managed_apply_receipt_unavailable',
         'managed_apply_already_started', 'managed_apply_migration_failed', 'managed_apply_verification_failed',
+        'managed_apply_realtime_unverified',
         'managed_update_busy', 'managed_update_request_invalid', 'managed_update_state_invalid',
         'managed_update_state_unavailable',
     ];
@@ -62,7 +64,18 @@ class ManagedApplyCommand extends Command
             $artifact = $this->artifact($guard, $request);
             $this->assertBinding($request['binding_sha256']);
 
-            if ($request['action'] === 'receipt') {
+            if ($request['action'] === 'realtime') {
+                // Caddy's WebSocket route stays available under the PHP hold.
+                // This authenticates a disposable Reverb subscription directly;
+                // it never bypasses the held Laravel /broadcasting/auth route.
+                app(ManagedRealtimeProbe::class)->verify();
+                $this->assertBinding($request['binding_sha256']);
+                $result = [
+                    'schema' => 1, 'operation_id' => $request['operation_id'], 'plan_id' => $request['plan_id'],
+                    'phase' => 'realtime_verified', 'target' => $request['target'],
+                    'binding_sha256' => $request['binding_sha256'], 'hold_owned' => true, 'realtime_verified' => true,
+                ];
+            } elseif ($request['action'] === 'receipt') {
                 $result = $this->readReceipt($request, $artifact);
             } elseif ($request['action'] === 'verify') {
                 $stored = $this->readReceipt($request, $artifact);
@@ -160,7 +173,7 @@ class ManagedApplyCommand extends Command
         $binding = $this->option('binding');
 
         if (! is_string($operation) || preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D', $operation) !== 1
-            || ! in_array($action, ['assess', 'baseline', 'migrate', 'verify', 'receipt'], true)
+            || ! in_array($action, ['assess', 'baseline', 'migrate', 'verify', 'receipt', 'realtime'], true)
             || ! is_string($plan) || preg_match(self::HASH, $plan) !== 1
             || ! is_string($binding) || preg_match(self::HASH, $binding) !== 1
             || ! is_string($version) || preg_match('/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/D', $version) !== 1

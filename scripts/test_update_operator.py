@@ -319,7 +319,7 @@ class CancellationLifecycleTests(unittest.TestCase):
         self.assertEqual("succeeded", self.status()["operation"]["phase"])
         self.assertEqual(1, self.engine.calls.count("migrate"))
 
-    def test_old_or_overclaimed_target_protocol_refuses_before_schema_admission(self):
+    def test_old_or_overclaimed_target_protocol_refuses_before_source_interruption(self):
         good = LIFECYCLE.APPLY.OPERATOR_CONTRACT
         for invalid in ({}, {**good, "protocol": True}, {**good, "minimum_helper_version": "0.3.0"},
                         {**good, "capabilities": ["plan", "status"]}, {**good, "extra": "untrusted"}):
@@ -329,14 +329,17 @@ class CancellationLifecycleTests(unittest.TestCase):
                 self.engine.oneoff = lambda directory, operation, state, action: invalid if action == "protocol" else original(directory, operation, state, action)
                 self.start()
                 self.applier(self.operation)
-                self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+                self.assertEqual("recovery_required", self.status()["operation"]["phase"])
                 self.assertFalse(self.status()["operation"]["mutation_started"])
                 self.assertTrue(self.engine.running)
                 self.assertFalse(self.engine.held)
+                self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+                for forbidden in ("enter", "drain", "backup"):
+                    self.assertNotIn(forbidden, self.engine.calls)
                 self.assertNotIn("assess", self.engine.calls)
                 self.assertNotIn("migrate", self.engine.calls)
 
-    def test_unsettled_target_protocol_timeout_holds_until_explicit_source_recovery(self):
+    def test_unsettled_target_protocol_timeout_preserves_source_until_explicit_recovery(self):
         original_oneoff, original_settled = self.engine.oneoff, self.engine.settled
         probe_active = [False]
         def unsettled(ids, operation):
@@ -353,8 +356,11 @@ class CancellationLifecycleTests(unittest.TestCase):
         self.start()
         self.applier(self.operation)
         self.assertEqual("recovery_required", self.status()["operation"]["phase"])
-        self.assertTrue(self.engine.held)
-        self.assertFalse(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+        for forbidden in ("enter", "drain", "backup"):
+            self.assertNotIn(forbidden, self.engine.calls)
         self.assertNotIn("release", self.engine.calls)
         self.assertNotIn("migrate", self.engine.calls)
         probe_active[0] = False

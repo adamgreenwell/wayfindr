@@ -232,7 +232,7 @@ return [
         'failed_safe' => 'Das Update schlug vor Datenbankänderungen fehl. Der Host hat bestätigt, dass die vorherige Version wieder Anfragen verarbeitet.',
         'rolled_back' => 'Der Host hat die Rückkehr zur vorherigen Version vor Datenbankänderungen bestätigt. Das beschreibt keine Datenbankwiederherstellung.',
         'cancelled' => 'Der Host hat den Abbruch vor Datenbankänderungen bestätigt und geprüft, dass die vorherige Version Anfragen verarbeitet.',
-        'recovery_required' => 'Der Datenbank- oder Dienstzustand kann sich geändert haben oder bleibt unklar. Der Wartungsmodus bleibt aktiv, bis ein Betreiber die ausdrückliche Wiederherstellung abschließt.',
+        'recovery_required' => 'Eine manuelle Wiederherstellung ist erforderlich. Prüfen Sie die aufgezeichnete Wartungssperre und den Dienstzustand des Hosts: Bei einer frühen Ablehnung kann die vorherige Version weiterlaufen. Behalten Sie eine aufgezeichnete Wartungssperre bis zum Abschluss der ausdrücklichen Wiederherstellung bei.',
         'reconciliation_required' => 'Der Host muss eine unterbrochene Vorbereitung abgleichen. Dies ist kein erfolgreiches Update.',
         'blocked' => 'Der Host hat die Ausführung nicht zugelassen. Prüfen und beheben Sie die Ursache, bevor Sie erneut prüfen.',
         'unknown' => 'Kein bestätigtes Endergebnis ist verfügbar. Lesen Sie den aktuellen Host-Zustand, bevor Sie weitere Maßnahmen ergreifen.',
