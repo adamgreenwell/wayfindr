@@ -29,6 +29,26 @@ part of CI.
 requires `--allow-provider` outside tests, writes only to a new private file
 outside the repository, and is never invoked by CI against a live endpoint.
 
+## Managed-update qualification harness
+
+From the repository root, run:
+
+```bash
+make managed-update-qualification-test
+```
+
+These standard-library Python tests exercise the public-artifact declaration
+gate, bounded VM controller and strict evidence validator using synthetic
+dependencies. Source-copy mutations must fail the named identity, durability
+and reboot assertions. This target is included in `make self-host-test` and PR
+CI. It does not create a VM, pull an image, interrupt a service or restore data.
+
+The [qualification guide](../self-hosting/managed-update-qualification.md)
+defines the separate published-artifact matrix, real reboot and independent
+restore requirements. A valid `blocked` or `not_run` evidence report exits `2`;
+only complete qualifying observations may exit `0`. A declaration preflight's
+`ready` result still carries `qualification: false`.
+
 ## Database Drivers in Tests
 
 The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,

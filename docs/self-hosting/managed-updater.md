@@ -18,6 +18,11 @@ an explicit root-only terminal action.
 These changes are development slices awaiting release and VM qualification.
 They have not been qualified as a production update mechanism.
 
+The [U8 qualification matrix](managed-update-qualification.md) distinguishes
+synthetic harness checks from published-artifact, reboot and separate-VM restore
+evidence. Its current public-artifact gate is blocked: neither `v1.1.0` nor
+`v1.1.1` contains the application/helper contracts needed for enrollment.
+
 ## Reviewing and following an update
 
 Open **Operator → Updates** (`/operator/updates/console`). The page checks the

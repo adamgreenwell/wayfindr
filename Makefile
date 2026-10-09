@@ -1,6 +1,6 @@
 SERVER_DIR := apps/server
 
-.PHONY: attachment-retention-test data-model-test help design-fonts-test design-tokens design-tokens-test host-release-manifest-test php-version-test public-artifact-install-test public-info-check public-info-test release-contract-test release-publish-contract-test reverb-capacity-test host-updater-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: attachment-retention-test data-model-test help design-fonts-test design-tokens design-tokens-test host-release-manifest-test php-version-test public-artifact-install-test public-info-check public-info-test release-contract-test release-publish-contract-test reverb-capacity-test host-updater-test managed-update-qualification-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
@@ -24,6 +24,7 @@ help:
 	@printf '%s\n' '  make reverb-capacity-test'
 	@printf '%s\n' '                          Test the concurrent-agent capacity harness guards'
 	@printf '%s\n' '  make host-updater-test  Test host preparation, protection, and enrollment'
+	@printf '%s\n' '  make managed-update-qualification-test  Test the VM harness and evidence gates (synthetic)'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
 	@printf '%s\n' '  make wiki-test          Validate Wiki navigation and authority links'
 	@printf '%s\n' '  make wiki-sync-dry-run  Preview docs/wiki against the GitHub Wiki'
@@ -82,7 +83,12 @@ wiki-sync-dry-run: wiki-test
 
 # The installer is shipped code that operators curl into bash, and two of these
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
-host-updater-test:
+managed-update-qualification-test:
+	python3 scripts/test_update_vm_preflight.py
+	python3 scripts/test_update_vm_evidence.py
+	python3 scripts/test_managed_update_vm.py
+
+host-updater-test: managed-update-qualification-test
 	python3 scripts/test_host_updater.py
 	python3 scripts/test_update_operator.py
 	python3 scripts/test_updater_enrollment.py

@@ -15,6 +15,15 @@ on:
           - recovery-latest-v0.3.1-image-rollback-retry
           - upgrade-v0.1.0-latest
           - upgrade-v0.1.0-v0.2.0-latest
+          - managed-update-preflight
+      managed_source:
+        description: Exact published source tag for the managed-update declaration gate.
+        required: false
+        type: string
+      managed_target:
+        description: Exact later published target tag for the managed-update declaration gate.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -25,6 +34,7 @@ concurrency:
 
 jobs:
   public-artifact:
+    if: ${{ github.event.inputs.scenario != 'managed-update-preflight' }}
     name: Public artifact evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -45,3 +55,50 @@ jobs:
           WAYFINDR_EVIDENCE_PROJECT: wayfindr-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           WAYFINDR_EVIDENCE_APP_URL: http://127.0.0.1:18080
         run: scripts/smoke/public-artifact-install.sh
+
+  managed-update-preflight:
+    if: ${{ github.event.inputs.scenario == 'managed-update-preflight' }}
+    name: Managed update published-artifact gate (no VM qualification)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the qualification harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check both published release declarations without installing or enrolling
+        env:
+          MANAGED_SOURCE: ${{ github.event.inputs.managed_source }}
+          MANAGED_TARGET: ${{ github.event.inputs.managed_target }}
+        run: |
+          python3 scripts/smoke/managed-update-vm.py preflight \
+            --source "$MANAGED_SOURCE" --target "$MANAGED_TARGET" \
+            --output "$RUNNER_TEMP/managed-update-preflight.json" \
+            --evidence-output "$RUNNER_TEMP/managed-update-evidence.json"
+      - name: Record the classification, including a blocked gate
+        if: ${{ always() }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          gate = root / 'managed-update-preflight.json'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('### Managed update artifact gate\n\n')
+              summary.write('This read-only job does not install, enroll, update, reboot or restore a VM.\n\n')
+              if gate.is_file():
+                  value = json.loads(gate.read_text())
+                  summary.write('Classification: **' + value['status'] + '**. VM qualification: **not run**.\n\n')
+                  for reason in value['reasons']:
+                      summary.write('- ' + reason['role'] + ': `' + reason['code'] + '`\n')
+              else:
+                  summary.write('No valid gate receipt was produced; qualification remains blocked.\n')
+          PY
+      - name: Retain the sanitized gate and incomplete evidence receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: managed-update-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/managed-update-preflight.json
+            ${{ runner.temp }}/managed-update-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
