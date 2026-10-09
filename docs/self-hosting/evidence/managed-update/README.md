@@ -78,7 +78,8 @@ receipts. Later integration commits containing documentation or fixture changes
 are separate source identities from this exact rehearsed candidate.
 
 **Managed qualification remains false, with zero executed managed scenarios.**
-The development image refused supported enrollment. There was no published
+The read-only admission check classified the development image as ineligible;
+enrollment was not invoked. There was no published
 source-to-target update, protective custody, helper fault/recovery or reboot
 during an upgrade. Public DNS/TLS, browser acceptance, user-session
 `/broadcasting/auth`, remote attachments and post-archive erasure replay remain
