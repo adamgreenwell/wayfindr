@@ -30,7 +30,9 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Proposed **1.2.0** candidate. One additive
+## [1.2.0] - 2026-10-09
+
+**No operator action required.** Pull and restart. One additive
 migration gives managed-update audit events a unique deduplication key. Ordinary
 unenrolled installations keep their existing update path; the new host helper
 requires separate, optional enrollment. Managed updates remain under disposable
