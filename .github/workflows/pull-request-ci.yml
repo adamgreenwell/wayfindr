@@ -225,3 +225,14 @@ jobs:
 
       - name: Validate the installer and Compose contracts
         run: make self-host-test
+
+      - name: Verify backup lease admission across real Linux users
+        # This standalone fixture uses only its own temporary files and no app
+        # bootstrap, database or Docker daemon. Root is needed to drop to the
+        # distinct authorized and unauthorized UIDs inside the disposable runner.
+        run: |
+          php_binary="$(command -v php)"
+          sudo -n "$php_binary" \
+            apps/server/tests/Fixtures/managed-lease-access.php \
+            "$GITHUB_WORKSPACE/apps/server/app/Support/Updates/ManagedUpdateLease.php" \
+            "$GITHUB_WORKSPACE/apps/server/app/Support/Updates/ManagedUpdateGate.php"

@@ -294,6 +294,14 @@ release before invoking the backup runner. An edited `.env` that has not reached
 the original containers therefore refuses protection instead of capturing a
 different database or storage location. Environment values remain private.
 
+Ordinary backups, restores and managed hold transitions share a lifetime file
+lease under `storage/framework`. The empty lock uses that directory's group so
+authorized terminal and application users can coordinate without changing an
+existing lock's owner or permissions. Existing locks are opened read-only and
+remain the same inode; local exclusive `flock` semantics are required. Do not
+remove or replace the lock while work is active. The private managed marker
+continues to deny admission independently of the live lease.
+
 ## Protection rehearsal
 
 Use the operation UUID from a completed preparation that reached

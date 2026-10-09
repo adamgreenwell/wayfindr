@@ -161,6 +161,14 @@ behaviour rather than against an assumption about it. The enrolled host helper
 tests also require Python 3.11 or newer. `make host-updater-test` runs its focused
 protocol, journal, and enrollment regressions without enrolling a host.
 
+Linux CI also runs `apps/server/tests/Fixtures/managed-lease-access.php` in its
+disposable runner as root. This standalone test uses temporary files and the
+real lease/gate classes, then drops to distinct users to verify group-authorized
+admission, lifetime contention, unchanged existing inodes and permissions, and
+outsider/managed-hold refusal. It needs no app bootstrap, database or Docker
+daemon. Portable Pest checks cover ordinary creation and read-only reuse; the
+cross-user check is explicitly skipped outside an isolated Linux root runtime.
+
 | Script | What it holds down |
 | --- | --- |
 | `test-php-version-contract.sh` | Composer and operator docs declare the PHP 8.4.1 floor, while the self-hosting image and generated environment track the patched 8.4 image series. |
