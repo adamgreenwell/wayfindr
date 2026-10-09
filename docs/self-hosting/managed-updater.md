@@ -18,10 +18,53 @@ an explicit root-only terminal action.
 These changes are development slices awaiting release and VM qualification.
 They have not been qualified as a production update mechanism.
 
+## Reviewing and following an update
+
+Open **Operator → Updates** (`/operator/updates/console`). The page checks the
+latest published stable release without starting a host operation. It shows
+the current and proposed releases, required actions, prerequisites, backup
+policy, interruption and recovery limits. Docker, source, host-PHP, deployment
+platform and hosting-managed installations receive their own update guidance.
+
+For an eligible enrolled installation, confirm your password and second factor
+when enabled, then choose **Review release**. Preparation records one exact
+release and plan without applying it. Read the host-bound review, select the
+confirmation checkbox, then choose **Start update**. **Recheck** prepares a new
+immutable review; it does not change an earlier operation.
+
+The dialog follows **Prepare → Download → Protect data → Apply → Restart →
+Verify**, with elapsed time, the last confirmed host state and redacted details.
+It does not invent percentages or a completion time. During the expected HTTP
+503 hold it keeps the last confirmed stage and explains reconnection. Status
+reads use one bounded request at a time, a ten-second deadline and backoff up
+to thirty seconds, without depending on Reverb.
+
+Closing the dialog or refreshing does not cancel an update. The browser retains
+only an actor/installation-bound bookmark, release/plan identifiers, last-known
+stage and pending request identity; it stores no password, second-factor code
+or execution authority. Reopening or returning to the operator console reads
+the existing host operation. If storage is unavailable, the host's active run
+is still discoverable. An uncertain write is reconciled by reads; **Try again**
+is an explicit retry of the same request, never an automatic new Start.
+
+Success requires the host's requested-release, service, origin, migration and
+configuration verification, not merely a returning HTTP response. Safe failure,
+cancellation, recovery required and uncertain status remain distinct. This
+executor does not perform automatic post-migration rollback; a returning old
+release is not labelled as a completed database rollback.
+
+Cancellation is available only before migration intent. Once the HTTP hold
+blocks the application, terminal inspection/cancellation remains the independent
+path described below. An expired session stops browser polling and offers a
+sign-in link; expired action confirmation can be renewed without losing the
+operation. Review/progress copy is available in English, German and Italian,
+with native-dialog keyboard/focus behavior and reduced-motion styling.
+
 ## Operator action contract
 
-U6 adds JSON endpoints under `/operator/updates`. The review/progress interface
-is a separate U7 slice; these endpoints alone do not add an Update button.
+U6 adds JSON endpoints under `/operator/updates`; U7 adds the review/progress
+page and a read-only latest-stable candidate endpoint. These remain development
+slices pending delivery and the separate disposable-VM qualification.
 
 Every endpoint requires a current, active platform operator, the existing
 authenticated-session and MFA policy checks, and the normal web CSRF protection
@@ -35,6 +78,8 @@ operator for this first contract.
 | Method | Path after `/operator/updates` | Input and behavior |
 | --- | --- | --- |
 | GET | `/` | Observe ownership, authenticated helper capabilities, execution eligibility, and manual guidance. |
+| GET | `/console` | Render the operator review/progress page with local identity and fixed endpoint URLs. |
+| GET | `/candidate` | Read and assess latest-stable public declarations; do not prepare, start, or change host state. |
 | POST | `/reauthenticate` | `current_password`, and `one_time_code` when MFA is enrolled; return a short-lived session proof. |
 | POST | `/plan`, `/recheck` | Canonical stable `release_tag` and UUID `request_id`; prepare asynchronously. Recheck creates a fresh operation without changing earlier history. |
 | GET | `/{operation}/review` | Build the full public release review and local guard evidence; its fingerprint must match the prepared host plan. |
@@ -47,7 +92,8 @@ operator for this first contract.
 Unknown executable inputs, paths, image selectors, actor claims, and extra
 fields are refused. POSTs accept the normal CSRF `_token`, never an authority
 claim. Requests use exact stable tags rather than `latest`. Responses and
-errors are JSON with `Cache-Control: no-store`. An unavailable or incompatible
+errors are JSON with `Cache-Control: no-store`; `/console` uses normal HTML and
+login redirects with the same no-store policy. An unavailable or incompatible
 helper and explicit external/hosting ownership cannot enable managed execution.
 Old preparation/status helper versions remain observable without gaining start
 authority. New enrollment probes the application's static protocol contract

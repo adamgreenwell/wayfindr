@@ -170,6 +170,28 @@ failed-query state is isolated with a savepoint. These fixtures do not perform
 an actual host enrollment, published-image update, provider write, restore or
 VM/reboot drill.
 
+`OperatorUpdateConsoleTest` covers the no-store review page, safe local bootstrap,
+read-only stable candidate assessment, current operator/MFA authority, blocked
+requirements, external ownership and missing metadata. `OperatorUpdateLanguageTest`
+checks English/German/Italian parity and rendered copy, protocol enum coverage,
+data-language markers and accessible dialog controls.
+
+The dashboard browser-script suite executes the actual update component with
+jsdom and a deterministic clock. It covers exact-operation reconnection,
+bounded backoff and deadlines, lost write replies, explicit same-request retry,
+fresh review/reauthentication, cancellation after migration intent, stale
+responses, changed installation/actor, history paging, browser Back/Forward,
+storage failure, redacted text, keyboard focus and reduced motion. Run it from
+the repository root after installing the widget's locked test dependencies:
+
+```bash
+node --test apps/server/tests/BrowserScripts/*.test.cjs
+```
+
+These browser fixtures simulate the HTTP hold and returning host evidence. They
+do not establish real service replacement, VM restart, backup restore or
+independent operator acceptance; those remain separate qualification gates.
+
 ### Why the dotenv and classification checks are differential tests
 
 [ADR 0013](../decisions/0013-upgrade-preflight-and-release-requirements.md)
