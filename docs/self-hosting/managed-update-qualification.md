@@ -313,6 +313,9 @@ Retain the run commands, exit codes, logs, hashes and independent observation
 receipts needed to review those claims. A missing prerequisite, blocked
 scaffold or incomplete matrix must remain visibly unqualified.
 
-U8 remains a release gate until the actual published matrix, a real same-guest
-reboot and the second-environment restore have evidence. U9 rollout/acceptance,
-human review, publication and production use remain separate gates.
+U8 gates managed-update qualification and rollout until the actual published
+matrix, a real same-guest reboot and the second-environment restore have evidence.
+The first compatible source must be published before that matrix can run; its
+publication does not clear this gate. Follow the separate
+[release-readiness sequence](managed-update-release-readiness.md). U9 acceptance,
+human review and production use remain separate gates.
