@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit installation of the restricted, preparation-only host helper.
+"""Explicit installation of the restricted preparation and protection host helper.
 
 No container is started or replaced here. Existing enrollments are never changed:
 helper replacement, credential rotation, and unenrollment require their own
@@ -176,7 +176,8 @@ def inspect_install(install_dir: Path, canonical_compose: Path, docker: list[str
     # This draft helper cannot turn an older published image into a compatible
     # application. The fixed command is read-only and introduces no helper gate
     # into existing terminal updates.
-    run(compose + ["exec", "-T", "web", "php", "artisan", "wayfindr:update-plan", "--help"])
+    for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+        run(compose + ["exec", "-T", "web", "php", "artisan", command, "--help"])
     return image
 
 
@@ -265,7 +266,7 @@ def verify_started(runtime, installation_id: str, token: str) -> None:
 def enrollment_status() -> dict:
     configuration = CONFIG_DIR / "installation.json"
     if not configuration.exists():
-        return {"enrolled": False, "preparation_only": True}
+        return {"enrolled": False, "application_apply_available": False}
     trusted(configuration)
     try:
         config = json.loads(configuration.read_text())
@@ -275,9 +276,11 @@ def enrollment_status() -> dict:
     except (OSError, ValueError, TypeError, KeyError):
         raise EnrollmentError("Existing enrollment metadata is invalid; no files were changed.") from None
     expected_fields = {"schema", "installation_id", "install_dir", "compose_project", "client_uid", "client_gid", "image_reference", "compose_sha256", "env_sha256", "installer_sha256"}
-    if not isinstance(config, dict) or set(config) != expected_fields or type(config.get("schema")) is not int or config["schema"] != 1 or config["installation_id"] != installation_id or config["compose_project"] != "wayfindr-self-hosting" or type(config["client_uid"]) is not int or config["client_uid"] != 1000 or type(config["client_gid"]) is not int or config["client_gid"] != 1000 or not isinstance(config["image_reference"], str) or OFFICIAL_IMAGE.fullmatch(config["image_reference"]) is None:
+    if not isinstance(config, dict) or set(config) not in (expected_fields, expected_fields | {"overlay_sha256"}) or type(config.get("schema")) is not int or config["schema"] != 1 or config["installation_id"] != installation_id or config["compose_project"] != "wayfindr-self-hosting" or type(config["client_uid"]) is not int or config["client_uid"] != 1000 or type(config["client_gid"]) is not int or config["client_gid"] != 1000 or not isinstance(config["image_reference"], str) or OFFICIAL_IMAGE.fullmatch(config["image_reference"]) is None:
         raise EnrollmentError("Existing enrollment metadata is invalid; no files were changed.")
     if any(not isinstance(config[field], str) or re.fullmatch(r"[a-f0-9]{64}", config[field]) is None for field in ("compose_sha256", "env_sha256", "installer_sha256")):
+        raise EnrollmentError("Existing enrollment metadata is invalid; no files were changed.")
+    if "overlay_sha256" in config and (not isinstance(config["overlay_sha256"], str) or re.fullmatch(r"[a-f0-9]{64}", config["overlay_sha256"]) is None):
         raise EnrollmentError("Existing enrollment metadata is invalid; no files were changed.")
     if not isinstance(config["install_dir"], str) or not Path(config["install_dir"]).is_absolute() or ".." in Path(config["install_dir"]).parts:
         raise EnrollmentError("Existing enrollment metadata is invalid; no files were changed.")
@@ -289,7 +292,7 @@ def enrollment_status() -> dict:
         raise EnrollmentError("Existing enrollment credentials are invalid; no files were changed.") from None
     if not isinstance(auth, dict) or set(auth) != {"schema", "installation_id", "token"} or type(auth.get("schema")) is not int or auth["schema"] != 1 or auth.get("installation_id") != installation_id or not isinstance(auth.get("token"), str) or re.fullmatch(r"[a-f0-9]{64}", auth["token"]) is None:
         raise EnrollmentError("Existing enrollment credentials are invalid; no files were changed.")
-    return {"enrolled": True, "installation_id": installation_id, "preparation_only": True, "helper_replacement_available": False}
+    return {"enrolled": True, "installation_id": installation_id, "application_apply_available": False, "helper_replacement_available": False}
 
 
 def enroll(install_dir: Path) -> dict:
@@ -309,6 +312,8 @@ def enroll(install_dir: Path) -> dict:
         "overlay": distribution / "docker/self-hosting/compose.updater.yml",
         "unit": distribution / "docker/self-hosting/wayfindr-updater.service",
         "daemon": distribution / "scripts/self-host/updater.py",
+        "protection": distribution / "scripts/self-host/update_protection.py",
+        "archive": distribution / "scripts/self-host/protection_archive.py",
         "installer": distribution / "scripts/self-host/install.sh",
     }
     for source in sources.values():
@@ -343,6 +348,7 @@ def enroll(install_dir: Path) -> dict:
         raise
     installation_id = str(uuid.uuid4())
     runtime = load_runtime(sources["daemon"])
+    overlay = sources["overlay"].read_bytes().replace(b"__WAYFINDR_INSTALLATION_ID__", installation_id.encode("ascii"))
     config = {
         "schema": 1,
         "installation_id": installation_id,
@@ -354,17 +360,19 @@ def enroll(install_dir: Path) -> dict:
         "compose_sha256": file_hash(install_dir / "compose.yml"),
         "env_sha256": file_hash(install_dir / ".env"),
         "installer_sha256": file_hash(install_dir / "install.sh"),
+        "overlay_sha256": hashlib.sha256(overlay).hexdigest(),
     }
     credential = {"schema": 1, "installation_id": installation_id, "token": secrets.token_hex(32)}
-    overlay = sources["overlay"].read_text().replace("__WAYFINDR_INSTALLATION_ID__", installation_id)
     CODE_DIR.mkdir(mode=0o755)
     STATE_DIR.mkdir(mode=0o700)
     write_new(STATE_DIR / "journal.json", json_bytes(runtime.initial_journal(installation_id)), 0o600)
     write_new(CODE_DIR / "updater.py", sources["daemon"].read_bytes(), 0o644)
+    write_new(CODE_DIR / "update_protection.py", sources["protection"].read_bytes(), 0o644)
+    write_new(CODE_DIR / "protection_archive.py", sources["archive"].read_bytes(), 0o644)
     write_new(CLI_FILE, b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/wayfindr-updater/updater.py "$@"\n', 0o755)
     write_new(CONFIG_DIR / "installation.json", json_bytes(config), 0o600)
     write_new(CONFIG_DIR / "credential.json", json_bytes(credential), 0o440, 1000)
-    write_new(install_dir / "compose.updater.yml", overlay.encode(), 0o644)
+    write_new(install_dir / "compose.updater.yml", overlay, 0o644)
     write_new(install_dir / ".updater-enrolled", (installation_id + "\n").encode(), 0o600)
     write_new(UNIT_FILE, sources["unit"].read_bytes(), 0o644)
     # An interrupted enrollment retains root-owned evidence and refuses a rerun;
@@ -373,13 +381,13 @@ def enroll(install_dir: Path) -> dict:
     run(["/usr/bin/systemctl", "enable", "--now", "wayfindr-updater.service"])
     run(["/usr/bin/systemctl", "is-active", "--quiet", "wayfindr-updater.service"])
     verify_started(runtime, installation_id, credential["token"])
-    return {"enrolled": True, "installation_id": installation_id, "preparation_only": True, "overlay": str(install_dir / "compose.updater.yml"), "activation_required": True}
+    return {"enrolled": True, "installation_id": installation_id, "application_apply_available": False, "overlay": str(install_dir / "compose.updater.yml"), "activation_required": True}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    enrollment = commands.add_parser("enroll", help="Explicitly install the preparation-only helper; do not start or recreate containers.")
+    enrollment = commands.add_parser("enroll", help="Install the preparation/protection helper; do not start or recreate application containers.")
     enrollment.add_argument("--install-dir", required=True, type=Path)
     commands.add_parser("status", help="Read enrollment identity without changing helper or application files.")
     options = parser.parse_args()

@@ -2,6 +2,7 @@
 """Synthetic enrollment tests. Never use host Docker, systemd, or /etc writes."""
 
 import contextlib
+import hashlib
 import importlib.util
 import json
 import os
@@ -71,7 +72,7 @@ class EnrollmentTests(unittest.TestCase):
             with self.assertRaises(ENROLL.EnrollmentError):
                 ENROLL.verify_process_identity(pid)
 
-    def installation_fixture(self, *, image=IMAGE, security=None, old_app=False, service_mutation=None):
+    def installation_fixture(self, *, image=IMAGE, security=None, old_app=False, missing_command=None, service_mutation=None):
         services = {name: {"image": image} for name in ENROLL.APP_SERVICES}
         if service_mutation:
             services["queue"].update(service_mutation)
@@ -90,8 +91,8 @@ class EnrollmentTests(unittest.TestCase):
             if "inspect" in command:
                 name = next(call[-1] for call in reversed(calls) if "ps" in call)
                 return [{"Image": IMAGE_ID, "State": {"Running": True, "Pid": 123}, "HostConfig": {"UsernsMode": ""}, "Config": {"User": "wayfindr", "Labels": {"com.docker.compose.project": "wayfindr-self-hosting", "com.docker.compose.service": name}}}]
-            if command[-2:] == ["wayfindr:update-plan", "--help"]:
-                if old_app:
+            if command[-1] == "--help" and command[-2] in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+                if (old_app and command[-2] == "wayfindr:update-plan") or command[-2] == missing_command:
                     raise ENROLL.EnrollmentError("Command is unavailable")
                 return "Read-only update plan"
             raise AssertionError("Unexpected synthetic Docker command")
@@ -104,11 +105,22 @@ class EnrollmentTests(unittest.TestCase):
     def test_exact_official_running_install_and_readonly_command_are_required(self):
         runner, calls = self.installation_fixture()
         self.assertEqual(IMAGE, self.inspect(runner))
-        self.assertEqual(["exec", "-T", "web", "php", "artisan", "wayfindr:update-plan", "--help"], calls[-1][-7:])
+        self.assertEqual([
+            ["exec", "-T", "web", "php", "artisan", command, "--help"]
+            for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup")
+        ], [command[-7:] for command in calls[-3:]])
         self.assertTrue(all("up" not in command and "pull" not in command for command in calls))
         runner, _ = self.installation_fixture(old_app=True)
         with self.assertRaises(ENROLL.EnrollmentError):
             self.inspect(runner)
+
+    def test_each_required_current_application_command_is_checked_readonly(self):
+        for command in ("wayfindr:update-plan", "wayfindr:upgrade-window", "wayfindr:protective-backup"):
+            with self.subTest(command=command), self.assertRaises(ENROLL.EnrollmentError):
+                runner, calls = self.installation_fixture(missing_command=command)
+                self.inspect(runner)
+            self.assertEqual([command, "--help"], calls[-1][-2:])
+            self.assertTrue(all("up" not in call and "pull" not in call and "run" not in call for call in calls))
 
     def test_custom_floating_prerelease_namespace_remap_and_mixed_services_refuse(self):
         fixtures = [dict(image="custom/wayfindr:v1.2.3"), dict(image="ghcr.io/adamgreenwell/wayfindr:latest"), dict(image="ghcr.io/adamgreenwell/wayfindr:v1.2.3-beta.1"), dict(security=["name=rootless"]), dict(security=["name=userns"]), dict(service_mutation={"image": "custom/wayfindr:v1.2.3"}), dict(service_mutation={"user": "0:0"})]
@@ -127,7 +139,8 @@ class EnrollmentTests(unittest.TestCase):
                 path.mkdir(parents=True, exist_ok=True)
             for filename in ("compose.yml", "compose.updater.yml", "wayfindr-updater.service"):
                 (distribution / "docker/self-hosting" / filename).write_bytes((ROOT / "docker/self-hosting" / filename).read_bytes())
-            (distribution / "scripts/self-host/updater.py").write_bytes((ROOT / "scripts/self-host/updater.py").read_bytes())
+            for filename in ("updater.py", "update_protection.py", "protection_archive.py"):
+                (distribution / "scripts/self-host" / filename).write_bytes((ROOT / "scripts/self-host" / filename).read_bytes())
             (distribution / "scripts/self-host/install.sh").write_bytes((ROOT / "scripts/self-host/install.sh").read_bytes())
             (install / "compose.yml").write_text("# unchanged application compose\n")
             (install / ".env").write_text("APP_KEY=synthetic-secret-not-for-output\n")
@@ -153,6 +166,10 @@ class EnrollmentTests(unittest.TestCase):
             self.assertNotIn(credential["token"], json.dumps(result))
             self.assertIn((ENROLL.CONFIG_DIR / "credential.json", 0o440, 1000), writes)
             self.assertIn((ENROLL.CONFIG_DIR / "installation.json", 0o600, 0), writes)
+            self.assertEqual(hashlib.sha256((install / "compose.updater.yml").read_bytes()).hexdigest(), config["overlay_sha256"])
+            for filename in ("updater.py", "update_protection.py", "protection_archive.py"):
+                self.assertIn((ENROLL.CODE_DIR / filename, 0o644, 0), writes)
+                self.assertEqual((ROOT / "scripts/self-host" / filename).read_bytes(), (ENROLL.CODE_DIR / filename).read_bytes())
             self.assertIn((install / ".updater-enrolled", 0o600, 0), writes)
             journal = json.loads((ENROLL.STATE_DIR / "journal.json").read_text())
             self.assertEqual(config["installation_id"], journal["installation_id"])
@@ -173,6 +190,51 @@ class EnrollmentTests(unittest.TestCase):
             self.assertEqual(count, len(writes))
             runner.assert_not_called()
             self.assertTrue(ENROLL.enrollment_status()["enrolled"])
+
+    def test_legacy_identity_remains_readable_without_silently_upgrading_files(self):
+        with self.synthetic_host() as (_, install, writes, _, runner):
+            ENROLL.enroll(install)
+            configuration = ENROLL.CONFIG_DIR / "installation.json"
+            value = json.loads(configuration.read_text())
+            del value["overlay_sha256"]
+            configuration.write_bytes(ENROLL.json_bytes(value))
+            before = {path: path.read_bytes() for path, _, _ in writes}
+            count = len(writes)
+            runner.reset_mock()
+            self.assertTrue(ENROLL.enrollment_status()["enrolled"])
+            with self.assertRaises(ENROLL.EnrollmentError):
+                ENROLL.enroll(install)
+            self.assertEqual(count, len(writes))
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+            runner.assert_not_called()
+
+    def test_overlay_digest_metadata_rejects_malformed_values_without_writes(self):
+        for digest in (True, "not-a-digest", "A" * 64, ["a" * 64]):
+            with self.subTest(digest=digest), self.synthetic_host() as (_, install, writes, _, runner):
+                ENROLL.enroll(install)
+                configuration = ENROLL.CONFIG_DIR / "installation.json"
+                value = json.loads(configuration.read_text())
+                value["overlay_sha256"] = digest
+                configuration.write_bytes(ENROLL.json_bytes(value))
+                count = len(writes)
+                runner.reset_mock()
+                with self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enrollment_status()
+                self.assertEqual(count, len(writes))
+                runner.assert_not_called()
+
+    def test_both_privileged_protection_sources_require_trust_before_preparation(self):
+        for filename in ("update_protection.py", "protection_archive.py"):
+            with self.subTest(filename=filename), self.synthetic_host() as (_, install, writes, inspect, runner):
+                def trust(path, kind="file"):
+                    if path.name == filename:
+                        raise ENROLL.EnrollmentError("Untrusted protection source")
+                with patch.object(ENROLL, "trusted", side_effect=trust), self.assertRaises(ENROLL.EnrollmentError):
+                    ENROLL.enroll(install)
+                self.assertEqual([], writes)
+                self.assertFalse(ENROLL.CONFIG_DIR.exists())
+                inspect.assert_not_called()
+                runner.assert_not_called()
 
     def test_partial_state_or_existing_code_refuses_without_writes(self):
         for artifact in ("state", "code", "marker", "overlay", "unit", "cli"):

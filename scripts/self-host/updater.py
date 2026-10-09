@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-owned update preparation and journal. No application mutation engine yet."""
+"""Host-owned preparation, protective backups, and journal. No schema apply engine."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 PROTOCOL = 1
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
 CREDENTIAL = Path("/etc/wayfindr-updater/credential.json")
@@ -43,6 +43,9 @@ IMAGE = re.compile(r"ghcr\.io/adamgreenwell/wayfindr:(v?(?:0|[1-9][0-9]*)\.(?:0|
 PHASES = {"accepted", "preparing", "reconciliation_required", "blocked"}
 CHECKPOINTS = {"accepted", "prepare_started", "plan_reported"}
 EVENTS = {"operation_accepted", "prepare_started", "plan_reported", "operation_blocked", "reconciliation_required", "interrupted_prepare"}
+PHASES |= {"protecting", "recovery_required"}
+CHECKPOINTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released"}
+EVENTS |= {"protection_started", "fenced", "drained", "backup_verified", "services_resumed", "protection_released", "protection_failed", "recovery_required", "recovery_started"}
 ERRORS = {
     "authentication_failed", "request_invalid", "protocol_unsupported", "installation_mismatch",
     "replay_detected", "request_expired", "operation_busy", "idempotency_conflict",
@@ -50,7 +53,40 @@ ERRORS = {
     "helper_unavailable", "configuration_changed", "prepare_unavailable", "prepare_failed",
     "prepare_timeout", "prepare_output_invalid", "prerequisites_unmet", "identity_unverified",
     "no_update_required", "execution_not_available", "reconciliation_required", "interrupted_prepare",
+    "protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout",
+    "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed",
+    "maintenance_present", "writer_unverified", "protection_verified",
 }
+
+
+def protection_state():
+    return {"phase": "fencing", "archive_sha256": None, "manifest_sha256": None,
+            "archive_bytes": None, "source_image_id": None, "local_attachment_disks": None,
+            "external_attachment_disks": None, "offsite_uploaded": None, "offsite_verification": None,
+            "custody_verified": False, "services_recovered": False, "hold_owned": False, "error": None}
+
+
+def validate_protection(value):
+    if not isinstance(value, dict) or set(value) != set(protection_state()):
+        raise Refusal("journal_corrupt")
+    if not isinstance(value["phase"], str) or value["phase"] not in {"fencing", "draining", "backing_up", "resuming", "verified", "recovery_required"}:
+        raise Refusal("journal_corrupt")
+    for key in ("archive_sha256", "manifest_sha256", "source_image_id"):
+        pattern = DIGEST if key == "source_image_id" else HEX
+        if value[key] is not None and (not isinstance(value[key], str) or not pattern.fullmatch(value[key])):
+            raise Refusal("journal_corrupt")
+    for key in ("archive_bytes", "local_attachment_disks", "external_attachment_disks"):
+        if value[key] is not None and not integer(value[key], 1 if key == "archive_bytes" else 0):
+            raise Refusal("journal_corrupt")
+    if value["offsite_uploaded"] is not None and type(value["offsite_uploaded"]) is not bool:
+        raise Refusal("journal_corrupt")
+    if value["offsite_verification"] is not None and (not isinstance(value["offsite_verification"], str) or value["offsite_verification"] not in {"not-configured", "existence-and-size"}):
+        raise Refusal("journal_corrupt")
+    protection_errors = {"protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout", "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed", "maintenance_present", "writer_unverified", "protection_verified"}
+    if any(type(value[key]) is not bool for key in ("custody_verified", "services_recovered", "hold_owned")) or (value["error"] is not None and (not isinstance(value["error"], str) or value["error"] not in protection_errors)):
+        raise Refusal("journal_corrupt")
+    if value["phase"] == "verified" and (any(value[key] is None for key in ("archive_sha256", "manifest_sha256", "archive_bytes", "source_image_id", "local_attachment_disks", "external_attachment_disks", "offsite_uploaded", "offsite_verification")) or not value["custody_verified"] or not value["services_recovered"] or value["hold_owned"] or value["error"] is not None or value["offsite_uploaded"] != (value["offsite_verification"] == "existence-and-size")):
+        raise Refusal("journal_corrupt")
 
 
 class Refusal(Exception):
@@ -173,14 +209,16 @@ def validate_journal(value: dict, installation_id: str) -> None:
         keys = {"operation_id", "request_id", "release_tag", "phase", "checkpoint", "executor_generation",
                 "executor_version", "mutation_started", "created_at", "updated_at", "revision", "error",
                 "source", "target", "plan_id", "events"}
-        if not isinstance(operation, dict) or set(operation) != keys or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
+        if not isinstance(operation, dict) or set(operation) not in (keys, keys | {"protection"}) or not is_uuid(operation_id) or operation["operation_id"] != operation_id:
             raise Refusal("journal_corrupt")
+        if "protection" in operation:
+            validate_protection(operation["protection"])
         if not is_uuid(operation["request_id"]) or operation["request_id"] in requests or not is_uuid(operation["executor_generation"]):
             raise Refusal("journal_corrupt")
         requests.add(operation["request_id"])
         if not isinstance(operation["release_tag"], str) or TAG.fullmatch(operation["release_tag"]) is None or len(operation["release_tag"]) > 128:
             raise Refusal("journal_corrupt")
-        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or operation["executor_version"] != VERSION or operation["mutation_started"] is not False:
+        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", VERSION} or operation["mutation_started"] is not False:
             raise Refusal("journal_corrupt")
         if any(not integer(operation[key]) for key in ("created_at", "updated_at", "revision")) or operation["revision"] > value["revision"]:
             raise Refusal("journal_corrupt")
@@ -215,7 +253,9 @@ def validate_journal(value: dict, installation_id: str) -> None:
 class Configuration:
     def __init__(self, value: dict, token: str):
         keys = {"schema", "installation_id", "install_dir", "compose_project", "client_uid", "client_gid", "image_reference", "compose_sha256", "env_sha256", "installer_sha256"}
-        if set(value) != keys or type(value["schema"]) is not int or value["schema"] != 1 or not is_uuid(value["installation_id"]):
+        if set(value) not in (keys, keys | {"overlay_sha256"}) or type(value["schema"]) is not int or value["schema"] != 1 or not is_uuid(value["installation_id"]):
+            raise Refusal("configuration_changed")
+        if "overlay_sha256" in value and (not isinstance(value["overlay_sha256"], str) or not HEX.fullmatch(value["overlay_sha256"])):
             raise Refusal("configuration_changed")
         if value["compose_project"] != "wayfindr-self-hosting" or type(value["client_uid"]) is not int or value["client_uid"] != 1000 or type(value["client_gid"]) is not int or value["client_gid"] != 1000:
             raise Refusal("configuration_changed")
@@ -245,7 +285,10 @@ class Configuration:
     def verify_files(self):
         directory = Path(self.value["install_dir"])
         trusted(directory, directory=True)
-        for name, key in (("compose.yml", "compose_sha256"), (".env", "env_sha256"), ("install.sh", "installer_sha256")):
+        files = [("compose.yml", "compose_sha256"), (".env", "env_sha256"), ("install.sh", "installer_sha256")]
+        if "overlay_sha256" in self.value:
+            files.append(("compose.updater.yml", "overlay_sha256"))
+        for name, key in files:
             path = directory / name
             trusted(path)
             try:
@@ -329,6 +372,7 @@ class Journal:
         operation["revision"] = value["revision"]
         operation["updated_at"] = int(time.time())
         operation["events"].append({"revision": operation["revision"], "at": operation["updated_at"], "code": code, "phase": operation["phase"]})
+        operation["events"] = operation["events"][-32:]
 
     def begin_generation(self, generation):
         with self.mutex:
@@ -337,10 +381,13 @@ class Journal:
             value["heartbeat_at"] = int(time.time())
             if value["active_operation"] is not None:
                 operation = value["operations"][value["active_operation"]]
-                if operation["phase"] != "reconciliation_required":
-                    operation["phase"] = "reconciliation_required"
-                    operation["error"] = "reconciliation_required"
-                    self.event(value, operation, "reconciliation_required")
+                phase = "recovery_required" if "protection" in operation else "reconciliation_required"
+                if operation["phase"] != phase:
+                    operation["phase"] = phase
+                    operation["error"] = phase
+                    if "protection" in operation:
+                        operation["protection"].update(phase=phase, error=phase)
+                    self.event(value, operation, phase)
             self.commit(value)
 
     def heartbeat(self):
@@ -417,6 +464,61 @@ class Journal:
             operation["error"] = "interrupted_prepare"
             self.event(value, operation, "interrupted_prepare")
             value["active_operation"] = None
+            self.commit(value)
+
+    def claim_protection(self, operation_id, generation, recover=False):
+        with self.mutex:
+            if operation_id not in self.value["operations"]:
+                raise Refusal("operation_missing")
+            operation = self.value["operations"][operation_id]
+            if self.value["active_operation"] not in {None, operation_id}:
+                raise Refusal("operation_busy")
+            if recover:
+                if operation["phase"] != "recovery_required" or "protection" not in operation:
+                    raise Refusal("recovery_required")
+            elif "protection" in operation:
+                return False  # Same operation never starts a second snapshot.
+            elif operation["phase"] != "blocked" or operation["error"] != "execution_not_available" or operation["checkpoint"] != "plan_reported" or operation["source"] is None or operation["plan_id"] is None:
+                raise Refusal("protection_unavailable")
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            operation.update(phase="protecting", error=None, executor_generation=generation, executor_version=VERSION)
+            if not recover:
+                operation["checkpoint"] = "protection_started"
+                operation["protection"] = protection_state()
+            value["active_operation"] = value["last_operation"] = operation_id
+            self.event(value, operation, "recovery_started" if recover else "protection_started")
+            self.commit(value)
+            return True
+
+    def protection_checkpoint(self, operation_id, checkpoint, facts):
+        with self.mutex:
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            if value["active_operation"] != operation_id or operation["phase"] != "protecting":
+                raise Refusal("recovery_required")
+            operation["checkpoint"] = checkpoint
+            operation["protection"].update(facts)
+            self.event(value, operation, checkpoint)
+            self.commit(value)
+
+    def protection_finish(self, operation_id, reason, recovered, hold_owned=None):
+        with self.mutex:
+            value = copy.deepcopy(self.value)
+            operation = value["operations"][operation_id]
+            if value["active_operation"] != operation_id:
+                raise Refusal("recovery_required")
+            operation["phase"] = "blocked" if recovered else "recovery_required"
+            operation["error"] = reason if recovered else "recovery_required"
+            public_reason = reason if reason in {"protection_unavailable", "protection_failed", "protection_timeout", "drain_timeout", "backup_failed", "backup_invalid", "custody_failed", "recovery_required", "source_changed", "maintenance_present", "writer_unverified", "protection_verified"} else "protection_failed"
+            operation["protection"].update(error=None if reason == "protection_verified" else public_reason)
+            if not recovered:
+                operation["protection"].update(phase="recovery_required", services_recovered=False)
+                if hold_owned is not None:
+                    operation["protection"]["hold_owned"] = hold_owned
+            self.event(value, operation, "protection_released" if reason == "protection_verified" and recovered else "protection_failed" if recovered else "recovery_required")
+            if recovered:
+                value["active_operation"] = None
             self.commit(value)
 
     def status(self, operation_id=None):
@@ -547,11 +649,12 @@ class Prepare:
 
 
 class Controller:
-    def __init__(self, config: Configuration, journal: Journal, preparer=None):
+    def __init__(self, config: Configuration, journal: Journal, preparer=None, protector=None):
         self.config = config
         self.journal = journal
         self.generation = str(uuid.uuid4())
         self.preparer = preparer if preparer is not None else Prepare(config)
+        self.protector = protector
         self.nonces = {}
         self.nonce_mutex = threading.Lock()
         self.workers = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wayfindr-prepare")
@@ -570,6 +673,8 @@ class Controller:
         if abs(int(time.time()) - payload["issued_at"]) > 30:
             raise Refusal("request_expired")
         action = payload.get("action")
+        if not isinstance(action, str):
+            raise Refusal("request_invalid")
         if action == "capabilities":
             expected = common
         elif action == "prepare":
@@ -583,6 +688,12 @@ class Controller:
         elif action == "logs":
             expected = common | {"operation_id", "cursor", "limit"}
             if not is_uuid(payload.get("operation_id")) or not integer(payload.get("cursor")) or not integer(payload.get("limit"), 1) or payload["limit"] > 100:
+                raise Refusal("request_invalid")
+        elif action in {"protect", "recover-protection"}:
+            if uid != 0:
+                raise Refusal("authentication_failed")
+            expected = common | {"operation_id"}
+            if not is_uuid(payload.get("operation_id")):
                 raise Refusal("request_invalid")
         else:
             raise Refusal("request_invalid")
@@ -607,6 +718,13 @@ class Controller:
             return self.journal.status(payload.get("operation_id"))
         if action == "logs":
             return self.journal.logs(payload["operation_id"], payload["cursor"], payload["limit"])
+        if action in {"protect", "recover-protection"}:
+            operation_id = payload["operation_id"]
+            recover = action == "recover-protection"
+            created = self.journal.claim_protection(operation_id, self.generation, recover)
+            if created:
+                self.workers.submit(self.protect, operation_id, recover)
+            return self.journal.status(operation_id)
         operation_id, created = self.journal.accept(payload["request_id"], payload["release_tag"], self.generation)
         if created:
             self.workers.submit(self.work, operation_id, payload["release_tag"])
@@ -626,6 +744,27 @@ class Controller:
             # A journal failure leaves durable ownership held; never clear it
             # in exception cleanup or publish a success inferred from HTTP.
             return
+
+    def protect(self, operation_id, recover):
+        try:
+            protector = self.protector
+            if protector is None:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("wayfindr_protection", Path(__file__).with_name("update_protection.py"))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                import types
+                api = types.SimpleNamespace(Refusal=Refusal, capture=capture, trusted=trusted,
+                                            strict_json=strict_json, atomic_write=atomic_write,
+                                            read_object=read_object, encoded=encoded)
+                protector = module.Protector(self.config, self.journal, STATE_DIR, api)
+            protector(operation_id, recover)
+        except Exception:
+            # Unknown outcomes retain operation ownership and the app's hold.
+            try:
+                self.journal.protection_finish(operation_id, "protection_failed", False)
+            except Exception:
+                pass
 
 
 def envelope(payload, token, direction):
@@ -740,6 +879,9 @@ def main():
     logs.add_argument("--json", action="store_true")
     reconcile = subparsers.add_parser("reconcile")
     reconcile.add_argument("--operation", required=True)
+    for action in ("protect", "recover-protection"):
+        command = subparsers.add_parser(action)
+        command.add_argument("--operation", required=True)
     args = parser.parse_args()
     try:
         if sys.version_info < (3, 11) or sys.platform != "linux" or os.geteuid() != 0:
@@ -750,7 +892,10 @@ def main():
         # Recovery reads depend on trusted enrollment identity, not a healthy
         # application or unchanged Compose/.env files. Execution still verifies.
         config = Configuration.load(verify_install=args.action == "serve")
-        if args.action in {"serve", "reconcile"}:
+        if args.action in {"protect", "recover-protection"}:
+            result = root_request(config, args.action, operation_id)
+            print(encoded(result).decode())
+        elif args.action in {"serve", "reconcile"}:
             with HostLock(STATE_DIR / "helper.lock"):
                 journal = Journal(STATE_DIR / "journal.json", config.installation_id)
                 if args.action == "serve":
@@ -772,6 +917,34 @@ def main():
         reason = failure.reason if isinstance(failure, Refusal) else "helper_unavailable"
         print(encoded({"schema": 1, "status": "failed", "reason": reason}).decode(), file=sys.stderr)
         return 1
+
+
+def root_request(config, action, operation_id):
+    trusted(SOCKET, socket_node=True)
+    payload = {"protocol": PROTOCOL, "installation_id": config.installation_id,
+               "nonce": uuid.uuid4().hex, "issued_at": int(time.time()),
+               "action": action, "operation_id": operation_id}
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(5)
+        connection.connect(str(SOCKET))
+        _, uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != 0:
+            raise Refusal("authentication_failed")
+        connection.sendall(envelope(payload, config.token, "request"))
+        raw = bytearray()
+        deadline = time.monotonic() + 5
+        while not raw.endswith(b"\n"):
+            connection.settimeout(max(0.01, deadline - time.monotonic()))
+            chunk = connection.recv(4096)
+            if not chunk or len(raw) + len(chunk) > RESPONSE_MAX or b"\n" in chunk[:-1] or time.monotonic() > deadline:
+                raise Refusal("helper_unavailable")
+            raw.extend(chunk)
+        response = unpack_envelope(bytes(raw), config.token, "response")
+        if response.get("protocol") != PROTOCOL or response.get("installation_id") != config.installation_id or response.get("nonce") != payload["nonce"]:
+            raise Refusal("authentication_failed")
+        if response.get("ok") is not True:
+            raise Refusal(response.get("error", "helper_unavailable"))
+        return response["result"]
 
 
 if __name__ == "__main__":

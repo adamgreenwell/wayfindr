@@ -23,7 +23,7 @@ help:
 	@printf '%s\n' '                          Require frozen notes and history before a tag publishes'
 	@printf '%s\n' '  make reverb-capacity-test'
 	@printf '%s\n' '                          Test the concurrent-agent capacity harness guards'
-	@printf '%s\n' '  make host-updater-test  Test the preparation-only host helper and enrollment'
+	@printf '%s\n' '  make host-updater-test  Test host preparation, protection, and enrollment'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
 	@printf '%s\n' '  make wiki-test          Validate Wiki navigation and authority links'
 	@printf '%s\n' '  make wiki-sync-dry-run  Preview docs/wiki against the GitHub Wiki'
@@ -85,6 +85,10 @@ wiki-sync-dry-run: wiki-test
 host-updater-test:
 	python3 scripts/test_host_updater.py
 	python3 scripts/test_updater_enrollment.py
+	python3 scripts/test_update_protection.py
+	python3 scripts/test_protection_source_binding.py
+	python3 scripts/test_protection_archive.py
+	python3 scripts/test-managed-upgrade-entrypoint.py
 
 self-host-test: php-version-test host-release-manifest-test host-updater-test
 	bash -n scripts/self-host/install.sh scripts/test-self-host-upgrade.sh scripts/smoke/upgrade-preflight.sh scripts/test-host-release-manifest.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
