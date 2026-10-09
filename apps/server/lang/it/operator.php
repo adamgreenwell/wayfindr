@@ -17,6 +17,7 @@ return [
         'back_to_console' => 'Torna alla console del gestore',
         'sections' => [
             'console' => 'Pannello di controllo',
+            'updates' => 'Aggiornamenti',
             'onboarding' => 'Checklist di configurazione',
             'mail' => 'Posta',
             'webpush' => 'Web Push',

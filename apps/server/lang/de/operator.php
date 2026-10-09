@@ -9,6 +9,7 @@ return [
         'back_to_console' => 'Zurück zur Betreiberkonsole',
         'sections' => [
             'console' => 'Konsole',
+            'updates' => 'Aktualisierungen',
             'onboarding' => 'Einrichtungscheckliste',
             'mail' => 'E-Mail',
             'webpush' => 'Web-Push',
