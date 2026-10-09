@@ -132,8 +132,10 @@ suite. Run all of it from the root:
 make self-host-test
 ```
 
-Docker is required, because two of these compare against Docker Compose's own
-behaviour rather than against an assumption about it.
+Docker is required, because these compare against Docker Compose's own
+behaviour rather than against an assumption about it. The enrolled host helper
+tests also require Python 3.11 or newer. `make host-updater-test` runs its focused
+protocol, journal, and enrollment regressions without enrolling a host.
 
 | Script | What it holds down |
 | --- | --- |
@@ -143,6 +145,17 @@ behaviour rather than against an assumption about it.
 | `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
 | `test-self-host-classification.sh` | The installer preflight and the artifact guard classify actions identically. |
 | `test-self-host-release-resolution.sh` | Release discovery distinguishes a fully paginated, authoritative absence of a usable release tag from HTTP, transport, and unreadable-response failures without using the public network. |
+| `test_host_updater.py` | Durable idempotency, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
+| `test_updater_enrollment.py` | Trusted ownership and current controller, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
+
+`HostUpdaterProtocolIntegrationTest` runs the real PHP client against an isolated
+Python helper on Linux, including response framing, preparation, revision
+pagination, client disconnect, process loss, and journal reload. Fixture paths
+and credentials are confined to a temporary directory; no host service, Docker
+operation, or production installation is changed. macOS skips the Linux peer
+credential checks; both PHP CI database lanes run them on Linux. VM enrollment,
+systemd behavior, bind mounts, and reboot recovery still need independent
+disposable-VM qualification under issue #1115.
 
 ### Why the dotenv and classification checks are differential tests
 

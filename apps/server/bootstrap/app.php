@@ -6,6 +6,7 @@ use App\Console\Commands\BootstrapWayfindrCommand;
 use App\Console\Commands\CobrowseTransportSmokeCommand;
 use App\Console\Commands\CreateAgentCommand;
 use App\Console\Commands\ExpireBreakGlassGrantsCommand;
+use App\Console\Commands\HostUpdaterStatusCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\MeasureAttachmentRetentionCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
@@ -68,6 +69,7 @@ return Application::configure(basePath: dirname(__DIR__))
         CobrowseTransportSmokeCommand::class,
         CreateAgentCommand::class,
         ExpireBreakGlassGrantsCommand::class,
+        HostUpdaterStatusCommand::class,
         MailTestCommand::class,
         MeasureAttachmentRetentionCommand::class,
         PruneCobrowseContentCommand::class,

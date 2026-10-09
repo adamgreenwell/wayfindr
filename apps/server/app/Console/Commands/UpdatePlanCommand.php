@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Support\Release\UpgradeGuard;
+use App\Support\Updates\HostUpdaterClient;
+use App\Support\Updates\HostUpdaterException;
 use App\Support\Updates\InstallationCapabilities;
 use App\Support\Updates\ReleaseCatalogClient;
 use App\Support\Updates\ReleaseMetadataException;
@@ -19,14 +21,18 @@ final class UpdatePlanCommand extends Command
 
     protected $description = 'Review an exact Wayfindr update without changing the installation';
 
-    public function handle(ReleaseCatalogClient $catalogs, UpdatePlanner $planner, UpgradeGuard $guard): int
+    public function handle(ReleaseCatalogClient $catalogs, UpdatePlanner $planner, UpgradeGuard $guard, HostUpdaterClient $updater): int
     {
         try {
             $ref = $this->option('ref');
+            $installation = config('wayfindr.updates.helper_enabled', false) === true
+                ? $updater->capabilities($guard->installationProfile())
+                : InstallationCapabilities::local($guard->installationProfile());
             $catalog = $catalogs->fetch(is_string($ref) && $ref !== '' ? $ref : null);
-            $plan = $planner->build($catalog, InstallationCapabilities::local($guard->installationProfile()))->toArray();
+            $plan = $planner->build($catalog, $installation)->toArray();
         } catch (Throwable $exception) {
-            $reason = $exception instanceof ReleaseMetadataException ? $exception->reason : 'assessment_failed';
+            $reason = $exception instanceof ReleaseMetadataException || $exception instanceof HostUpdaterException
+                ? $exception->reason : 'assessment_failed';
 
             if ($this->option('json')) {
                 $this->line(json_encode(['schema' => 1, 'status' => 'failed', 'reason' => $reason], JSON_THROW_ON_ERROR));

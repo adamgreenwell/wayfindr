@@ -44,6 +44,9 @@ jobs:
       - name: Prepare the local test environment
         run: cp apps/server/.env.example apps/server/.env
 
+      - name: Require the Linux host protocol test runtime
+        run: python3 -c 'import socket, sys; assert sys.version_info >= (3, 11) and hasattr(socket, "SO_PEERCRED")'
+
       - name: Run the Pest suite
         working-directory: apps/server
         env:
@@ -111,6 +114,9 @@ jobs:
 
       - name: Prepare the local test environment
         run: cp apps/server/.env.example apps/server/.env
+
+      - name: Require the Linux host protocol test runtime
+        run: python3 -c 'import socket, sys; assert sys.version_info >= (3, 11) and hasattr(socket, "SO_PEERCRED")'
 
       - name: Run the Pest suite against PostgreSQL
         working-directory: apps/server

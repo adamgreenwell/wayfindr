@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Support\Release\ReleaseManifest;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
+use App\Support\Updates\HostUpdaterClient;
+use App\Support\Updates\HostUpdaterException;
+use App\Support\Updates\InstallationCapabilities;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Artisan;
@@ -70,6 +73,7 @@ beforeEach(function (): void {
         'wayfindr.updates.installation_ownership' => 'installer-managed',
         'wayfindr.updates.installation_id' => 'command-test-installation',
         'wayfindr.updates.image_reference' => 'ghcr.io/adamgreenwell/wayfindr:0.1.0',
+        'wayfindr.updates.helper_enabled' => false,
     ]);
     app()->instance(UpgradeContext::class, new UpgradeContext);
     $source = ReleaseManifest::build(['minimum_upgrade_from' => null, 'actions' => []], '0.1.0', str_repeat('a', 40));
@@ -87,6 +91,75 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     File::deleteDirectory($this->updatePlanCommandDirectory);
+});
+
+test('an enrolled CLI plan obtains authenticated capabilities while execution remains unavailable', function (): void {
+    config()->set('wayfindr.updates.helper_enabled', true);
+    $installation = InstallationCapabilities::authenticatedHelper([
+        'ownership' => 'installer-managed',
+        'installation_id' => 'command-test-installation',
+        'enrolled' => true,
+        'helper' => ['protocol' => 1, 'version' => '0.1.0', 'capabilities' => ['plan', 'status']],
+        'managed_policy' => [],
+    ], 'image', 'linux', 'amd64', 'ghcr.io/adamgreenwell/wayfindr:0.1.0');
+    $client = Mockery::mock(HostUpdaterClient::class);
+    $client->shouldReceive('capabilities')->once()->with('image')->andReturn($installation);
+    app()->instance(HostUpdaterClient::class, $client);
+    Http::fake(updatePlanCommandHttpFixture());
+
+    $exit = Artisan::call('wayfindr:update-plan', ['--json' => true]);
+    $plan = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($plan['installation']['helper']['authenticated'])->toBeTrue()
+        ->and($plan['installation']['enrolled'])->toBeTrue()
+        ->and($plan['managed']['execution_available'])->toBeFalse()
+        ->and($plan['managed']['eligible'])->toBeFalse()
+        ->and($plan['managed']['blockers'])->toContain('helper_capability_missing:apply', 'helper_capability_missing:recover')
+        ->and($plan['managed']['blockers'])->not->toContain('helper_not_authenticated');
+});
+
+test('an enabled helper authentication failure refuses the CLI plan without falling back to claims', function (bool $json): void {
+    config()->set('wayfindr.updates.helper_enabled', true);
+    $client = Mockery::mock(HostUpdaterClient::class);
+    $client->shouldReceive('capabilities')->once()->with('image')->andThrow(new HostUpdaterException('helper_authentication_failed'));
+    app()->instance(HostUpdaterClient::class, $client);
+    Http::fake();
+
+    $exit = Artisan::call('wayfindr:update-plan', $json ? ['--json' => true] : []);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('helper_authentication_failed')
+        ->and($output)->not->toContain('update_available', 'up_to_date', 'command-test-installation');
+    Http::assertNothingSent();
+
+    if ($json) {
+        expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'schema' => 1, 'status' => 'failed', 'reason' => 'helper_authentication_failed',
+        ]);
+    }
+})->with([true, false]);
+
+test('configured helper authentication and enrollment bits cannot authenticate a disabled helper', function (): void {
+    config()->set('wayfindr.updates.helper', [
+        'authenticated' => true, 'protocol' => 1, 'version' => '0.1.0', 'capabilities' => ['plan', 'apply', 'status', 'recover'],
+    ]);
+    config()->set('wayfindr.updates.enrolled', true);
+    $client = Mockery::mock(HostUpdaterClient::class);
+    $client->shouldNotReceive('capabilities');
+    app()->instance(HostUpdaterClient::class, $client);
+    Http::fake(updatePlanCommandHttpFixture());
+
+    $exit = Artisan::call('wayfindr:update-plan', ['--json' => true]);
+    $plan = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exit)->toBe(0)
+        ->and($plan['installation']['helper']['authenticated'])->toBeFalse()
+        ->and($plan['installation']['enrolled'])->toBeFalse()
+        ->and($plan['managed']['blockers'])->toContain('helper_not_authenticated', 'helper_not_enrolled')
+        ->and($plan['managed']['eligible'])->toBeFalse()
+        ->and($plan['managed']['execution_available'])->toBeFalse();
 });
 
 test('the CLI emits a complete metadata review while preserving live release files configuration and acknowledgements', function (): void {
