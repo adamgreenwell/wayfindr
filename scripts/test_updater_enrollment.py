@@ -225,6 +225,9 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual(["web"], [line.strip().rstrip(":") for line in overlay.splitlines() if line.startswith("  ") and not line.startswith("    ") and line.strip().endswith(":")])
         self.assertEqual(2, overlay.count("read_only: true"))
         self.assertEqual(2, overlay.count("create_host_path: false"))
+        for source in ("/run/wayfindr-updater", "/etc/wayfindr-updater/credential.json"):
+            mount = overlay.split("source: " + source + "\n", 1)[1].split("\n      - type:", 1)[0]
+            self.assertIn("bind:\n          create_host_path: false", mount)
         self.assertNotIn("/var/run/docker.sock", overlay)
         self.assertNotIn("/var/lib/wayfindr-updater", overlay)
         self.assertNotIn("/usr/local/lib/wayfindr-updater", overlay)
@@ -307,7 +310,10 @@ class EnrollmentTests(unittest.TestCase):
             self.assertIn("/config", mounts)
             for target in ("/run/wayfindr-updater", "/run/wayfindr-updater-auth/credential.json"):
                 self.assertTrue(mounts[target]["read_only"])
-                self.assertFalse(mounts[target]["bind"]["create_host_path"])
+                # Compose serializers can omit a false/default bool. The
+                # separate template test requires both explicit false settings;
+                # rendered true or any other value still fails this assertion.
+                self.assertIs(mounts[target]["bind"].get("create_host_path", False), False)
             for service, configuration in rendered["services"].items():
                 for mount in configuration.get("volumes", []):
                     self.assertNotEqual("/var/run/docker.sock", mount.get("source"))

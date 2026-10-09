@@ -105,6 +105,11 @@ The host installation record supplies those facts. Status and logs expose
 operation metadata and classified errors, rather than environment files,
 credentials, command output, or customer content.
 
+The `plan_reported` checkpoint records selected facts from the application's
+read-only planner. It is not independent host verification or permission to
+execute an update. The later apply engine must verify canonical release
+provenance and the actual running image itself before making any change.
+
 ## Status and interrupted operations
 
 Enrollment identity can be inspected without changing files:
