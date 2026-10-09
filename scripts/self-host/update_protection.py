@@ -90,7 +90,26 @@ class DockerEngine:
         return {"version": environment.get("WAYFINDR_VERSION", "").removeprefix("v"), "commit": environment.get("WAYFINDR_COMMIT")}
 
     def window(self, container, operation, action):
+        self.commands_settled(container)
         return self.call(["exec", container, "php", "artisan", "wayfindr:upgrade-window", operation, "--action=" + action, "--json"], "protection_failed", json=True)
+
+    def commands_settled(self, container):
+        # Closing a Docker client is not proof that its PHP exec has exited.
+        # ExecIDs also cover created/not-yet-started execs. Check processes as
+        # well: a failed daemon cancellation can remove an exec's metadata.
+        value = self.call(["inspect", "--format", '{"execs":{{json .ExecIDs}},"running":{{json .State.Running}}}', container], "recovery_required", json=True)
+        if not isinstance(value, dict) or set(value) != {"execs", "running"} or value["execs"] not in (None, []) or type(value["running"]) is not bool:
+            raise self.api.Refusal("recovery_required")
+        if value["running"]:
+            processes = self.call(["top", container, "-eo", "args"], "recovery_required")
+            if not processes.strip() or "wayfindr:upgrade-window" in processes:
+                raise self.api.Refusal("recovery_required")
+
+    def settled(self, ids, operation):
+        for container in ids.values():
+            self.commands_settled(container)
+        if self.oneoff_active("wayfindr-updater-fence-" + operation):
+            raise self.api.Refusal("recovery_required")
 
     def effective_keys(self, container):
         # Private root capture only. Never add these bytes to RPC receipts/logs.
@@ -174,13 +193,19 @@ class DockerEngine:
         return "wayfindr-updater-backup-" + operation
 
     def backup_active(self, operation):
-        name = self.backup_name(operation)
+        return self.oneoff_active(self.backup_name(operation))
+
+    def oneoff_active(self, name):
         raw = self.call(["ps", "-a", "-q", "--no-trunc", "--filter", "name=^/" + name + "$"])
         if not raw:
             return False
         if not CONTAINER.fullmatch(raw):
             raise self.api.Refusal("recovery_required")
-        return self.inspect(raw)["state"].get("Running") is True
+        state = self.inspect(raw)["state"]
+        # A created/paused/restarting container can still run its command later.
+        return not (state.get("Status") == "exited" and state.get("Running") is False
+                    and all(state.get(key) is False for key in ("Paused", "Restarting", "Dead", "OOMKilled"))
+                    and not state.get("Error") and type(state.get("ExitCode")) is int and state["ExitCode"] >= 0)
 
     def backup(self, operation, image, context):
         # --entrypoint bypasses the normal migration/worker bootstrap entirely.
@@ -216,6 +241,7 @@ class DockerEngine:
         return self.compose + ["-f", str(override)]
 
     def ensure_window(self, ids, operation, image):
+        self.settled(ids, operation)
         if self.inspect(ids["web"])["state"].get("Running") is True:
             return self.window(ids["web"], operation, "enter")
         self.require_source(ids, image)
@@ -345,6 +371,7 @@ class Protector:
         self.engine.check_selected_image(image)
         self.engine.require_source(ids, image)
         self.engine.writers(set(ids.values()) | self.engine.dependencies())
+        self.engine.settled(ids, operation)
         self.check_window(self.engine.window(ids["web"], operation, "status"), operation, source, False)
         if self.engine.web_status(ids["web"]) != 200:
             self.refusal("writer_unverified")
@@ -459,6 +486,7 @@ class Protector:
 
     def recover(self, directory, operation, context):
         self.config.verify_files()
+        self.engine.settled(context["containers"], operation)
         if self.engine.backup_active(operation):
             self.refusal("recovery_required")
         # Never race a pending daemon stop. A partially drained set stays held.
@@ -494,15 +522,20 @@ class Protector:
                 time.sleep(1)
         self.journal.protection_checkpoint(operation, "services_resumed", {"phase": "resuming", "services_recovered": True, "hold_owned": value["held"]})
         if value["held"]:
+            self.engine.settled(context["containers"], operation)
             self.persist(directory, context, "release_intent")
             self.check_window(self.engine.window(context["containers"]["web"], operation, "release"), operation, context["source"], False)
+        self.engine.settled(context["containers"], operation)
         # Success requires an observed serving baseline after release.
         if self.engine.web_status(context["containers"]["web"]) != 200:
             self.refusal("recovery_required")
         self.persist(directory, context, "complete")
         evidence = self.journal.status(operation)["operation"]["protection"]
         verified = evidence["custody_verified"]
-        self.journal.protection_checkpoint(operation, "protection_released", {"phase": "verified" if verified else "resuming", "hold_owned": False})
+        final = {"phase": "verified" if verified else "resuming", "hold_owned": False}
+        if verified:
+            final["error"] = None
+        self.journal.protection_checkpoint(operation, "protection_released", final)
 
     def __call__(self, operation, recovery=False):
         directory = self.root / "protection" / operation
@@ -525,6 +558,7 @@ class Protector:
                 self.api.atomic_write(directory / "keys.json", keys)
                 self.persist(directory, context, "fence_intent")
                 self.api.atomic_write(directory / "image.yml", {"services": {"web": {"image": context["image"]}}})
+                self.engine.settled(context["containers"], operation)
                 self.check_window(self.engine.window(context["containers"]["web"], operation, "enter"), operation, context["source"], True)
                 self.journal.protection_checkpoint(operation, "fenced", {"phase": "draining", "hold_owned": True, "source_image_id": context["image"]})
                 self.persist(directory, context, "drain_intent")

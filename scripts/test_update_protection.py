@@ -68,6 +68,7 @@ class Engine:
         self.extra_writer = False
         self.crash_after_stop = False
         self.ledger = False
+        self.pending_window = None
 
     def service_ids(self):
         return self.ids.copy()
@@ -100,17 +101,42 @@ class Engine:
         if self.extra_writer:
             raise UP.Refusal("writer_unverified")
 
+    def commands_settled(self, container):
+        if self.pending_window is not None:
+            raise UP.Refusal("recovery_required")
+
+    def settled(self, ids, operation):
+        self.calls.append("settled")
+        for container in ids.values():
+            self.commands_settled(container)
+
+    def complete_pending_window(self):
+        assert self.pending_window in {"enter", "release", "fence"}
+        self.held = self.pending_window != "release"
+        self.pending_window = None
+        self.fault = None
+
     def window(self, container, operation, action):
+        self.commands_settled(container)
         self.calls.append(action)
+        if (action == "enter" and self.fault == "delayed_enter") or (action == "release" and self.fault == "delayed_release"):
+            self.pending_window = action
+            raise UP.Refusal("protection_timeout")
         if action == "enter":
             self.held = True
         if action == "release":
             self.held = False
+            if self.fault == "release_not_settled":
+                self.pending_window = "release"
         return {"schema": 1, "operation_id": operation if self.held else None, "held": self.held,
                 "ordinary_maintenance": self.fault == "ordinary", "source": {**SOURCE, "profile": "image"}, "ledger_supported": True}
 
     def ensure_window(self, ids, operation, image):
         self.calls.append("ensure_fence")
+        self.settled(ids, operation)
+        if self.fault == "delayed_oneoff" and not self.running:
+            self.pending_window = "fence"
+            raise UP.Refusal("protection_timeout")
         return self.window(ids["web"], operation, "enter")
 
     def drain(self, ids, timeout):
@@ -311,6 +337,82 @@ class ProtectionTests(unittest.TestCase):
         self.assertTrue(self.status()["operation"]["protection"]["hold_owned"])
         self.assertFalse(self.status()["operation"]["protection"]["services_recovered"])
 
+    def test_timed_out_enter_never_retries_or_releases_until_explicit_settled_recovery(self):
+        self.engine.fault = "delayed_enter"
+        self.protect()
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("enter", self.engine.pending_window)
+        self.assertEqual(1, self.engine.calls.count("enter"))
+        for action in ("drain", "backup", "start", "release"):
+            self.assertNotIn(action, self.engine.calls)
+        self.engine.complete_pending_window()
+        self.assertTrue(self.engine.held)
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.journal.claim_protection(self.operation, self.generation, recover=True)
+        self.protector(self.operation, recovery=True)
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertFalse(self.engine.held)
+        self.assertNotIn("backup", self.engine.calls)
+        self.assertEqual(1, self.engine.calls.count("release"))
+
+    def test_timed_out_release_keeps_host_ownership_and_prevents_a_second_window_mutation(self):
+        self.engine.fault = "delayed_release"
+        self.protect()
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("release", self.engine.pending_window)
+        self.assertTrue(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("release"))
+        enter_count = self.engine.calls.count("enter")
+        self.journal.claim_protection(self.operation, self.generation, recover=True)
+        self.protector(self.operation, recovery=True)
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.assertEqual(enter_count, self.engine.calls.count("enter"))
+        self.assertEqual(1, self.engine.calls.count("release"))
+        self.engine.complete_pending_window()
+        self.assertFalse(self.engine.held)
+        self.journal.claim_protection(self.operation, self.generation, recover=True)
+        self.protector(self.operation, recovery=True)
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertEqual("protection_verified", self.status()["operation"]["error"])
+        self.assertFalse(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("backup"))
+
+    def test_pending_fence_oneoff_keeps_originals_stopped_until_it_settles(self):
+        self.engine.fault = "delayed_oneoff"
+        self.protect()
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.assertEqual("fence", self.engine.pending_window)
+        self.assertFalse(self.engine.running)
+        self.assertTrue(self.engine.held)
+        self.assertNotIn("start", self.engine.calls)
+        self.assertNotIn("release", self.engine.calls)
+        self.engine.complete_pending_window()
+        self.journal.claim_protection(self.operation, self.generation, recover=True)
+        self.protector(self.operation, recovery=True)
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("backup"))
+        self.assertEqual(1, self.engine.calls.count("start"))
+
+    def test_release_receipt_cannot_clear_host_ownership_while_its_exec_remains_unsettled(self):
+        self.engine.fault = "release_not_settled"
+        self.protect()
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("release", self.engine.pending_window)
+        self.assertFalse(self.engine.held)
+        self.assertEqual(1, self.engine.calls.count("release"))
+        self.assertEqual("recovery_required", self.status()["operation"]["protection"]["phase"])
+        self.engine.complete_pending_window()
+        self.journal.claim_protection(self.operation, self.generation, recover=True)
+        self.protector(self.operation, recovery=True)
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertEqual("protection_verified", self.status()["operation"]["error"])
+        self.assertFalse(self.engine.held)
+
     def test_root_action_only_and_accepted_intent_precedes_async_worker(self):
         entered, resume = threading.Event(), threading.Event()
         observed = []
@@ -430,6 +532,8 @@ class ProtectionTests(unittest.TestCase):
         self.assertIn("--signal=TERM", commands[0])
         engine.inspect = lambda _: {"state": {"Running": False}}
         engine.require_source = lambda *_: None
+        engine.settled = lambda *_: None
+        engine.commands_settled = lambda *_: None
         engine.ensure_window(self.engine.ids, self.operation, IMAGE)
         command = commands[-1]
         for option in ("--entrypoint", "--no-deps", "--pull=never", str(directory / "image.yml")):
@@ -437,6 +541,100 @@ class ProtectionTests(unittest.TestCase):
         self.assertEqual("php", command[command.index("--entrypoint") + 1])
         for forbidden in ("kill", "up", "migrate", "pull", "restart"):
             self.assertNotIn(forbidden, command)
+
+
+class DockerSettlementTests(unittest.TestCase):
+    """Exercise real settlement guards; every Docker response is synthetic."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.config = Config(self.root)
+        self.ids = Engine().ids
+        self.operation = str(uuid.uuid4())
+        self.inspection = {"execs": [], "running": True}
+        self.processes = b"COMMAND\nphp artisan reverb:start --port=8080\n"
+        self.top_code = 0
+        self.present = False
+        self.oneoff = "8" * 64
+        self.state = {"Status": "exited", "Running": False, "Paused": False, "Restarting": False,
+                      "Dead": False, "OOMKilled": False, "Error": "", "ExitCode": 0}
+        self.calls = []
+        api = types.SimpleNamespace(**API.__dict__)
+        api.capture = self.capture
+        self.engine = PROTECT.DockerEngine(self.config, api, self.root)
+
+    def capture(self, command, **kwargs):
+        self.calls.append(command)
+        args = command[5:]
+        if args[0] == "inspect":
+            value = self.inspection if ".ExecIDs" in args[2] else {"state": self.state}
+            return 0, json.dumps(value).encode()
+        if args[0] == "top":
+            return self.top_code, self.processes
+        if args[0] == "ps":
+            return 0, self.oneoff.encode() if self.present else b""
+        raise AssertionError("A settlement refusal must precede every Docker side effect")
+
+    def refusal(self, action):
+        with self.assertRaises(UP.Refusal) as failure:
+            action()
+        self.assertEqual("recovery_required", failure.exception.reason)
+        self.assertTrue(all(command[5] in {"inspect", "top", "ps"} for command in self.calls))
+
+    def test_empty_execs_and_normal_processes_or_stopped_container_are_settled(self):
+        self.engine.commands_settled(self.ids["web"])
+        self.assertEqual("top", self.calls[-1][5])
+        self.calls.clear()
+        self.inspection = {"execs": None, "running": False}
+        self.engine.commands_settled(self.ids["web"])
+        self.assertEqual(1, len(self.calls))
+
+    def test_created_or_running_exec_id_blocks_every_window_action_before_another_exec(self):
+        self.inspection["execs"] = ["9" * 64]
+        for action in ("enter", "status", "release"):
+            with self.subTest(action=action):
+                self.refusal(lambda: self.engine.window(self.ids["web"], self.operation, action))
+
+    def test_orphaned_window_process_blocks_even_after_exec_metadata_disappears(self):
+        for action in ("enter", "release"):
+            with self.subTest(action=action):
+                self.processes = ("COMMAND\nphp artisan wayfindr:upgrade-window " + self.operation + " --action=" + action + " --json\n").encode()
+                self.refusal(lambda: self.engine.window(self.ids["web"], self.operation, "enter"))
+
+    def test_malformed_exec_inspection_cannot_authorize_recovery(self):
+        for value in ({}, {"execs": [], "running": True, "unexpected": True}, {"execs": [], "running": 1},
+                      {"execs": "", "running": True}, {"execs": False, "running": True}):
+            with self.subTest(value=value):
+                self.inspection = value
+                self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
+
+    def test_failed_or_empty_process_listing_cannot_authorize_recovery(self):
+        for code, output in ((1, b"private failure"), (0, b""), (0, b" \n")):
+            with self.subTest(code=code, output=output):
+                self.top_code, self.processes = code, output
+                self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
+
+    def test_named_oneoffs_require_a_genuine_terminal_state(self):
+        self.present = True
+        valid = self.state.copy()
+        for key, value in (("Status", "created"), ("Status", "running"), ("Running", True), ("Paused", True),
+                           ("Restarting", True), ("Dead", True), ("OOMKilled", True), ("Error", "unsettled"),
+                           ("ExitCode", True), ("ExitCode", -1)):
+            with self.subTest(key=key, value=value):
+                self.state = {**valid, key: value}
+                self.assertTrue(self.engine.oneoff_active(self.engine.backup_name(self.operation)))
+                self.refusal(lambda: self.engine.settled(self.ids, self.operation))
+        self.state = valid
+        self.assertFalse(self.engine.oneoff_active(self.engine.backup_name(self.operation)))
+        self.engine.settled(self.ids, self.operation)
+
+    def test_pending_named_fence_refuses_before_recovery_creates_another_oneoff(self):
+        self.present = True
+        self.state["Status"] = "created"
+        self.refusal(lambda: self.engine.ensure_window(self.ids, self.operation, IMAGE))
+        self.assertIn("name=^/wayfindr-updater-fence-" + self.operation + "$", self.calls[-2])
 
 
 if __name__ == "__main__":

@@ -85,9 +85,13 @@ class Capture:
             raise AssertionError("Unexpected Compose command in source fixture")
         if args[:2] == ["image", "inspect"]:
             return 0, json.dumps({"env": [key + "=" + value for key, value in self.baked.items()]}).encode()
+        if args[0] == "ps":
+            return 0, b""  # No existing named fence oneoff.
         if args[0] == "inspect":
             template, container = args[2], args[3]
-            if ".Config.Env" in template:
+            if ".ExecIDs" in template:
+                value = {"execs": [], "running": False}
+            elif ".Config.Env" in template:
                 value = {"env": self.environments[container]}
             elif ".Mounts" in template:
                 value = {"mounts": self.mounts[container]}
@@ -114,7 +118,7 @@ class SourceBindingTests(unittest.TestCase):
     def assert_read_only(self):
         for command in self.fixture.calls:
             args = command[5:]
-            allowed = args[0] == "inspect" or args[:2] == ["image", "inspect"] or (
+            allowed = args[0] in {"inspect", "ps"} or args[:2] == ["image", "inspect"] or (
                 args[0] == "compose" and args[-3:] == ["config", "--format", "json"])
             self.assertTrue(allowed, "Source admission must finish before any side effect")
 

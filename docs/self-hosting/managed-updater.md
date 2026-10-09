@@ -168,6 +168,13 @@ have a pending graceful stop after the CLI wait ends; that uncertain window
 retains the hold and requires checked recovery. Only verified stopped original
 writers permit the backup to begin.
 
+An unfinished Docker exec or fence command also blocks further fence changes
+and release. The helper checks outstanding exec identities and private process
+state, plus named one-shot container state; a created, paused, or restarting
+container is not terminal. A CLI timeout cannot authorize a second command that
+races a delayed first command. Once the command has settled, explicit recovery
+can recheck ownership and the original serving state.
+
 The protective backup runs through a PHP-only one-shot container pinned to the
 old source image, with no dependencies started and no image pull. Its entrypoint
 does not run migrations. During recovery a PHP-only old-image fence is verified
