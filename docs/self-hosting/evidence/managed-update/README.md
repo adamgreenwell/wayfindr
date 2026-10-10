@@ -34,6 +34,13 @@ fixtures now model the daemon refusing a listing without PID, accept each
 expected live role, and retain the existing pending-exec, orphaned window,
 failed-listing and wrong-role refusals. This candidate does not alter the
 published helper, recover the failed operation or qualify the upgrade span.
+An independently reviewed native component probe loaded only the two private
+candidate modules with the published configuration/API. Seven actual running
+containers passed command settlement and all five application roles passed
+readiness; all 33 Docker inspect/top calls succeeded. Raw evidence verified
+the original runtime bindings, installed published helper, enrollment and
+failed operation journal were preserved, apart from its ordinary heartbeat.
+This is candidate component evidence, not a completed application upgrade.
 Publication, supported helper replacement and fresh native qualification
 remain separate gates. No retry, recovery, journal clearance or fixture
 erasure was performed for this observation.
