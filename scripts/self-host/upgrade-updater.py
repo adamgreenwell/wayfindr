@@ -76,6 +76,14 @@ class UpgradeError(Exception):
     """Only fixed operator-safe classifications reach terminal output."""
 
 
+class StartupError(UpgradeError):
+    def __init__(self, stage, *, retry=False, identity=None):
+        super().__init__("startup_unverified")
+        self.stage = stage
+        self.retry = retry
+        self.identity = identity
+
+
 def refuse(code):
     raise UpgradeError(code)
 
@@ -281,11 +289,11 @@ def code_hashes(directory, *, partial=False):
     return hashes
 
 
-def run(*arguments):
+def run(*arguments, timeout=30):
     try:
         result = subprocess.run([str(SYSTEMCTL), *arguments], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
-                                timeout=30, env={"PATH": "/usr/bin:/bin", "LANG": "C"}, text=True)
+                                timeout=timeout, env={"PATH": "/usr/bin:/bin", "LANG": "C"}, text=True)
     except (OSError, subprocess.TimeoutExpired):
         refuse("systemd_unavailable")
     if result.returncode != 0:
@@ -293,22 +301,31 @@ def run(*arguments):
     return result.stdout.strip()
 
 
-def service():
+def startup_remaining(deadline, stage):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise StartupError(stage)
+    return remaining
+
+
+def service(*, deadline=None):
     names = ("ActiveState", "SubState", "MainPID", "ControlGroup", "FragmentPath", "DropInPaths", "FreezerState", "Restart")
-    result = run("show", SERVICE, "--property=" + ",".join(names))
+    arguments = ("show", SERVICE, "--property=" + ",".join(names))
+    result = run(*arguments) if deadline is None else run(*arguments, timeout=startup_remaining(deadline, "manager"))
     value = dict(line.split("=", 1) for line in result.splitlines() if "=" in line)
     if set(value) != set(names) or value["FragmentPath"] != str(UNIT) or value["DropInPaths"] not in {"", str(DROPIN)} or value["Restart"] != "on-failure":
         refuse("service_changed")
     return value
 
 
-def condition_loaded():
+def condition_loaded(*, deadline=None):
     try:
         result = subprocess.run([str(BUSCTL), "--json=short", "get-property", "org.freedesktop.systemd1",
                                  "/org/freedesktop/systemd1/unit/wayfindr_2dupdater_2eservice",
                                  "org.freedesktop.systemd1.Service", "ExecCondition"],
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                check=False, timeout=30, env={"PATH": "/usr/bin:/bin", "LANG": "C"}, text=True)
+                                check=False, timeout=30 if deadline is None else startup_remaining(deadline, "manager"),
+                                env={"PATH": "/usr/bin:/bin", "LANG": "C"}, text=True)
         if result.returncode != 0 or len(result.stdout) > 65536:
             refuse("service_changed")
         value = json.loads(result.stdout)
@@ -549,14 +566,19 @@ def authenticate(runtime, config, *, expected_pid=None):
             request = {"protocol": 1, "installation_id": config.installation_id, "nonce": nonce,
                        "issued_at": int(time.time()), "action": "capabilities"}
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(0.25)
+                connection.settimeout(min(0.25, startup_remaining(deadline, "authentication")))
                 connection.connect(str(SOCKET))
                 peer_pid, peer_uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if peer_uid != 0 or (expected_pid is not None and peer_pid != expected_pid):
                     refuse("startup_unverified")
+                connection.settimeout(min(0.25, startup_remaining(deadline, "authentication")))
                 connection.sendall(runtime.envelope(request, config.token, "request"))
                 raw = bytearray()
                 while not raw.endswith(b"\n"):
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        refuse("startup_unverified")
+                    connection.settimeout(min(0.25, remaining))
                     chunk = connection.recv(min(4096, runtime.RESPONSE_MAX + 1 - len(raw)))
                     if not chunk or len(raw) + len(chunk) > runtime.RESPONSE_MAX or b"\n" in chunk[:-1]:
                         refuse("startup_unverified")
@@ -565,46 +587,149 @@ def authenticate(runtime, config, *, expected_pid=None):
             expected = {"protocol": 1, "installation_id": config.installation_id, "nonce": nonce, "ok": True, "result": config.capabilities()}
             if response != expected or response["result"]["helper"]["version"] != VERSION:
                 refuse("startup_unverified")
+            startup_remaining(deadline, "authentication")
             return
         except (OSError, runtime.Refusal):
             time.sleep(0.1)
     refuse("startup_unverified")
 
 
-def running_helper():
-    current = service()
+def process_start(current):
+    path = PROC / current["MainPID"] / "stat"
+    trusted(path)
+    raw = path.read_bytes()
+    # comm can contain spaces and parentheses; starttime is field22, or
+    # suffix field20 after the final ') ' closing field2.
+    prefix, separator, suffix = raw.rpartition(b") ")
+    fields = suffix.split()
+    if (len(raw) > 65536 or not separator or not prefix.startswith(current["MainPID"].encode() + b" (")
+            or len(fields) < 20 or not re.fullmatch(rb"[1-9][0-9]*", fields[19])):
+        raise StartupError("process")
+    return int(fields[19])
+
+
+def running_helper(*, expected_identity=None, starting=False, settling=False, deadline=None):
+    try:
+        current = service() if deadline is None else service(deadline=deadline)
+        condition = condition_loaded() if deadline is None else condition_loaded(deadline=deadline)
+    except (OSError, UpgradeError, subprocess.SubprocessError):
+        raise StartupError("manager") from None
+    if (current["ControlGroup"] not in {"", "/system.slice/" + SERVICE}
+            or current["DropInPaths"] != str(DROPIN) or not condition):
+        raise StartupError("manager")
+    identity = None
+    if re.fullmatch(r"[1-9][0-9]*", current["MainPID"]):
+        try:
+            identity = (current["MainPID"], process_start(current),
+                        current["FragmentPath"], current["DropInPaths"], current["Restart"])
+        except FileNotFoundError:
+            # A positive manager PID whose proc entry vanished cannot be
+            # replaced silently by an automatic restart during this wait.
+            raise StartupError("process") from None
+        except (OSError, UpgradeError):
+            raise StartupError("process") from None
+        if expected_identity is not None and identity != expected_identity:
+            raise StartupError("process")
+    elif current["MainPID"] != "0" or expected_identity is not None:
+        raise StartupError("process")
     if (current["ActiveState"] != "active" or current["SubState"] != "running"
-            or not re.fullmatch(r"[1-9][0-9]*", current["MainPID"])
+            or identity is None
             or current["ControlGroup"] != "/system.slice/" + SERVICE
-            or current["DropInPaths"] != str(DROPIN)
-            or current["FreezerState"] not in {"running", "frozen"}
-            or not condition_loaded()):
-        refuse("startup_unverified")
+            or current["FreezerState"] not in {"running", "frozen", *({"thawing"} if settling else set())}):
+        raise StartupError("post_thaw" if settling else "manager", retry=starting, identity=identity)
     process = PROC / current["MainPID"]
-    for path in (process / "cmdline", process / "cgroup", CGROUP / "cgroup.freeze", CGROUP / "cgroup.events"):
-        trusted(path)
-    if ((process / "cmdline").read_bytes() != b"/usr/bin/python3\0/usr/local/lib/wayfindr-updater/updater.py\0serve\0"
-            or (process / "cgroup").read_text() != "0::/system.slice/" + SERVICE + "\n"
-            or (CGROUP / "cgroup.freeze").read_text() != "0\n"
-            or events().get("frozen") != "0" or events().get("populated") != "1"):
-        refuse("startup_unverified")
-    return current
+    try:
+        for path in (process / "cmdline", process / "cgroup"):
+            trusted(path)
+        canonical = ((process / "cmdline").read_bytes() == b"/usr/bin/python3\0/usr/local/lib/wayfindr-updater/updater.py\0serve\0"
+                     and (process / "cgroup").read_text() == "0::/system.slice/" + SERVICE + "\n")
+        if process_start(current) != identity[1]:
+            raise StartupError("process")
+    except FileNotFoundError:
+        raise StartupError("process", retry=expected_identity is None, identity=identity) from None
+    except (OSError, UpgradeError):
+        raise StartupError("process") from None
+    if not canonical:
+        raise StartupError("process", retry=starting, identity=identity)
+    try:
+        for path in (CGROUP / "cgroup.freeze", CGROUP / "cgroup.events"):
+            trusted(path)
+        freeze = (CGROUP / "cgroup.freeze").read_text()
+        state = events()
+    except FileNotFoundError:
+        raise StartupError("kernel", retry=starting, identity=identity) from None
+    except (OSError, UpgradeError):
+        raise StartupError("kernel") from None
+    if freeze != "0\n" or state.get("frozen") != "0" or state.get("populated") not in {"0", "1"}:
+        # A genuinely frozen group is never normalized by this startup path.
+        raise StartupError("kernel")
+    if state["populated"] != "1":
+        raise StartupError("kernel", retry=starting, identity=identity)
+    if settling and current["FreezerState"] != "running":
+        raise StartupError("post_thaw", retry=True, identity=identity)
+    return current, identity
+
+
+def wait_running_helper(*, expected_identity=None, settling=False, deadline=None):
+    deadline = time.monotonic() + 10 if deadline is None else deadline
+    stage = "post_thaw" if settling else "manager"
+    while True:
+        startup_remaining(deadline, stage)
+        try:
+            result = running_helper(expected_identity=expected_identity, starting=not settling,
+                                    settling=settling, deadline=deadline)
+            startup_remaining(deadline, "post_thaw" if settling else "manager")
+            return result
+        except StartupError as failure:
+            if not failure.retry:
+                raise
+            if failure.identity is not None:
+                expected_identity = failure.identity
+            stage = failure.stage
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise StartupError(failure.stage) from None
+            time.sleep(min(0.1, remaining))
+
+
+def authenticate_identity(runtime, config, identity):
+    try:
+        authenticate(runtime, config, expected_pid=int(identity[0]))
+    except (OSError, UpgradeError, runtime.Refusal):
+        raise StartupError("authentication") from None
+    # Authentication proves the socket peer PID; stat and manager observations
+    # before and after it also reject PID reuse or service replacement.
+    deadline = time.monotonic() + 10
+    result = running_helper(expected_identity=identity, deadline=deadline)
+    startup_remaining(deadline, "authentication")
+    return result
+
+
+def settle_manager(before, identity):
+    deadline = time.monotonic() + 10
+    if before["FreezerState"] == "frozen":
+        try:
+            run("thaw", SERVICE, timeout=startup_remaining(deadline, "post_thaw"))
+        except (OSError, UpgradeError, subprocess.SubprocessError):
+            raise StartupError("post_thaw") from None
+    after, _ = wait_running_helper(expected_identity=identity, settling=True, deadline=deadline)
+    if (after["FreezerState"] != "running"
+            or {key: value for key, value in before.items() if key != "FreezerState"}
+            != {key: value for key, value in after.items() if key != "FreezerState"}):
+        raise StartupError("post_thaw")
+    return after
 
 
 def authenticate_started(runtime, config):
     # Killing the frozen old cgroup can leave systemd's cached FreezerState
     # frozen after a new, unfrozen cgroup starts. Normalize only the authenticated
     # new process while the transaction still blocks application mutations.
-    before = running_helper()
-    authenticate(runtime, config, expected_pid=int(before["MainPID"]))
-    if before["FreezerState"] == "frozen":
-        run("thaw", SERVICE)
-    after = running_helper()
-    if (after["FreezerState"] != "running"
-            or {key: value for key, value in before.items() if key != "FreezerState"}
-            != {key: value for key, value in after.items() if key != "FreezerState"}):
-        refuse("startup_unverified")
-    authenticate(runtime, config, expected_pid=int(after["MainPID"]))
+    before, identity = wait_running_helper()
+    before, _ = authenticate_identity(runtime, config, identity)
+    settle_manager(before, identity)
+    after, _ = authenticate_identity(runtime, config, identity)
+    if after["FreezerState"] != "running":
+        raise StartupError("post_thaw")
 
 
 def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
@@ -620,9 +745,8 @@ def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
             # systemd's cached freezer state stale for the new running cgroup.
             # Only validated explicit recovery normalizes an already-unfrozen
             # group before requesting and proving a fresh freeze.
-            run("thaw", SERVICE)
-            if service()["FreezerState"] != "running" or events().get("frozen") != "0":
-                refuse("freeze_unverified")
+            before, identity = wait_running_helper()
+            settle_manager(before, identity)
         run("freeze", SERVICE)
         frozen = False
         killed = False
@@ -904,6 +1028,8 @@ def main():
         reason = str(failure) if isinstance(failure, UpgradeError) else "upgrade_unavailable"
         result = {"schema": 1, "status": "refused", "reason": reason,
                   "recovery_required": exists(TRANSACTION) or exists(STATE / ".helper-upgrade.next")}
+        if isinstance(failure, StartupError):
+            result["startup_stage"] = failure.stage
         for path in (TRANSACTION, STATE / ".helper-upgrade.next"):
             if exists(path):
                 try:
