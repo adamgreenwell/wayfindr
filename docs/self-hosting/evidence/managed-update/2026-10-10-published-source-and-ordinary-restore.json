@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "kind": "published_source_and_ordinary_restore_rehearsal",
+  "observed_at_utc": "2026-10-10T01:34:44Z",
+  "qualified": false,
+  "executed_managed_scenarios": 0,
+  "public_identity": {
+    "tag": "v1.2.0",
+    "version": "1.2.0",
+    "commit": "56374e9574ed84616aae430d06589cfe2f0b33a0",
+    "oci_index_digest": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+    "arm64_platform_manifest_digest": "sha256:afa4730dd6ad38c2710f6a08258104a94f200eb9df8931b53b59899fc175e15e",
+    "arm64_config_digest": "sha256:4bd909bcdd9bff20a3842a036134ebf550c5d2951aa501d53424dac00820e1cb",
+    "release_manifest_sha256": "2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4",
+    "release_manifest_bytes": 1111,
+    "publisher_run_id": 38007100329,
+    "main_ci_run_id": 38006329309
+  },
+  "source": {
+    "alias": "source-vm",
+    "architecture": "arm64",
+    "local_docker_image_id": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+    "baked_image": {
+      "status": "passed",
+      "checks": {
+        "native_architecture_verified": true,
+        "official_index_repo_digest_verified": true,
+        "local_descriptor_bound": true,
+        "full_public_config_equal": true,
+        "rootfs_diff_ids_equal": true,
+        "created_never_started": true,
+        "no_mounts": true,
+        "uid_gid_1000_verified": true,
+        "baked_version_commit_verified": true,
+        "manifest_bytes_equal": true,
+        "canonical_history_equal": true,
+        "owned_probe_cleanup_verified": true
+      }
+    },
+    "runtime": {
+      "status": "passed",
+      "php_version": "8.4.26",
+      "applied_migrations": 80,
+      "failed_jobs": 0,
+      "checks": {
+        "official_installer_used": true,
+        "installed_sources_byte_identical": true,
+        "five_roles_host_uid_gid_1000": true,
+        "all_seven_services_running": true,
+        "five_roles_same_image": true,
+        "postgresql_verified": true,
+        "production_redis_verified": true,
+        "migrations_current": true,
+        "zero_failed_jobs": true,
+        "private_http_serving": true,
+        "private_websocket_nonce_delivered": true,
+        "authenticated_api_support_loop": true
+      }
+    },
+    "enrollment": {
+      "status": "passed",
+      "helper_version": "0.4.0",
+      "protocol": 1,
+      "checks": {
+        "reviewed_distribution_equal": true,
+        "canonical_installation_verified": true,
+        "authenticated_helper_status_verified": true,
+        "web_only_socket_overlay_verified": true,
+        "idle_no_operation_no_hold": true
+      }
+    },
+    "idle_helper_restart": {
+      "status": "passed",
+      "checks": {
+        "authenticated_before_after": true,
+        "same_application_containers": true,
+        "runtime_directory_inode_preserved": true,
+        "idle_no_operation_no_hold": true,
+        "new_helper_generation_verified": true,
+        "enrollment_credential_config_identities_preserved": true
+      }
+    },
+    "idle_guest_reboot": {
+      "status": "passed",
+      "checks": {
+        "boot_id_changed": true,
+        "same_application_containers": true,
+        "same_all_seven_role_container_ids": true,
+        "autonomous_before_intervention": true,
+        "runtime_directory_ready_before_docker": true,
+        "authenticated_helper_status_verified": true,
+        "web_socket_mount_verified": true,
+        "runtime_and_support_loop_reverified": true,
+        "idle_no_operation_no_hold": true,
+        "new_helper_generation_verified": true,
+        "enrollment_credential_config_identities_preserved": true
+      }
+    }
+  },
+  "ordinary_restore": {
+    "alias": "restore-vm",
+    "architecture": "arm64",
+    "status": "passed",
+    "archive_sha256": "6aeae349566289fdc766471aa2e4b12315e576015c02f8e160dac95029d28539",
+    "archive_bytes": 21391,
+    "checks": {
+      "separate_vm_verified": true,
+      "same_official_image_verified": true,
+      "unenrolled_empty_baseline_verified": true,
+      "effective_keys_retained_verified": true,
+      "fixed_pre_erasure_archive_verified": true,
+      "latest_real_nonempty_ledger_transferred": true,
+      "actual_restore_completed": true,
+      "survivor_rows_preserved": true,
+      "survivor_local_binary_preserved": true,
+      "persisted_setting_preserved": true,
+      "encrypted_setting_decrypts": true,
+      "exact_source_erasure_receipt_linked": true,
+      "system_replay_event_linked": true,
+      "post_archive_source_event_absent": true,
+      "erased_rows_absent": true,
+      "erased_local_binary_absent": true,
+      "ticket_personal_fields_scrubbed": true,
+      "ledger_pending_unreadable_outstanding_clear": true,
+      "visitor_sequence_advanced": true,
+      "new_api_contact_above_erased_ids": true,
+      "runtime_and_support_loop_reverified": true
+    },
+    "replay_counts": {
+      "visitors": 1,
+      "conversations": 1,
+      "messages": 1,
+      "attachments": 1,
+      "tickets_stripped": 1
+    }
+  },
+  "managed_target_admission": {
+    "status": "blocked",
+    "basis": "static_review_with_observed_engine_identity",
+    "reason": "docker29_local_image_id_differs_from_registry_config_digest",
+    "actual_managed_operation_executed": false
+  },
+  "limitations": [
+    "arm64_only",
+    "private_http_only",
+    "no_user_session_broadcast_auth_acceptance",
+    "no_remote_attachment_or_offsite_storage_proof",
+    "no_managed_protective_custody",
+    "no_newer_compatible_published_target",
+    "no_managed_apply_or_active_update_reboot",
+    "u8_u9_and_epic_open",
+    "production_qualification_pending",
+    "no_supported_in_place_helper_upgrade",
+    "one_current_key_no_rotation_exercised",
+    "erasure_service_not_dashboard_confirmation"
+  ]
+}

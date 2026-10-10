@@ -5,7 +5,35 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
-The latest public release is `v1.1.1`.
+The latest public release is `v1.2.0`, at `56374e95`, published October 9 EDT
+(October 10 UTC). Its public Release, manifest, both platform image chains and
+aliases verified independently. ARM64 never-started baked identity verification
+passed. Actual ARM64 official installation/enrollment, idle helper restart and
+autonomous idle guest reboot also passed, with PostgreSQL/production Redis,
+private WebSocket nonce and authenticated API/operator checks repeated after
+reboot. The same eight container IDs and credential/config/source fingerprints
+survived with a new helper generation and no operations. The run used private
+HTTP; TLS and user-session broadcasting authorization were not tested.
+
+The [sanitized source and ordinary-recovery receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
+records those results plus actual ordinary archive/restore on a separate clean,
+unenrolled guest without force. The retained effective key preceded first start;
+the real nonempty post-archive erasure ledger preceded restore. Exact positive
+SYSTEM replay, survivor rows/local binary/settings/decryption, ticket scrubbing
+and sequence/new API contact checks passed. One current key and no previous
+keys were present, so rotation was not exercised. Erasure used the production
+service, not dashboard confirmation. This is ordinary recovery, not managed
+protective custody.
+Managed protection/apply and active-operation reboot also require the
+[Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
+and a real newer compatible published target.
+An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
+new published source enrolled with the fixed helper; an application image
+update alone does not replace host helper code.
+U8/#1115 and U9/#1116 remain open; managed scenarios remain zero. Use the
+[managed qualification contract](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/managed-update-qualification.md)
+and [dated evidence index](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/README.md)
+for that separate lane.
 
 The newest hosted public-artifact runs cover a `v1.1.1`
 [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
@@ -17,7 +45,7 @@ backup/restore and stack restart, and read `v1.1.1` from authenticated
 Earlier hosted public-artifact clean-install and upgrade results for `v1.1.0`,
 `v1.0.0`, `v0.11.0`, `v0.10.0` and `v0.9.0` are recorded on
 [Releases](Releases). The August 2026 `v0.3.2` hosted and bare-metal matrix
-below remains evidence for that artifact; it does not establish a `v1.1.1`
+below remains evidence for that artifact; it does not establish a newer artifact's
 bare-metal reboot or rollback path.
 
 The authoritative contract lives in

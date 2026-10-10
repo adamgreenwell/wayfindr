@@ -2,10 +2,21 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.1.1` (October 2, 2026), at tag `648caa1b`.
-It fixes dashboard and widget consistency, mobile controls, keyboard flows
-and release diagnostics. It has no migrations or required operator actions.
-The next development line is `1.2.0-dev`.
+The latest public release is `v1.2.0`, at `56374e95`, with
+successful [exact-main CI](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
+[Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback verified the Release, manifest, both
+amd64/arm64 image chains and aliases. Publication was October 9 EDT, October 10
+UTC. ARM64 baked identity, official installation/enrollment, idle helper restart
+and autonomous idle guest reboot passed. Private HTTP/nonce/API checks were
+repeated after reboot. Ordinary archive/restore on a separate clean, unenrolled
+VM also passed without force, including exact post-archive erasure replay and
+survivor/file/decryption/sequence checks. These ARM64/private HTTP results
+cannot qualify managed apply.
+Development `main` now identifies as
+`1.3.0-dev`, following the separate version change at `bcb5474a`. The previous
+public artifact is `v1.1.1` (October 2, 2026), at tag `648caa1b`.
+
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
 `POST /api/mail/inbound` when their matching verification is configured; the
@@ -42,10 +53,26 @@ finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v1.1.1`
+## What's in `v1.2.0`
 
-This section describes public `v1.1.1`. Some foundation was available in older
+This section describes public `v1.2.0` at `56374e95`. Some foundation was available in older
 releases; consult the release notes when operating one of those artifacts.
+
+1.2.0 adds read-only release review in Operator → Updates and hardens terminal
+upgrades. Optional managed execution on explicitly enrolled Linux/systemd hosts
+adds authenticated start/cancel/history, independent fencing and backup custody,
+reconnecting progress and explicit host recovery. The application container
+does not receive the Docker daemon socket. One additive audit-event
+deduplication migration runs automatically. No operator action is required;
+ordinary unenrolled installations retain their update path.
+
+Managed execution is implemented but **not qualified for production use**.
+[U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115) and
+[U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
+with zero qualified managed scenarios. The first compatible source can prove
+enrollment, idle reboot and ordinary independent restore; protection and apply
+need a real newer compatible published target. See the
+[qualification boundary](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
 and work context are more consistent; Reports filters, long comments and chart
@@ -321,10 +348,24 @@ sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
 performed by an AI agent rather than a human non-author.
 
-The `v1.1.1` tag at `648caa1b` and its
+Public `v1.2.0` at `56374e95` has passed exact-main CI, guarded publication and
+independent public-chain verification. ARM64 never-started baked identity
+verification, official source installation/enrollment and autonomous idle
+restart/reboot passed, with runtime/private nonce/API checks. Ordinary
+separate-VM restore passed without force, using retained keys and a real
+post-archive erasure ledger with exact replay/survivor/decryption/sequence checks.
+Publication and ordinary recovery cannot close U8, U9 or the managed-update epic. Managed
+execution needs the [Docker 29 image-identity fix
+#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) and a newer compatible
+published target. Planning the running release returns `no_update_required`.
+An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
+new published source enrolled with the fixed helper; an application image
+update alone does not replace host helper code.
+
+At its October 2 publication, the `v1.1.1` tag at `648caa1b` and its
 [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
-verify the published manifest, multi-architecture image and digest
-(`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`), GitHub Release, and stable `1.1` and `latest` aliases.
+verified the published manifest, multi-architecture image and digest
+(`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`), GitHub Release, and the stable `1.1` and `latest` aliases at that publication.
 
 At its October 1 publication, the `v1.1.0` tag at `9b634b23` and its
 [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36875096725)
