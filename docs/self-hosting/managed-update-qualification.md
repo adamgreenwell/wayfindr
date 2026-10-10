@@ -369,8 +369,8 @@ control boundaries without exercising Linux privileges or a real VM.
 
 | Command | Implemented effect |
 | --- | --- |
-| `preflight` | Read public declarations for the exact `--source` and `--target`; write an exclusive `--output` receipt and optional `--evidence-output` scaffold. It does not access a VM or Docker. A ready declaration is still unqualified. |
-| `adopt` | With `--ack-disposable`, verify the actual baked source identity, five distinct running canonical services on that image, no active operation and authenticated helper identity before writing a root-private source/target marker. Isolation remains an operator attestation. It does not provision or enroll the installation. |
+| `preflight` | Read public declarations for the exact `--source`, `--target` and optional distinct `--helper-release`; write an exclusive `--output` receipt and optional `--evidence-output` scaffold. It does not access a VM or Docker. A ready declaration is still unqualified. |
+| `adopt` | With `--ack-disposable`, verify the actual baked source identity, five distinct running canonical services on that image, no active operation and authenticated helper identity. Independently bind the exact published helper files and any completed supported helper-upgrade receipt before writing a root-private source/target/helper marker. Isolation remains an operator attestation. It does not provision or enroll the installation. |
 | `snapshot` | Capture the validated journal, authenticated helper identity when available, and minimal identities/running states for the five application services. It does not execute origin, runtime or data-survival checks. |
 | `interrupt-helper` | Wait within a bounded interval for the exact owned operation/checkpoint, retain an interruption-intent receipt, and signal only the fixed helper service. Existing systemd restart policy may restart the helper. This command does not recover it or terminate application containers. |
 | `checkpoint-reboot` | Retain an owned operation observation before a separately requested guest reboot. It does not reboot the VM. |
@@ -393,6 +393,44 @@ The running helper version comes from its authenticated local status response,
 with a root socket peer, nonce and HMAC verification. The observer distribution
 version is recorded separately. An offline journal remains readable with
 unverified helper identity and cannot authorize a fault injection.
+
+### Adopting a source with a separately upgraded helper
+
+An application release and its installed helper can have different published
+source tags. A `v1.2.0` application initially enrolls helper `0.4.0`; after the
+separate supported replacement, the application still reports `v1.2.0` while
+the authenticated helper reports `0.5.0`. Do not replace the application identity
+or reenroll to make those versions appear identical.
+
+After publishing and independently verifying the selected helper distribution,
+pass its exact stable tag as `--helper-release` and the completed replacement
+receipt UUID as `--helper-upgrade-transaction` to `adopt`. Both flags are required
+for this distinct-helper case. Use the receipt from that installation's actual
+root-only upgrade. The runner verifies the selected release, source-tree blobs,
+complete installed module hashes, source enrollment inputs, completed receipt
+and transaction-derived retained old generation. It requires no pending
+replacement/stop gate and verifies the current root systemd process through the
+authenticated socket peer PID.
+
+The private adoption marker uses schema `2`. Subsequent VM controls recheck its
+local generations and receipt without repeating public metadata requests. The
+receipt's startup generation is historical; a legitimate helper restart creates
+a new authenticated generation. A display version alone cannot admit the host.
+
+Public metadata reads are bounded and unauthenticated. Guests behind one NAT
+share GitHub's public API allowance; retain each adopted installation's own
+snapshot between fault scenarios instead of repeatedly adopting it. A transport
+or rate-limit refusal is a missing prerequisite, not permission to relax checks.
+
+The runner accepts the actual `accepted` and `prepare_started` checkpoints before
+source/target/plan resolution. Those observations bind the requested release,
+operation/request UUIDs, executor generation and journal revision and require
+null unresolved identities with no mutation. Protection checkpoints such as
+`fenced`, `drained` and `backup_verified` require the resolved plan and protection
+record. Observations do not constitute an atomic pause or prove that an
+intervention hit its intended window.
+
+### Validating the sanitized report
 
 Validate the sanitized report with the
 [managed-update evidence contract](../../scripts/self-host/update_vm_evidence.py)

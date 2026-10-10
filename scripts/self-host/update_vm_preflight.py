@@ -32,6 +32,7 @@ IMAGE = "ghcr.io/" + REPOSITORY
 MAX_BODY = 2_000_000
 FETCH_TIMEOUT = 15
 MAX_FETCHES = 32
+MAX_HELPER_FETCHES = 48  # An independent third stable release plus complete helper inputs.
 MAX_TAG_CHAIN = 4
 STABLE = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 COMMIT = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -41,6 +42,11 @@ CAPABILITIES = ["plan", "status", "start", "history", "cancel"]
 UPDATER = "scripts/self-host/updater.py"
 INSTALLATION = "apps/server/app/Support/Updates/InstallationCapabilities.php"
 PROBE = "apps/server/app/Console/Commands/HostUpdaterStatusCommand.php"
+HELPER_FILES = ("updater.py", "update_protection.py", "update_apply.py", "update_artifacts.py", "protection_archive.py")
+UPGRADE = "scripts/self-host/upgrade-updater.py"
+PROVENANCE_FILES = ("scripts/self-host/install.sh", "docker/self-hosting/compose.yml",
+                    "docker/self-hosting/compose.updater.yml", "docker/self-hosting/wayfindr-updater.service",
+                    "docker/self-hosting/wayfindr-updater.conf")
 REQUIRED_FILES = (
     "scripts/self-host/install.sh",
     "scripts/self-host/enroll-updater.py",
@@ -78,6 +84,7 @@ REASONS = frozenset({
     "release_asset_invalid", "release_asset_missing", "release_asset_checksum_invalid",
     "release_manifest_invalid", "source_tree_invalid", "source_blob_invalid",
     "helper_protocol_unpublished", "published_release_invalid", "image_digest_invalid", "helper_not_published",
+    "helper_bundle_unpublished",
 })
 
 
@@ -212,15 +219,19 @@ def _object(raw):
 
 
 class _Reader:
-    def __init__(self, fetch):
+    def __init__(self, fetch, maximum=MAX_FETCHES):
         self.fetch = fetch
         self.count = 0
+        self.maximum = maximum
+        self.cache = {}
 
     def raw(self, url):
         if not _valid_url(url):
             raise Refusal("public_url_refused")
+        if url in self.cache:
+            return self.cache[url]
         self.count += 1
-        if self.count > MAX_FETCHES:
+        if self.count > self.maximum:
             raise Refusal("public_fetch_limit")
         try:
             raw = self.fetch(url)
@@ -238,6 +249,7 @@ class _Reader:
             raise Refusal("public_metadata_invalid")
         if len(raw) > MAX_BODY:
             raise Refusal("public_response_too_large")
+        self.cache[url] = raw
         return raw
 
     def object(self, url):
@@ -311,7 +323,7 @@ def _manifest(raw, tag, commit):
     return value
 
 
-def _tree(reader, commit):
+def _tree(reader, commit, wanted=REQUIRED_FILES):
     value = reader.object(API + "/git/commits/" + commit)
     tree = value.get("tree")
     if value.get("sha") != commit or not isinstance(tree, dict) or not _sha(tree.get("sha")):
@@ -326,7 +338,7 @@ def _tree(reader, commit):
         if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or entry["path"] in seen:
             raise Refusal("source_tree_invalid")
         seen.add(entry["path"])
-        if entry["path"] in REQUIRED_FILES:
+        if entry["path"] in wanted:
             if entry.get("type") != "blob" or entry.get("mode") not in ("100644", "100755") or not _sha(entry.get("sha")):
                 raise Refusal("source_tree_invalid")
             files[entry["path"]] = entry["sha"]
@@ -446,7 +458,24 @@ def _release(reader, identity):
                     protocol_probe_present=True, source_tree_verified=True)
 
 
-def assess(source_tag, target_tag, fetch=None):
+def _helper_distribution(reader, identity):
+    """Hash complete installed generations and enrollment inputs, without execution."""
+    wanted = tuple("scripts/self-host/" + name for name in HELPER_FILES) + PROVENANCE_FILES + (UPGRADE,)
+    tree, files = _tree(reader, identity["commit"], wanted)
+    if tree != identity["source_tree_sha"] or set(files) - {UPGRADE} != set(wanted) - {UPGRADE}:
+        raise Refusal("helper_bundle_unpublished")
+    hashes = {path: hashlib.sha256(_blob(reader, sha).encode("utf-8")).hexdigest() for path, sha in files.items()}
+    modules = {name: hashes["scripts/self-host/" + name] for name in HELPER_FILES}
+    declaration = {"schema": 1, "helper_version": identity["helper_version"],
+                   "protocol": identity["helper_protocol"], "files": modules}
+    raw = (json.dumps(declaration, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    return {"tag": identity["tag"], "commit": identity["commit"], "source_tree_sha": tree,
+            **declaration, "bundle_sha256": hashlib.sha256(raw).hexdigest(),
+            "provenance_files": {path: hashes[path] for path in PROVENANCE_FILES},
+            "upgrade_cli_sha256": hashes.get(UPGRADE)}
+
+
+def assess(source_tag, target_tag, fetch=None, *, helper_tag=None):
     """Return a schema-1 classified publication gate without any host writes.
 
     ``fetch`` is an optional callable ``fetch(official_url) -> bytes`` for
@@ -458,7 +487,11 @@ def assess(source_tag, target_tag, fetch=None):
               "scope": "published_artifact_declarations", "source": None, "target": None, "reasons": [],
               "verification": {"public_release_metadata": False, "source_tree_declarations": False,
                                "baked_image": False, "release_guards": False, "host": False, "reboot": False}}
-    for role, tag in (("source", source_tag), ("target", target_tag)):
+    tags = (("source", source_tag), ("target", target_tag))
+    if helper_tag is not None:
+        tags += (("helper", helper_tag),)
+        report["helpers"] = {"source": None, "selected": None}
+    for role, tag in tags:
         if not _stable(tag):
             report["reasons"].append({"code": "stable_tag_required", "role": role})
     if report["reasons"]:
@@ -466,7 +499,8 @@ def assess(source_tag, target_tag, fetch=None):
     if _numbers(target_tag) <= _numbers(source_tag):
         report["reasons"].append({"code": "target_must_be_newer", "role": "pair"})
         return report
-    reader = _Reader(public_fetch if fetch is None else fetch)
+    maximum = MAX_HELPER_FETCHES if helper_tag is not None and helper_tag not in {source_tag, target_tag} else MAX_FETCHES
+    reader = _Reader(public_fetch if fetch is None else fetch, maximum)
     for role, tag in (("source", source_tag), ("target", target_tag)):
         identity = _identity(tag)
         report[role] = identity
@@ -479,6 +513,19 @@ def assess(source_tag, target_tag, fetch=None):
     floor = report["target"]["minimum_upgrade_from"]
     if floor is not None and _numbers(source_tag) < tuple(int(part) for part in SEMVER.fullmatch(floor).groups()[:3]):
         report["reasons"].append({"code": "upgrade_floor_not_met", "role": "pair"})
+    if helper_tag is not None and not report["reasons"]:
+        # An explicit helper release is independent of the application target.
+        # Reuse content-addressed public objects when those tags coincide.
+        selected = next((report[role] for role in ("source", "target") if report[role]["tag"] == helper_tag), None)
+        try:
+            if selected is None:
+                selected = _identity(helper_tag)
+                _release(reader, selected)
+            report["helpers"]["source"] = _helper_distribution(reader, report["source"])
+            report["helpers"]["selected"] = (report["helpers"]["source"] if helper_tag == source_tag
+                                              else _helper_distribution(reader, selected))
+        except Refusal as error:
+            report["reasons"].append({"code": error.code, "role": "helper"})
     if not report["reasons"]:
         report["status"] = "ready"
     return report
