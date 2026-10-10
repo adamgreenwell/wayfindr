@@ -30,31 +30,35 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** There are no new database migrations. Optional
-managed updates remain under disposable-VM qualification. The host helper
-corrections below are development source; they have not been published or
-installed by an application update. Application updates preserve the installed
-helper. Helper replacement remains a separate, explicit administrator command.
+## [1.4.0] - 2026-10-10
+
+**No operator action required.** Pull and restart the application; there are no
+new database migrations. Optional managed updates remain under disposable-VM
+qualification and are not qualified for production use. Application updates
+preserve the installed host helper. Installing the helper corrections below
+requires a separate, explicit administrator command from a reviewed source
+distribution; an application update never replaces privileged host code.
 
 ### Added
 
-- **A separate candidate bridge preserves one blocked 0.5 application apply
+- **A separate root-only bridge preserves one blocked 0.5 application apply
   during helper replacement.** The root-only CLI admits only the exact public
   source/target and initial pre-mutation failure history, verifies the corrected
   read-only baseline, retains the complete application journal and swaps only
   helper code. Normal replacement remains idle-only; application recovery is a
   separate operator action. One disposable ARM64/containerd VM completed a
   candidate 0.5-to-0.6 bridge with preservation; its application operation remains
-  `recovery_required`. This source is unpublished, and managed qualification
-  remains 0/100. See the [candidate contract and bounded native evidence](docs/self-hosting/helper-active-recovery-bridge.md).
+  `recovery_required`. Managed qualification remains 0/100. See the
+  [bridge contract and bounded candidate evidence](docs/self-hosting/helper-active-recovery-bridge.md).
 
-- **Unreleased helper 0.6 supports explicit replacement of exact published 0.4
+- **Helper 0.6 supports explicit replacement of exact published 0.4
   and 0.5 bundles.** Transactions retain their original source identity and
   historical executor journals. A frozen corrected 0.5 CLI finishes an existing
   0.4-to-0.5 transaction with its original UUID and destination before a separate
-  successor upgrade. Active application operations still refuse replacement.
-  See the [candidate procedure](docs/self-hosting/helper-0.6-candidate.md);
-  native acceptance and publication remain separate gates under
+  successor upgrade. Ordinary replacement still refuses active application
+  operations. See the [helper upgrade procedure](docs/self-hosting/managed-updater.md#upgrading-the-installed-helper)
+  and [bounded candidate observations](docs/self-hosting/helper-0.6-candidate.md).
+  Remaining native qualification is tracked under
   [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
 
 ### Fixed
@@ -64,8 +68,8 @@ helper. Helper replacement remains a separate, explicit administrator command.
   command arguments, preventing a deterministic Docker process-listing refusal
   while retaining pending-exec, orphaned upgrade-window and wrong-role guards.
   Native read-only candidate component checks passed; full managed qualification
-  remains incomplete. Helper publication and the supported `0.5.0` upgrade path
-  are tracked separately in [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+  remains incomplete. An installed `0.5.0` helper receives this correction only
+  through the separate, supported replacement or recovery bridge procedure.
 
 - **Helper replacement verifies systemd's freezer state before admitting work.**
   After the complete new helper starts, the upgrade CLI authenticates the exact
