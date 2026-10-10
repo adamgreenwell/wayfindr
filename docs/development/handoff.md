@@ -4,9 +4,10 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§25](#25-published-120--october-9-2026)**
-for the current public release, accepted ARM64 source/ordinary-recovery evidence
-and open managed qualification gates, then
+**Taking the baton? Start at [§26](#26-docker-29-helper-recovery-candidate)**
+for the current Docker 29/helper-recovery candidate and its remaining gates,
+then [§25](#25-published-120--october-9-2026) for the current public release and
+accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for the previous public artifact.
 Then §5 (conventions) and §7 (gotchas). Sections 8–24 are dated snapshots, kept
 for their evidence rather than their currency.
@@ -60,9 +61,12 @@ The release adds review, CLI hardening and optional managed execution;
 one additive audit-event migration runs automatically, with no required operator
 action. Unenrolled installs retain their update path. U1–U7 implementation is
 delivered, while U8/#1115, U9/#1116 and epic #1107 remain open. A real newer
-compatible published target and the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) are needed for managed
-apply; qualification remains false with zero managed scenarios. See §25.
+compatible published target and publication of the reviewed [Docker 29
+image-identity/helper fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
+are needed for managed apply. The ARM64/containerd interrupted helper recovery
+and current-release artifact-component candidate checks passed (§26);
+qualification remains false with zero managed scenarios. See §25 for the
+published source.
 
 The previous public `v1.1.1` published October 2 at tag
 `648caa1b`, with the manifest and multi-architecture image at
@@ -414,9 +418,13 @@ Ordered by real dogfood value and dependency, not feature novelty.
 1. **Build on public 1.2.0 source and ordinary-recovery evidence (§25).** Public
    artifacts and aliases verified; ARM64 baked identity verification passed.
    ARM64 official installation/enrollment and idle restart/reboot passed.
-   Ordinary separate-VM restore with real erasure replay also passed. Resolve
-   Docker 29 image identity and helper lifecycle #1131 before target execution. Keep `v1.1.1`'s
-   verified public artifacts
+   Ordinary separate-VM restore with real erasure replay also passed. The
+   Docker 29 image-binding/helper-lifecycle candidate for #1131 is implemented,
+   with native ARM64/containerd explicit recovery and artifact-component checks
+   passed ([§26](#26-docker-29-helper-recovery-candidate)). Publication of the
+   reviewed fix, a genuine newer compatible application target and the 100-case
+   native architecture/image-store qualification matrix remain separate gates.
+   Keep `v1.1.1`'s verified public artifacts
    and hosted-runner results as historical evidence (§24). Earlier
    publication and hosted-runner evidence stays specific to `v1.1.0` (§22),
    `v1.0.0` (§21), `v0.11.0` (§19), `v0.10.0` (§17) and `v0.9.0` (§16); keep
@@ -1745,3 +1753,57 @@ auto-deployment toggle was not inspected or changed.
 
 Publication, actual VM evidence, exact runtime identity, human acceptance,
 Forge deployment, website publication and Wiki sync remain separate results.
+
+## 26. Docker 29 helper recovery candidate
+
+On October 9 EDT / October 10 UTC, the reviewed `0.5.0` candidate passed an
+actual interrupted-CLI helper recovery and current-public-release artifact
+component rehearsal on a new disposable Ubuntu ARM64 VM with Docker
+29.1.3/containerd. The [sanitized receipt](../self-hosting/evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+binds the five-module bundle at
+`6a9b834eb7c1d77efc3caa2f4cef0e974cbefc74`, its exact hash and the separately
+frozen CLI. The published `v1.2.0` application remained in place; earlier lab
+VMs were preserved.
+
+An explicit `recover` of the retained candidate transaction freshly froze the
+old helper and persisted a new `frozen_idle` record for that same transaction.
+The fault controller killed that cgroup and paused the CLI for 6.5 seconds.
+The unchanged five-second `Restart=on-failure` policy did not restart the helper:
+MainPID remained zero, the service was inactive, its generation stayed the same,
+and typed metadata recorded the effective `ExecCondition` exiting `1`. After
+the paused CLI was killed, ordinary upgrade refused with `upgrade_unavailable`
+and `recovery_required: true`, preserving the exact transaction. Explicit
+`recover` with the same transaction/bundle completed `0.4.0` → `0.5.0`.
+An uninterrupted fresh upgrade remains a separate observation.
+
+The actual published PHP `HostUpdaterClient` authenticated helper `0.5.0` with
+protocol `1` and HMAC. Enrollment authority, credential/configuration,
+state/runtime/lifetime-lock identities and durable journal operations were
+preserved. All eight application container IDs stayed unchanged, with seven
+services running and storage-init exited `0`. The old complete generation was
+retained and the transaction/stop marker cleared through the CLI procedure.
+
+Actual candidate `Artifacts.prepare` and retained read-only `verify` passed
+against independently fetched public `v1.2.0` release assets and image chain.
+Schema `2` bound the distinct index/platform/config/local image identities,
+complete Config/RootFS, selected probe manifest and never-started baked bytes,
+with no installation mounts or probe network access. Native findings required
+preserving a legitimate `0700` code directory under root umask `077` and using
+`ExecCondition` to guard automatic systemd 255 restarts that skip
+`ConditionPathExists`. The frozen candidate passed those checks.
+
+The private harness initially labelled the actual safe pending refusal
+`pending_not_refused` because it expected a dedicated reason. Only its
+continuation was corrected for `upgrade_unavailable`/`recovery_required: true`;
+the frozen CLI and transaction stayed unchanged before explicit recovery.
+
+This is ARM64/containerd candidate evidence. The fix is unpublished, the public
+`v1.2.0` helper remains `0.4.0`, no newer application target was created, and
+zero managed scenarios ran. Managed qualification remains false; a genuine
+newer compatible public application target and all 100 cases across 25 scenario
+identifiers, two native architectures and two image stores remain required.
+Managed protection/apply/migration, active-update reboot, native interruption
+during directory exchange, historical terminal apply recovery and the other
+native combinations remain unobserved. Keep U8/#1115, U9/#1116 and epic #1107 open.
+Follow the [qualification plan](../self-hosting/managed-update-qualification.md)
+and preserve all dated §25/source evidence intact.

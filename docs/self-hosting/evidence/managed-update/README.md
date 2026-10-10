@@ -231,3 +231,68 @@ during an active update. Those require a real newer compatible published target.
 Managed qualification remains **false with zero scenarios**. U8/#1115,
 U9/#1116 and epic #1107 remain open. Preserve all preceding dated evidence and
 append the reviewed actual result rather than rewriting its artifact or scope.
+
+
+## October 9 EDT / October 10 UTC, 2026: Docker 29 helper recovery candidate
+
+The [sanitized helper-recovery receipt](2026-10-10-docker29-helper-recovery.json)
+records an actual interrupted-CLI recovery and artifact-component rehearsal on
+a new disposable Ubuntu ARM64 VM with Docker 29.1.3 and the containerd image
+store. The running application remained the exact public `v1.2.0` image. The
+five-module candidate bundle came from
+`6a9b834eb7c1d77efc3caa2f4cef0e974cbefc74`; the receipt binds its exact bundle
+hash and the separately frozen helper-upgrade CLI hash. Earlier lab VMs were
+preserved.
+
+An explicit `recover` of the retained candidate transaction freshly froze the
+published `0.4.0` helper and persisted a new `frozen_idle` record for that same
+transaction. The external fault controller killed that
+frozen helper through `cgroup.kill` and paused the upgrade CLI for 6.5 seconds,
+beyond the service's five-second restart delay. The service remained inactive
+with MainPID zero and the same executor generation. Its canonical
+`Restart=on-failure` policy stayed unchanged; typed systemd metadata recorded
+the effective `ExecCondition` exiting `1`, blocking automatic restart.
+
+The controller then killed the paused CLI. An ordinary upgrade attempt refused
+with `upgrade_unavailable`, `recovery_required: true` and the unchanged
+transaction identity. Explicit `recover` with that same transaction UUID and
+reviewed bundle completed the `0.4.0` → `0.5.0` replacement. This records recovery
+after an actual CLI interruption; an uninterrupted fresh upgrade remains a
+separate observation.
+
+The published application's real PHP `HostUpdaterClient` authenticated the new
+helper through protocol `1` and HMAC. Enrollment identity, credential and
+configuration, state/runtime/lifetime-lock identities and durable journal
+operations were preserved. All eight application container IDs stayed the
+same: seven services remained running and storage-init retained exit `0`. The
+complete old `0.4.0` code generation remained retained; the transaction and stop
+marker cleared through the supported procedure.
+
+On that same candidate, actual `Artifacts.prepare` and read-only retained
+`verify` passed against independently downloaded public `v1.2.0` release
+metadata and image bytes. Artifact schema `2` kept index, selected platform,
+raw configuration and observed local image identities distinct. Complete
+Config/RootFS comparison, the selected container manifest and baked
+version/commit/manifest/history passed through the never-started, network-disabled
+probe without installation mounts. No newer application target or managed
+operation was created.
+
+Native observations exposed legitimate `0700` code directories under a
+restrictive root umask and systemd 255 automatic restarts skipping
+`ConditionPathExists`. The reviewed candidate preserves the safe directory mode
+and uses the verified `ExecCondition` guard. A private observer assertion also
+initially reported `pending_not_refused`: it expected a dedicated pending reason
+instead of the actual safe `upgrade_unavailable` refusal. Only the harness
+continuation was corrected before explicit recovery; the frozen CLI and
+transaction stayed unchanged. Private logs and host authority remain outside
+this repository.
+
+This is ARM64/containerd candidate helper-lifecycle and current-release component
+evidence. The `0.5.0` distribution is not published; the public `v1.2.0` helper
+remains `0.4.0`. Managed qualification remains **false with zero managed
+scenarios**. A real newer compatible application release and all 100 native
+architecture/image-store scenario cases remain required. This run does not
+establish managed protective custody, application apply/migration, an
+active-update reboot, native interruption during directory exchange, historical
+terminal apply recovery, or the other native/store combinations. U8/#1115,
+U9/#1116 and epic #1107 remain open.
