@@ -24,10 +24,13 @@ retained recovery files, application containers and application data retain the
 same preservation requirements.
 
 All active or interrupted application operations still refuse normal helper
-replacement, including the published 0.5 process-listing failure. This candidate
-does not implement a recovery bridge for that failure. Keep the failed operation
-and its original helper intact. Qualification on a fresh isolated host can
-exercise the normal idle path while that bridge receives separate review.
+replacement, including the published 0.5 process-listing failure. A separately
+reviewed [candidate bridge](helper-active-recovery-bridge.md) admits only its
+exact pre-mutation failure state and preserves the active application operation.
+It has its own CLI and transaction schema; it does not perform application
+recovery. Its [bounded native preservation observation](helper-active-recovery-bridge.md#bounded-native-preservation-observation-2026-10-10)
+is separate from the ordinary idle runs below. Keep the failed operation and all
+original evidence intact while reviewing that separate path.
 
 ## Bounded native candidate observations (2026-10-10)
 
@@ -66,8 +69,8 @@ This observes one native legacy interruption boundary; synthetic tests cover
 the other durable stages.
 
 These observations do not qualify reboot, power loss, retained historical
-application operations, the VM16 active-operation bridge, a managed application
-upgrade, protective backup, ordinary restore or publication. **Zero managed
+application operations, a managed application upgrade, protective backup,
+ordinary restore or publication. **Zero managed
 application-upgrade scenarios are qualified by these helper-only runs.**
 
 ## Finish an interrupted 0.4 to 0.5 helper transaction first

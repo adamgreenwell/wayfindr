@@ -93,6 +93,8 @@ host-updater-test: managed-update-qualification-test
 	python3 scripts/test_update_operator.py
 	python3 scripts/test_updater_enrollment.py
 	python3 scripts/test_updater_upgrade.py
+	python3 scripts/test_helper_recovery_bridge.py
+	python3 scripts/test_helper_bridge_lifecycle.py
 	python3 scripts/test_update_protection.py
 	python3 scripts/test_update_artifacts.py
 	python3 scripts/test_update_apply_contract.py

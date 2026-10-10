@@ -38,6 +38,16 @@ helper. Helper replacement remains a separate, explicit administrator command.
 
 ### Added
 
+- **A separate candidate bridge preserves one blocked 0.5 application apply
+  during helper replacement.** The root-only CLI admits only the exact public
+  source/target and initial pre-mutation failure history, verifies the corrected
+  read-only baseline, retains the complete application journal and swaps only
+  helper code. Normal replacement remains idle-only; application recovery is a
+  separate operator action. One disposable ARM64/containerd VM completed a
+  candidate 0.5-to-0.6 bridge with preservation; its application operation remains
+  `recovery_required`. This source is unpublished, and managed qualification
+  remains 0/100. See the [candidate contract and bounded native evidence](docs/self-hosting/helper-active-recovery-bridge.md).
+
 - **Unreleased helper 0.6 supports explicit replacement of exact published 0.4
   and 0.5 bundles.** Transactions retain their original source identity and
   historical executor journals. A frozen corrected 0.5 CLI finishes an existing
