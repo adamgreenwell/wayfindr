@@ -21,100 +21,55 @@ There are three separate results:
    release assets and images, then independently verifies the resulting data,
    services, origin, reboot and restore behavior.
 
-Public `v1.2.0` is frozen at
-`56374e9574ed84616aae430d06589cfe2f0b33a0`, and
-[exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
-and [publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed. Independent public readback verified the Release, manifest, both
-amd64/arm64 image chains and aliases on October 10 UTC (October 9 EDT).
-ARM64 never-started-image baked version/commit/manifest/history verification
-passed, including exact public Config/rootfs equality, no start or mounts, and
-named UID/GID 1000. Actual ARM64 official installation, optional enrollment,
-idle helper restart and autonomous idle guest reboot passed; the
-[source/ordinary-recovery receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
-binds the exact official image and installed distribution. Five application
-roles passed PostgreSQL/production Redis/runtime checks, with private nonce and
-authenticated API/operator checks repeated after reboot. Container identities
-and credential/config/source fingerprints survived with a new helper generation
-and no operations. Ordinary archive/restore on a separate clean, unenrolled
-VM passed without force: the fixed archive predated a real erasure, its latest
-nonempty settled ledger preceded restore, and exact positive SYSTEM replay,
-survivor rows/local binary/settings/decryption and sequence/new API contact
-checks passed. One current key was retained, with no previous keys; rotation
-was not exercised. Erasure used the production service, not dashboard
-confirmation. These ARM64/private HTTP runs do not establish TLS, user-session
-broadcasting authorization, remote storage or managed protective custody. U8/#1115, U9/#1116 and epic #1107 remain open;
-managed qualification remains false, with zero executed managed scenarios.
-Public amd64 and arm64 manifest/configuration checks do not establish baked-file
-or installed-VM observations for an untested architecture.
+Public `v1.3.0` at `1bae329c4e349017716827dd0ce26b9ba7f9f2ac` now
+supplies the genuine newer target for published `v1.2.0` at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`. All five exact-main CI jobs and
+the guarded publisher passed. Independent readback verified public release
+assets, both amd64/arm64 OCI chains and stable aliases. The
+[publication receipt](evidence/managed-update/2026-10-10-v1.3.0-publication.json)
+also binds the separately published helper `0.5.0` and exact upgrade CLI.
+Development `main` is `1.4.0-dev`; its version reset is separate from publication.
 
-**Docker 29 execution blocker:** on the ARM64 source guest, the containerd image
-store reports the OCI index digest as image `.Id` and container `.Image`; the
-public configuration digest is separate and is not a local image address. The
-source probe verified full public Config/rootfs equality and baked bytes, but
-published managed artifact verification/apply assume the local ID equals the configuration
-digest. [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) must be fixed
-and exercised with exact published artifacts before managed execution can be
-qualified. No managed operation was attempted. A newer compatible published
-target is a separate prerequisite.
+**Installed Docker 29 compatibility is still a native gate.** The 1.2.0 helper
+`0.4.0` assumes the local image ID equals the public configuration digest.
+Docker 29/containerd instead exposed the OCI index as local image `.Id` and
+container `.Image` on the observed ARM64 guest. Published helper `0.5.0`
+separates those identities and verifies the selected platform manifest, full
+Config and rootfs. A newer application image cannot replace the installed host
+helper. Use the [supported exact-byte helper upgrade](managed-updater.md#upgrading-the-installed-helper)
+and bind its actual completed transaction when adopting an older application
+with the newer helper. Manual helper overwrite, marker deletion, store switching
+and silent enrollment overwrite cannot establish this path.
 
-The affected code is installed in the host helper. Managed apply replaces the
-application image/overlay and installation image/configuration binding; it does not replace helper
-code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
-enrolled hosts. A newer application image alone therefore cannot repair an
-already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
-supported, ownership-aware, byte-verified helper upgrade preserves enrollment
-identity, credential, journal, locks and recovery state while refusing active or
-partial work, or qualify a real newer published source freshly enrolled with the
-fixed helper. Manual helper overwrite, marker deletion, store switching and
-silent enrollment overwrite are not supported recovery paths.
+The earlier [source and ordinary-restore receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
+proves ARM64 published 1.2.0 installation/enrollment, idle helper restart and
+actual autonomous idle guest reboot. It also records a separate clean,
+unenrolled ordinary restore without force, using a fixed pre-erasure archive,
+the real latest nonempty ledger and retained current encryption key. Positive
+SYSTEM replay, survivor rows/local binary/settings/decryption, scrubbed tickets
+and sequence checks passed. Those private-HTTP observations did not exercise
+TLS, user-session broadcasting authorization, remote storage or rotated keys.
+They do not qualify managed protection/apply or active-update recovery.
 
-The development `0.5.0` implementation addresses this image binding and adds the
-separate [exact-byte helper upgrade](managed-updater.md#upgrading-the-installed-helper).
-The published `v1.2.0` helper is still `0.4.0`. Implementation tests or a local
-candidate lifecycle rehearsal do not publish the fix or qualify a managed
-source-to-target span. Record actual installed-helper replacement, public target
-identity and the expanded matrix separately.
+The [earlier candidate recovery receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+and [merged-helper lifecycle rehearsal](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+remain dated evidence of unpublished-code trials. The latter passed normal
+replacement and explicit same-transaction recovery after kernel-confirmed
+atomic exchange and SIGKILL on ARM64/containerd, preserving the published
+application, enrollment and seeded data. It proves same-kernel process-crash
+recovery before parent-directory fsync, not power-loss or reboot durability.
+Its historical `published: false` field remains unchanged; the later 1.3.0
+publication is recorded separately above.
 
-The earlier [ARM64 Docker 29/containerd candidate receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
-records actual same-transaction recovery after interrupting the explicit
-helper-upgrade `recover` command,
-preserving the published `v1.2.0` application and its enrollment while completing
-`0.4.0` → `0.5.0`. Current-public-release `Artifacts.prepare` and retained
-read-only verification also passed. This is candidate helper-lifecycle and
-artifact-component evidence; an uninterrupted fresh upgrade is a separate
-observation. The fix remains unpublished, no newer application target or managed
-operation was created, and all 100 managed scenario cases remain unexecuted.
-
-The subsequent [merged-helper lifecycle receipt](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
-records a clean uninterrupted `0.4.0` → `0.5.0` upgrade and explicit
-same-transaction recovery after the unmodified CLI's successful atomic directory
-exchange and SIGKILL. Both trials used one new ARM64/Docker 29/containerd VM,
-reset between trials only through its own clean published-source snapshot.
-The actual syscall-exit stop proved complete generations exchanged while the
-record remained `staging`, before the parent-directory fsync. Both trials
-preserved application containers, authority, journal and seeded data, including
-binary bytes and fresh-process encrypted-setting decryption. This is
-same-kernel process-crash evidence, without power-loss durability or reboot
-recovery. Historical terminal managed-apply custody remains unexercised.
-The helper remains unpublished; no newer application target, managed
-protection/apply/migration or other native/store combination ran. Managed
-qualification remains false with zero of 100 managed cases; #1131, U8/#1115,
-U9/#1116 and epic #1107 remain open.
-
-
-The earlier October 9 publication gate checked public `v1.1.0` → `v1.1.1`.
-Neither immutable tag contains the managed-apply command required by enrollment;
-the now-merged implementation cannot change those older artifacts. Retain that
-[blocked receipt](evidence/managed-update/README.md) as dated evidence.
-A managed success span needs **two compatible published releases**, with the
-source and target satisfying the reviewed application/helper protocol and
-byte-identical supported base Compose configuration. The first compatible
-release can prove enrollment, idle helper reboot behavior, ordinary backups and
-an independent restore. Target-bound protection and active-operation reboot
-drills need an eligible newer published target; planning the running release
-returns `no_update_required`. One release cannot supply both ends of a published
-managed upgrade.
+The older `v1.1.0` → `v1.1.1` [blocked gate](evidence/managed-update/README.md)
+also remains valid: those immutable tags lack the managed updater contracts.
+A success span needs two compatible published releases and supported base
+Compose bytes; one release cannot supply both ends. The 1.2.0 → 1.3.0 minor
+pair now exists, while other matrix cases still require their actual published
+prerequisites. Keep each missing case blocked. Publication, helper tests and
+source-only observations cannot fill the 100-case native matrix. U8/#1115,
+U9/#1116, #1131 and epic #1107 remain open; this document records zero qualified
+managed scenarios.
 
 Release/tag creation, registry publication, implementation merges, production
 changes and arbitrary image downgrades are separate actions. This qualification

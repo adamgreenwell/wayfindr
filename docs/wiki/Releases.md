@@ -10,13 +10,42 @@ patch only fixes. The release notes and manifest remain the authoritative
 detail.
 
 The latest public release is
+[`v1.3.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.3.0), at
+`1bae329c4e349017716827dd0ce26b9ba7f9f2ac`.
+[Exact-main CI 38056674067](https://github.com/adamgreenwell/wayfindr/actions/runs/38056674067)
+and [guarded publisher 38057466650](https://github.com/adamgreenwell/wayfindr/actions/runs/38057466650)
+passed. Independent public readback verified Release assets, manifest, OCI
+index, both amd64/arm64 platform/configuration chains, `1.3.0`, `1.3` and
+`latest` aliases, and GitHub latest. The index is
+`sha256:f7b5361f32c4b81010d74da37d310aec048f7101d8ea3ec4a99cea9f90df8dd0`;
+the manifest SHA256 is
+`61ab5296646fea9f4d756b2075eba03fcc167f07302887a40a921a5df3c48c58`.
+No operator action or migration is required; standing backup-queue guidance
+remains. The [publication receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
+records these public identities.
+
+This release publishes the Docker 29 compatibility correction, helper `0.5.0`
+and the separate supported helper upgrade CLI. An already-enrolled 1.2.0
+installation must upgrade its host helper separately; an application image
+pull does not replace that code. The genuine 1.2.0 → 1.3.0 minor-release pair
+is now available for disposable-VM testing. Publication does not establish
+managed protection/apply, recovery, native AMD64 behavior or the full matrix.
+U8/#1115, U9/#1116, #1131 and epic #1107 remain open with zero qualified
+managed scenarios.
+
+Development `main` is now `1.4.0-dev` after
+[PR #1136](https://github.com/adamgreenwell/wayfindr/pull/1136), merge
+`a61445dcf5d67713f61d082cd389876b1d9f2e46`; all five
+[exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38059773227)
+passed. This version change did not publish another release.
+
+The previous public release is
 [`v1.2.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.2.0), at
 `56374e9574ed84616aae430d06589cfe2f0b33a0`.
 [Exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
 passed; [guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
 passed. Independent readback verified the public Release, 1,111-byte manifest,
-OCI index, both amd64/arm64 platform/configuration chains and stable `1.2` and
-`latest` aliases. The index is
+OCI index, both amd64/arm64 platform/configuration chains and the `1.2` and `latest` aliases at that publication. The index is
 `sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683`.
 The manifest SHA256 is
 `2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4`.
@@ -35,13 +64,14 @@ also passed without force, using the retained effective key and real
 post-archive erasure ledger, with exact replay/survivor/decryption/sequence
 checks. These ARM64/private HTTP results do not establish TLS, user-session
 broadcasting authorization or managed protective custody.
-Managed protection/apply need a genuine newer compatible published target and
-the [Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+At this earlier observation, managed protection/apply lacked a compatible
+newer target and the [Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+Those artifacts are now published in 1.3.0; native qualification remains separate.
 An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
 new published source enrolled with the fixed helper; an application image
 update alone does not replace host helper code. U8/#1115 and U9/#1116 remain
 open, with zero qualified scenarios.
-Development `main` now identifies as `1.3.0-dev`, following the separate
+The historical `1.3.0-dev` reset followed the separate
 `VERSION` change at `bcb5474a`; required actions are empty and standing notices
 are preserved.
 
@@ -50,7 +80,7 @@ only. Public
 amd64 manifest/configuration verification is a separate artifact check, not an
 amd64 installation, reboot or restore result.
 
-The previous public release is
+An earlier public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1).
 Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
@@ -86,6 +116,11 @@ are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
+- The [attached `v1.3.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.3.0/release-manifest.json),
+  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.3.0/release.json)
+  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.3.0/releases/history.json)
+  describe the current public artifact. Prior release actions still apply to
+  installations that skipped them.
 - The [attached `v1.2.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json),
   [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.2.0/release.json)
   and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.2.0/releases/history.json)
@@ -101,8 +136,8 @@ are recorded below.
   before it.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
   is separate from the immutable published manifest. Development `main` is
-  `1.3.0-dev`; empty current actions do not replace the history carried by
-  `v1.2.0`.
+  `1.4.0-dev`; empty current actions do not replace the history carried by
+  `v1.3.0`.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
