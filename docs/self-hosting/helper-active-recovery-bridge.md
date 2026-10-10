@@ -9,9 +9,50 @@ The [normal helper replacement](helper-0.6-candidate.md) remains idle-only.
 An ARM64/containerd rehearsal completed two read-only preservation baselines,
 then refused during inspection with `partial_state`, before a bridge transaction,
 helper kill or code exchange. The original candidate did not recognize the
-qualification marker already created by the supported VM runner. The correction
-below has offline coverage; native bridge acceptance is still pending and managed
+qualification marker already created by the supported VM runner. The corrected
+candidate later completed one helper-only bridge on that disposable VM, as
+documented below. The original refusal remains retained, and managed
 qualification remains **0/100**.
+
+## Bounded native preservation observation (2026-10-10)
+
+One populated ARM64 Linux VM using Docker 29.1.3's containerd image store
+completed an explicit public helper 0.5.0 to candidate 0.6.0 bridge. The reviewed
+candidate source was commit `c7206742bcc0a5337a149fc4f1074deb130d2365`, with
+five-module bundle SHA-256
+`eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df`.
+The v1.2.0 application remained installed throughout.
+
+Independent audits verified the complete private raw export and two fresh full
+observations before and after replacement, plus the immediate pre-transaction
+baseline. All eight complete application container bindings, installation
+authority and credentials, current and previous keys, encrypted settings,
+logical data HMACs, erasure ledger, four actual local/S3 binary reads and trusted
+HTTPS were preserved. Root-authenticated status bound the new 0.6 process to its
+systemd identity and unfrozen kernel state. The complete original 0.5 generation,
+older retained generations and receipts, both earlier native evidence trees and
+the qualification marker's exact bytes and file/directory identities remained
+intact.
+
+The completed schema-2 bridge transaction was
+`8b6f9fb3-b80f-48aa-823d-f97c2d512048`. These SHA-256 values identify distinct
+retained artifacts; the native standard output and private evidence JSON are
+different byte streams:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Native standard output | `db2b5a650eaa12deeb75bfd6a4f82acc28644f3b2705b7c9f08d289daa589ea4` |
+| Private `evidence/result.json` | `b9009ab699dfa4d25c941eb7d8982894ce17741e82be478331fab177d2d8f398` |
+| Durable bridge completion receipt | `5c54674985b6fc8d403b8a97d3979b6b9a921b0788c1b69d58319c1aea92e8e8` |
+
+The application operation remained at revision 7, `recovery_required`, with its
+complete nonvolatile journal unchanged. The original inspection refusal and
+separate read-only follow-up remain retained. Historical pre-loss S3 continuity
+remains invalidated; this observation preserves only the fresh repaired
+baseline. No application retry, recovery, upgrade, reboot, restore or publication
+was performed. **Zero of 100 managed application-upgrade scenarios are qualified
+by this helper-only observation.** Other native interruption boundaries remain
+unproven.
 
 ## One narrowly admitted state
 

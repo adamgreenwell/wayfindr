@@ -43,8 +43,10 @@ helper. Helper replacement remains a separate, explicit administrator command.
   source/target and initial pre-mutation failure history, verifies the corrected
   read-only baseline, retains the complete application journal and swaps only
   helper code. Normal replacement remains idle-only; application recovery is a
-  separate operator action. This source is unpublished and has no native bridge
-  acceptance claim. See the [candidate contract](docs/self-hosting/helper-active-recovery-bridge.md).
+  separate operator action. One disposable ARM64/containerd VM completed a
+  candidate 0.5-to-0.6 bridge with preservation; its application operation remains
+  `recovery_required`. This source is unpublished, and managed qualification
+  remains 0/100. See the [candidate contract and bounded native evidence](docs/self-hosting/helper-active-recovery-bridge.md).
 
 - **Unreleased helper 0.6 supports explicit replacement of exact published 0.4
   and 0.5 bundles.** Transactions retain their original source identity and
