@@ -13,7 +13,7 @@ and still accepts the original Wayfindr-signed proxy format for existing
 integrations. Older `v0.7.0` predates that direct-provider support. See the
 [inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
 
-The capability list below describes public `v1.2.0` at `56374e95`.
+The capability list below describes public `v1.3.0` at `1bae329c`.
 The Status section separates implementation, verified public artifacts and
 ARM64 source/ordinary-recovery evidence from open managed-update qualification.
 
@@ -158,6 +158,24 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 ## Status
 
 The latest public release is
+[`v1.3.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.3.0),
+at `1bae329c4e349017716827dd0ce26b9ba7f9f2ac`. All five
+[exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38056674067)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38057466650)
+passed. Independent public readback verified the Release assets, manifest,
+both amd64/arm64 OCI chains and `1.3.0`/`1.3`/`latest` aliases. The
+[publication receipt](docs/self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
+records those exact identities.
+
+1.3.0 publishes the Docker 29 image-identity correction, helper `0.5.0` and
+its separate supported upgrade CLI. An enrolled 1.2.0 installation must
+[upgrade its host helper separately](docs/self-hosting/managed-updater.md#upgrading-the-installed-helper);
+pulling the application image does not replace host helper code. No operator
+action or migration is required; standing backup-queue guidance remains.
+The real 1.2.0 → 1.3.0 minor pair is available for testing. Publication does
+not qualify managed application updates; zero managed scenarios are qualified.
+
+The previous public release is
 [`v1.2.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.2.0),
 at `56374e9574ed84616aae430d06589cfe2f0b33a0`.
 [Exact-main CI](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
@@ -189,8 +207,8 @@ not establish TLS or user-session broadcasting authorization. The merged
 [Docker 29 image-identity/helper fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
 passed a separate ARM64/containerd [clean helper upgrade and atomic-exchange
 recovery rehearsal](docs/self-hosting/evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json).
-The helper remains unpublished; managed apply still needs a real newer compatible
-published target and the full native qualification matrix. An application image
+The helper and newer compatible target are now published in 1.3.0; the full
+native qualification matrix remains open. An application image
 update alone does not replace host helper code. The exchange check proves
 same-kernel process-crash recovery before the parent-directory fsync, without
 establishing power-loss or reboot durability. Managed scenarios remain **0**;
@@ -198,7 +216,7 @@ establishing power-loss or reboot durability. Managed scenarios remain **0**;
 [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open.
 See the [qualification boundary](docs/self-hosting/managed-update-qualification.md).
 
-The previous verified public release is
+An earlier verified public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1)
 (October 2, 2026). Its protected tag resolves to `648caa1b`, and the
 published multi-architecture image resolves to
@@ -228,8 +246,8 @@ From 1.0.0 the version number carries the operator-action signal, as
 See the [release notes](CHANGELOG.md). If you are several releases behind, read
 each release in between. `v0.11.0` carries a session-secret security fix, and
 `v0.10.0` sends an email reply backlog left over from `v0.9.0`.
-Development `main` now identifies the next line as `1.3.0-dev`, following the
-separate `VERSION` change at `bcb5474a`. The empty required-action declaration
+Development `main` now identifies the next line as `1.4.0-dev`, following
+[PR #1136](https://github.com/adamgreenwell/wayfindr/pull/1136), merge `a61445dc`. The empty required-action declaration
 and standing advisory notices remain intact; this does not select the next
 release's scope.
 
@@ -307,7 +325,7 @@ That is point-in-time variability—not long-term drift resistance,
 model-revision evidence, provider or runtime approval, or authority to change
 ADR 0004.
 
-The list below describes the published 1.2.0 capability set; managed-update
+The list below describes the published 1.3.0 capability set; managed-update
 qualification remains pending as stated above.
 
 - browser and CLI first-run setup;

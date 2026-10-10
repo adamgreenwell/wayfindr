@@ -5,27 +5,22 @@ a help centre, consent-based cobrowsing, and durable ticketing — with reportin
 over the conversations and tickets it handles. The project reached `v1.0.0` on
 September 30, 2026.
 
-The latest public release is `v1.2.0`, at `56374e95`, published October 9,
-2026 EDT (October 10 UTC). Its public Release, manifest, both platform image
-chains and stable aliases were independently verified. It adds release review and
-terminal-upgrade hardening, with optional managed host execution still under VM
-qualification. No operator action is required; one additive audit-event
-migration runs automatically. ARM64 never-started baked identity verification
-passed. Actual ARM64 official installation/enrollment, idle helper restart and
-autonomous idle guest reboot passed over private HTTP with runtime/nonce/API
-checks. Ordinary archive/restore on a separate clean, unenrolled VM also passed
-without force, with real post-archive erasure replay and survivor/file/decryption/
-sequence checks. These ARM64/private HTTP results do not qualify managed
-updates; U8 and U9 remain open. Managed upgrades need both a real newer
-compatible published target and the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
-An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
-new published source enrolled with the fixed helper; an application image
-update alone does not replace host helper code. Development `main` now
-identifies as `1.3.0-dev`, after the
-separate version change at `bcb5474a`.
-The previous public artifact is `v1.1.1` (October 2, 2026); its dated
-evidence is preserved on [Releases](Releases).
+The latest public release is `v1.3.0`, at `1bae329c`, published October 10,
+2026. All five exact-main CI jobs and the guarded publisher passed; independent
+readback verified Release assets, manifest, both amd64/arm64 OCI chains and
+stable aliases. This release publishes the Docker 29 correction, helper `0.5.0`
+and its separate supported upgrade CLI. An enrolled 1.2.0 host must upgrade
+its helper separately; an application image pull cannot replace host code.
+No operator action or migration is required; standing backup-queue guidance
+remains. See [Releases](Releases) for the public receipt and exact identities.
+The real 1.2.0 → 1.3.0 minor pair is available, but managed application
+qualification remains open with zero qualified scenarios. Development `main`
+is `1.4.0-dev` after PR #1136; that reset published no release.
+
+The previous public release is `v1.2.0`. Its ARM64 published-source install,
+enrollment, idle restart/reboot and separate ordinary restore passed over
+private HTTP. Those observations and older dated evidence remain on
+[Disposable VM Evidence](Disposable-VM-Evidence) and [Releases](Releases).
 
 It is a working support desk, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget

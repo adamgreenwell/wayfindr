@@ -1,5 +1,22 @@
 # Managed-update qualification evidence
 
+## October 10, 2026: v1.3.0 application and helper publication verified
+
+The [public-artifact receipt](2026-10-10-v1.3.0-publication.json) binds release
+`v1.3.0`, commit `1bae329c4e349017716827dd0ce26b9ba7f9f2ac`, successful
+exact-main CI and guarded publisher, Release assets, both amd64/arm64 OCI
+chains, and the `1.3.0`, `1.3` and `latest` aliases. Independent public source
+readback also verified helper `0.5.0`/protocol 1, all five modules and the
+supported upgrade CLI at that same immutable tag.
+
+This makes the real `v1.2.0` → `v1.3.0` minor-release pair available. It does
+not prove image pulls, baked-file probes, installed-helper replacement, managed
+protection/apply/fault recovery, restore or any native AMD64 guest behavior.
+The application image does not install or upgrade the host helper. Qualification
+remains false with zero managed scenarios. The older receipts below retain
+their original dated claims and limitations.
+
+
 ## October 9, 2026: published-artifact gate blocked
 
 The read-only preflight checked the actual public `v1.1.0` → `v1.1.1` patch

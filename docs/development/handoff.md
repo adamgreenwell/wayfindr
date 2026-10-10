@@ -4,14 +4,15 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery)**
-for the clean helper upgrade and atomic-exchange recovery evidence and its
-remaining gates, then [§26](#26-docker-29-helper-recovery-candidate) for the
+**Taking the baton? Start at [§28](#28-published-130-application-and-helper)**
+for the current publication and remaining native gates, then
+[§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery) and
+[§26](#26-docker-29-helper-recovery-candidate) for the
 earlier recovery/artifact-component rehearsal. See
-[§25](#25-published-120--october-9-2026) for the current public release and
+[§25](#25-published-120--october-9-2026) for the previous publication and
 accepted ARM64 source/ordinary-recovery evidence, then
-[§24](#24-published-111--october-2-2026) for the previous public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–26 are dated snapshots, kept
+[§24](#24-published-111--october-2-2026) for an earlier public artifact.
+Then §5 (conventions) and §7 (gotchas). Sections 8–27 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -1868,3 +1869,26 @@ helper is merged but unpublished; no newer application target, managed
 protection/apply/migration or full matrix ran. Qualification remains false with
 zero of 100 managed cases. Keep #1131, U8/#1115, U9/#1116 and epic #1107 open,
 and preserve §26 and all earlier dated evidence.
+
+
+## 28. Published 1.3.0 application and helper
+
+On October 10, `v1.3.0` published from exact main commit
+`1bae329c4e349017716827dd0ce26b9ba7f9f2ac` after all five CI jobs passed.
+Guarded publisher `38057466650` passed. Independent public readback verified
+the Release, attached manifest/digest assets, both amd64/arm64 OCI chains,
+`1.3.0`/`1.3`/`latest` aliases and GitHub latest. The
+[sanitized publication receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
+binds the exact published helper `0.5.0`, protocol 1, five-module bundle and
+upgrade CLI. No operator action or migration is required; standing notices
+remain. Development `main` then moved to `1.4.0-dev` in PR #1136, merge
+`a61445dcf5d67713f61d082cd389876b1d9f2e46`, with all five exact-main CI jobs
+passing. No 1.4.0 release was published.
+
+A real 1.2.0 → 1.3.0 minor pair is now available. An application pull cannot
+upgrade an enrolled host's helper; use the separate supported published CLI.
+The earlier candidate receipts in §26–27 remain unchanged. Public artifact
+verification does not establish installed-helper or managed application
+behavior. Keep the native matrix, missing published prerequisites and
+independent operator acceptance open; this publication receipt qualifies zero
+managed scenarios. #1131, U8/#1115, U9/#1116 and epic #1107 remain open.

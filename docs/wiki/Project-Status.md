@@ -2,20 +2,22 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.2.0`, at `56374e95`, with
-successful [exact-main CI](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
-[Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed. Independent public readback verified the Release, manifest, both
-amd64/arm64 image chains and aliases. Publication was October 9 EDT, October 10
-UTC. ARM64 baked identity, official installation/enrollment, idle helper restart
-and autonomous idle guest reboot passed. Private HTTP/nonce/API checks were
-repeated after reboot. Ordinary archive/restore on a separate clean, unenrolled
-VM also passed without force, including exact post-archive erasure replay and
-survivor/file/decryption/sequence checks. These ARM64/private HTTP results
-cannot qualify managed apply.
-Development `main` now identifies as
-`1.3.0-dev`, following the separate version change at `bcb5474a`. The previous
-public artifact is `v1.1.1` (October 2, 2026), at tag `648caa1b`.
+The latest public release is `v1.3.0`, at `1bae329c`, published October 10,
+2026. All five exact-main CI jobs and the guarded publisher passed; independent
+readback verified Release assets, manifest, both amd64/arm64 OCI chains and
+stable aliases. This release publishes the Docker 29 correction, helper `0.5.0`
+and its separate supported upgrade CLI. An enrolled 1.2.0 host must upgrade
+its helper separately; an application image pull cannot replace host code.
+No operator action or migration is required; standing backup-queue guidance
+remains. See [Releases](Releases) for the public receipt and exact identities.
+The real 1.2.0 → 1.3.0 minor pair is available, but managed application
+qualification remains open with zero qualified scenarios. Development `main`
+is `1.4.0-dev` after PR #1136; that reset published no release.
+
+The previous public release is `v1.2.0`, at `56374e95`. ARM64 baked identity,
+official source installation/enrollment, idle restart/reboot and separate
+ordinary restore passed over private HTTP. These source and ordinary-recovery
+results remain separate from managed apply and its fault matrix.
 
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
@@ -53,10 +55,11 @@ finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v1.2.0`
+## What's in `v1.3.0`
 
-This section describes public `v1.2.0` at `56374e95`. Some foundation was available in older
-releases; consult the release notes when operating one of those artifacts.
+This section describes public `v1.3.0` at `1bae329c`. It includes the Docker 29
+helper correction and supported host-helper replacement. Some foundation was
+available in older releases; consult their release notes when operating them.
 
 1.2.0 adds read-only release review in Operator → Updates and hardens terminal
 upgrades. Optional managed execution on explicitly enrolled Linux/systemd hosts
@@ -70,8 +73,8 @@ Managed execution is implemented but **not qualified for production use**.
 [U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115) and
 [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
 with zero qualified managed scenarios. The first compatible source can prove
-enrollment, idle reboot and ordinary independent restore; protection and apply
-need a real newer compatible published target. See the
+enrollment, idle reboot and ordinary independent restore. The published
+1.2.0 → 1.3.0 pair now supplies a real target for protection/apply tests. See the
 [qualification boundary](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
@@ -355,9 +358,10 @@ restart/reboot passed, with runtime/private nonce/API checks. Ordinary
 separate-VM restore passed without force, using retained keys and a real
 post-archive erasure ledger with exact replay/survivor/decryption/sequence checks.
 Publication and ordinary recovery cannot close U8, U9 or the managed-update epic. Managed
-execution needs the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) and a newer compatible
-published target. Planning the running release returns `no_update_required`.
+execution needs installed-helper and target-bound native proof. The
+[Docker 29 fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131),
+helper upgrade CLI and newer target are now published in 1.3.0. Planning the
+running release still returns `no_update_required`.
 An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
 new published source enrolled with the fixed helper; an application image
 update alone does not replace host helper code.

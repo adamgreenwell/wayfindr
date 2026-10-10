@@ -2,28 +2,27 @@
 
 This roadmap is directional and should not include private business strategy.
 
-**Published 1.2.0; managed-update qualification remains open.** Public `v1.2.0`
-is frozen at `56374e95` with
-successful [exact-main CI](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
-[Publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed. Independent readback verified its public Release, manifest,
-multi-architecture image chain and aliases on October 10 UTC (October 9 EDT).
-ARM64 baked identity, official source installation/enrollment, idle helper
-restart and autonomous idle guest reboot passed. Ordinary archive/restore on a
-separate clean, unenrolled VM also passed, including exact post-archive erasure
-replay, survivor data/files/decryption and sequence checks. These ARM64/private
-HTTP results do not qualify a managed upgrade. Managed execution
-also needs the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) and a newer compatible
-published target.
-An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
-new published source enrolled with the fixed helper; an application image
-update alone does not replace host helper code.
-Development `main` now identifies as `1.3.0-dev`, following the separate
-`VERSION` change at `bcb5474a`, with empty required actions and standing notices
-preserved.
+**Published 1.3.0; managed-update qualification remains open.** Public `v1.3.0`
+is frozen at `1bae329c`. All five
+[exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38056674067)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38057466650)
+passed. Independent public readback verified Release assets, manifest, both
+architecture OCI chains and stable aliases; the
+[publication receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
+records exact identities. The Docker 29 correction, helper `0.5.0` and supported
+helper upgrade CLI are published. Enrolled 1.2.0 hosts must upgrade host helper
+code separately; pulling the application image does not replace it. No operator
+action or migration is required; standing backup-queue guidance remains.
 
-The previous public release is
+The real 1.2.0 → 1.3.0 minor pair is available for native testing. Publication
+cannot establish installed-helper behavior or fill the managed fault matrix;
+zero managed scenarios are qualified. The earlier 1.2.0 ARM64 source install,
+enrollment, idle restart/reboot and separate ordinary restore remain valid
+private-HTTP evidence. U8/#1115, U9/#1116, #1131 and epic #1107 remain open.
+Development `main` is now `1.4.0-dev` after PR #1136, merge `a61445dc`; all five
+exact-main CI jobs passed, and that reset published no release.
+
+An earlier public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1)
 (October 2, 2026), at tag `648caa1b`. Its
 [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
@@ -67,10 +66,11 @@ The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issue
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v1.2.0
+## Implemented in v1.3.0
 
-This section describes public `v1.2.0` at `56374e95`. Some foundation also
-exists in older releases; the release notes define each version's boundary.
+This section describes public `v1.3.0` at `1bae329c`, including the Docker 29
+helper correction and supported helper replacement. Some foundation also
+exists in older releases; their release notes define each version's boundary.
 
 1.2.0 adds read-only review of the next release in Operator → Updates,
 hardens terminal upgrades and provides optional independent managed execution
@@ -84,8 +84,8 @@ U1–U7 implementation is delivered. [U8/#1115](https://github.com/adamgreenwell
 and [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
 with zero qualified managed scenarios. The first compatible published source
 can establish source enrollment, idle reboot and ordinary separate-VM restore;
-a real newer compatible published target is needed for managed protection and
-apply. See the [qualification plan](../self-hosting/managed-update-qualification.md).
+the published 1.2.0 → 1.3.0 pair now supplies a real target for managed
+protection/apply tests. See the [qualification plan](../self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
 and work context are more consistent; Reports filters, long comments and chart
