@@ -204,7 +204,7 @@ class PublicationGateTest(unittest.TestCase):
         self.assertEqual(report['status'], 'ready', report['reasons'])
         source, selected = report['helpers']['source'], report['helpers']['selected']
         self.assertEqual(source['helper_version'], '0.4.0')
-        self.assertEqual(selected['helper_version'], '0.5.0')
+        self.assertEqual(selected['helper_version'], '0.6.0')
         self.assertEqual(selected['commit'], report['target']['commit'])
         self.assertEqual(selected['source_tree_sha'], report['target']['source_tree_sha'])
         self.assertEqual(set(selected['files']), set(preflight.HELPER_FILES))

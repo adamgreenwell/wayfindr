@@ -386,6 +386,20 @@ def no_helper_transaction(upgrade):
             raise Refusal('helper_upgrade_pending')
 
 
+def approved_helper_source(upgrade, source, selected):
+    """Retain the published legacy CLI shape without accepting mixed maps."""
+    published = upgrade.PUBLISHED
+    names = set(upgrade.FILES)
+    if (upgrade.VERSION == '0.5.0' and (source, selected) == ('0.4.0', '0.5.0')
+            and isinstance(published, dict) and set(published) == names):
+        return published
+    if (upgrade.VERSION == '0.6.0' and isinstance(published, dict)
+            and set(published) == {'0.4.0', '0.5.0'}
+            and all(isinstance(files, dict) and set(files) == names for files in published.values())):
+        return published.get(source)
+    return None
+
+
 def verify_helper_generation(host, binding):
     """Revalidate the persisted public-byte binding before every VM control read."""
     if (not isinstance(binding, dict) or set(binding) != {'source', 'selected', 'transaction_id', 'receipt_sha256'}
@@ -409,7 +423,7 @@ def verify_helper_generation(host, binding):
             raise Refusal('helper_provenance_unverified')
     upgrade = helper_upgrade_api(binding)
     no_helper_transaction(upgrade)
-    if selected['protocol'] != host.api.PROTOCOL or selected['helper_version'] not in {'0.4.0', '0.5.0'}:
+    if selected['protocol'] != host.api.PROTOCOL or selected['helper_version'] not in {'0.4.0', '0.5.0', '0.6.0'}:
         raise Refusal('helper_provenance_unverified')
     if upgrade.code_hashes(upgrade.CODE) != selected['files']:
         raise Refusal('helper_provenance_unverified')
@@ -418,9 +432,10 @@ def verify_helper_generation(host, binding):
         if source != selected or binding['receipt_sha256'] is not None:
             raise Refusal('helper_provenance_unverified')
     else:
-        if (not canonical_uuid(transaction) or source['helper_version'] != '0.4.0'
-                or selected['helper_version'] != '0.5.0' or source['protocol'] != 1
-                or upgrade.PUBLISHED != source['files']):
+        if (not canonical_uuid(transaction)
+                or (source['helper_version'], selected['helper_version']) not in {('0.4.0', '0.5.0'), ('0.4.0', '0.6.0'), ('0.5.0', '0.6.0')}
+                or source['protocol'] != 1
+                or approved_helper_source(upgrade, source['helper_version'], selected['helper_version']) != source['files']):
             raise Refusal('helper_provenance_unverified')
         upgrade.trusted(upgrade.RECEIPTS, directory=True)
         if upgrade.RECEIPTS.stat().st_mode & 0o777 != 0o700 or upgrade.RECEIPTS.stat().st_gid != 0:

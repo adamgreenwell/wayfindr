@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit root-only replacement of the published 0.4.0 host helper.
+"""Explicit root-only replacement of the published 0.4.0 or 0.5.0 host helper.
 
 Review a root-owned distribution first, obtain its bundle hash with ``inspect``,
 then pass that exact hash to ``upgrade``. An interruption requires ``recover``
@@ -32,7 +32,7 @@ import uuid
 
 
 sys.dont_write_bytecode = True
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 CODE = Path("/usr/local/lib/wayfindr-updater")
 STATE = Path("/var/lib/wayfindr-updater")
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
@@ -58,13 +58,22 @@ HEX = re.compile(r"[a-f0-9]{64}\Z")
 FILES = ("updater.py", "update_protection.py", "update_apply.py", "update_artifacts.py", "protection_archive.py")
 CODE_MODES = {0o700, 0o750, 0o755}
 # These exact source bytes shipped in v1.2.0, commit 56374e9574ed84616aae430d06589cfe2f0b33a0.
-PUBLISHED = {
+PUBLISHED = {"0.4.0": {
     "updater.py": "70fa1541552dd7ad4275fb4b1f66be0c01f6c6e3d1417685fc375119a4b7c778",
     "update_protection.py": "f61f6323be01c541722d2b7393412523a0985cc30ade647f1d4cce7a606e0b85",
     "update_apply.py": "5abe0fe47424cd9bc478373c783ac48a976fa83eb9ee6d0d75eaca0203bede45",
     "update_artifacts.py": "e6b2e99f1eec06d5cd4d4ab77691b341e68bdee7efc7cfd36eb97b1e252f8e41",
     "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
-}
+}, "0.5.0": {
+    # Exact v1.3.0 bytes, commit 1bae329c4e349017716827dd0ce26b9ba7f9f2ac.
+    "updater.py": "4ad7316d4dda4788f209ea6ef685ecab864bd2352bf82a0a50ddc6f7e2a8c038",
+    "update_protection.py": "f61f6323be01c541722d2b7393412523a0985cc30ade647f1d4cce7a606e0b85",
+    "update_apply.py": "e31e81351c476999af8d94ff52bf0a2d4b49ee03e0db8b84c8c734b2fcc1da36",
+    "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+    "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
+}}
+LEGACY_BUNDLE_SHA256 = "e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29"
+LEGACY_RECOVERY_CLI_SHA256 = "fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616"
 UNIT_SHA = "f478f16ab8d42796f10b94abd5531d9dae63b01e9e8a26fa59345c426ca96f25"
 TMPFILES_SHA = "47aab750e3e8b3c22223877b10c50f7ba340f9acafcc0a1f54f0812843cc9dc5"
 WRAPPER = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/wayfindr-updater/updater.py "$@"\n'
@@ -771,7 +780,7 @@ def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
             try:
                 history, retained, generation = idle(runtime, config, private_code=private_code)
             except UpgradeError as failure:
-                if str(failure) == "operation_busy" and record["stage"] == "prepared" and code_hashes(CODE) == PUBLISHED:
+                if str(failure) == "operation_busy" and record["stage"] == "prepared" and code_hashes(CODE) == record["old"]:
                     # An accepted Start won the race. Keep that complete old
                     # generation running and withdraw only this owned intent.
                     unlink(STOP)
@@ -807,7 +816,7 @@ def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
 
 def validate_record(record, selected_hash, new):
     expected = {"schema", "transaction_id", "installation_id", "bundle_sha256", "old", "new", "preserved", "stage", "history", "retained", "previous_generation", "verified_generation", "code_directory_mode"}
-    if set(record) != expected or type(record["schema"]) is not int or record["schema"] != 1 or record["old"] != PUBLISHED or record["new"] != new or record["bundle_sha256"] != selected_hash or record["stage"] not in {"prepared", "frozen_idle", "staging", "switched", "starting", "verified"}:
+    if set(record) != expected or type(record["schema"]) is not int or record["schema"] != 1 or record["old"] not in PUBLISHED.values() or record["new"] != new or record["bundle_sha256"] != selected_hash or record["stage"] not in {"prepared", "frozen_idle", "staging", "switched", "starting", "verified"}:
         refuse("transaction_changed")
     try:
         if str(uuid.UUID(record["transaction_id"])) != record["transaction_id"] or str(uuid.UUID(record["installation_id"])) != record["installation_id"]:
@@ -826,22 +835,44 @@ def validate_record(record, selected_hash, new):
             refuse("transaction_changed")
 
 
+def published_version(files):
+    for version, expected in PUBLISHED.items():
+        if files == expected:
+            return version
+    refuse("unsupported_installed_helper")
+
+
+def refuse_legacy_transaction():
+    # A successor distribution cannot change an interrupted transaction's
+    # destination. Finish the original 0.4 -> 0.5 transaction with the frozen
+    # compatibility CLI and exact public 0.5 distribution before a new upgrade.
+    path = TRANSACTION if exists(TRANSACTION) else STATE / ".helper-upgrade.next"
+    if exists(path):
+        private(path)
+        record = read_json(path)
+        if (record.get("old") == PUBLISHED.get("0.4.0")
+                and record.get("new") == PUBLISHED.get("0.5.0")
+                and record.get("bundle_sha256") == LEGACY_BUNDLE_SHA256):
+            validate_record(record, LEGACY_BUNDLE_SHA256, PUBLISHED["0.5.0"])
+            refuse("legacy_helper_recovery_required")
+
+
 def validate_generation(record, current, staged):
     for directory in (CODE, staged):
         if exists(directory) and stat.S_IMODE(directory.stat().st_mode) != record["code_directory_mode"]:
             refuse("transaction_changed")
     stage = record["stage"]
     if stage in {"prepared", "frozen_idle"}:
-        if current != PUBLISHED or exists(staged):
+        if current != record["old"] or exists(staged):
             refuse("transaction_changed")
     elif stage in {"switched", "starting", "verified"}:
-        if current != record["new"] or code_hashes(staged) != PUBLISHED:
+        if current != record["new"] or code_hashes(staged) != record["old"]:
             refuse("transaction_changed")
     elif stage == "staging":
         if current == record["new"]:
-            if code_hashes(staged) != PUBLISHED:
+            if code_hashes(staged) != record["old"]:
                 refuse("transaction_changed")
-        elif current != PUBLISHED:
+        elif current != record["old"]:
             refuse("transaction_changed")
 
 
@@ -849,16 +880,17 @@ def finish(distribution, selected_hash, *, recovery=None):
     declaration, actual = bundle(distribution)
     if not HEX.fullmatch(selected_hash) or actual != selected_hash:
         refuse("distribution_changed")
+    refuse_legacy_transaction()
     supported(recovering=recovery is not None)
     owned_gate(allow_legacy=recovery is not None)
     trusted(STATE, directory=True)
     trusted(CODE.parent, directory=True)
     current_hashes = code_hashes(CODE)
-    if current_hashes not in (PUBLISHED, declaration["files"]):
+    if current_hashes not in (*PUBLISHED.values(), declaration["files"]):
         refuse("unsupported_installed_helper")
     if recovery is None and (exists(TRANSACTION) or exists(STOP) or exists(STATE / ".helper-upgrade.next") or exists(STATE / ".helper-upgrade-stop.next")):
         refuse("recovery_required")
-    if recovery is None and current_hashes != PUBLISHED:
+    if recovery is None and current_hashes not in PUBLISHED.values():
         refuse("unsupported_installed_helper")
     if exists(LOCK):
         private(LOCK)
@@ -871,6 +903,7 @@ def finish(distribution, selected_hash, *, recovery=None):
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             refuse("operation_busy")
+        refuse_legacy_transaction()
         # Another CLI may have completed between the read-only preflight and
         # this serialization lock. Never act on that stale source observation.
         if code_hashes(CODE) != current_hashes:
@@ -882,7 +915,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         if recovery is None:
             history, retained, generation = idle(runtime, config)
             record = {"schema": 1, "transaction_id": str(uuid.uuid4()), "installation_id": config.installation_id,
-                      "bundle_sha256": actual, "old": PUBLISHED, "new": declaration["files"], "preserved": snapshot(config),
+                      "bundle_sha256": actual, "old": current_hashes, "new": declaration["files"], "preserved": snapshot(config),
                       "code_directory_mode": stat.S_IMODE(CODE.stat().st_mode),
                       "stage": "prepared", "history": None, "retained": {}, "previous_generation": generation, "verified_generation": None}
             gate_install()
@@ -894,7 +927,7 @@ def finish(distribution, selected_hash, *, recovery=None):
                 private(temporary)
                 pending = read_json(temporary)
                 validate_record(pending, actual, declaration["files"])
-                if pending["transaction_id"] != recovery or pending["installation_id"] != config.installation_id or pending["stage"] != "prepared" or current_hashes != PUBLISHED or pending["history"] is not None:
+                if pending["transaction_id"] != recovery or pending["installation_id"] != config.installation_id or pending["stage"] != "prepared" or current_hashes != pending["old"] or pending["history"] is not None:
                     refuse("transaction_changed")
                 verify_snapshot(config, pending["preserved"])
                 os.replace(temporary, TRANSACTION)
@@ -909,14 +942,14 @@ def finish(distribution, selected_hash, *, recovery=None):
                 if current_hashes != record["new"]:
                     # A crash before the original stop-file write is safe only
                     # with the unchanged complete legacy code generation.
-                    if record["stage"] != "prepared" or current_hashes != PUBLISHED:
+                    if record["stage"] != "prepared" or current_hashes != record["old"]:
                         refuse("transaction_changed")
             ensure_stop(recovery, recovering=True)
             if DROPIN.read_bytes() not in {GATE, LEGACY_GATE}:
                 refuse("transaction_changed")
             verify_snapshot(config, record["preserved"])
         validate_record(record, actual, declaration["files"])
-        if current_hashes not in (PUBLISHED, record["new"]):
+        if current_hashes not in (record["old"], record["new"]):
             refuse("code_changed")
         staged = CODE.parent / (".wayfindr-updater-generation-" + record["transaction_id"])
         validate_generation(record, current_hashes, staged)
@@ -924,7 +957,7 @@ def finish(distribution, selected_hash, *, recovery=None):
             gate_install(recovery=recovery)
         private_code = CODE
         if current_hashes == record["new"]:
-            if code_hashes(staged) != PUBLISHED:
+            if code_hashes(staged) != record["old"]:
                 refuse("code_changed")
             private_code = staged
         with stop_idle(runtime, config, record, private_code=private_code, recovering=recovery is not None):
@@ -935,7 +968,7 @@ def finish(distribution, selected_hash, *, recovery=None):
             if history != record["history"] or retained != record["retained"]:
                 refuse("retained_state_changed")
             verify_snapshot(config, record["preserved"])
-            if code_hashes(CODE) == PUBLISHED:
+            if code_hashes(CODE) == record["old"]:
                 record["stage"] = "staging"
                 store(record)
                 if not exists(staged):
@@ -966,7 +999,7 @@ def finish(distribution, selected_hash, *, recovery=None):
                 if code_hashes(staged) != record["new"]:
                     refuse("distribution_changed")
                 exchange(CODE, staged)
-            if code_hashes(CODE) != record["new"] or code_hashes(staged) != PUBLISHED:
+            if code_hashes(CODE) != record["new"] or code_hashes(staged) != record["old"]:
                 refuse("code_changed")
             validate_generation(record, record["new"], staged)
             record["stage"] = "switched"
@@ -979,7 +1012,7 @@ def finish(distribution, selected_hash, *, recovery=None):
             record["stage"] = "starting"
             store(record)
             unlink(STOP)
-        # New0.5 may run, but its persistent admission barrier blocks all writes
+        # The new helper may run, but its persistent admission barrier blocks all writes
         # until authenticated startup and preservation have both been verified.
         run("start", SERVICE)
         verified_identity = authenticate_started(new_runtime, new_config)
@@ -987,7 +1020,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         if history != record["history"] or retained != record["retained"] or generation == record["previous_generation"] or not new_runtime.is_uuid(generation):
             refuse("startup_unverified")
         verify_snapshot(new_config, record["preserved"])
-        if code_hashes(CODE) != record["new"] or code_hashes(staged) != PUBLISHED:
+        if code_hashes(CODE) != record["new"] or code_hashes(staged) != record["old"]:
             refuse("code_changed")
         validate_generation(record, record["new"], staged)
         verify_completion(new_runtime, new_config, verified_identity)
@@ -1001,7 +1034,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         trusted(RECEIPTS, directory=True)
         receipt = RECEIPTS / (record["transaction_id"] + ".json")
         result = {"schema": 1, "transaction_id": record["transaction_id"], "installation_id": config.installation_id,
-                  "from_helper_version": "0.4.0", "helper_version": VERSION, "protocol": 1,
+                  "from_helper_version": published_version(record["old"]), "helper_version": VERSION, "protocol": 1,
                   "bundle_sha256": actual, "generation": record["verified_generation"], "preserved": True,
                   "application_changed": False, "retained_old_code": str(staged)}
         if exists(receipt):
@@ -1044,6 +1077,9 @@ def main():
         reason = str(failure) if isinstance(failure, UpgradeError) else "upgrade_unavailable"
         result = {"schema": 1, "status": "refused", "reason": reason,
                   "recovery_required": exists(TRANSACTION) or exists(STATE / ".helper-upgrade.next")}
+        if reason == "legacy_helper_recovery_required":
+            result["legacy_recovery"] = {"helper_version": "0.5.0", "bundle_sha256": LEGACY_BUNDLE_SHA256,
+                                         "cli_sha256": LEGACY_RECOVERY_CLI_SHA256}
         if isinstance(failure, StartupError):
             result["startup_stage"] = failure.stage
         for path in (TRANSACTION, STATE / ".helper-upgrade.next"):
