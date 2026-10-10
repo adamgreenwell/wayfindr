@@ -30,6 +30,18 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Application updates preserve the installed
+helper. Helper replacement remains a separate, explicit administrator command.
+
+### Fixed
+
+- **Helper replacement verifies systemd's freezer state before admitting work.**
+  After the complete new helper starts, the upgrade CLI authenticates the exact
+  systemd process and verifies that its kernel cgroup is already unfrozen. If
+  systemd still caches the old generation's frozen state, the CLI explicitly
+  reconciles it and verifies the same process again before clearing the
+  transaction. Failed verification retains explicit recovery ownership.
+
 ## [1.3.0] - 2026-10-10
 
 **No operator action required.** Pull and restart the application;
