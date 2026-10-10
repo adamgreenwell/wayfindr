@@ -124,3 +124,110 @@ enrollment, idle helper/guest reboot and target-bound interrupted upgrades still
 require their own observations. The original development candidate receipt
 remains bound to its earlier source/image identity; this host enrollment fix is
 validated separately.
+
+
+## October 9 EDT / October 10 UTC, 2026: first compatible source published
+
+The final 1.2.0 source is `56374e9574ed84616aae430d06589cfe2f0b33a0`.
+[Exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+passed. [Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback completed at 00:29 UTC on October 10. The
+Release published at 00:26 UTC, October 9 at 20:26 EDT; the notes retain their
+October 9 date. The public Release is stable and not a draft, GitHub latest is
+`v1.2.0`, and `1.2.0`, `1.2` and `latest` image selectors resolve to the same
+verified OCI index.
+
+| Public artifact | Verified identity |
+| --- | --- |
+| OCI index | `sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683` |
+| amd64 platform manifest | `sha256:5039c0be6e4d0250aadbaf12e4d3df47c7f073d476bf90575a83b3b4aeece8fa` |
+| amd64 configuration | `sha256:2766ddb5bcefd2bcb69e6c5e3220eb8f91a17f31bce30b2fb2696b1b8488ccd4` |
+| arm64 platform manifest | `sha256:afa4730dd6ad38c2710f6a08258104a94f200eb9df8931b53b59899fc175e15e` |
+| arm64 configuration | `sha256:4bd909bcdd9bff20a3842a036134ebf550c5d2951aa501d53424dac00820e1cb` |
+| [Release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json), 1,111 bytes | SHA256 `2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4` |
+
+Both public OCI configuration documents declare raw `WAYFINDR_VERSION=v1.2.0`
+and the exact release commit; the manifest and OCI version label are canonical
+`1.2.0`. These public configuration reads do not prove the bytes under
+`/etc/wayfindr` or execute an installed application.
+
+ARM64 never-started-image verification passed for baked `v1.2.0`, full
+`56374e9574ed84616aae430d06589cfe2f0b33a0` commit, the byte-identical
+1,111-byte manifest and canonical builder history.
+The probe was created without starting, used no network or mounts, and verified
+the named user/group UID/GID 1000. Local Config/rootfs matched the public ARM64
+configuration; RepoDigest/Descriptor bound the official OCI index.
+
+[Actual source and ordinary-recovery receipt](2026-10-10-published-source-and-ordinary-restore.json): official
+ARM64 installation, supported optional enrollment, idle helper restart and
+autonomous idle guest reboot passed. The tagged installed distribution and
+helper code matched. All five application roles used UID/GID 1000 on the exact
+official image; PostgreSQL, production Redis, PHP 8.4.26, 80 applied migrations
+and zero failed jobs were verified. Authenticated application/helper
+capabilities/status/history used protocol 1/helper 0.4.0; only web had the
+read-only runtime mount.
+
+Helper restart preserved container IDs, runtime-directory inode and
+credential/config/source fingerprints with a new generation. Real idle guest
+reboot preserved all eight container IDs, with seven services running and the
+completed storage-init container. Initial read-only boot observations preceded
+intervention; tmpfiles completed before Docker and helper startup. Private
+WebSocket nonce and authenticated API/operator/runtime checks passed again.
+No operation or hold existed. Exact probe ID/name absence was read back after
+boot. These installed-VM observations are ARM64/private HTTP only; they do not
+establish TLS or user-session broadcasting authorization.
+
+Ordinary archive/restore on a separate clean, unenrolled ARM64 guest also
+**passed without force**. The fixed pre-erasure archive is 21,391 bytes, SHA256
+`6aeae349566289fdc766471aa2e4b12315e576015c02f8e160dac95029d28539`.
+The real latest nonempty ledger (one committed entry) was installed before
+restore. The effective current key was installed before first application
+start, retaining fresh DB credentials and restore origin; there were no
+previous keys, so rotation was not exercised.
+
+The exact returned erasure receipt bound the restored row/account/site/public
+key/lineage and positive SYSTEM replay audit event. One contact, conversation,
+message, attachment and ticket scrub were verified; the post-archive source
+erasure event was absent from the dump. Survivor logical rows/local binary,
+persisted setting and encrypted setting decryption matched the pre-erasure
+archive binding. Target rows/local binary remained absent, archived ticket
+personal fields were scrubbed, and pending/unreadable/outstanding ledger work
+was clear. The read-only sequence query and a distinct post-up API contact
+proved erased IDs were not reused. Five official runtime roles, PostgreSQL,
+production Redis, private nonce and authenticated API/operator checks passed.
+Erasure used the production service, not the dashboard confirmation flow.
+No preparation or synthetic receipt stands in for either actual VM run.
+
+The actual Docker 29/containerd guest reports the OCI index digest as local
+image `.Id` and container `.Image`, while the verified public configuration
+digest is a separate identity and not a usable local image address. The initial
+private probe stopped at that identity mismatch; a bounded probe correction
+verified source identity without changing the published image or product.
+Published managed artifact verification/apply retain configuration-digest assumptions,
+tracked as execution blocker [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+This is not evidence of an attempted managed operation. Private controller
+refusals were retained: initial image/User assumptions, JSON stdout parsing
+after actual enrollment success, and a 12-character versus full candidate-ID
+comparison. Bounded controller corrections resumed the existing installation
+without rerunning enrollment or manually rescuing the rebooted stack. These
+verification issues do not establish a product reboot failure.
+
+The affected code is installed in the host helper. Managed apply replaces the
+application image/overlay and installation image/configuration binding; it does not replace helper
+code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
+enrolled hosts. A newer application image alone therefore cannot repair an
+already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
+supported, ownership-aware, byte-verified helper upgrade preserves enrollment
+identity, credential, journal, locks and recovery state while refusing active or
+partial work, or qualify a real newer published source freshly enrolled with the
+fixed helper. Manual helper overwrite, marker deletion, store switching and
+silent enrollment overwrite are not supported recovery paths.
+
+
+This first source is distinct from the development-candidate and isolated
+boot-order receipts above. Source installation/idle reboot and ordinary restore
+do not qualify target-bound protection, apply, interrupted migration or reboot
+during an active update. Those require a real newer compatible published target.
+Managed qualification remains **false with zero scenarios**. U8/#1115,
+U9/#1116 and epic #1107 remain open. Preserve all preceding dated evidence and
+append the reviewed actual result rather than rewriting its artifact or scope.

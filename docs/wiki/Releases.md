@@ -9,14 +9,55 @@ pulling and restarting, a minor adds features and self-migrating schema, and a
 patch only fixes. The release notes and manifest remain the authoritative
 detail.
 
-The latest published release is
+The latest public release is
+[`v1.2.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.2.0), at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`.
+[Exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+passed; [guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent readback verified the public Release, 1,111-byte manifest,
+OCI index, both amd64/arm64 platform/configuration chains and stable `1.2` and
+`latest` aliases. The index is
+`sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683`.
+The manifest SHA256 is
+`2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4`.
+Publication was October 10 at 00:26 UTC, October 9 at 20:26 EDT; the release
+notes retain their October 9 date. No operator action is required; one additive
+audit-event deduplication migration runs automatically. The source adds
+Operator → Updates release review, CLI hardening and optional managed execution
+still under disposable-VM qualification. Ordinary installs retain their update
+path; optional enrollment is separate from taking the release.
+
+ARM64 never-started baked version/commit/manifest/history verification passed.
+Actual ARM64 official installation/enrollment, idle helper restart and autonomous
+idle guest reboot also passed, with runtime/private nonce/API checks repeated
+after reboot. Ordinary archive/restore on a separate clean, unenrolled VM
+also passed without force, using the retained effective key and real
+post-archive erasure ledger, with exact replay/survivor/decryption/sequence
+checks. These ARM64/private HTTP results do not establish TLS, user-session
+broadcasting authorization or managed protective custody.
+Managed protection/apply need a genuine newer compatible published target and
+the [Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
+new published source enrolled with the fixed helper; an application image
+update alone does not replace host helper code. U8/#1115 and U9/#1116 remain
+open, with zero qualified scenarios.
+Development `main` now identifies as `1.3.0-dev`, following the separate
+`VERSION` change at `bcb5474a`; required actions are empty and standing notices
+are preserved.
+
+The verified baked-file/source VM and ordinary-restore observations cover ARM64
+only. Public
+amd64 manifest/configuration verification is a separate artifact check, not an
+amd64 installation, reboot or restore result.
+
+The previous public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1).
 Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
 and stable image aliases on October 2, 2026. Its protected tag resolves to
 `648caa1b`, its image resolves to
 `sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`, and
-the `1.1` and `latest` image aliases point at that image. It needs no operator action and has no
+at that publication the `1.1` and `latest` image aliases pointed at that image. It needs no operator action and has no
 migrations. This patch fixes dashboard typography, form spacing, page ordering,
 reports, and authentication feedback; makes mobile widget text and controls
 easier to use; preserves keyboard tab selection and focus after attachment
@@ -45,6 +86,11 @@ are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
+- The [attached `v1.2.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json),
+  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.2.0/release.json)
+  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.2.0/releases/history.json)
+  agree that this release has no new required action. Prior release actions
+  remain applicable to installs that skipped them.
 - The [attached `v1.1.1` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.1.1/release-manifest.json)
   for the required actions and advisory notices in that published artifact;
   [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v1.1.1/release.json)
@@ -54,8 +100,9 @@ are recorded below.
   `v0.9.0` host-managed PHP runtime action for an install upgrading from
   before it.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
-  for the next development line, `1.2.0-dev`. Its cleared actions do not
-  replace the published `v1.1.1` manifest.
+  is separate from the immutable published manifest. Development `main` is
+  `1.3.0-dev`; empty current actions do not replace the history carried by
+  `v1.2.0`.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
@@ -69,6 +116,25 @@ artifact you intend to run.
 
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
+
+The 1.2.0 ARM64 baked identity, official source installation/enrollment, idle
+helper restart and autonomous idle guest reboot passed. All five application
+roles verified the official image/UID-GID/runtime, PostgreSQL, production Redis,
+80 migrations and zero failed jobs. The same eight container IDs and
+credential/config/source fingerprints survived reboot; private nonce and
+authenticated API/operator checks passed again with a new helper generation and
+no operations. These private-HTTP source-only results do not establish TLS,
+user-session broadcasting authorization, managed apply or active-upgrade reboot.
+The [sanitized receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
+records exact public image/source identities without private VM IDs or secrets.
+Ordinary archive/restore on a separate clean, unenrolled guest also passed
+without force, using the fixed pre-erasure archive and latest real nonempty
+ledger. Exact returned-receipt/site/lineage/SYSTEM replay linkage and positive
+counts were checked; survivor rows/local binary/settings/decryption, scrubbed
+tickets and sequence/new API contact checks passed. One current key and no
+previous keys were retained, so rotation was not exercised. Erasure used the
+production service, not dashboard confirmation. This ordinary recovery does
+not qualify managed protective custody or active-update recovery.
 
 The October 2, 2026 `v1.1.1` public-artifact runs cover two hosted paths:
 

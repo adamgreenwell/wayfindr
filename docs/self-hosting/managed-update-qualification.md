@@ -3,8 +3,9 @@
 This is the execution plan and evidence boundary for [U8 / #1115](https://github.com/adamgreenwell/wayfindr/issues/1115).
 It extends the [disposable-VM evidence contract](disposable-vm-evidence.md)
 for the [independent host updater](managed-updater.md). It does not record a
-completed VM qualification. Every procedure below starts as **proposed and
-unexecuted**; only evidence from an actual run can change that status.
+completed managed VM qualification. The managed source-to-target matrix below
+remains **proposed and unexecuted**. Actual source and ordinary-recovery
+observations are recorded separately and cannot complete its rows.
 
 ## Publication and execution gates
 
@@ -20,9 +21,59 @@ There are three separate results:
    release assets and images, then independently verifies the resulting data,
    services, origin, reboot and restore behavior.
 
-As checked on October 9, 2026, the latest public stable release is `v1.1.1`.
-That tag does not contain the managed-apply application command required by
-enrollment. The draft U1–U7 stack does not make the existing release compatible.
+Public `v1.2.0` is frozen at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`, and
+[exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+and [publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback verified the Release, manifest, both
+amd64/arm64 image chains and aliases on October 10 UTC (October 9 EDT).
+ARM64 never-started-image baked version/commit/manifest/history verification
+passed, including exact public Config/rootfs equality, no start or mounts, and
+named UID/GID 1000. Actual ARM64 official installation, optional enrollment,
+idle helper restart and autonomous idle guest reboot passed; the
+[source/ordinary-recovery receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
+binds the exact official image and installed distribution. Five application
+roles passed PostgreSQL/production Redis/runtime checks, with private nonce and
+authenticated API/operator checks repeated after reboot. Container identities
+and credential/config/source fingerprints survived with a new helper generation
+and no operations. Ordinary archive/restore on a separate clean, unenrolled
+VM passed without force: the fixed archive predated a real erasure, its latest
+nonempty settled ledger preceded restore, and exact positive SYSTEM replay,
+survivor rows/local binary/settings/decryption and sequence/new API contact
+checks passed. One current key was retained, with no previous keys; rotation
+was not exercised. Erasure used the production service, not dashboard
+confirmation. These ARM64/private HTTP runs do not establish TLS, user-session
+broadcasting authorization, remote storage or managed protective custody. U8/#1115, U9/#1116 and epic #1107 remain open;
+managed qualification remains false, with zero executed managed scenarios.
+Public amd64 and arm64 manifest/configuration checks do not establish baked-file
+or installed-VM observations for an untested architecture.
+
+**Docker 29 execution blocker:** on the ARM64 source guest, the containerd image
+store reports the OCI index digest as image `.Id` and container `.Image`; the
+public configuration digest is separate and is not a local image address. The
+source probe verified full public Config/rootfs equality and baked bytes, but
+published managed artifact verification/apply assume the local ID equals the configuration
+digest. [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) must be fixed
+and exercised with exact published artifacts before managed execution can be
+qualified. No managed operation was attempted. A newer compatible published
+target is a separate prerequisite.
+
+The affected code is installed in the host helper. Managed apply replaces the
+application image/overlay and installation image/configuration binding; it does not replace helper
+code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
+enrolled hosts. A newer application image alone therefore cannot repair an
+already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
+supported, ownership-aware, byte-verified helper upgrade preserves enrollment
+identity, credential, journal, locks and recovery state while refusing active or
+partial work, or qualify a real newer published source freshly enrolled with the
+fixed helper. Manual helper overwrite, marker deletion, store switching and
+silent enrollment overwrite are not supported recovery paths.
+
+
+The earlier October 9 publication gate checked public `v1.1.0` → `v1.1.1`.
+Neither immutable tag contains the managed-apply command required by enrollment;
+the now-merged implementation cannot change those older artifacts. Retain that
+[blocked receipt](evidence/managed-update/README.md) as dated evidence.
 A managed success span needs **two compatible published releases**, with the
 source and target satisfying the reviewed application/helper protocol and
 byte-identical supported base Compose configuration. The first compatible
@@ -32,7 +83,7 @@ drills need an eligible newer published target; planning the running release
 returns `no_update_required`. One release cannot supply both ends of a published
 managed upgrade.
 
-Release/tag creation, registry publication, merging the draft stack, production
+Release/tag creation, registry publication, implementation merges, production
 changes and arbitrary image downgrades are separate actions. This qualification
 plan authorizes none of them. Do not relabel a local image as an official public
 release or bypass enrollment checks to turn a rehearsal into release evidence.

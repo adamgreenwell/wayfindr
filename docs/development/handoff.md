@@ -1,13 +1,14 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated October 2, 2026. For an agent (or engineer) picking up
+*Living document — updated October 9, 2026 (EDT). For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§24](#24-published-111--october-2-2026)** for
-the current release, then [§23](#23-111-preparation--october-2-2026) for its
-preparation and [§22](#22-published-110--october-1-2026) for 1.1.0.
-Then §5 (conventions) and §7 (gotchas). Sections 8–23 are dated snapshots, kept
+**Taking the baton? Start at [§25](#25-published-120--october-9-2026)**
+for the current public release, accepted ARM64 source/ordinary-recovery evidence
+and open managed qualification gates, then
+[§24](#24-published-111--october-2-2026) for the previous public artifact.
+Then §5 (conventions) and §7 (gotchas). Sections 8–24 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -31,7 +32,7 @@ differentiator.
 
 ---
 
-## 2. Current state (October 2, 2026)
+## 2. Current state (October 9, 2026 EDT)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -42,13 +43,36 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v1.1.1` published October 2 at tag
+**Release truth comes first.** Public `v1.2.0` is tagged at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`, with successful exact-main CI
+[38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
+Guarded publisher [38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed; independent readback verified the Release, manifest, OCI index and both
+amd64/arm64 platform/configuration chains, plus stable aliases. Publication was
+October 10 at 00:26 UTC, October 9 EDT. ARM64 never-started-image baked
+version/commit/manifest/history verification passed separately from the public
+OCI checks. ARM64 official source installation/enrollment, idle helper restart
+and autonomous idle guest reboot also passed, with private HTTP/nonce/API
+checks. Ordinary archive/restore on a separate clean, unenrolled VM also passed
+without force, including exact post-archive erasure replay and surviving
+data/files/decryption/sequence checks.
+The release adds review, CLI hardening and optional managed execution;
+one additive audit-event migration runs automatically, with no required operator
+action. Unenrolled installs retain their update path. U1–U7 implementation is
+delivered, while U8/#1115, U9/#1116 and epic #1107 remain open. A real newer
+compatible published target and the [Docker 29 image-identity fix
+#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) are needed for managed
+apply; qualification remains false with zero managed scenarios. See §25.
+
+The previous public `v1.1.1` published October 2 at tag
 `648caa1b`, with the manifest and multi-architecture image at
 `sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`
 (§24). The previous release, `v1.1.0`, published October 1 at `9b634b23` (§22).
 The patch fixes dashboard and widget consistency, mobile controls, keyboard
 context, and release diagnostics. It has no migrations or required operator
-action. Current `main` begins `1.2.0-dev`.
+action. Development `main` now begins `1.3.0-dev`, following the separate
+`VERSION` change at `bcb5474a`; required actions stay empty and standing notices
+are preserved.
 
 The public `v1.1.1` artifact passed a
 [hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
@@ -387,15 +411,28 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Use the published `v1.1.1` artifact as the release baseline.** The guarded
-   tag, public release, manifest, and image digest are verified (§24). Earlier
+1. **Build on public 1.2.0 source and ordinary-recovery evidence (§25).** Public
+   artifacts and aliases verified; ARM64 baked identity verification passed.
+   ARM64 official installation/enrollment and idle restart/reboot passed.
+   Ordinary separate-VM restore with real erasure replay also passed. Resolve
+   Docker 29 image identity and helper lifecycle #1131 before target execution. Keep `v1.1.1`'s
+   verified public artifacts
+   and hosted-runner results as historical evidence (§24). Earlier
    publication and hosted-runner evidence stays specific to `v1.1.0` (§22),
    `v1.0.0` (§21), `v0.11.0` (§19), `v0.10.0` (§17) and `v0.9.0` (§16); keep
    it distinct from the older `v0.3.2` bare-metal matrix and `v0.7.0` cold
    sandbox run. Host-managed PHP upgrades from before `v0.9.0` still owe that
-   release's scoped runtime action, carried in `v1.1.1`'s history; the published
+   release's scoped runtime action, retained in release history; the published
    image is exempt. From 1.0.0 the number itself is the operator-action signal
    (ADR 0012): anything that needs an operator's hands now means a new major.
+
+   Retain the accepted source installation/enrollment, idle restart/reboot and
+   ordinary separate-VM restore receipt, with exact archive/keys/real ledger
+   linkage. Keep U8 and U9 open: source and ordinary recovery cannot establish
+   managed protective custody or apply. Those need a genuine newer compatible public
+   target and a supported host-helper lifecycle path for #1131, or a new
+   published source enrolled with the fixed helper. Do not manufacture a release to
+   complete the matrix or treat its synthetic tests as qualified VM scenarios.
 
 2. **The account area's structural work for 1.0.0 is done (§18).** #994's
    epic, the overview that was a hub and a settings page at once, is split:
@@ -1594,3 +1631,117 @@ itself after the worker was observed.
 Wiki mirrors each need their own verification. The hosted evidence is specific
 to its artifact and environment; it does not establish physical iPhone or
 hands-on VoiceOver acceptance.
+
+## 25. Published 1.2.0 — October 9, 2026
+
+**Published source and ordinary recovery verified; managed qualification open.**
+Public `v1.2.0` is frozen at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`. Exact-main
+[CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+passed. Guarded publisher
+[38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback completed October 10 at 00:29 UTC; the
+Release published at 00:26 UTC, October 9 at 20:26 EDT. The notes retain their
+October 9 date.
+
+| Result | Current evidence |
+| --- | --- |
+| Public `v1.2.0` Release, manifest and OCI index/amd64/arm64 platform/config chain | Verified independently; [public artifact identities](../self-hosting/evidence/managed-update/README.md) |
+| Stable image aliases | `1.2.0`, `1.2` and `latest` resolve to the verified index; GitHub latest is `v1.2.0` |
+| ARM64 never-started-image baked release/commit/manifest/history identity | Verified; no start or mounts, named UID/GID 1000; public config/rootfs matched |
+| Actual ARM64 published-source install, enrollment, idle restart and guest reboot | Verified source-only pass; [sanitized receipt](../self-hosting/evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json) |
+| ARM64 ordinary archive, post-archive erasure replay and separate-VM restore | Passed without force; exact positive SYSTEM replay, survivor/attachment/decryption/sequence checks; [same sanitized receipt](../self-hosting/evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json) |
+| Managed source-to-newer-target qualification | Needs a real newer compatible release and Docker 29 fix [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131); zero scenarios, `qualified: false` |
+| Next `1.3.0-dev` label | Separate `VERSION` change `bcb5474a`; required actions empty, standing notices preserved |
+
+1.2.0 adds Operator → Updates release review, hardened terminal upgrades and
+optional independent Linux/systemd execution. The helper owns authenticated
+operations, fencing/drain, protective custody, apply and explicit host recovery;
+the web container has no Docker daemon socket. Accessible review/progress
+survives reconnection without replaying Start. The release requires no operator
+action. Its single additive migration,
+`2026_10_09_180000_add_managed_update_event_key_to_audit_events.php`, gives audit
+receipts a nullable unique deduplication key and runs automatically. Enrollment
+is optional; ordinary installs keep their update mechanism.
+
+The accepted ARM64 source run used the official installer and unchanged tagged
+distribution. All five application roles ran UID/GID 1000 on the verified image,
+with PostgreSQL, production Redis, PHP 8.4.26, 80 migrations and zero failed
+jobs. Authenticated application-to-helper checks passed with protocol 1/helper
+0.4.0 and a web-only read-only runtime mount. Idle helper restart kept container
+IDs, runtime-directory inode and credential/config/source fingerprints while
+changing the helper generation. A real idle guest reboot returned autonomously
+with the same eight container IDs: seven services running and storage-init
+completed. Boot observations preceded intervention; tmpfiles completed before
+Docker, then the helper started. Runtime, private nonce and support-loop checks
+passed again. There was no managed operation or hold. This private-HTTP run
+does not test TLS or user-session broadcasting authorization.
+
+Ordinary recovery used the fixed pre-erasure archive (21,391 bytes, SHA256
+`6aeae349566289fdc766471aa2e4b12315e576015c02f8e160dac95029d28539`)
+on a separate clean, unenrolled VM. The effective current key was installed
+before first start, preserving fresh DB credentials and restore origin; there
+were no previous keys, so rotation was not exercised. A real nonempty settled
+ledger preceded the no-force restore. The exact returned erasure receipt bound
+the recreated row/site/lineage and a positive SYSTEM replay audit event, with
+one contact, conversation, message and attachment removed, and one ticket
+scrubbed. The post-archive
+source event was absent from the restored dump. Survivor logical rows, local
+binary, persisted setting and encrypted setting decryption matched the frozen
+archive binding. Ledger pending/unreadable/outstanding work was clear; sequence
+and a distinct post-up API contact verified IDs were not reused. All five
+official runtime roles, private nonce and API/operator checks passed. Erasure
+used the production service, not the dashboard confirmation flow. This was an
+ordinary archive, not managed protective custody.
+
+The ARM64 baked probe observed Docker 29/containerd using the OCI index digest
+as local image `.Id` and container `.Image`, separately from the verified public
+configuration digest. Full public Config/rootfs equality and never-started baked
+bytes established source identity. Published managed artifact verification/apply assume
+those digest identities coincide; [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
+tracks that execution blocker. No managed operation was attempted or qualified.
+
+The affected code is installed in the host helper. Managed apply replaces the
+application image/overlay and installation image/configuration binding; it does not replace helper
+code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
+enrolled hosts. A newer application image alone therefore cannot repair an
+already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
+supported, ownership-aware, byte-verified helper upgrade preserves enrollment
+identity, credential, journal, locks and recovery state while refusing active or
+partial work, or qualify a real newer published source freshly enrolled with the
+fixed helper. Manual helper overwrite, marker deletion, store switching and
+silent enrollment overwrite are not supported recovery paths.
+
+
+The eight implementation slices and release fixes landed through aggregate
+[#1128](https://github.com/adamgreenwell/wayfindr/pull/1128) at `9c70bf0b`, with
+original stacked PR ancestry retained; [#1130](https://github.com/adamgreenwell/wayfindr/pull/1130)
+adds the development-only source-map patch and accurate operator guidance.
+U1–U7/#1108–#1114 are implementation-delivered, not evidence that a person
+observed cancellation, a browser disconnect or an active-update reboot.
+[U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115),
+[U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) and
+[epic #1107](https://github.com/adamgreenwell/wayfindr/issues/1107) remain open.
+
+Retain all earlier dated receipts: `v1.1.1`'s hosted proof is still specific to
+that artifact; the development candidate and isolated boot-order probe are
+separate from supported enrollment. The first compatible source can prove
+source installation/idle behavior and ordinary restore, but cannot prove
+target-bound protection, managed apply, active-upgrade reboot or the complete
+25-scenario matrix. A genuine newer compatible published application release
+must precede those tests. Follow the
+[release-readiness sequence](../self-hosting/managed-update-release-readiness.md)
+and [evidence index](../self-hosting/evidence/managed-update/README.md).
+
+The separate website [PR #7](https://github.com/adamgreenwell/wayfindr-site/pull/7)
+merged at `39a17ac558c38091741f60b3aee3c573b03f1ebb`. A normal public GET of
+[wayfindr.cc](https://wayfindr.cc/) at October 10, 00:45:59 UTC returned HTTP 200
+and the 1.2.0 release dated October 9, all 14 milestones, four qualification
+caveats, managed execution marked In Development and the later-target
+requirement. Its HTML SHA256 was
+`cdd1709a0218b3f6167503d536950961400a19425f87fce831f847b0f99808a9`.
+This is a point-in-time public-content readback; the hosting provider
+auto-deployment toggle was not inspected or changed.
+
+Publication, actual VM evidence, exact runtime identity, human acceptance,
+Forge deployment, website publication and Wiki sync remain separate results.

@@ -3,10 +3,30 @@
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
 over the conversations and tickets it handles. The project reached `v1.0.0` on
-September 30, 2026, and the latest public release is `v1.1.1` (October 2,
-2026). This patch fixes dashboard and widget consistency, mobile controls,
-keyboard flows and release diagnostics, with no migrations or required
-operator action. The next development line is `1.2.0-dev`.
+September 30, 2026.
+
+The latest public release is `v1.2.0`, at `56374e95`, published October 9,
+2026 EDT (October 10 UTC). Its public Release, manifest, both platform image
+chains and stable aliases were independently verified. It adds release review and
+terminal-upgrade hardening, with optional managed host execution still under VM
+qualification. No operator action is required; one additive audit-event
+migration runs automatically. ARM64 never-started baked identity verification
+passed. Actual ARM64 official installation/enrollment, idle helper restart and
+autonomous idle guest reboot passed over private HTTP with runtime/nonce/API
+checks. Ordinary archive/restore on a separate clean, unenrolled VM also passed
+without force, with real post-archive erasure replay and survivor/file/decryption/
+sequence checks. These ARM64/private HTTP results do not qualify managed
+updates; U8 and U9 remain open. Managed upgrades need both a real newer
+compatible published target and the [Docker 29 image-identity fix
+#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
+new published source enrolled with the fixed helper; an application image
+update alone does not replace host helper code. Development `main` now
+identifies as `1.3.0-dev`, after the
+separate version change at `bcb5474a`.
+The previous public artifact is `v1.1.1` (October 2, 2026); its dated
+evidence is preserved on [Releases](Releases).
+
 It is a working support desk, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.

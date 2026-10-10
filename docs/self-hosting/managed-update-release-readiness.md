@@ -1,13 +1,83 @@
 # Managed-update release readiness
 
-This is the proposed release and qualification sequence for the U1–U8 managed
-update work in [epic #1107](https://github.com/adamgreenwell/wayfindr/issues/1107).
-It is a preparation record, not authorization to tag, publish, merge, deploy or
-enroll a shared installation. Follow [RELEASING.md](../../RELEASING.md) for the
+This records the release and qualification sequence prepared on October 9,
+2026 for the U1–U8 managed update work in
+[epic #1107](https://github.com/adamgreenwell/wayfindr/issues/1107).
+It records current public/source/ordinary-recovery results and preserves the
+original preparation sequence. It does not authorize a tag, publication, merge,
+deployment or enrollment of a shared installation. Follow [RELEASING.md](../../RELEASING.md) for the
 actual cut procedure and the [U8 matrix](managed-update-qualification.md) for
 independent VM evidence.
 
-The candidate remains **1.2.0**, as already recorded in `VERSION`. Adding an
+## Verified publication, ARM64 source and ordinary recovery
+
+The final 1.2.0 source is `56374e9574ed84616aae430d06589cfe2f0b33a0`.
+[Exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+passed. [Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback verified the Release, manifest, OCI index,
+both amd64/arm64 platform/configuration chains and aliases. The Release
+published October 10 at 00:26 UTC, October 9 at 20:26 EDT; its notes keep their
+October 9 date. The U1–U8 implementation and follow-up fixes are merged;
+publication remains separate from VM qualification.
+
+| Independent result | Verified status |
+| --- | --- |
+| Public `v1.2.0` Release and attached manifest/digest assets | Verified; manifest 1,111 bytes, SHA256 `2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4` |
+| OCI index and both amd64/arm64 platform manifest/config | Verified; [exact identities](evidence/managed-update/README.md) |
+| Stable `1.2.0`, `1.2` and `latest` aliases; GitHub latest | Verified index `sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683`; GitHub latest `v1.2.0` |
+| ARM64 never-started-image baked version/commit/manifest/history proof | Verified; exact public config/rootfs, no start or mounts, named UID/GID 1000 |
+| Actual ARM64 published-source install, supported enrollment, idle restart/reboot | Passed; [source/ordinary-recovery receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json), private HTTP/nonce/API; same container IDs and autonomous idle reboot |
+| ARM64 ordinary archive and separate-VM restore with a real post-archive erasure | Passed on a clean, unenrolled guest without force; exact positive SYSTEM replay, survivor/file/decryption/sequence checks |
+| Target-bound managed protection/apply/fault matrix | Requires a real newer compatible public target and Docker 29 fix [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131); zero scenarios, `qualified: false` |
+| Next `1.3.0-dev` version/declaration reset | Separate `VERSION` change `bcb5474a`; required actions empty and standing notices preserved |
+
+No operator action is required for 1.2.0. The single additive migration
+`2026_10_09_180000_add_managed_update_event_key_to_audit_events.php` adds a
+nullable unique audit-event key and runs automatically. Unenrolled installs
+retain their update path. Optional root-owned enrollment is a separate choice.
+U1–U7/#1108–#1114 are implementation-delivered; actual managed VM and independent
+operator acceptance remain in U8/#1115 and U9/#1116, with epic #1107 open.
+The accepted ARM64 source receipt covers official installation, optional
+enrollment, authenticated helper protocol 1/version 0.4.0, idle helper restart
+and actual autonomous idle guest reboot. All five application roles passed
+PostgreSQL/production Redis/runtime checks, with 80 migrations and zero failed
+jobs; private WebSocket nonce and authenticated API/operator checks passed again
+after reboot. The same eight container IDs and credential/config/source
+fingerprints survived, with a new helper generation and zero operations.
+Ordinary separate-VM restore also passed from the fixed pre-erasure archive,
+with the real nonempty settled ledger installed before invocation, retained
+effective key before first start and an empty unenrolled baseline without force.
+Exact positive SYSTEM replay, surviving logical rows/local binary/settings and
+decryption, ticket scrubbing and sequence/new API contact checks passed. There
+was one current key and no previous keys; rotation was not exercised. Erasure
+used the production service, not dashboard confirmation. These results do not
+establish TLS, user-session broadcasting authorization, remote storage, managed
+protective custody/apply or active-upgrade reboot.
+
+The ARM64 baked probe observed Docker 29/containerd storing the OCI index digest
+as local image `.Id` and container `.Image`. The separately verified public
+configuration digest is not a usable local image address on that guest. Full
+Config/rootfs equality and never-started baked bytes proved the source identity,
+but the published managed artifact verification/apply paths assume a configuration-digest
+local image identity. [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
+is a concrete execution blocker, separate from the absence of a newer compatible
+target. No managed operation was attempted.
+
+The affected code is installed in the host helper. Managed apply replaces the
+application image/overlay and installation image/configuration binding; it does not replace helper
+code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
+enrolled hosts. A newer application image alone therefore cannot repair an
+already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
+supported, ownership-aware, byte-verified helper upgrade preserves enrollment
+identity, credential, journal, locks and recovery state while refusing active or
+partial work, or qualify a real newer published source freshly enrolled with the
+fixed helper. Manual helper overwrite, marker deletion, store switching and
+silent enrollment overwrite are not supported recovery paths.
+
+
+## Preparation record before the first compatible publication
+
+The candidate was **1.2.0**, as recorded in `VERSION` at preparation. Adding an
 optional host updater does not make an existing operator install a new service:
 ordinary unenrolled Docker and host installations retain their update paths.
 The proposed verdict is **No operator action required**, with the additive audit
@@ -16,10 +86,11 @@ review discovers a genuine required change. Optional enrollment has its own
 root-owned setup and recovery responsibilities; it is not a prerequisite for
 upgrading Wayfindr. This follows [ADR 0012](../decisions/0012-platform-versioning.md).
 
-The proposed Unreleased notes were reconciled on October 9, 2026 against both
+The 1.2.0 notes were reconciled on October 9, 2026 against both
 merge and non-merge commits after `v1.1.1`, the U1–U8 stack, and the follow-up
-compatibility/realtime checks. They must be reconciled again against the final
-merged tree immediately before the release cut. Draft branch contents are not
+compatibility/realtime, lease, Redis and boot-order fixes, plus the final
+development-only source-map patch. The frozen declaration and retained history
+agree with the final release source. Draft branch contents are not
 evidence that those changes reached `main` or a published image.
 
 ## What is already established
@@ -54,8 +125,8 @@ and the installation separately, typically `/opt/wayfindr`. All required files
 and ancestors must meet the ownership, mode and symlink checks in
 [managed-updater.md](managed-updater.md#supported-enrollment).
 
-The first published source freezes the currently unpublished **helper 0.4.0,
-protocol 1** behavior. There is no need to invent a helper version bump merely
+The first compatible source freezes **helper 0.4.0, protocol 1** behavior.
+There is no need to invent a helper version bump merely
 to create a test pair. Managed apply changes the application image and reviewed
 overlay; it does not replace the installed helper. Helper replacement,
 credential rotation and unenrollment are not implemented. A later app image
