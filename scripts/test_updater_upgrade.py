@@ -338,7 +338,8 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(b"0\n", (host.cgroup / "cgroup.freeze").read_bytes())
             start = host.commands.index(("start", UPGRADE.SERVICE))
             self.assertEqual([("start", UPGRADE.SERVICE), ("authenticate", 123),
-                              ("thaw", UPGRADE.SERVICE), ("authenticate", 123)],
+                              ("thaw", UPGRADE.SERVICE), ("authenticate", 123),
+                              ("authenticate", 123), ("authenticate", 123)],
                              [command for command in host.commands[start:] if command[0] != "show"])
             self.assertFalse(UPGRADE.TRANSACTION.exists())
 
@@ -570,7 +571,7 @@ class UpgradeTests(unittest.TestCase):
                 self.assertTrue(result["preserved"])
             self.assertEqual(3, len(host.waits))
             self.assertEqual(1, host.commands.count(("thaw", UPGRADE.SERVICE)))
-            self.assertEqual(2, host.commands.count(("authenticate", 123)))
+            self.assertEqual(4, host.commands.count(("authenticate", 123)))
 
     def test_post_thaw_same_pid_reuse_or_kernel_mutation_never_completes(self):
         for changed in ("starttime", "kernel_freeze", "empty_group", "service"):
@@ -711,6 +712,89 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(1, UPGRADE.main())
         self.assertEqual({"schema": 1, "status": "refused", "reason": "startup_unverified",
                           "startup_stage": "post_thaw", "recovery_required": False}, json.loads(output.getvalue()))
+
+    def test_helper_death_or_replacement_during_preservation_cannot_commit_completion(self):
+        for changed in ("dead", "pid", "reused_pid"):
+            with self.subTest(changed=changed), self.host() as host:
+                verify, service = UPGRADE.verify_snapshot, host.service
+                replaced = False
+                (host.proc / "124").mkdir()
+                for name in ("cmdline", "cgroup"):
+                    host.write(host.proc / "124" / name, (host.proc / "123" / name).read_bytes(), 0o444)
+                host.write(host.proc / "124/stat", host.stat_bytes(pid=124, start=789), 0o444)
+                def replacement_service(**options):
+                    value = service(**options)
+                    if replaced and changed == "pid":
+                        value["MainPID"] = "124"
+                    return value
+                def die_after_authentication(*arguments):
+                    nonlocal replaced
+                    result = verify(*arguments)
+                    if host.commands.count(("authenticate", 123)) == 2:
+                        replaced = True
+                        if changed == "dead":
+                            host.running = False
+                        elif changed == "reused_pid":
+                            host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                    return result
+                with patch.object(UPGRADE, "verify_snapshot", die_after_authentication), \
+                        patch.object(UPGRADE, "service", replacement_service):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Completion must revalidate the authenticated process after disk preservation"):
+                        host.upgrade()
+                self.assertTrue(replaced)
+                self.assertTrue(UPGRADE.TRANSACTION.exists(), "A dead or replaced helper must retain the admission barrier")
+                self.assertEqual("starting", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"],
+                                 "Preservation cannot publish success for an exited or replaced helper")
+                self.assertFalse(UPGRADE.RECEIPTS.exists(), "Preservation cannot publish success for an exited or replaced helper")
+
+    def test_helper_death_or_reuse_during_receipt_write_cannot_clear_barrier(self):
+        for reused in (False, True):
+            with self.subTest(reused=reused), self.host() as host:
+                create = UPGRADE.create
+                def die_during_receipt(path, raw, mode=0o600):
+                    create(path, raw, mode)
+                    if path.parent == UPGRADE.RECEIPTS:
+                        if reused:
+                            host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                        else:
+                            host.running = False
+                with patch.object(UPGRADE, "create", die_during_receipt):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Receipt fsync cannot clear the barrier after the authenticated helper exits or is reused"):
+                        host.upgrade()
+                record = UPGRADE.read_json(UPGRADE.TRANSACTION)
+                self.assertEqual("verified", record["stage"])
+                self.assertTrue(UPGRADE.TRANSACTION.exists(), "Explicit recovery must remain required after an unsettled receipt write")
+                self.assertTrue((UPGRADE.RECEIPTS / (record["transaction_id"] + ".json")).exists(), "Retain the actual durable receipt alongside its pending transaction")
+
+    def test_completion_requires_fresh_same_peer_authentication_at_each_commit_boundary(self):
+        for refused_call in (3, 4):
+            with self.subTest(refused_call=refused_call), self.host() as host:
+                authenticate = host.authenticate
+                calls = 0
+                def wrong_peer(*arguments, **keywords):
+                    nonlocal calls
+                    calls += 1
+                    if calls == refused_call:
+                        UPGRADE.refuse("startup_unverified")
+                    authenticate(*arguments, **keywords)
+                with patch.object(UPGRADE, "authenticate", wrong_peer):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Each completion boundary requires fresh authentication of the exact verified peer") as failure:
+                        host.upgrade()
+                self.assertEqual("authentication", failure.exception.stage)
+                self.assertEqual(refused_call, calls)
+                self.assertTrue(UPGRADE.TRANSACTION.exists())
+                self.assertEqual("starting" if refused_call == 3 else "verified", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"])
+
+    def test_completion_late_success_cannot_renew_the_readiness_budget(self):
+        with self.host() as host:
+            def late_observation(**_options):
+                host.clock += 11
+                return host.service(), ("123", 456)
+            with patch.object(UPGRADE, "running_helper", late_observation), \
+                    patch.object(UPGRADE, "authenticate_identity", return_value=(host.service(), ("123", 456))) as authentication:
+                with self.assertRaises(UPGRADE.StartupError, msg="Completion must reject a late successful observation before renewing authentication"):
+                    UPGRADE.verify_completion(None, None, ("123", 456))
+                authentication.assert_not_called()
 
     def test_real_enrollment_under_umask077_preserves_private_code_directory_through_upgrade(self):
         specification = importlib.util.spec_from_file_location("upgrade_enrollment_fixture", ROOT / "scripts/test_updater_enrollment.py")

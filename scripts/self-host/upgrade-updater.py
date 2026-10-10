@@ -730,6 +730,20 @@ def authenticate_started(runtime, config):
     after, _ = authenticate_identity(runtime, config, identity)
     if after["FreezerState"] != "running":
         raise StartupError("post_thaw")
+    return identity
+
+
+def verify_completion(runtime, config, identity):
+    # Disk preservation and receipt fsync can outlive the authenticated
+    # process. Completion may neither adopt a restart nor normalize again.
+    deadline = time.monotonic() + 10
+    before, _ = running_helper(expected_identity=identity, deadline=deadline)
+    startup_remaining(deadline, "manager")
+    if before["FreezerState"] != "running":
+        raise StartupError("post_thaw")
+    after, _ = authenticate_identity(runtime, config, identity)
+    if after["FreezerState"] != "running":
+        raise StartupError("post_thaw")
 
 
 def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
@@ -968,7 +982,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         # New0.5 may run, but its persistent admission barrier blocks all writes
         # until authenticated startup and preservation have both been verified.
         run("start", SERVICE)
-        authenticate_started(new_runtime, new_config)
+        verified_identity = authenticate_started(new_runtime, new_config)
         history, retained, generation = idle(new_runtime, new_config, private_code=staged)
         if history != record["history"] or retained != record["retained"] or generation == record["previous_generation"] or not new_runtime.is_uuid(generation):
             refuse("startup_unverified")
@@ -976,6 +990,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         if code_hashes(CODE) != record["new"] or code_hashes(staged) != PUBLISHED:
             refuse("code_changed")
         validate_generation(record, record["new"], staged)
+        verify_completion(new_runtime, new_config, verified_identity)
         record["stage"] = "verified"
         if record["verified_generation"] is None:
             record["verified_generation"] = generation
@@ -999,6 +1014,7 @@ def finish(distribution, selected_hash, *, recovery=None):
                 create(receipt, encoded(result))
         else:
             create(receipt, encoded(result))
+        verify_completion(new_runtime, new_config, verified_identity)
         unlink(TRANSACTION)
         return result
     finally:
