@@ -2,8 +2,8 @@
 
 This is an **unreleased development candidate**, tracked by
 [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140). It does not establish
-publication, installed helper acceptance, application recovery or completed
-managed-update qualification. Public v1.3.0 still contains helper 0.5.0. Follow
+publication, production installation acceptance, application recovery or
+completed managed-update qualification. Public v1.3.0 still contains helper 0.5.0. Follow
 the [published helper guide](managed-updater.md#upgrading-the-installed-helper)
 for that release. Do not install candidate code on a production host.
 
@@ -28,6 +28,47 @@ replacement, including the published 0.5 process-listing failure. This candidate
 does not implement a recovery bridge for that failure. Keep the failed operation
 and its original helper intact. Qualification on a fresh isolated host can
 exercise the normal idle path while that bridge receives separate review.
+
+## Bounded native candidate observations (2026-10-10)
+
+Two populated disposable Linux VMs completed one ordinary idle helper replacement
+each using the exact candidate bytes from commit
+`0a32b4ba14e2713cd34a9c8e8dac8dd419fe60e7`. Both used Docker 29.1.3 with its
+classic `overlay2` store and retained the source v1.2.0 application.
+
+| Original helper | Platform | Native completed result SHA-256 |
+| --- | --- | --- |
+| Public 0.4.0 to candidate 0.6.0 | AMD64, classic store | `94d968f66f932437d034899fadea22710c44695a46bb1d8b87b10e487cc1038d` |
+| Public 0.5.0 to candidate 0.6.0 | ARM64, classic store | `cf7357366893a135371ddab21e0f752354c47b8927ab8d3fb24d5cf4536d22df` |
+
+Both runs used this candidate five-module bundle SHA-256:
+
+```text
+eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df
+```
+
+The candidate upgrade CLI SHA-256 was
+`53e33e9361129201855964b2e7f696de42cc92ee1b85b287a91fc4b16ba8222f`.
+Private raw exports were independently audited against their source baselines.
+All eight complete application container bindings, installation authority and
+credentials, current and previous keys, encrypted settings, logical data HMACs,
+erasure ledger, four actual local/S3 binary reads and trusted HTTPS were
+preserved. The AMD64 VM's separate S3 fixture container was preserved too.
+The ordinary application context authenticated the new idle 0.6 generation;
+no pending helper transaction remained, and systemd and the kernel reported
+the helper running and unfrozen. Each complete original generation was retained.
+
+Before the ARM64 successor run, the frozen compatibility CLI completed the
+retained `starting` legacy transaction into the exact public 0.5 bundle with its
+original UUID. The separate 0.5 to 0.6 transaction preserved that completed
+receipt, both prior generations and all original failure/recovery evidence.
+This observes one native legacy interruption boundary; synthetic tests cover
+the other durable stages.
+
+These observations do not qualify reboot, power loss, retained historical
+application operations, the VM16 active-operation bridge, a managed application
+upgrade, protective backup, ordinary restore or publication. **Zero managed
+application-upgrade scenarios are qualified by these helper-only runs.**
 
 ## Finish an interrupted 0.4 to 0.5 helper transaction first
 
@@ -105,6 +146,7 @@ The frozen compatibility CLI accepts only its existing 0.4 to 0.5 transaction
 rules; it cannot target 0.6. Its presence does not authorize application recovery
 or removal of an existing hold. Candidate tests cover each durable legacy stage
 and the complete same-transaction recovery followed by a separate successor
-transaction using isolated synthetic filesystems. Linux native interruption
-proofs, both architecture boundaries, publication verification and application
-qualification remain separate gates.
+transaction using isolated synthetic filesystems. The bounded native
+observations above cover one retained startup interruption and the two listed
+ordinary replacement paths. Other native interruption proofs, publication
+verification and application qualification remain separate gates.
