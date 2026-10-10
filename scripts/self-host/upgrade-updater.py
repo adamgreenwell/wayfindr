@@ -50,6 +50,7 @@ DROPIN = Path("/etc/systemd/system/wayfindr-updater.service.d/10-helper-upgrade.
 GATE_TEMP = DROPIN.with_name(".10-helper-upgrade.next")
 SERVICE = "wayfindr-updater.service"
 CGROUP = Path("/sys/fs/cgroup/system.slice/wayfindr-updater.service")
+PROC = Path("/proc")
 SYSTEMCTL = Path("/usr/bin/systemctl")
 BUSCTL = Path("/usr/bin/busctl")
 TEST = Path("/usr/bin/test")
@@ -539,7 +540,7 @@ def exchange(left, right):
     sync(left.parent)
 
 
-def authenticate(runtime, config):
+def authenticate(runtime, config, *, expected_pid=None):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         try:
@@ -550,7 +551,8 @@ def authenticate(runtime, config):
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(0.25)
                 connection.connect(str(SOCKET))
-                if struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1] != 0:
+                peer_pid, peer_uid, _ = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                if peer_uid != 0 or (expected_pid is not None and peer_pid != expected_pid):
                     refuse("startup_unverified")
                 connection.sendall(runtime.envelope(request, config.token, "request"))
                 raw = bytearray()
@@ -567,6 +569,42 @@ def authenticate(runtime, config):
         except (OSError, runtime.Refusal):
             time.sleep(0.1)
     refuse("startup_unverified")
+
+
+def running_helper():
+    current = service()
+    if (current["ActiveState"] != "active" or current["SubState"] != "running"
+            or not re.fullmatch(r"[1-9][0-9]*", current["MainPID"])
+            or current["ControlGroup"] != "/system.slice/" + SERVICE
+            or current["DropInPaths"] != str(DROPIN)
+            or current["FreezerState"] not in {"running", "frozen"}
+            or not condition_loaded()):
+        refuse("startup_unverified")
+    process = PROC / current["MainPID"]
+    for path in (process / "cmdline", process / "cgroup", CGROUP / "cgroup.freeze", CGROUP / "cgroup.events"):
+        trusted(path)
+    if ((process / "cmdline").read_bytes() != b"/usr/bin/python3\0/usr/local/lib/wayfindr-updater/updater.py\0serve\0"
+            or (process / "cgroup").read_text() != "0::/system.slice/" + SERVICE + "\n"
+            or (CGROUP / "cgroup.freeze").read_text() != "0\n"
+            or events().get("frozen") != "0" or events().get("populated") != "1"):
+        refuse("startup_unverified")
+    return current
+
+
+def authenticate_started(runtime, config):
+    # Killing the frozen old cgroup can leave systemd's cached FreezerState
+    # frozen after a new, unfrozen cgroup starts. Normalize only the authenticated
+    # new process while the transaction still blocks application mutations.
+    before = running_helper()
+    authenticate(runtime, config, expected_pid=int(before["MainPID"]))
+    if before["FreezerState"] == "frozen":
+        run("thaw", SERVICE)
+    after = running_helper()
+    if (after["FreezerState"] != "running"
+            or {key: value for key, value in before.items() if key != "FreezerState"}
+            != {key: value for key, value in after.items() if key != "FreezerState"}):
+        refuse("startup_unverified")
+    authenticate(runtime, config, expected_pid=int(after["MainPID"]))
 
 
 def stop_idle(runtime, config, record, *, private_code=None, recovering=False):
@@ -806,7 +844,7 @@ def finish(distribution, selected_hash, *, recovery=None):
         # New0.5 may run, but its persistent admission barrier blocks all writes
         # until authenticated startup and preservation have both been verified.
         run("start", SERVICE)
-        authenticate(new_runtime, new_config)
+        authenticate_started(new_runtime, new_config)
         history, retained, generation = idle(new_runtime, new_config, private_code=staged)
         if history != record["history"] or retained != record["retained"] or generation == record["previous_generation"] or not new_runtime.is_uuid(generation):
             refuse("startup_unverified")

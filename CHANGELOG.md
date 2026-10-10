@@ -45,6 +45,14 @@ by an application update.
   remains incomplete. Helper publication and the supported `0.5.0` upgrade path
   are tracked separately in [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
 
+- **Helper replacement verifies systemd's freezer state before admitting work.**
+  After the complete new helper starts, the upgrade CLI authenticates the exact
+  systemd process and verifies that its kernel cgroup is already unfrozen. If
+  systemd still caches the old generation's frozen state, the CLI explicitly
+  reconciles it and verifies the same process again before clearing the
+  transaction. Failed verification retains explicit recovery ownership.
+
+
 ## [1.3.0] - 2026-10-10
 
 **No operator action required.** Pull and restart the application;
