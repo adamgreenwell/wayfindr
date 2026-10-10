@@ -343,7 +343,7 @@ class Engine:
 
     def role_ready(self, container, service):
         # Inspect role argv and a live process; a healthy web alone is insufficient.
-        processes = self.base.call(["top", container, "-eo", "args"], "runtime_verification_failed", timeout=5)
+        processes = self.base.call(["top", container, "-eo", "pid,args"], "runtime_verification_failed", timeout=5)
         role = {"web": "frankenphp", "queue": "queue:work redis", "backup-queue": "queue:work backups", "scheduler": "schedule:work", "reverb": "reverb:start"}[service]
         if role not in processes.lower():
             raise self.api.Refusal("runtime_verification_failed")

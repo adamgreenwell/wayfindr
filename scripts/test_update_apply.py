@@ -883,6 +883,47 @@ class DockerOneoffTests(unittest.TestCase):
         self.assertFalse(any("run" in args or args[0] == "rm" for args in self.calls))
 
 
+class DockerRoleReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.api = types.SimpleNamespace(**vars(FIX.API))
+        self.api.capture = self.capture
+        self.config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
+        self.engine = APPLY.Engine(self.config, self.api, "/var/lib/wayfindr-updater")
+        self.container = "a" * 64
+        self.top_code = 0
+        self.processes = b""
+        self.calls = []
+
+    def capture(self, command, **kwargs):
+        args = command[5:]
+        self.calls.append(args)
+        if args[:2] != ["top", self.container]:
+            raise AssertionError("Role readiness may only inspect the selected container's processes")
+        # Model Docker's process selection rather than accepting any ps argv.
+        fields = args[3].split(",") if len(args) == 4 and args[2] == "-eo" else []
+        if "pid" not in fields:
+            return 1, b""
+        return self.top_code, self.processes
+
+    def test_daemon_process_listing_accepts_each_live_role(self):
+        for service, command in (("web", "frankenphp run"), ("queue", "php artisan queue:work redis"),
+                                 ("backup-queue", "php artisan queue:work backups"), ("scheduler", "php artisan schedule:work"),
+                                 ("reverb", "php artisan reverb:start --port=8080")):
+            with self.subTest(service=service):
+                self.processes = ("PID COMMAND\n123 " + command + "\n").encode()
+                self.engine.role_ready(self.container, service)
+
+    def test_wrong_role_failed_or_empty_listing_cannot_prove_readiness(self):
+        for code, processes in ((0, b"PID COMMAND\n123 php artisan queue:work backups\n"),
+                                (1, b"PID COMMAND\n123 php artisan queue:work redis\n"),
+                                (0, b""), (0, b"PID COMMAND\n")):
+            with self.subTest(code=code, processes=processes):
+                self.top_code, self.processes = code, processes
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.role_ready(self.container, "queue")
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+
 class DockerLayoutTests(unittest.TestCase):
     def setUp(self):
         self.api = types.SimpleNamespace(**vars(FIX.API))

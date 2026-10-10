@@ -1,5 +1,50 @@
 # Managed-update qualification evidence
 
+## October 10, 2026: published helper process-listing refusal
+
+The first ordinary HTTPS Start attempt for published `v1.2.0` → `v1.3.0`,
+with installed helper `0.5.0`, stopped at `apply_started` with
+`recovery_required` on the dedicated Ubuntu ARM64 Docker 29.1.3/containerd
+guest. The durable operation reports `mutation_started: false`, neither hold
+owned, and no protective archive. Independent root readback found both the
+operation's apply and protection directories absent. Source containers kept
+their original IDs and images; the helper process stayed running with its
+original PID/start time and zero restarts. This is a failed start observation,
+not completed protection, application-upgrade, recovery or restore evidence.
+Managed qualification remains false with zero qualified scenarios.
+
+A fresh normal-context application readback matched the current pre-start
+fixture baseline: logical data, all four local/remote attachment GETs,
+current/previous-key decryption, installation identity and the baseline erasure
+ledger. TLS material and proxy configuration matched, and the trusted-CA HTTPS
+health check returned 200. That baseline followed an explicit synthetic lab
+repair; this comparison does not restore pre-loss continuity or prove recovery.
+
+Read-only `docker top <container> -eo args` failed for all seven running
+containers with `Couldn't find PID field in ps output`. The same containers
+returned their live commands successfully with `-eo pid,args`.
+[Moby's process selector](https://github.com/moby/moby/blob/master/daemon/top_unix.go)
+requires a PID column to select container tasks. Published helper `0.5.0`
+omits that column in both command-settlement and service-role checks. Its
+bounded capture discards stderr, so the operation retains the conservative
+generic refusal; the bounded service-journal readback had no entries.
+
+The source correction requests `pid,args` at both call sites. Regression
+fixtures now model the daemon refusing a listing without PID, accept each
+expected live role, and retain the existing pending-exec, orphaned window,
+failed-listing and wrong-role refusals. This candidate does not alter the
+published helper, recover the failed operation or qualify the upgrade span.
+An independently reviewed native component probe loaded only the two private
+candidate modules with the published configuration/API. Seven actual running
+containers passed command settlement and all five application roles passed
+readiness; all 33 Docker inspect/top calls succeeded. Raw evidence verified
+the original runtime bindings, installed published helper, enrollment and
+failed operation journal were preserved, apart from its ordinary heartbeat.
+This is candidate component evidence, not a completed application upgrade.
+Publication, supported helper replacement and fresh native qualification
+remain separate gates. No retry, recovery, journal clearance or fixture
+erasure was performed for this observation.
+
 ## October 10, 2026: v1.3.0 application and helper publication verified
 
 The [public-artifact receipt](2026-10-10-v1.3.0-publication.json) binds release

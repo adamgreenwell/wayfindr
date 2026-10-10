@@ -30,6 +30,21 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** There are no new database migrations. Optional
+managed updates remain under disposable-VM qualification. The host helper
+correction below is development source; it has not been published or installed
+by an application update.
+
+### Fixed
+
+- **Managed helper process listings include the PID column Docker requires.**
+  Command settlement and application-role readiness request both PID and full
+  command arguments, preventing a deterministic Docker process-listing refusal
+  while retaining pending-exec, orphaned upgrade-window and wrong-role guards.
+  Native read-only candidate component checks passed; full managed qualification
+  remains incomplete. Helper publication and the supported `0.5.0` upgrade path
+  are tracked separately in [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+
 ## [1.3.0] - 2026-10-10
 
 **No operator action required.** Pull and restart the application;
