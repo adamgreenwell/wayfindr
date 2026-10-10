@@ -1,0 +1,131 @@
+{
+  "active_operation": "00000000-0000-4000-8000-000000000003",
+  "generation": "00000000-0000-4000-8000-000000000001",
+  "heartbeat_at": 1700000004,
+  "installation_id": "00000000-0000-4000-8000-000000000004",
+  "last_operation": "00000000-0000-4000-8000-000000000003",
+  "operations": {
+    "00000000-0000-4000-8000-000000000003": {
+      "apply": {
+        "config_digest": null,
+        "configuration_committed": false,
+        "error": "recovery_required",
+        "history_sha256": null,
+        "hold_owned": false,
+        "index_digest": null,
+        "manifest_sha256": null,
+        "migration_receipt_sha256": null,
+        "migration_started": false,
+        "migration_verified": false,
+        "origin_verified": false,
+        "phase": "recovery_required",
+        "platform_manifest_digest": null,
+        "runtime_receipt_sha256": null,
+        "services_verified": false
+      },
+      "checkpoint": "apply_started",
+      "created_at": 1700000000,
+      "error": "recovery_required",
+      "events": [
+        {
+          "at": 1700000000,
+          "code": "operation_accepted",
+          "phase": "accepted",
+          "revision": 1
+        },
+        {
+          "at": 1700000000,
+          "code": "prepare_started",
+          "phase": "preparing",
+          "revision": 2
+        },
+        {
+          "at": 1700000001,
+          "code": "plan_reported",
+          "phase": "preparing",
+          "revision": 3
+        },
+        {
+          "at": 1700000001,
+          "code": "operation_blocked",
+          "phase": "blocked",
+          "revision": 4
+        },
+        {
+          "at": 1700000002,
+          "code": "operator_started",
+          "phase": "downloading",
+          "revision": 5
+        },
+        {
+          "at": 1700000002,
+          "code": "apply_started",
+          "phase": "downloading",
+          "revision": 6
+        },
+        {
+          "at": 1700000003,
+          "code": "recovery_required",
+          "phase": "recovery_required",
+          "revision": 7
+        }
+      ],
+      "executor_generation": "00000000-0000-4000-8000-000000000001",
+      "executor_version": "0.5.0",
+      "mutation_started": false,
+      "operation_id": "00000000-0000-4000-8000-000000000003",
+      "operator": {
+        "cancel": null,
+        "prepare": {
+          "actor": {
+            "id": 4101
+          },
+          "at": 1700000000,
+          "revision": 1
+        },
+        "start": {
+          "actor": {
+            "id": 4101
+          },
+          "at": 1700000002,
+          "plan_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "request_id": "00000000-0000-4000-8000-000000000002",
+          "revision": 5
+        }
+      },
+      "phase": "recovery_required",
+      "plan_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "protection": {
+        "archive_bytes": null,
+        "archive_sha256": null,
+        "custody_verified": false,
+        "error": null,
+        "external_attachment_disks": null,
+        "hold_owned": false,
+        "local_attachment_disks": null,
+        "manifest_sha256": null,
+        "offsite_uploaded": null,
+        "offsite_verification": null,
+        "phase": "fencing",
+        "services_recovered": false,
+        "source_image_id": null
+      },
+      "release_tag": "v1.3.0",
+      "request_id": "00000000-0000-4000-8000-000000000005",
+      "revision": 7,
+      "source": {
+        "commit": "56374e9574ed84616aae430d06589cfe2f0b33a0",
+        "version": "1.2.0"
+      },
+      "target": {
+        "commit": "1bae329c4e349017716827dd0ce26b9ba7f9f2ac",
+        "image_digest": "sha256:f7b5361f32c4b81010d74da37d310aec048f7101d8ea3ec4a99cea9f90df8dd0",
+        "tag": "v1.3.0",
+        "version": "1.3.0"
+      },
+      "updated_at": 1700000003
+    }
+  },
+  "revision": 7,
+  "schema": 1
+}
