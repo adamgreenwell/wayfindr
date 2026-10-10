@@ -32,8 +32,10 @@ missed while skimming.
 
 **No operator action required.** There are no new database migrations. Optional
 managed updates remain under disposable-VM qualification. The host helper
-correction below is development source; it has not been published or installed
-by an application update.
+corrections below are development source; they have not been published or
+installed by an application update. Application updates preserve the installed
+helper. Helper replacement remains a separate, explicit administrator command.
+
 
 ### Fixed
 
@@ -44,6 +46,13 @@ by an application update.
   Native read-only candidate component checks passed; full managed qualification
   remains incomplete. Helper publication and the supported `0.5.0` upgrade path
   are tracked separately in [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+
+- **Helper replacement verifies systemd's freezer state before admitting work.**
+  After the complete new helper starts, the upgrade CLI authenticates the exact
+  systemd process and verifies that its kernel cgroup is already unfrozen. If
+  systemd still caches the old generation's frozen state, the CLI explicitly
+  reconciles it and verifies the same process again before clearing the
+  transaction. Failed verification retains explicit recovery ownership.
 
 ## [1.3.0] - 2026-10-10
 

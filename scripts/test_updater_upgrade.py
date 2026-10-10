@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -44,6 +45,7 @@ class Host:
         self.credential = self.config.with_name("credential.json")
         self.runtime = root / "run/wayfindr-updater"
         self.cgroup = root / "cgroup/system.slice/wayfindr-updater.service"
+        self.proc = root / "proc"
         self.unit = root / "etc/systemd/system/wayfindr-updater.service"
         self.tmpfiles = root / "etc/tmpfiles.d/wayfindr-updater.conf"
         self.cli = root / "usr/local/bin/wayfindr-updater"
@@ -54,12 +56,17 @@ class Host:
         self.running = True
         self.frozen = False
         self.stale_freezer = False
+        self.stale_after_start = False
+        self.thaw_works = True
         self.freeze_works = True
         self.condition_works = True
         self.kill_settles = True
         self.race = None
         self.kill_count = 0
         self.exchange_count = 0
+        self.clock = 0.0
+        self.waits = []
+        self.on_sleep = None
         for path in (self.install, self.state, self.code, self.config.parent, self.runtime, self.cgroup, self.unit.parent, self.tmpfiles.parent, self.cli.parent, self.distribution / "scripts/self-host", self.distribution / "docker/self-hosting"):
             path.mkdir(parents=True, exist_ok=True)
         os.chmod(self.code, 0o755)
@@ -91,7 +98,16 @@ class Host:
         self.write(self.credential, json.dumps({"schema": 1, "installation_id": self.installation_id, "token": "a" * 64}).encode(), 0o440)
         self.write(self.state / "helper.lock", b"", 0o600)
         self.write(self.cgroup / "cgroup.kill", b"", 0o600)
+        self.write(self.cgroup / "cgroup.freeze", b"0\n", 0o644)
+        self.write(self.cgroup / "cgroup.events", b"populated 1\nfrozen 0\n", 0o644)
+        (self.proc / "123").mkdir(parents=True)
+        self.write(self.proc / "123/cmdline", b"/usr/bin/python3\0/usr/local/lib/wayfindr-updater/updater.py\0serve\0", 0o444)
+        self.write(self.proc / "123/cgroup", ("0::/system.slice/" + UPGRADE.SERVICE + "\n").encode(), 0o444)
+        self.write(self.proc / "123/stat", self.stat_bytes(), 0o444)
         self.original_runtime_from = UPGRADE.runtime_from
+        self.original_authenticate = UPGRADE.authenticate
+        self.original_run = UPGRADE.run
+        self.original_condition_loaded = UPGRADE.condition_loaded
         runtime = self.runtime_from(self.code / "updater.py")
         value = runtime.initial_journal(self.installation_id)
         value["generation"] = str(uuid.uuid4())
@@ -99,8 +115,22 @@ class Host:
 
     @staticmethod
     def write(path, raw, mode):
+        if path.exists() and mode == 0o444:
+            # Model kernel-owned proc observations changing without asking
+            # the fixture's unprivileged test process to write a0444 file.
+            os.chmod(path, 0o600)
         path.write_bytes(raw)
         os.chmod(path, mode)
+
+    @staticmethod
+    def stat_bytes(pid=123, start=456, comm=b"python3"):
+        return str(pid).encode() + b" (" + comm + b") S " + b"0 " * 18 + str(start).encode() + b" 0 0\n"
+
+    def sleep(self, duration):
+        self.clock += duration
+        self.waits.append(duration)
+        if self.on_sleep:
+            self.on_sleep()
 
     def trust(self, path, *, directory=False):
         if not path.is_absolute() or ".." in path.parts:
@@ -134,13 +164,13 @@ class Host:
             runtime.STATE_DIR = self.state
         return runtime
 
-    def service(self):
+    def service(self, **_options):
         return {"ActiveState": "active" if self.running else "inactive", "SubState": "running" if self.running else "dead",
                 "MainPID": "123" if self.running else "0", "ControlGroup": "/system.slice/" + UPGRADE.SERVICE,
                 "FragmentPath": str(self.unit), "DropInPaths": str(self.dropin) if self.dropin.exists() else "",
                 "FreezerState": "frozen" if self.frozen or self.stale_freezer else "running", "Restart": "on-failure"}
 
-    def condition_loaded(self):
+    def condition_loaded(self, **_options):
         return self.condition_works and self.dropin.exists() and self.dropin.read_bytes() == UPGRADE.GATE
 
     def events(self):
@@ -149,7 +179,7 @@ class Host:
             self.running = False
         return {"frozen": "1" if self.frozen else "0", "populated": "1" if self.running else "0"}
 
-    def run(self, *arguments):
+    def run(self, *arguments, **_options):
         self.commands.append(arguments)
         if arguments[0] == "show":
             return "\n".join(key + "=" + value for key, value in self.service().items())
@@ -157,19 +187,28 @@ class Host:
             if self.race:
                 self.race()
             self.frozen = self.freeze_works
+            self.write(self.cgroup / "cgroup.freeze", b"1\n" if self.frozen else b"0\n", 0o644)
         elif arguments[0] == "thaw":
-            self.frozen = False
-            self.stale_freezer = False
+            if self.thaw_works:
+                self.frozen = False
+                self.stale_freezer = False
+                self.write(self.cgroup / "cgroup.freeze", b"0\n", 0o644)
         elif arguments[0] == "stop":
             assert not self.running, "The cgroup must be observed empty before stop can auto-thaw."
             self.running = False
             self.frozen = False
             if self.cgroup.exists():
+                self.write(self.cgroup / "cgroup.freeze", b"0\n", 0o644)
                 self.write(self.cgroup / "cgroup.kill", b"", 0o600)
         elif arguments[0] == "start":
             assert not UPGRADE.STOP.exists(), "Persistent stop gate must be cleared only after complete code exchange."
             assert UPGRADE.TRANSACTION.exists(), "Admission barrier must remain until new startup is authenticated."
             self.running = True
+            self.stale_freezer = self.stale_after_start
+            self.cgroup.mkdir(parents=True, exist_ok=True)
+            self.write(self.cgroup / "cgroup.freeze", b"0\n", 0o644)
+            self.write(self.cgroup / "cgroup.events", b"populated 1\nfrozen 0\n", 0o644)
+            self.write(self.cgroup / "cgroup.kill", b"", 0o600)
             runtime = self.runtime_from(self.code / "updater.py")
             journal = runtime.Journal(self.state / "journal.json", self.installation_id)
             journal.begin_generation(str(uuid.uuid4()))
@@ -186,11 +225,13 @@ class Host:
         os.rename(right, left)
         os.rename(middle, right)
 
-    def authenticate(self, runtime, config):
+    def authenticate(self, runtime, config, *, expected_pid=None):
         assert self.running
         assert UPGRADE.TRANSACTION.exists()
         assert runtime.VERSION == "0.5.0"
         assert config.installation_id == self.installation_id
+        assert expected_pid in {None, 123}
+        self.commands.append(("authenticate", expected_pid))
 
     @contextlib.contextmanager
     def activated(self):
@@ -198,7 +239,8 @@ class Host:
                  "CLI": self.cli, "UNIT": self.unit, "TMPFILES": self.tmpfiles, "RUNTIME": self.runtime,
                  "SOCKET": self.runtime / "updater.sock", "TRANSACTION": self.state / "helper-upgrade.json",
                  "STOP": self.state / "helper-upgrade-stop", "LOCK": self.state / "helper-upgrade.lock",
-                 "RECEIPTS": self.state / "helper-upgrades", "DROPIN": self.dropin, "CGROUP": self.cgroup}
+                 "RECEIPTS": self.state / "helper-upgrades", "DROPIN": self.dropin, "CGROUP": self.cgroup,
+                 "PROC": self.proc}
         paths["GATE_TEMP"] = self.dropin.with_name(".10-helper-upgrade.next")
         # All production calls remain real except host ownership identities,
         # privileged APIs and directory exchange unavailable on macOS.
@@ -216,6 +258,8 @@ class Host:
             stack.enter_context(patch.object(UPGRADE, "condition_loaded", self.condition_loaded))
             stack.enter_context(patch.object(UPGRADE, "exchange", self.exchange))
             stack.enter_context(patch.object(UPGRADE, "authenticate", self.authenticate))
+            stack.enter_context(patch.object(UPGRADE.time, "monotonic", lambda: self.clock))
+            stack.enter_context(patch.object(UPGRADE.time, "sleep", self.sleep))
             stack.enter_context(patch.object(UPGRADE.os, "chown"))
             stack.enter_context(patch.object(UPGRADE.os, "fchown"))
             # Real code_hashes additionally enforces gid0; fixture owner group is
@@ -283,6 +327,474 @@ class UpgradeTests(unittest.TestCase):
                 UPGRADE.finish(host.distribution, "a" * 64)
             self.assertEqual([], host.commands)
             self.assertFalse(UPGRADE.LOCK.exists())
+
+    def test_completed_upgrade_normalizes_stale_manager_cache_before_clearing_admission(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            result = host.upgrade()
+            self.assertTrue(result["preserved"])
+            self.assertEqual("running", host.service()["FreezerState"])
+            self.assertEqual("0", host.events()["frozen"])
+            self.assertEqual(b"0\n", (host.cgroup / "cgroup.freeze").read_bytes())
+            start = host.commands.index(("start", UPGRADE.SERVICE))
+            self.assertEqual([("start", UPGRADE.SERVICE), ("authenticate", 123),
+                              ("thaw", UPGRADE.SERVICE), ("authenticate", 123),
+                              ("authenticate", 123), ("authenticate", 123)],
+                             [command for command in host.commands[start:] if command[0] != "show"])
+            self.assertFalse(UPGRADE.TRANSACTION.exists())
+
+    def test_unverified_manager_thaw_retains_transaction_without_success_receipt(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            host.thaw_works = False
+            with self.assertRaisesRegex(UPGRADE.UpgradeError, "startup_unverified"):
+                host.upgrade()
+            self.assertEqual("starting", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"])
+            self.assertFalse(UPGRADE.RECEIPTS.exists())
+            self.assertEqual(1, host.commands.count(("thaw", UPGRADE.SERVICE)))
+            host.thaw_works = True
+            self.assertTrue(host.recover()["preserved"])
+
+    def test_new_helper_kernel_freeze_or_wrong_process_never_triggers_normalization(self):
+        for changed in ("kernel_freeze", "kernel_events", "empty_group", "cmdline", "cgroup"):
+            with self.subTest(changed=changed), self.host() as host:
+                host.stale_after_start = True
+                run = host.run
+                def change_after_start(*arguments, **options):
+                    result = run(*arguments, **options)
+                    if arguments[0] == "start":
+                        if changed == "kernel_freeze":
+                            host.write(host.cgroup / "cgroup.freeze", b"1\n", 0o644)
+                        elif changed in {"cmdline", "cgroup"}:
+                            path = host.proc / "123" / changed
+                            os.chmod(path, 0o644)
+                            host.write(path, b"different process\n", 0o444)
+                    return result
+                events = host.events
+                def changed_events():
+                    value = events()
+                    if host.stale_freezer:
+                        if changed == "kernel_events":
+                            value["frozen"] = "1"
+                        elif changed == "empty_group":
+                            value["populated"] = "0"
+                    return value
+                with patch.object(UPGRADE, "run", change_after_start), patch.object(UPGRADE, "events", changed_events):
+                    with self.assertRaisesRegex(UPGRADE.UpgradeError, "startup_unverified"):
+                        host.upgrade()
+                self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+                self.assertTrue(UPGRADE.TRANSACTION.exists())
+                self.assertFalse(UPGRADE.RECEIPTS.exists())
+
+    def test_new_helper_pid_change_during_thaw_retains_admission_barrier(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            (host.proc / "124").mkdir()
+            for name in ("cmdline", "cgroup", "stat"):
+                host.write(host.proc / "124" / name, (host.proc / "123" / name).read_bytes(), 0o444)
+            host.write(host.proc / "124/stat", host.stat_bytes(pid=124), 0o444)
+            service = host.service
+            def changed_service(**_options):
+                value = service()
+                if ("thaw", UPGRADE.SERVICE) in host.commands:
+                    value["MainPID"] = "124"
+                return value
+            with patch.object(UPGRADE, "service", changed_service):
+                with self.assertRaisesRegex(UPGRADE.UpgradeError, "startup_unverified"):
+                    host.upgrade()
+            self.assertEqual(1, host.commands.count(("authenticate", 123)))
+            self.assertTrue(UPGRADE.TRANSACTION.exists())
+            self.assertFalse(UPGRADE.RECEIPTS.exists())
+
+    def test_authentication_refuses_root_socket_from_a_different_service_pid(self):
+        with self.host() as host:
+            runtime = host.runtime_from(host.code / "updater.py")
+            runtime.VERSION = "0.5.0"
+            config = UPGRADE.enrollment(runtime, host.distribution)
+            nonce = "b" * 32
+            with patch.object(runtime, "trusted"), patch.object(UPGRADE.secrets, "token_hex", return_value=nonce), \
+                    patch.object(UPGRADE.socket, "SO_PEERCRED", 17, create=True), \
+                    patch.object(UPGRADE.socket, "socket") as socket_factory:
+                connection = socket_factory.return_value.__enter__.return_value
+                connection.getsockopt.return_value = UPGRADE.struct.pack("3i", 124, 0, 0)
+                connection.recv.return_value = runtime.envelope({"protocol": 1, "installation_id": config.installation_id,
+                    "nonce": nonce, "ok": True, "result": config.capabilities()}, config.token, "response")
+                with self.assertRaisesRegex(UPGRADE.UpgradeError, "startup_unverified"):
+                    host.original_authenticate(runtime, config, expected_pid=123)
+
+    def test_startup_waits_for_same_process_to_exec_before_authentication(self):
+        with self.host() as host:
+            canonical = (host.proc / "123/cmdline").read_bytes()
+            run = host.run
+            def pre_exec(*arguments, **options):
+                result = run(*arguments, **options)
+                if arguments[0] == "start":
+                    host.write(host.proc / "123/cmdline", b"pre-exec systemd process\0", 0o444)
+                return result
+            def finish_exec():
+                self.assertNotIn(("authenticate", 123), host.commands)
+                if len(host.waits) == 3:
+                    host.write(host.proc / "123/cmdline", canonical, 0o444)
+            host.on_sleep = finish_exec
+            with patch.object(UPGRADE, "run", pre_exec):
+                try:
+                    result = host.upgrade()
+                except UPGRADE.UpgradeError:
+                    self.fail("Same-PID pre-exec startup must wait for canonical readiness before authentication")
+                self.assertTrue(result["preserved"])
+            self.assertEqual(3, len(host.waits), "Pre-exec observations must be retried, not accepted immediately")
+            self.assertEqual(1, host.commands.count(("start", UPGRADE.SERVICE)))
+
+    def test_startup_waits_for_manager_pid_and_cgroup_population(self):
+        with self.host() as host:
+            service = host.service
+            events = host.events
+            def starting_manager(**_options):
+                value = service()
+                if ("start", UPGRADE.SERVICE) in host.commands and host.clock < 0.2:
+                    value.update(ActiveState="activating", SubState="start", MainPID="0", ControlGroup="")
+                return value
+            def filling_group():
+                value = events()
+                if ("start", UPGRADE.SERVICE) in host.commands and host.clock < 0.4:
+                    value["populated"] = "0"
+                return value
+            with patch.object(UPGRADE, "service", starting_manager), patch.object(UPGRADE, "events", filling_group):
+                self.assertTrue(host.upgrade()["preserved"], "Manager/PID/kernel startup transitions must settle before authentication")
+            self.assertGreaterEqual(host.clock, 0.4)
+            self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+
+    def test_permanently_unready_startup_is_bounded_and_classified(self):
+        for boundary in ("manager", "process", "kernel"):
+            with self.subTest(boundary=boundary), self.host() as host:
+                service, run, events = host.service, host.run, host.events
+                def unready_manager(**_options):
+                    value = service()
+                    if boundary == "manager" and ("start", UPGRADE.SERVICE) in host.commands:
+                        value.update(ActiveState="activating", SubState="start", MainPID="0")
+                    return value
+                def unready_process(*arguments, **options):
+                    result = run(*arguments, **options)
+                    if boundary == "process" and arguments[0] == "start":
+                        host.write(host.proc / "123/cmdline", b"still pre-exec\0", 0o444)
+                    return result
+                def unready_kernel():
+                    value = events()
+                    if boundary == "kernel" and ("start", UPGRADE.SERVICE) in host.commands:
+                        value["populated"] = "0"
+                    return value
+                with patch.object(UPGRADE, "service", unready_manager), patch.object(UPGRADE, "run", unready_process), \
+                        patch.object(UPGRADE, "events", unready_kernel):
+                    with self.assertRaises(UPGRADE.StartupError) as failure:
+                        host.upgrade()
+                self.assertEqual(boundary, failure.exception.stage)
+                self.assertEqual("startup_unverified", str(failure.exception))
+                self.assertAlmostEqual(10, host.clock, msg="Startup must have a finite monotonic deadline")
+                self.assertEqual("starting", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"])
+                self.assertNotIn(("authenticate", 123), host.commands)
+                self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+                self.assertFalse(UPGRADE.RECEIPTS.exists())
+
+    def test_readiness_wait_never_adopts_a_restarted_process(self):
+        for reused_pid in (False, True):
+            with self.subTest(reused_pid=reused_pid), self.host() as host:
+                run, service = host.run, host.service
+                (host.proc / "124").mkdir()
+                for name in ("cmdline", "cgroup"):
+                    host.write(host.proc / "124" / name, (host.proc / "123" / name).read_bytes(), 0o444)
+                host.write(host.proc / "124/stat", host.stat_bytes(pid=124, start=789), 0o444)
+                def pre_exec(*arguments, **options):
+                    result = run(*arguments, **options)
+                    if arguments[0] == "start":
+                        host.write(host.proc / "123/cmdline", b"pre-exec\0", 0o444)
+                    return result
+                def restarted_manager(**_options):
+                    value = service()
+                    if host.waits and not reused_pid:
+                        value["MainPID"] = "124"
+                    return value
+                def restart():
+                    if reused_pid:
+                        host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                        host.write(host.proc / "123/cmdline", (host.proc / "124/cmdline").read_bytes(), 0o444)
+                host.on_sleep = restart
+                with patch.object(UPGRADE, "run", pre_exec), patch.object(UPGRADE, "service", restarted_manager):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Readiness must never adopt a restarted or reused PID") as failure:
+                        host.upgrade()
+                self.assertEqual("process", failure.exception.stage)
+                self.assertNotIn(("authenticate", 123), host.commands)
+                self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+                self.assertFalse(UPGRADE.RECEIPTS.exists())
+                self.assertTrue(UPGRADE.TRANSACTION.exists())
+
+    def test_process_starttime_parser_handles_comm_boundaries_and_refuses_corruption(self):
+        with self.host() as host:
+            host.write(host.proc / "123/stat", host.stat_bytes(comm=b"python ) (worker) name"), 0o444)
+            self.assertEqual(456, UPGRADE.process_start({"MainPID": "123"}))
+            for raw in (b"123 (python3) S 0\n", host.stat_bytes(pid=124), host.stat_bytes(start=0),
+                        host.stat_bytes(start="changed"), b"123 python3 S " + b"0 " * 20):
+                with self.subTest(raw=raw):
+                    host.write(host.proc / "123/stat", raw, 0o444)
+                    with self.assertRaises(UPGRADE.StartupError) as failure:
+                        UPGRADE.process_start({"MainPID": "123"})
+                    self.assertEqual("process", failure.exception.stage)
+
+    def test_same_pid_reuse_during_authentication_refuses_before_thaw(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            authenticate = host.authenticate
+            def reused(*arguments, **keywords):
+                authenticate(*arguments, **keywords)
+                host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+            with patch.object(UPGRADE, "authenticate", reused):
+                with self.assertRaises(UPGRADE.StartupError) as failure:
+                    host.upgrade()
+            self.assertEqual("process", failure.exception.stage)
+            self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+            self.assertTrue(UPGRADE.TRANSACTION.exists())
+            self.assertFalse(UPGRADE.RECEIPTS.exists())
+
+    def test_post_thaw_waits_for_manager_cache_on_the_authenticated_process(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            service = host.service
+            def thawing_manager(**_options):
+                value = service()
+                if ("thaw", UPGRADE.SERVICE) in host.commands and len(host.waits) < 3:
+                    value["FreezerState"] = "thawing"
+                return value
+            with patch.object(UPGRADE, "service", thawing_manager):
+                try:
+                    result = host.upgrade()
+                except UPGRADE.UpgradeError:
+                    self.fail("Authenticated thaw must wait for asynchronous manager completion")
+                self.assertTrue(result["preserved"])
+            self.assertEqual(3, len(host.waits))
+            self.assertEqual(1, host.commands.count(("thaw", UPGRADE.SERVICE)))
+            self.assertEqual(4, host.commands.count(("authenticate", 123)))
+
+    def test_post_thaw_same_pid_reuse_or_kernel_mutation_never_completes(self):
+        for changed in ("starttime", "kernel_freeze", "empty_group", "service"):
+            with self.subTest(changed=changed), self.host() as host:
+                host.stale_after_start = True
+                run, service, events = host.run, host.service, host.events
+                def changed_after_thaw(*arguments, **options):
+                    result = run(*arguments, **options)
+                    if arguments[0] == "thaw":
+                        if changed == "starttime":
+                            host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                        elif changed == "kernel_freeze":
+                            host.write(host.cgroup / "cgroup.freeze", b"1\n", 0o644)
+                    return result
+                def changed_service(**_options):
+                    value = service()
+                    if changed == "service" and ("thaw", UPGRADE.SERVICE) in host.commands:
+                        value["FragmentPath"] = "/unexpected.service"
+                    return value
+                def changed_events():
+                    value = events()
+                    if changed == "empty_group" and ("thaw", UPGRADE.SERVICE) in host.commands:
+                        value["populated"] = "0"
+                    return value
+                with patch.object(UPGRADE, "run", changed_after_thaw), patch.object(UPGRADE, "service", changed_service), \
+                        patch.object(UPGRADE, "events", changed_events):
+                    with self.assertRaises(UPGRADE.StartupError):
+                        host.upgrade()
+                self.assertEqual(1, host.commands.count(("thaw", UPGRADE.SERVICE)))
+                self.assertEqual(1, host.commands.count(("authenticate", 123)))
+                self.assertTrue(UPGRADE.TRANSACTION.exists())
+                self.assertFalse(UPGRADE.RECEIPTS.exists())
+
+    def test_explicit_recovery_waits_for_same_process_thaw_before_fresh_freeze(self):
+        with self.host() as host:
+            host.stale_after_start = True
+            with patch.object(UPGRADE, "authenticate", side_effect=UPGRADE.UpgradeError("startup_unverified")):
+                with self.assertRaises(UPGRADE.UpgradeError):
+                    host.upgrade()
+            original = UPGRADE.read_json(UPGRADE.TRANSACTION)
+            service = host.service
+            def thawing_manager(**_options):
+                value = service()
+                if ("thaw", UPGRADE.SERVICE) in host.commands and len(host.waits) < 3:
+                    value["FreezerState"] = "thawing"
+                return value
+            def before_freeze():
+                self.assertEqual(1, host.commands.count(("freeze", UPGRADE.SERVICE)),
+                                 "Explicit recovery must settle its observed process identity before a new freeze")
+            host.on_sleep = before_freeze
+            with patch.object(UPGRADE, "service", thawing_manager):
+                try:
+                    result = host.recover()
+                except UPGRADE.UpgradeError:
+                    self.fail("Explicit recovery must wait for asynchronous cached-freezer normalization")
+            self.assertEqual(original["transaction_id"], result["transaction_id"])
+            self.assertEqual(3, len(host.waits))
+            self.assertEqual(1, host.exchange_count)
+
+    def test_missing_stat_after_positive_manager_pid_never_adopts_a_later_process(self):
+        with self.host() as host:
+            run = host.run
+            def vanished(*arguments, **options):
+                result = run(*arguments, **options)
+                if arguments[0] == "start":
+                    (host.proc / "123/stat").unlink()
+                return result
+            with patch.object(UPGRADE, "run", vanished):
+                with self.assertRaises(UPGRADE.StartupError) as failure:
+                    host.upgrade()
+            self.assertEqual("process", failure.exception.stage)
+            self.assertEqual([], host.waits)
+            self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+            self.assertTrue(UPGRADE.TRANSACTION.exists())
+
+    def test_successful_probe_after_deadline_is_refused(self):
+        with self.host() as host:
+            host.dropin.parent.mkdir()
+            host.write(host.dropin, UPGRADE.GATE, 0o644)
+            condition = host.condition_loaded
+            def slow_probe(**options):
+                value = condition(**options)
+                host.clock += 11
+                return value
+            with patch.object(UPGRADE, "condition_loaded", slow_probe):
+                with self.assertRaises(UPGRADE.StartupError, msg="Successful readiness after its monotonic deadline must be refused"):
+                    UPGRADE.wait_running_helper()
+            self.assertNotIn(("thaw", UPGRADE.SERVICE), host.commands)
+
+    def test_readiness_systemd_probes_share_remaining_monotonic_budget(self):
+        with self.host() as host:
+            current = host.service()
+            current["DropInPaths"] = str(host.dropin)
+            command = [str(UPGRADE.TEST), [str(UPGRADE.TEST), "!", "-e", str(UPGRADE.STOP)], False, *([0] * 7)]
+            manager = types.SimpleNamespace(returncode=0, stdout="\n".join(key + "=" + value for key, value in current.items()))
+            condition = types.SimpleNamespace(returncode=0, stdout=json.dumps({"type": "a(sasbttttuii)", "data": [command]}))
+            # Both real read-only subprocess wrappers receive the same2.5s
+            # remainder rather than their ordinary30s independent timeout.
+            with patch.object(UPGRADE, "run", host.original_run), \
+                    patch.object(UPGRADE.subprocess, "run", side_effect=[manager, condition]) as probe:
+                self.assertEqual(current, UPGRADE.service(deadline=2.5))
+                self.assertTrue(host.original_condition_loaded(deadline=2.5))
+                self.assertEqual([2.5, 2.5], [call.kwargs["timeout"] for call in probe.call_args_list])
+
+    def test_slow_byte_authentication_cannot_extend_monotonic_deadline(self):
+        with self.host() as host:
+            runtime = host.runtime_from(host.code / "updater.py")
+            runtime.RESPONSE_MAX = 128
+            config = UPGRADE.enrollment(runtime, host.distribution)
+            with patch.object(runtime, "trusted"), patch.object(UPGRADE.socket, "SO_PEERCRED", 17, create=True), \
+                    patch.object(UPGRADE.socket, "socket") as factory:
+                connection = factory.return_value.__enter__.return_value
+                connection.getsockopt.return_value = UPGRADE.struct.pack("3i", 123, 0, 0)
+                def slow_byte(_maximum):
+                    host.clock += 0.2
+                    return b"x"
+                connection.recv.side_effect = slow_byte
+                with self.assertRaisesRegex(UPGRADE.UpgradeError, "startup_unverified"):
+                    host.original_authenticate(runtime, config, expected_pid=123)
+                self.assertLessEqual(connection.recv.call_count, 51, "Slow byte framing must stop at the original authentication deadline")
+                self.assertLessEqual(host.clock, 10.2)
+                self.assertLess(connection.settimeout.call_args.args[0], 0.25, "Final receive timeout must be bounded by remaining time")
+
+    def test_readiness_probe_errors_have_a_fixed_manager_classification(self):
+        for probe in ("service", "condition_loaded"):
+            with self.subTest(probe=probe), self.host() as host:
+                with patch.object(UPGRADE, probe, side_effect=UPGRADE.UpgradeError("systemd_unavailable")):
+                    with self.assertRaises(UPGRADE.StartupError) as failure:
+                        UPGRADE.wait_running_helper()
+                self.assertEqual("manager", failure.exception.stage)
+                self.assertEqual("startup_unverified", str(failure.exception))
+                self.assertTrue(all(command[0] == "show" for command in host.commands))
+
+    def test_operator_error_retains_reason_and_adds_only_fixed_startup_stage(self):
+        with patch.object(UPGRADE.sys, "argv", ["upgrade-updater.py", "upgrade", "--expected-bundle-sha256", "a" * 64]), \
+                patch.object(UPGRADE, "finish", side_effect=UPGRADE.StartupError("post_thaw")), \
+                patch.object(UPGRADE, "exists", return_value=False), contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(1, UPGRADE.main())
+        self.assertEqual({"schema": 1, "status": "refused", "reason": "startup_unverified",
+                          "startup_stage": "post_thaw", "recovery_required": False}, json.loads(output.getvalue()))
+
+    def test_helper_death_or_replacement_during_preservation_cannot_commit_completion(self):
+        for changed in ("dead", "pid", "reused_pid"):
+            with self.subTest(changed=changed), self.host() as host:
+                verify, service = UPGRADE.verify_snapshot, host.service
+                replaced = False
+                (host.proc / "124").mkdir()
+                for name in ("cmdline", "cgroup"):
+                    host.write(host.proc / "124" / name, (host.proc / "123" / name).read_bytes(), 0o444)
+                host.write(host.proc / "124/stat", host.stat_bytes(pid=124, start=789), 0o444)
+                def replacement_service(**options):
+                    value = service(**options)
+                    if replaced and changed == "pid":
+                        value["MainPID"] = "124"
+                    return value
+                def die_after_authentication(*arguments):
+                    nonlocal replaced
+                    result = verify(*arguments)
+                    if host.commands.count(("authenticate", 123)) == 2:
+                        replaced = True
+                        if changed == "dead":
+                            host.running = False
+                        elif changed == "reused_pid":
+                            host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                    return result
+                with patch.object(UPGRADE, "verify_snapshot", die_after_authentication), \
+                        patch.object(UPGRADE, "service", replacement_service):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Completion must revalidate the authenticated process after disk preservation"):
+                        host.upgrade()
+                self.assertTrue(replaced)
+                self.assertTrue(UPGRADE.TRANSACTION.exists(), "A dead or replaced helper must retain the admission barrier")
+                self.assertEqual("starting", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"],
+                                 "Preservation cannot publish success for an exited or replaced helper")
+                self.assertFalse(UPGRADE.RECEIPTS.exists(), "Preservation cannot publish success for an exited or replaced helper")
+
+    def test_helper_death_or_reuse_during_receipt_write_cannot_clear_barrier(self):
+        for reused in (False, True):
+            with self.subTest(reused=reused), self.host() as host:
+                create = UPGRADE.create
+                def die_during_receipt(path, raw, mode=0o600):
+                    create(path, raw, mode)
+                    if path.parent == UPGRADE.RECEIPTS:
+                        if reused:
+                            host.write(host.proc / "123/stat", host.stat_bytes(start=789), 0o444)
+                        else:
+                            host.running = False
+                with patch.object(UPGRADE, "create", die_during_receipt):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Receipt fsync cannot clear the barrier after the authenticated helper exits or is reused"):
+                        host.upgrade()
+                record = UPGRADE.read_json(UPGRADE.TRANSACTION)
+                self.assertEqual("verified", record["stage"])
+                self.assertTrue(UPGRADE.TRANSACTION.exists(), "Explicit recovery must remain required after an unsettled receipt write")
+                self.assertTrue((UPGRADE.RECEIPTS / (record["transaction_id"] + ".json")).exists(), "Retain the actual durable receipt alongside its pending transaction")
+
+    def test_completion_requires_fresh_same_peer_authentication_at_each_commit_boundary(self):
+        for refused_call in (3, 4):
+            with self.subTest(refused_call=refused_call), self.host() as host:
+                authenticate = host.authenticate
+                calls = 0
+                def wrong_peer(*arguments, **keywords):
+                    nonlocal calls
+                    calls += 1
+                    if calls == refused_call:
+                        UPGRADE.refuse("startup_unverified")
+                    authenticate(*arguments, **keywords)
+                with patch.object(UPGRADE, "authenticate", wrong_peer):
+                    with self.assertRaises(UPGRADE.StartupError, msg="Each completion boundary requires fresh authentication of the exact verified peer") as failure:
+                        host.upgrade()
+                self.assertEqual("authentication", failure.exception.stage)
+                self.assertEqual(refused_call, calls)
+                self.assertTrue(UPGRADE.TRANSACTION.exists())
+                self.assertEqual("starting" if refused_call == 3 else "verified", UPGRADE.read_json(UPGRADE.TRANSACTION)["stage"])
+
+    def test_completion_late_success_cannot_renew_the_readiness_budget(self):
+        with self.host() as host:
+            def late_observation(**_options):
+                host.clock += 11
+                return host.service(), ("123", 456)
+            with patch.object(UPGRADE, "running_helper", late_observation), \
+                    patch.object(UPGRADE, "authenticate_identity", return_value=(host.service(), ("123", 456))) as authentication:
+                with self.assertRaises(UPGRADE.StartupError, msg="Completion must reject a late successful observation before renewing authentication"):
+                    UPGRADE.verify_completion(None, None, ("123", 456))
+                authentication.assert_not_called()
 
     def test_real_enrollment_under_umask077_preserves_private_code_directory_through_upgrade(self):
         specification = importlib.util.spec_from_file_location("upgrade_enrollment_fixture", ROOT / "scripts/test_updater_enrollment.py")
@@ -488,8 +1000,7 @@ class UpgradeTests(unittest.TestCase):
                     else:
                         host.running = True
                 return {"frozen": "1" if host.frozen else "0", "populated": "1" if host.running else "0"}
-            clock = iter((0, 11))
-            with patch.object(UPGRADE, "events", automatic_restart_events), patch.object(UPGRADE.time, "monotonic", side_effect=lambda: next(clock)):
+            with patch.object(UPGRADE, "events", automatic_restart_events):
                 try:
                     result = host.upgrade()
                 except Exception as failure:
