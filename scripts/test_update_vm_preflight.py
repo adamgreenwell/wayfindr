@@ -99,7 +99,35 @@ class Fixture:
         return preflight.API + "/releases/tags/" + (tag or self.target)
 
     def tree_url(self, tag=None):
-        return preflight.API + "/git/trees/" + ("c" * 40 if tag == self.source else "d" * 40) + "?recursive=1"
+        commit = json.loads(self.urls[preflight.API + "/git/ref/tags/" + (tag or self.target)])["object"]["sha"]
+        tree = json.loads(self.urls[preflight.API + "/git/commits/" + commit])["tree"]["sha"]
+        return preflight.API + "/git/trees/" + tree + "?recursive=1"
+
+    def helper_files(self, tag, *, current=False):
+        """A complete synthetic public tree; current copies are never executed."""
+        root = MODULE.parents[2]
+        url = self.tree_url(tag)
+        tree = json.loads(self.urls[url])
+        wanted = tuple("scripts/self-host/" + name for name in preflight.HELPER_FILES) + preflight.PROVENANCE_FILES
+        if current:
+            wanted += (preflight.UPGRADE,)
+        for path in wanted:
+            entry = next((entry for entry in tree["tree"] if entry["path"] == path), None)
+            if current or path in preflight.PROVENANCE_FILES or path.endswith(('update_protection.py', 'protection_archive.py')):
+                raw = (root / path).read_bytes()
+            elif path == preflight.UPDATER:
+                raw = b'VERSION = "0.4.0"\nPROTOCOL = 1\n'
+            else:
+                raw = ("published old " + path + "\n").encode()
+            sha = blob_sha(raw)
+            self.urls[preflight.API + "/git/blobs/" + sha] = encoded({
+                "sha": sha, "encoding": "base64", "size": len(raw), "content": base64.b64encode(raw).decode(),
+            })
+            if entry is None:
+                tree["tree"].append({"path": path, "mode": "100644", "type": "blob", "sha": sha})
+            else:
+                entry["sha"] = sha
+        self.urls[url] = encoded(tree)
 
     def rewrite_blob(self, path, transform, tag=None):
         url = self.tree_url(tag)
@@ -164,6 +192,81 @@ class PublicationGateTest(unittest.TestCase):
         self.assertEqual(report["status"], "ready")
         self.assertTrue(report["target"]["protocol_probe_present"])
         self.assertFalse(report["qualification"])
+
+    def helper_gate(self, helper=None):
+        return preflight.assess(self.fixture.source, self.fixture.target, fetch=self.fixture.fetch,
+                                helper_tag=helper or self.fixture.target)
+
+    def test_exact_complete_published_helper_bytes_and_cli_are_hashed_without_execution(self):
+        self.fixture.helper_files(self.fixture.source)
+        self.fixture.helper_files(self.fixture.target, current=True)
+        report = self.helper_gate()
+        self.assertEqual(report['status'], 'ready', report['reasons'])
+        source, selected = report['helpers']['source'], report['helpers']['selected']
+        self.assertEqual(source['helper_version'], '0.4.0')
+        self.assertEqual(selected['helper_version'], '0.5.0')
+        self.assertEqual(selected['commit'], report['target']['commit'])
+        self.assertEqual(selected['source_tree_sha'], report['target']['source_tree_sha'])
+        self.assertEqual(set(selected['files']), set(preflight.HELPER_FILES))
+        root = MODULE.parents[2]
+        self.assertEqual(selected['files'], {name: sha((root / 'scripts/self-host' / name).read_bytes())
+                                            for name in preflight.HELPER_FILES})
+        declaration = {key: selected[key] for key in ('schema', 'helper_version', 'protocol', 'files')}
+        self.assertEqual(selected['bundle_sha256'], sha((json.dumps(declaration, sort_keys=True, separators=(',', ':')) + '\n').encode()))
+        self.assertEqual(selected['upgrade_cli_sha256'], sha((root / preflight.UPGRADE).read_bytes()))
+        self.assertIsNone(source['upgrade_cli_sha256'], 'old enrollment did not ship an upgrade CLI')
+        self.assertEqual(len(self.fixture.fetches), len(set(self.fixture.fetches)), 'each exact public URL is fetched once')
+        self.assertLessEqual(len(self.fixture.fetches), preflight.MAX_FETCHES)
+        self.assertFalse(report['qualification'])
+
+    def test_helper_release_is_independent_of_application_target(self):
+        self.fixture.helper_files(self.fixture.source)
+        self.fixture.helper_files(self.fixture.target, current=True)
+        self.fixture.add('v1.2.2', 'e' * 40, 'f' * 40, 12)
+        self.fixture.helper_files('v1.2.2', current=True)
+        report = self.helper_gate('v1.2.2')
+        self.assertEqual(report['status'], 'ready', report['reasons'])
+        self.assertEqual(report['target']['tag'], 'v1.2.1')
+        self.assertEqual(report['helpers']['selected']['tag'], 'v1.2.2')
+        self.assertEqual(report['helpers']['selected']['commit'], 'e' * 40)
+        self.assertGreater(len(self.fixture.fetches), preflight.MAX_FETCHES)
+        self.assertLessEqual(len(self.fixture.fetches), preflight.MAX_HELPER_FETCHES)
+
+    def test_missing_archive_module_and_unverified_cli_blob_block_helper_gate(self):
+        for missing in ('scripts/self-host/protection_archive.py', preflight.UPGRADE):
+            fixture = Fixture()
+            fixture.helper_files(fixture.source)
+            fixture.helper_files(fixture.target, current=True)
+            tree_url = fixture.tree_url()
+            tree = json.loads(fixture.urls[tree_url])
+            entry = next(entry for entry in tree['tree'] if entry['path'] == missing)
+            if missing.endswith('protection_archive.py'):
+                tree['tree'].remove(entry)
+                fixture.urls[tree_url] = encoded(tree)
+                code = 'helper_bundle_unpublished'
+            else:
+                blob_url = preflight.API + '/git/blobs/' + entry['sha']
+                fixture.change(blob_url, lambda blob: blob.update(content=base64.b64encode(b'changed code').decode()))
+                code = 'source_blob_invalid'
+            with self.subTest(missing=missing):
+                report = preflight.assess(fixture.source, fixture.target, fetch=fixture.fetch, helper_tag=fixture.target)
+                self.assertEqual(report['status'], 'blocked')
+                self.assertIn({'code': code, 'role': 'helper'}, report['reasons'])
+
+    def test_helper_gate_never_imports_a_downloaded_upgrade_script(self):
+        self.fixture.helper_files(self.fixture.source)
+        self.fixture.helper_files(self.fixture.target, current=True)
+        raw = b'raise RuntimeError("downloaded code must never run")\n'
+        self.fixture.rewrite_blob(preflight.UPGRADE, lambda _: raw)
+        report = self.helper_gate()
+        self.assertEqual(report['status'], 'ready')
+        self.assertEqual(report['helpers']['selected']['upgrade_cli_sha256'], sha(raw))
+
+    def test_invalid_helper_tag_refuses_before_any_public_fetch(self):
+        report = self.helper_gate('main')
+        self.assertEqual(report['status'], 'blocked')
+        self.assertIn({'code': 'stable_tag_required', 'role': 'helper'}, report['reasons'])
+        self.assertEqual(self.fixture.fetches, [])
 
     def test_noncanonical_tags_are_rejected_before_any_fetch(self):
         for value in (None, True, [], "", "1.2.0", "latest", "main", "v01.2.0", "v1.2.0-alpha.1", "v1.2.0+build", "v1.2.0\n", "v1.2.0/../../secret", "v" + "1" * 130 + ".2.0"):
@@ -427,6 +530,20 @@ class PublicationGateTest(unittest.TestCase):
 
 
 class PublicTransportTest(unittest.TestCase):
+    def test_reader_fetch_budgets_are_finite_and_cached_urls_do_not_refetch(self):
+        for maximum in (preflight.MAX_FETCHES, preflight.MAX_HELPER_FETCHES):
+            calls = []
+            reader = preflight._Reader(lambda url: calls.append(url) or b'{}', maximum)
+            first = preflight.API + '/git/blobs/' + 'a' * 40
+            self.assertEqual(reader.raw(first), b'{}')
+            self.assertEqual(reader.raw(first), b'{}')
+            self.assertEqual(len(calls), 1)
+            for index in range(maximum - 1):
+                reader.raw(preflight.API + '/git/blobs/' + hashlib.sha1(str(index).encode()).hexdigest())
+            with self.subTest(maximum=maximum), self.assertRaisesRegex(preflight.Refusal, 'public_fetch_limit'):
+                reader.raw(preflight.API + '/git/blobs/' + 'f' * 40)
+            self.assertEqual(len(calls), maximum, 'no request may be dispatched beyond the bound')
+
     def test_only_fixed_official_api_and_download_paths_are_accepted(self):
         allowed = (preflight.API + "/releases/tags/v1.2.0", preflight.API + "/git/ref/tags/v1.2.0",
                    preflight.API + "/git/tags/" + "a" * 40, preflight.API + "/git/commits/" + "a" * 40,

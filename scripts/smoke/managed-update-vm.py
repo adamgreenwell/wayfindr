@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import os
@@ -27,9 +28,12 @@ ROOT = Path(__file__).resolve().parents[2]
 STATE = Path('/var/lib/wayfindr-updater/qualification')
 MARKER = STATE / 'disposable.json'
 BOOT = Path('/proc/sys/kernel/random/boot_id')
+PROC = Path('/proc')
 UNIT = 'wayfindr-updater.service'
 SERVICES = ('web', 'queue', 'backup-queue', 'scheduler', 'reverb')
-CHECKPOINTS = ('target_download_intent', 'target_verified', 'data_protected',
+PREPARATION_CHECKPOINTS = {'accepted': 'accepted', 'prepare_started': 'preparing'}
+PROTECTION_CHECKPOINTS = ('protection_started', 'fenced', 'drained', 'backup_verified', 'services_resumed', 'protection_released')
+CHECKPOINTS = (*PREPARATION_CHECKPOINTS, *PROTECTION_CHECKPOINTS, 'target_download_intent', 'target_verified', 'data_protected',
                'migration_intent', 'migrations_verified', 'target_restart_intent',
                'target_services_started', 'runtime_verified', 'configuration_commit_intent',
                'configuration_committed', 'apply_release_intent')
@@ -124,7 +128,7 @@ def boot_id():
     return value
 
 
-def rpc_status(api, config, operation_id):
+def rpc_status(api, config, operation_id, *, expected_pid=None):
     """Read actual daemon identity over its existing authenticated local protocol."""
     api.trusted(api.SOCKET, socket_node=True)
     payload = {'protocol': api.PROTOCOL, 'installation_id': config.installation_id,
@@ -134,8 +138,8 @@ def rpc_status(api, config, operation_id):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(5)
         connection.connect(str(api.SOCKET))
-        _, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-        if uid != 0:
+        pid, uid, _ = struct.unpack('3i', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != 0 or (expected_pid is not None and pid != expected_pid):
             raise Refusal('helper_identity_unverified')
         connection.sendall(api.envelope(payload, config.token, 'request'))
         raw = bytearray()
@@ -147,7 +151,8 @@ def rpc_status(api, config, operation_id):
                 raise Refusal('helper_identity_unverified')
             raw.extend(chunk)
         response = api.unpack_envelope(bytes(raw), config.token, 'response')
-        if (response.get('protocol') != api.PROTOCOL or response.get('installation_id') != config.installation_id
+        if (type(response.get('protocol')) is not int or response['protocol'] != api.PROTOCOL
+                or response.get('installation_id') != config.installation_id
                 or response.get('nonce') != payload['nonce'] or response.get('ok') is not True):
             raise Refusal('helper_identity_unverified')
         return response['result']
@@ -172,8 +177,8 @@ class Host:
             raise Refusal('disposable_marker_invalid')
         value = read_json(MARKER)
         expected = {'schema', 'purpose', 'installation_id', 'run_id', 'vm_kind', 'created_at',
-                    'initial_boot_id', 'source', 'target'}
-        if (set(value) != expected or type(value['schema']) is not int or value['schema'] != 1
+                    'initial_boot_id', 'source', 'target', 'helper'}
+        if (set(value) != expected or type(value['schema']) is not int or value['schema'] != 2
                 or value['purpose'] != 'disposable-update-qualification'
                 or value['installation_id'] != self.installation_id
                 or not canonical_uuid(value['run_id']) or not canonical_uuid(value['initial_boot_id'])
@@ -187,6 +192,7 @@ class Host:
                     or not self.api.COMMIT.fullmatch(identity.get('commit', ''))
                     or not self.api.DIGEST.fullmatch(identity.get('image_digest', ''))):
                 raise Refusal('disposable_marker_invalid')
+        verify_helper_generation(self, value['helper'])
         return value
 
     def observe(self, operation_id=None):
@@ -245,15 +251,33 @@ def bind_operation(observation, marker, operation_id, *, active=False):
     status = observation['status']
     operation = status['operation']
     if (status['installation_id'] != marker['installation_id'] or not operation
-            or operation['operation_id'] != operation_id
+            or not canonical_uuid(operation_id) or operation['operation_id'] != operation_id
             or (active and status['active_operation'] != operation_id)
-            or operation['source'] != {'version': marker['source']['tag'][1:], 'commit': marker['source']['commit']}
+            or (active and (not canonical_uuid(status['generation'])
+                            or operation['executor_generation'] != status['generation']))
+            or (active and 'helper' in marker and (status['helper_version'] != marker['helper']['selected']['helper_version']
+                    or operation['executor_version'] != marker['helper']['selected']['helper_version']))
+            or operation['release_tag'] != marker['target']['tag']
+            or not canonical_uuid(operation['request_id'])
+            or type(operation['revision']) is not int or operation['revision'] < 1):
+        raise Refusal('operation_mismatch')
+    if operation['checkpoint'] in PREPARATION_CHECKPOINTS:
+        # These real journal checkpoints precede plan/image resolution. Never
+        # invent those bindings or accept a partially populated/mutating state.
+        allowed = {PREPARATION_CHECKPOINTS[operation['checkpoint']]}
+        if not active:
+            allowed |= {'reconciliation_required', 'blocked'}
+        if (operation['phase'] not in allowed
+                or any(operation[key] is not None for key in ('source', 'target', 'plan_id'))
+                or operation['mutation_started'] is not False or 'protection' in operation or 'apply' in operation):
+            raise Refusal('operation_mismatch')
+        return 'requested_release'
+    if (operation['source'] != {'version': marker['source']['tag'][1:], 'commit': marker['source']['commit']}
             or operation['target'] != {'tag': marker['target']['tag'], 'version': marker['target']['tag'][1:],
                                      'commit': marker['target']['commit'], 'image_digest': marker['target']['image_digest']}
-            or not canonical_uuid(operation['request_id'])
-            or type(operation['revision']) is not int or operation['revision'] < 1
             or not isinstance(operation['plan_id'], str) or not re.fullmatch(r'[0-9a-f]{64}', operation['plan_id'])):
         raise Refusal('operation_mismatch')
+    return 'resolved_plan'
 
 
 def private_receipt(host, path):
@@ -275,6 +299,9 @@ def wait_checkpoint(host, marker, operation_id, checkpoint, timeout):
         if operation['checkpoint'] == checkpoint:
             if observation['helper_version_source'] != 'authenticated_rpc':
                 raise Refusal('helper_identity_unverified')
+            if (checkpoint in PROTECTION_CHECKPOINTS
+                    and (operation['phase'] != 'protecting' or not isinstance(operation.get('protection'), dict))):
+                raise Refusal('operation_mismatch')
             return observation
         if time.monotonic() >= deadline:
             raise Refusal('checkpoint_not_observed')
@@ -288,6 +315,7 @@ def interrupt(host, operation_id, checkpoint, timeout, output):
     receipt = {'schema': 1, 'scope': 'helper_interruption_intent', 'qualification': False,
                'run_id': marker['run_id'], 'installation_id': marker['installation_id'],
                'operation_id': operation_id, 'observed_checkpoint': checkpoint, 'before': before,
+               'binding': bind_operation(before, marker, operation_id, active=True),
                'limitations': ['checkpoint_observation_is_not_an_atomic_pause', 'recovery_not_executed']}
     write_new(output, receipt)  # Durable intent precedes the one explicit fault.
     # Kill only the fixed enrolled service cgroup. Docker and the application
@@ -328,7 +356,7 @@ def resume_reboot(host, checkpoint, output):
     bind_operation(after, marker, saved['operation_id'])
     old, new = before['status'], after['status']
     if (before['boot_id'] == after['boot_id'] or not canonical_uuid(before['boot_id'])
-            or old['operation']['plan_id'] != new['operation']['plan_id']
+            or (old['operation']['plan_id'] is not None and old['operation']['plan_id'] != new['operation']['plan_id'])
             or old['operation']['request_id'] != new['operation']['request_id']
             or new['operation']['revision'] <= old['operation']['revision']
             or old['generation'] == new['generation'] or new['revision'] <= old['revision']):
@@ -341,10 +369,148 @@ def resume_reboot(host, checkpoint, output):
     return receipt
 
 
-def adopt(host, source, target, acknowledged):
+def helper_upgrade_api(binding):
+    """Use only the local reviewed CLI, never import downloaded release code."""
+    if binding['transaction_id'] is not None:
+        expected = binding['selected']['upgrade_cli_sha256']
+        raw = (ROOT / 'scripts/self-host/upgrade-updater.py').read_bytes()
+        if expected is None or hashlib.sha256(raw).hexdigest() != expected:
+            raise Refusal('helper_provenance_unverified')
+    return module('upgrade-updater')
+
+
+def no_helper_transaction(upgrade):
+    for path in (upgrade.TRANSACTION, upgrade.STOP, upgrade.GATE_TEMP,
+                 upgrade.STATE / '.helper-upgrade.next', upgrade.STATE / '.helper-upgrade-stop.next'):
+        if upgrade.exists(path):
+            raise Refusal('helper_upgrade_pending')
+
+
+def verify_helper_generation(host, binding):
+    """Revalidate the persisted public-byte binding before every VM control read."""
+    if (not isinstance(binding, dict) or set(binding) != {'source', 'selected', 'transaction_id', 'receipt_sha256'}
+            or not isinstance(binding['source'], dict) or not isinstance(binding['selected'], dict)):
+        raise Refusal('helper_provenance_unverified')
+    source, selected = binding['source'], binding['selected']
+    for distribution in (source, selected):
+        expected = {'tag', 'commit', 'source_tree_sha', 'schema', 'helper_version', 'protocol', 'files',
+                    'bundle_sha256', 'provenance_files', 'upgrade_cli_sha256'}
+        if (set(distribution) != expected or type(distribution['schema']) is not int or distribution['schema'] != 1
+                or not host.api.TAG.fullmatch(distribution['tag']) or not host.api.COMMIT.fullmatch(distribution['commit'])
+                or not host.api.COMMIT.fullmatch(distribution['source_tree_sha'])
+                or not isinstance(distribution['files'], dict) or set(distribution['files']) != {
+                    'updater.py', 'update_protection.py', 'update_apply.py', 'update_artifacts.py', 'protection_archive.py'}
+                or any(not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha) for sha in distribution['files'].values())
+                or type(distribution['protocol']) is not int or distribution['protocol'] != 1):
+            raise Refusal('helper_provenance_unverified')
+        declaration = {key: distribution[key] for key in ('schema', 'helper_version', 'protocol', 'files')}
+        raw = (json.dumps(declaration, sort_keys=True, separators=(',', ':')) + '\n').encode()
+        if hashlib.sha256(raw).hexdigest() != distribution['bundle_sha256']:
+            raise Refusal('helper_provenance_unverified')
+    upgrade = helper_upgrade_api(binding)
+    no_helper_transaction(upgrade)
+    if selected['protocol'] != host.api.PROTOCOL or selected['helper_version'] not in {'0.4.0', '0.5.0'}:
+        raise Refusal('helper_provenance_unverified')
+    if upgrade.code_hashes(upgrade.CODE) != selected['files']:
+        raise Refusal('helper_provenance_unverified')
+    transaction = binding['transaction_id']
+    if transaction is None:
+        if source != selected or binding['receipt_sha256'] is not None:
+            raise Refusal('helper_provenance_unverified')
+    else:
+        if (not canonical_uuid(transaction) or source['helper_version'] != '0.4.0'
+                or selected['helper_version'] != '0.5.0' or source['protocol'] != 1
+                or upgrade.PUBLISHED != source['files']):
+            raise Refusal('helper_provenance_unverified')
+        upgrade.trusted(upgrade.RECEIPTS, directory=True)
+        if upgrade.RECEIPTS.stat().st_mode & 0o777 != 0o700 or upgrade.RECEIPTS.stat().st_gid != 0:
+            raise Refusal('helper_provenance_unverified')
+        receipt_path = upgrade.RECEIPTS / (transaction + '.json')
+        upgrade.private(receipt_path)
+        receipt = read_json(receipt_path)
+        expected = {'schema', 'transaction_id', 'installation_id', 'from_helper_version', 'helper_version',
+                    'protocol', 'bundle_sha256', 'generation', 'preserved', 'application_changed', 'retained_old_code'}
+        retained = upgrade.CODE.parent / ('.wayfindr-updater-generation-' + transaction)
+        if (set(receipt) != expected or type(receipt['schema']) is not int or receipt['schema'] != 1
+                or receipt['transaction_id'] != transaction or receipt['installation_id'] != host.installation_id
+                or receipt['from_helper_version'] != source['helper_version']
+                or receipt['helper_version'] != selected['helper_version'] or type(receipt['protocol']) is not int
+                or receipt['protocol'] != selected['protocol'] or receipt['bundle_sha256'] != selected['bundle_sha256']
+                or not canonical_uuid(receipt['generation']) or receipt['preserved'] is not True
+                or receipt['application_changed'] is not False or receipt['retained_old_code'] != str(retained)
+                or hashlib.sha256(receipt_path.read_bytes()).hexdigest() != binding['receipt_sha256']
+                or upgrade.code_hashes(retained) != source['files']
+                or (upgrade.CODE.stat().st_mode & 0o777) != (retained.stat().st_mode & 0o777)):
+            raise Refusal('helper_provenance_unverified')
+        upgrade.owned_gate()
+        if not upgrade.exists(upgrade.DROPIN) or not upgrade.condition_loaded():
+            raise Refusal('helper_provenance_unverified')
+    no_helper_transaction(upgrade)
+    return upgrade
+
+
+def helper_provenance(host, gate, observed, helper_release, transaction):
+    source, selected = gate['helpers']['source'], gate['helpers']['selected']
+    if (observed['helper_version_source'] != 'authenticated_rpc'
+            or observed['status']['helper_version'] != selected['helper_version']
+            or (transaction is not None and helper_release is None)
+            or (source != selected and transaction is None)):
+        raise Refusal('helper_identity_unverified')
+    binding = {'source': source, 'selected': selected, 'transaction_id': transaction, 'receipt_sha256': None}
+    upgrade = helper_upgrade_api(binding)
+    no_helper_transaction(upgrade)
+    if transaction is not None:
+        if not canonical_uuid(transaction):
+            raise Refusal('helper_provenance_unverified')
+        receipt = upgrade.RECEIPTS / (transaction + '.json')
+        upgrade.private(receipt)
+        binding['receipt_sha256'] = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    upgrade = verify_helper_generation(host, binding)
+    # The source installer/compose and canonical enrollment survive a helper
+    # replacement. Do not claim that the old application's tag shipped 0.5.
+    for path, config_key in (('scripts/self-host/install.sh', 'installer_sha256'),
+                             ('docker/self-hosting/compose.yml', 'compose_sha256')):
+        if host.config.value[config_key] != source['provenance_files'][path]:
+            raise Refusal('helper_provenance_unverified')
+    for path in ('docker/self-hosting/wayfindr-updater.service', 'docker/self-hosting/compose.updater.yml'):
+        if hashlib.sha256((ROOT / path).read_bytes()).hexdigest() != source['provenance_files'][path]:
+            raise Refusal('helper_provenance_unverified')
+    if (upgrade.UNIT_SHA != source['provenance_files']['docker/self-hosting/wayfindr-updater.service']
+            or upgrade.TMPFILES_SHA != source['provenance_files']['docker/self-hosting/wayfindr-updater.conf']):
+        raise Refusal('helper_provenance_unverified')
+    config = upgrade.enrollment(host.api, ROOT)
+    if config.value != host.config.value or config.token != host.config.token:
+        raise Refusal('helper_provenance_unverified')
+    install = Path(config.value['install_dir'])
+    overlay = (ROOT / 'docker/self-hosting/compose.updater.yml').read_bytes().replace(
+        b'__WAYFINDR_INSTALLATION_ID__', host.installation_id.encode('ascii'))
+    if ((install / '.updater-enrolled').read_bytes() != (host.installation_id + '\n').encode()
+            or (install / 'compose.updater.yml').read_bytes() != overlay):
+        raise Refusal('helper_provenance_unverified')
+    service = upgrade.service()
+    if (service['ActiveState'] != 'active' or service['SubState'] != 'running'
+            or not re.fullmatch(r'[1-9][0-9]*', service['MainPID'])
+            or service['ControlGroup'] != '/system.slice/' + UNIT or service['FreezerState'] != 'running'
+            or (transaction is not None and service['DropInPaths'] != str(upgrade.DROPIN))):
+        raise Refusal('helper_identity_unverified')
+    process = PROC / service['MainPID']
+    if ((process / 'cmdline').read_bytes() != b'/usr/bin/python3\0/usr/local/lib/wayfindr-updater/updater.py\0serve\0'
+            or (process / 'cgroup').read_text() != '0::/system.slice/' + UNIT + '\n'):
+        raise Refusal('helper_identity_unverified')
+    live = rpc_status(host.api, config, None, expected_pid=int(service['MainPID']))
+    if (live['helper_version'] != selected['helper_version'] or live['generation'] != observed['status']['generation']
+            or live['active_operation'] is not None):
+        raise Refusal('helper_identity_unverified')
+    # Root-owned state can change during an observation. Refuse a newly started
+    # helper replacement rather than creating a marker from stale receipt bytes.
+    verify_helper_generation(host, binding)
+    return binding
+
+
+def adopt(host, source, target, acknowledged, *, helper_release=None, helper_transaction=None):
     if acknowledged is not True:
         raise Refusal('explicit_disposable_acknowledgement_required')
-    gate = module('update_vm_preflight').assess(source, target)
+    gate = module('update_vm_preflight').assess(source, target, helper_tag=helper_release or source)
     if gate['status'] != 'ready':
         raise Refusal('published_artifacts_unavailable')
     host.config.verify_files()
@@ -376,18 +542,19 @@ def adopt(host, source, target, acknowledged):
     observed = host.observe(None)
     if observed['status']['active_operation'] is not None:
         raise Refusal('operation_already_active')
-    if (observed['helper_version_source'] != 'authenticated_rpc'
-            or observed['status']['helper_version'] != gate['source']['helper_version']):
+    if observed['helper_version_source'] != 'authenticated_rpc':
         raise Refusal('helper_identity_unverified')
+    helper = helper_provenance(host, gate, observed, helper_release, helper_transaction)
     host.api.trusted(STATE.parent, directory=True)
     STATE.mkdir(mode=0o700, exist_ok=True)
     host.api.trusted(STATE, directory=True)
     if STATE.stat().st_mode & 0o077:
         raise Refusal('disposable_marker_invalid')
-    marker = {'schema': 1, 'purpose': 'disposable-update-qualification',
+    marker = {'schema': 2, 'purpose': 'disposable-update-qualification',
               'installation_id': host.installation_id, 'run_id': str(uuid.uuid4()),
               'vm_kind': 'dedicated_vm', 'created_at': utc(), 'initial_boot_id': boot_id(),
-              'source': gate['source'], 'target': gate['target']}
+              'source': gate['source'], 'target': gate['target'], 'helper': helper}
+    verify_helper_generation(host, helper)
     write_new(MARKER, marker)
     return {'schema': 1, 'scope': 'operator_isolation_attestation', 'qualification': False,
             'run_id': marker['run_id'], 'installation_id': host.installation_id}
@@ -399,6 +566,7 @@ def main(argv=None):
     gate = commands.add_parser('preflight', help='Read-only published release gate; no VM or Docker access.')
     gate.add_argument('--source', required=True)
     gate.add_argument('--target', required=True)
+    gate.add_argument('--helper-release', help='Also verify the exact published installed-helper distribution.')
     gate.add_argument('--output', type=Path, required=True)
     gate.add_argument('--evidence-output', type=Path, help='Also write an honest blocked/not-run evidence scaffold.')
     for action in ('adopt', 'snapshot', 'interrupt-helper', 'checkpoint-reboot', 'resume-reboot'):
@@ -407,6 +575,8 @@ def main(argv=None):
         if action == 'adopt':
             item.add_argument('--source', required=True)
             item.add_argument('--target', required=True)
+            item.add_argument('--helper-release', help='Exact published distribution of the installed helper; defaults to source.')
+            item.add_argument('--helper-upgrade-transaction', help='Completed supported helper-upgrade receipt UUID; requires --helper-release.')
             item.add_argument('--ack-disposable', action='store_true')
         else:
             item.add_argument('--output', type=Path, required=True)
@@ -420,7 +590,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.action == 'preflight':
-            result = module('update_vm_preflight').assess(args.source, args.target)
+            options = {} if args.helper_release is None else {'helper_tag': args.helper_release}
+            result = module('update_vm_preflight').assess(args.source, args.target, **options)
             write_new(args.output, result)
             if args.evidence_output:
                 limitations = ['vm_not_provisioned', 'reboot_not_executed', 'restore_not_executed', 'matrix_incomplete']
@@ -434,7 +605,8 @@ def main(argv=None):
             return 0 if result['status'] == 'ready' else 2
         host = Host(args.installation_id)
         if args.action == 'adopt':
-            result = adopt(host, args.source, args.target, args.ack_disposable)
+            result = adopt(host, args.source, args.target, args.ack_disposable,
+                           helper_release=args.helper_release, helper_transaction=args.helper_upgrade_transaction)
         elif args.action == 'snapshot':
             private_receipt(host, args.output)
             marker = host.marker()

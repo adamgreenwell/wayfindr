@@ -30,6 +30,43 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-10
+
+**No operator action required.** Pull and restart the application;
+there are no new database migrations. Managed updates remain under disposable
+VM qualification and are not yet qualified for production use. Application
+updates preserve an enrolled host's installed helper; choosing the fixed helper
+requires the separate, explicit root-only upgrade below.
+
+### Added
+
+- **Upgrade an enrolled helper without reenrolling the installation.** The
+  reviewed source distribution includes a separate root-only command for the
+  exact published `0.4.0` helper to `0.5.0`. It verifies the reviewed bundle,
+  preserves enrollment credentials, journal, locks and retained recovery
+  material, and atomically exchanges complete code generations. Interrupted
+  replacement keeps its transaction and stop gate for explicit recovery with
+  the same distribution and bundle. It does not update the application image,
+  restart application containers, migrate data or rotate credentials. See the
+  [helper upgrade procedure](docs/self-hosting/managed-updater.md#upgrading-the-installed-helper).
+
+### Fixed
+
+- **Qualification can observe a supported helper upgrade and early interruptions.**
+  The disposable-VM runner separately verifies the published application source
+  and installed helper distribution, exact code generations and completed
+  upgrade receipt. It can observe preparation and protection checkpoints before
+  apply, while preserving the stronger plan binding once resolution completes.
+  These controls collect evidence; they do not enroll a host or qualify an update.
+- **Managed image verification supports Docker 29's containerd image store.**
+  Helper `0.5.0` distinguishes the published OCI index, selected platform
+  manifest and configuration digest from Docker's local image identity. It
+  verifies immutable image selection, public configuration/rootfs identity and
+  the selected container platform before admitting a migration or reporting
+  serving success. The same identity checks retain support for the classic
+  Docker image store. The application protocol remains `1`; a newer application
+  image alone does not replace an already installed `0.4.0` helper.
+
 ## [1.2.0] - 2026-10-09
 
 **No operator action required.** Pull and restart. One additive
