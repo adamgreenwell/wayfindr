@@ -5,7 +5,19 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
-The latest public release is `v1.2.0`, at `56374e95`, published October 9 EDT
+The latest public release is `v1.3.0`, at `1bae329c`, published October 10,
+2026. All five exact-main CI jobs and the guarded publisher passed; independent
+readback verified Release assets, manifest, both amd64/arm64 OCI chains and
+stable aliases. This release publishes the Docker 29 correction, helper `0.5.0`
+and its separate supported upgrade CLI. An enrolled 1.2.0 host must upgrade
+its helper separately; an application image pull cannot replace host code.
+No operator action or migration is required; standing backup-queue guidance
+remains. See [Releases](Releases) for the public receipt and exact identities.
+The real 1.2.0 → 1.3.0 minor pair is available, but managed application
+qualification remains open with zero qualified scenarios. Development `main`
+is `1.4.0-dev` after PR #1136; that reset published no release.
+
+The previous public release, `v1.2.0` at `56374e95`, was published October 9 EDT
 (October 10 UTC). Its public Release, manifest, both platform image chains and
 aliases verified independently. ARM64 never-started baked identity verification
 passed. Actual ARM64 official installation/enrollment, idle helper restart and
@@ -24,9 +36,9 @@ and sequence/new API contact checks passed. One current key and no previous
 keys were present, so rotation was not exercised. Erasure used the production
 service, not dashboard confirmation. This is ordinary recovery, not managed
 protective custody.
-Managed protection/apply and active-operation reboot also require the
-[Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
-and a real newer compatible published target.
+The Docker 29 correction and real newer target are now published in 1.3.0.
+Managed protection/apply and active-operation reboot still require separate
+native qualification with the supported installed-helper upgrade.
 An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
 new published source enrolled with the fixed helper; an application image
 update alone does not replace host helper code.
