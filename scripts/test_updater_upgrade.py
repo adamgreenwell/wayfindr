@@ -14,6 +14,8 @@ import importlib.util
 import io
 import json
 import os
+import re
+import sys
 from pathlib import Path
 import shutil
 import stat
@@ -35,7 +37,8 @@ class Crash(Exception):
 
 
 class Host:
-    def __init__(self, root):
+    def __init__(self, root, source_version="0.4.0"):
+        self.source_version = source_version
         self.root = root
         self.distribution = root / "reviewed-distribution"
         self.install = root / "opt/wayfindr"
@@ -75,8 +78,8 @@ class Host:
         for name in UPGRADE.FILES:
             raw = (ROOT / "scripts/self-host" / name).read_bytes()
             if name == "updater.py":
-                old = raw.replace(b'VERSION = "0.5.0"', b'VERSION = "0.4.0"')
-                new = raw.replace(b'VERSION = "0.4.0"', b'VERSION = "0.5.0"')
+                old = re.sub(rb'VERSION = "[0-9.]+"', ('VERSION = "' + source_version + '"').encode(), raw, count=1)
+                new = re.sub(rb'VERSION = "[0-9.]+"', ('VERSION = "' + UPGRADE.VERSION + '"').encode(), raw, count=1)
             else:
                 old, new = raw, raw + b"\n# Synthetic reviewed helper generation.\n"
             self.write(self.code / name, old, 0o644)
@@ -228,7 +231,7 @@ class Host:
     def authenticate(self, runtime, config, *, expected_pid=None):
         assert self.running
         assert UPGRADE.TRANSACTION.exists()
-        assert runtime.VERSION == "0.5.0"
+        assert runtime.VERSION == UPGRADE.VERSION
         assert config.installation_id == self.installation_id
         assert expected_pid in {None, 123}
         self.commands.append(("authenticate", expected_pid))
@@ -247,7 +250,7 @@ class Host:
         with contextlib.ExitStack() as stack:
             for name, value in paths.items():
                 stack.enter_context(patch.object(UPGRADE, name, value))
-            stack.enter_context(patch.object(UPGRADE, "PUBLISHED", self.old_hashes))
+            stack.enter_context(patch.object(UPGRADE, "PUBLISHED", self.old_hashes if UPGRADE.VERSION == "0.5.0" else {self.source_version: self.old_hashes}))
             stack.enter_context(patch.object(UPGRADE, "supported"))
             stack.enter_context(patch.object(UPGRADE, "trusted", self.trust))
             stack.enter_context(patch.object(UPGRADE, "private", self.private))
@@ -289,10 +292,11 @@ class Host:
 
 
 class UpgradeTests(unittest.TestCase):
+    source_version = "0.4.0"
     @contextlib.contextmanager
     def host(self):
         with tempfile.TemporaryDirectory(prefix="wayfindr-upgrade-fixture-") as directory:
-            fixture = Host(Path(directory).resolve())
+            fixture = Host(Path(directory).resolve(), self.source_version)
             with fixture.activated():
                 yield fixture
 
@@ -303,7 +307,8 @@ class UpgradeTests(unittest.TestCase):
             before = UPGRADE.snapshot(config)
             old_journal = UPGRADE.read_json(host.state / "journal.json")
             result = host.upgrade()
-            self.assertEqual("0.5.0", result["helper_version"])
+            self.assertEqual("0.6.0", result["helper_version"])
+            self.assertEqual(self.source_version, result["from_helper_version"])
             self.assertEqual(host.installation_id, result["installation_id"])
             self.assertFalse(result["application_changed"])
             self.assertTrue(result["preserved"])
@@ -409,7 +414,7 @@ class UpgradeTests(unittest.TestCase):
     def test_authentication_refuses_root_socket_from_a_different_service_pid(self):
         with self.host() as host:
             runtime = host.runtime_from(host.code / "updater.py")
-            runtime.VERSION = "0.5.0"
+            runtime.VERSION = UPGRADE.VERSION
             config = UPGRADE.enrollment(runtime, host.distribution)
             nonce = "b" * 32
             with patch.object(runtime, "trusted"), patch.object(UPGRADE.secrets, "token_hex", return_value=nonce), \
@@ -964,6 +969,28 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual([], host.commands)
             self.assertTrue(host.running)
 
+    def test_interrupted_application_refuses_without_recovery_or_helper_gate_mutation(self):
+        with self.host() as host:
+            runtime = host.runtime_from(host.code / "updater.py")
+            journal = runtime.Journal(host.state / "journal.json", host.installation_id)
+            operation = journal.accept(str(uuid.uuid4()), "v1.3.0", journal.value["generation"])[0]
+            journal.preparing(operation)
+            journal.finish(operation, "execution_not_available", {"source": {"version": "1.2.0", "commit": "a" * 40},
+                           "plan_id": "d" * 64, "target": {"tag": "v1.3.0", "version": "1.3.0",
+                           "commit": "e" * 40, "image_digest": "sha256:" + "f" * 64}})
+            self.assertTrue(journal.claim_apply(operation, journal.value["generation"]))
+            journal.begin_generation(str(uuid.uuid4()))
+            self.assertEqual("recovery_required", journal.status(operation)["operation"]["phase"])
+            before = (host.state / "journal.json").read_bytes()
+            with self.assertRaisesRegex(UPGRADE.UpgradeError, "operation_busy"):
+                host.upgrade()
+            self.assertEqual(before, (host.state / "journal.json").read_bytes())
+            self.assertEqual([], host.commands)
+            self.assertEqual((0, 0), (host.kill_count, host.exchange_count))
+            self.assertFalse(UPGRADE.TRANSACTION.exists())
+            self.assertFalse(UPGRADE.STOP.exists())
+            self.assertFalse(host.dropin.exists())
+
     def test_start_accepted_between_preflight_and_freeze_is_thawed_without_kill_or_exchange(self):
         with self.host() as host:
             def race():
@@ -1218,7 +1245,7 @@ class UpgradeTests(unittest.TestCase):
             protector = fixture.PROTECT.Protector(config, journal, host.state, runtime, fixture.Engine(), secure=False)
             protector(operation)
             self.assertIsNone(journal.value["active_operation"])
-            self.assertEqual("0.4.0", journal.value["operations"][operation]["executor_version"])
+            self.assertEqual(self.source_version, journal.value["operations"][operation]["executor_version"])
             self.assertTrue(journal.value["operations"][operation]["protection"]["custody_verified"])
             before = UPGRADE.idle(runtime, config)[:2]
             self.assertTrue(before[1], "The fixture must contain real retained archive/key/config files.")
@@ -1353,7 +1380,7 @@ class Applier:
                 with self.assertRaisesRegex(UPGRADE.UpgradeError, "recovery_required|helper_not_running"):
                     host.upgrade()
                 result = host.recover()
-                self.assertEqual("0.5.0", result["helper_version"])
+                self.assertEqual("0.6.0", result["helper_version"])
                 self.assertEqual(host.installation_id, result["installation_id"])
                 self.assertEqual(1, host.exchange_count)
                 self.assertFalse(UPGRADE.TRANSACTION.exists())
@@ -1428,7 +1455,7 @@ class Applier:
                 with patch.object(UPGRADE, "create", crash), self.assertRaises(Crash):
                     host.upgrade()
                 result = host.recover()
-                self.assertEqual("0.5.0", result["helper_version"])
+                self.assertEqual("0.6.0", result["helper_version"])
                 self.assertEqual(1, host.exchange_count)
                 self.assertTrue(list(UPGRADE.RECEIPTS.glob("*.incomplete-*")), "Interrupted bytes must be retained for inspection.")
 
@@ -1530,6 +1557,102 @@ class Applier:
                         UPGRADE.exchange(Path("/root/old"), Path("/root/new"))
                     sync.assert_not_called()
                 self.assertEqual((-100, b"/root/old", -100, b"/root/new", 2), rename.arguments)
+
+
+class LegacyRecoveryTests(unittest.TestCase):
+    def legacy_cli(self):
+        path = ROOT / "scripts/self-host/upgrade-updater-0.5-recovery.py"
+        self.assertEqual("fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616", hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(UPGRADE.LEGACY_RECOVERY_CLI_SHA256, hashlib.sha256(path.read_bytes()).hexdigest())
+        specification = importlib.util.spec_from_file_location("frozen_05_recovery", path)
+        legacy = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(legacy)
+        return legacy
+
+    def test_public_source_allowlists_and_legacy_target_are_exact(self):
+        self.assertEqual({"0.4.0", "0.5.0"}, set(UPGRADE.PUBLISHED))
+        legacy = self.legacy_cli()
+        self.assertEqual("0.5.0", legacy.VERSION)
+        self.assertEqual(legacy.PUBLISHED, UPGRADE.PUBLISHED["0.4.0"])
+        self.assertEqual(set(UPGRADE.FILES), set(UPGRADE.PUBLISHED["0.5.0"]))
+        declaration = {"schema": 1, "helper_version": "0.5.0", "protocol": 1, "files": UPGRADE.PUBLISHED["0.5.0"]}
+        self.assertEqual("e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29", UPGRADE.digest(UPGRADE.encoded(declaration)))
+        self.assertEqual(UPGRADE.LEGACY_BUNDLE_SHA256, UPGRADE.digest(UPGRADE.encoded(declaration)))
+
+    def test_frozen_cli_finishes_original_transaction_before_separate_successor_upgrade(self):
+        successor = UPGRADE
+        legacy = self.legacy_cli()
+        for stage in ("prepared", "frozen_idle", "staging", "switched", "starting", "verified", "prepared_scratch"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory(prefix="wayfindr-legacy-recovery-") as directory:
+                with patch.object(sys.modules[__name__], "UPGRADE", legacy):
+                    host = Host(Path(directory).resolve())
+                    with host.activated():
+                        declaration, checksum = legacy.bundle(host.distribution)
+                        legacy_target = {name: (host.distribution / "scripts/self-host" / name).read_bytes() for name in legacy.FILES}
+                        store = legacy.store
+                        def crash(record):
+                            store(record)
+                            if record["stage"] == stage.removesuffix("_scratch"):
+                                raise Crash()
+                        with patch.object(legacy, "store", crash), self.assertRaises(Crash):
+                            host.upgrade()
+                        record = legacy.read_json(legacy.TRANSACTION)
+                        transaction = record["transaction_id"]
+                        if stage == "prepared_scratch":
+                            os.rename(legacy.TRANSACTION, host.state / ".helper-upgrade.next")
+                approved = {"0.4.0": host.old_hashes, "0.5.0": declaration["files"]}
+                # A complete successor distribution exists, but cannot retarget
+                # the original transaction even after its code exchange.
+                for name in successor.FILES:
+                    host.write(host.distribution / "scripts/self-host" / name, (ROOT / "scripts/self-host" / name).read_bytes(), 0o644)
+                with host.activated(), patch.object(successor, "PUBLISHED", approved), patch.object(successor, "LEGACY_BUNDLE_SHA256", checksum):
+                    before = {str(path.relative_to(host.root)): path.read_bytes() for path in host.root.rglob("*") if path.is_file()}
+                    commands, kills, exchanges = list(host.commands), host.kill_count, host.exchange_count
+                    for recovery in (None, transaction):
+                        with self.assertRaisesRegex(successor.UpgradeError, "legacy_helper_recovery_required"):
+                            successor.finish(host.distribution, host.selected(), recovery=recovery)
+                    self.assertEqual(commands, host.commands, "Legacy refusal must not reach any systemd command")
+                    self.assertEqual((kills, exchanges), (host.kill_count, host.exchange_count))
+                    self.assertEqual(before, {str(path.relative_to(host.root)): path.read_bytes() for path in host.root.rglob("*") if path.is_file()}, "No gate, journal, transaction, receipt or code bytes may change")
+                # Only the frozen CLI in an exact original target tree resumes
+                # the original UUID. The helper modules are never hotpatched.
+                for name, raw in legacy_target.items():
+                    host.write(host.distribution / "scripts/self-host" / name, raw, 0o644)
+                with patch.object(sys.modules[__name__], "UPGRADE", legacy), host.activated():
+                    self.assertEqual(checksum, host.selected())
+                    before_commands = list(host.commands)
+                    for selected_hash, selected_transaction in (("a" * 64, transaction), (checksum, str(uuid.uuid4()))):
+                        with self.assertRaises(legacy.UpgradeError):
+                            legacy.finish(host.distribution, selected_hash, recovery=selected_transaction)
+                    self.assertEqual(before_commands, host.commands)
+                    old_receipt = host.recover()
+                    self.assertEqual(transaction, old_receipt["transaction_id"])
+                    self.assertEqual("0.5.0", old_receipt["helper_version"])
+                    old_path = legacy.RECEIPTS / (transaction + ".json")
+                    old_receipt_bytes = old_path.read_bytes()
+                for name in successor.FILES:
+                    host.write(host.distribution / "scripts/self-host" / name, (ROOT / "scripts/self-host" / name).read_bytes(), 0o644)
+                with host.activated(), patch.object(successor, "PUBLISHED", approved):
+                    result = host.upgrade()
+                    self.assertEqual(("0.5.0", "0.6.0"), (result["from_helper_version"], result["helper_version"]))
+                    self.assertNotEqual(transaction, result["transaction_id"])
+                    self.assertEqual(old_receipt_bytes, old_path.read_bytes())
+                    self.assertEqual(declaration["files"], successor.code_hashes(Path(result["retained_old_code"])))
+
+    def test_legacy_refusal_reports_only_fixed_recovery_pins(self):
+        with patch.object(UPGRADE.sys, "argv", ["upgrade-updater.py", "recover", "--transaction", str(uuid.uuid4()), "--expected-bundle-sha256", "a" * 64]), \
+                patch.object(UPGRADE, "finish", side_effect=UPGRADE.UpgradeError("legacy_helper_recovery_required")), \
+                patch.object(UPGRADE, "exists", return_value=False), contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(1, UPGRADE.main())
+        result = json.loads(output.getvalue())
+        self.assertEqual({"helper_version": "0.5.0", "bundle_sha256": UPGRADE.LEGACY_BUNDLE_SHA256,
+                          "cli_sha256": UPGRADE.LEGACY_RECOVERY_CLI_SHA256}, result["legacy_recovery"])
+
+
+class Published05UpgradeTests(UpgradeTests):
+    # Exercise every interruption, admission race and custody preservation case
+    # with a distinct original 0.5 generation, not just the happy path.
+    source_version = "0.5.0"
 
 
 if __name__ == "__main__":

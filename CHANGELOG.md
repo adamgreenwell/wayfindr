@@ -36,6 +36,16 @@ corrections below are development source; they have not been published or
 installed by an application update. Application updates preserve the installed
 helper. Helper replacement remains a separate, explicit administrator command.
 
+### Added
+
+- **Unreleased helper 0.6 supports explicit replacement of exact published 0.4
+  and 0.5 bundles.** Transactions retain their original source identity and
+  historical executor journals. A frozen corrected 0.5 CLI finishes an existing
+  0.4-to-0.5 transaction with its original UUID and destination before a separate
+  successor upgrade. Active application operations still refuse replacement.
+  See the [candidate procedure](docs/self-hosting/helper-0.6-candidate.md);
+  native acceptance and publication remain separate gates under
+  [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
 
 ### Fixed
 

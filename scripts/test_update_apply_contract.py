@@ -124,16 +124,18 @@ class ApplyContractTests(unittest.TestCase):
 
     def test_helper_upgrade_preserves_historical_executor_versions_without_rewriting(self):
         operation_id = self.prepared()
-        value = copy.deepcopy(self.journal.value)
-        value["operations"][operation_id]["executor_version"] = "0.4.0"
-        UP.atomic_write(self.path, value)
-        before = self.path.read_bytes()
-        historical = UP.Journal(self.path, INSTALLATION, secure=False)
-        self.assertEqual("0.4.0", historical.status(operation_id)["operation"]["executor_version"])
-        self.assertEqual(before, self.path.read_bytes())
-        new_id = historical.accept(str(uuid.uuid4()), "v1.2.5", self.generation)[0]
-        self.assertEqual("0.5.0", historical.status(new_id)["operation"]["executor_version"])
-        self.assertEqual("0.4.0", historical.status(operation_id)["operation"]["executor_version"])
+        for version in ("0.4.0", "0.5.0"):
+            with self.subTest(version=version):
+                value = copy.deepcopy(self.journal.value)
+                value["operations"][operation_id]["executor_version"] = version
+                UP.atomic_write(self.path, value)
+                before = self.path.read_bytes()
+                historical = UP.Journal(self.path, INSTALLATION, secure=False)
+                self.assertEqual(version, historical.status(operation_id)["operation"]["executor_version"])
+                self.assertEqual(before, self.path.read_bytes())
+                new_id = historical.accept(str(uuid.uuid4()), "v1.2.5", self.generation)[0]
+                self.assertEqual("0.6.0", historical.status(new_id)["operation"]["executor_version"])
+                self.assertEqual(version, historical.status(operation_id)["operation"]["executor_version"])
 
     def test_helper_upgrade_gate_blocks_every_mutation_but_keeps_observation(self):
         controller = self.controller(lambda *_args, **_kwargs: None)

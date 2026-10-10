@@ -577,7 +577,8 @@ class HelperProvenanceTests(unittest.TestCase):
             current = ROOT / 'scripts/self-host' / name
             (self.upgrade.CODE / name).write_bytes(current.read_bytes())
             (self.upgrade.CODE / name).chmod(0o644)
-        self.upgrade.PUBLISHED = self.old
+        self.upgrade.PUBLISHED = {"0.4.0": self.old,
+            "0.5.0": {name: hashlib.sha256(('other published 0.5 module ' + name).encode()).hexdigest() for name in self.upgrade.FILES}}
         self.upgrade.DROPIN.write_bytes(self.upgrade.GATE)
         self.upgrade.DROPIN.chmod(0o644)
         self.api = VM.module('updater')
@@ -595,14 +596,14 @@ class HelperProvenanceTests(unittest.TestCase):
         self.source = self.distribution('v1.2.0', '0.4.0', self.old)
         self.source['upgrade_cli_sha256'] = None
         new = {name: hashlib.sha256((self.upgrade.CODE / name).read_bytes()).hexdigest() for name in self.upgrade.FILES}
-        self.selected = self.distribution('v1.3.0', '0.5.0', new)
+        self.selected = self.distribution('v1.4.0', '0.6.0', new)
         self.gate = {'status': 'ready', 'source': {**SOURCE, 'helper_version': '0.4.0'}, 'target': TARGET,
                      'helpers': {'source': self.source, 'selected': self.selected}}
         self.observed = {'helper_version_source': 'authenticated_rpc', 'status': {
-            'helper_version': '0.5.0', 'generation': str(uuid.uuid4()), 'active_operation': None}}
+            'helper_version': '0.6.0', 'generation': str(uuid.uuid4()), 'active_operation': None}}
         self.host.observe = lambda *_args: copy.deepcopy(self.observed)
         self.receipt = {'schema': 1, 'transaction_id': self.transaction, 'installation_id': self.host.installation_id,
-            'from_helper_version': '0.4.0', 'helper_version': '0.5.0', 'protocol': 1,
+            'from_helper_version': '0.4.0', 'helper_version': '0.6.0', 'protocol': 1,
             'bundle_sha256': self.selected['bundle_sha256'], 'generation': str(uuid.uuid4()),
             'preserved': True, 'application_changed': False, 'retained_old_code': str(self.retained)}
         self.receipt_path = self.upgrade.RECEIPTS / (self.transaction + '.json')
@@ -663,6 +664,57 @@ class HelperProvenanceTests(unittest.TestCase):
     def prove(self):
         return VM.helper_provenance(self.host, self.gate, self.observed, self.selected['tag'], self.transaction)
 
+    def transition(self, source, selected):
+        self.source['helper_version'] = source
+        self.selected['helper_version'] = selected
+        for distribution in (self.source, self.selected):
+            declaration = {key: distribution[key] for key in ('schema', 'helper_version', 'protocol', 'files')}
+            distribution['bundle_sha256'] = hashlib.sha256((json.dumps(declaration, sort_keys=True, separators=(',', ':')) + '\n').encode()).hexdigest()
+        self.gate['source']['helper_version'] = source
+        self.observed['status']['helper_version'] = selected
+        self.receipt.update(from_helper_version=source, helper_version=selected,
+                            bundle_sha256=self.selected['bundle_sha256'])
+        self.save_receipt()
+
+    def test_successor_05_source_requires_its_exact_versioned_allowlist_and_original_receipt(self):
+        self.transition('0.5.0', '0.6.0')
+        self.upgrade.PUBLISHED['0.5.0'] = self.old
+        self.assertEqual(self.binding, self.prove())
+        self.upgrade.PUBLISHED['0.5.0'] = {**self.old, 'updater.py': 'f' * 64}
+        with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+            self.prove()
+
+    def test_historical_04_to_05_receipt_accepts_only_the_reviewed_flat_legacy_cli_shape(self):
+        self.transition('0.4.0', '0.5.0')
+        with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+            self.prove()  # A successor CLI cannot impersonate the legacy CLI.
+        self.upgrade.VERSION = '0.5.0'
+        self.upgrade.PUBLISHED = self.old
+        self.assertEqual(self.binding, self.prove())
+        for invalid in ({**self.old, 'updater.py': 'f' * 64},
+                        {**self.old, '0.4.0': self.old}, {'0.4.0': self.old},
+                        {**self.old, 'unknown.py': 'f' * 64}):
+            with self.subTest(invalid=invalid):
+                self.upgrade.PUBLISHED = invalid
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+
+    def test_unknown_transitions_and_wrong_or_mixed_cli_map_shapes_refuse(self):
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        for source, selected in (('0.5.0', '0.5.0'), ('0.6.0', '0.6.0'), ('0.3.0', '0.6.0'), ('0.5.0', '0.7.0')):
+            with self.subTest(source=source, selected=selected):
+                self.transition(source, selected)
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+        self.transition('0.4.0', '0.6.0')
+        for invalid in (self.old, {'0.4.0': self.old},
+                        {**original, 'updater.py': 'f' * 64},
+                        {**original, '0.5.0': {'updater.py': 'f' * 64}}):
+            with self.subTest(invalid=invalid):
+                self.upgrade.PUBLISHED = invalid
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+
     def test_supported_published_pair_requires_completed_receipt_and_authenticates_canonical_service_pid(self):
         self.assertNotEqual(self.receipt['generation'], self.observed['status']['generation'], 'reboot changes the daemon generation')
         binding = self.prove()
@@ -690,7 +742,7 @@ class HelperProvenanceTests(unittest.TestCase):
         changes = [('schema', True), ('preserved', False), ('preserved', 1), ('application_changed', True),
                    ('application_changed', 0), ('installation_id', str(uuid.uuid4())), ('transaction_id', str(uuid.uuid4())),
                    ('protocol', True), ('protocol', 2), ('bundle_sha256', 'f' * 64), ('generation', 'not-a-uuid'),
-                   ('from_helper_version', '0.3.0'), ('helper_version', '0.6.0'),
+                   ('from_helper_version', '0.3.0'), ('helper_version', '0.7.0'),
                    ('retained_old_code', str(self.retained / '..')), ('unknown', True)]
         for field, value in changes:
             self.receipt = {**copy.deepcopy(original), field: value}
@@ -864,7 +916,7 @@ class HelperProvenanceTests(unittest.TestCase):
              HelperProvenanceTests, 'test_each_current_module_and_retained_old_generation_must_match_exact_public_bytes'),
             ("or receipt['preserved'] is not True", 'or False',
              HelperProvenanceTests, 'test_receipt_shape_flags_identity_protocol_bundle_generation_and_retained_path_are_exact'),
-            ("or upgrade.PUBLISHED != source['files']", 'or False',
+            ("or approved_helper_source(upgrade, source['helper_version'], selected['helper_version']) != source['files']", 'or False',
              HelperProvenanceTests, 'test_upgrade_receipt_cannot_adopt_an_unknown_original_helper_generation'),
             ("upgrade.STATE / '.helper-upgrade-stop.next'", "upgrade.STATE / '.unused-test-path'",
              HelperProvenanceTests, 'test_every_pending_upgrade_marker_and_scratch_including_dangling_symlinks_refuses'),
