@@ -24,10 +24,12 @@ retained recovery files, application containers and application data retain the
 same preservation requirements.
 
 All active or interrupted application operations still refuse normal helper
-replacement, including the published 0.5 process-listing failure. This candidate
-does not implement a recovery bridge for that failure. Keep the failed operation
-and its original helper intact. Qualification on a fresh isolated host can
-exercise the normal idle path while that bridge receives separate review.
+replacement, including the published 0.5 process-listing failure. A separately
+reviewed [candidate bridge](helper-active-recovery-bridge.md) admits only its
+exact pre-mutation failure state and preserves the active application operation.
+It has its own CLI and transaction schema; it does not perform application
+recovery or establish native acceptance. Keep the failed operation and all
+original evidence intact while reviewing that separate path.
 
 ## Bounded native candidate observations (2026-10-10)
 
