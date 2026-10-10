@@ -30,6 +30,9 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** Application updates preserve the installed
+helper. Helper replacement remains a separate, explicit administrator command.
+
 ### Fixed
 
 - **Helper replacement verifies systemd's freezer state before admitting work.**
