@@ -393,7 +393,7 @@ def approved_helper_source(upgrade, source, selected):
     if (upgrade.VERSION == '0.5.0' and (source, selected) == ('0.4.0', '0.5.0')
             and isinstance(published, dict) and set(published) == names):
         return published
-    if (upgrade.VERSION == '0.6.0' and isinstance(published, dict)
+    if (upgrade.VERSION == '0.6.0' and selected == '0.6.0' and isinstance(published, dict)
             and set(published) == {'0.4.0', '0.5.0'}
             and all(isinstance(files, dict) and set(files) == names for files in published.values())):
         return published.get(source)

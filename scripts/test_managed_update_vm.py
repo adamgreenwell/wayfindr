@@ -686,6 +686,8 @@ class HelperProvenanceTests(unittest.TestCase):
 
     def test_historical_04_to_05_receipt_accepts_only_the_reviewed_flat_legacy_cli_shape(self):
         self.transition('0.4.0', '0.5.0')
+        with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+            self.prove()  # A successor CLI cannot impersonate the legacy CLI.
         self.upgrade.VERSION = '0.5.0'
         self.upgrade.PUBLISHED = self.old
         self.assertEqual(self.binding, self.prove())
