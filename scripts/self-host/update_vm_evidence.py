@@ -3,7 +3,8 @@
 
 This checks consistency of recorded observations. It cannot authenticate a
 self-reported VM observation, and fixture validation is not release evidence.
-Only the full published-artifact matrix can receive ``qualified``. Exit 0 is
+Only the full published-artifact matrix, repeated for native amd64 and arm64 on
+both classic and containerd image stores, can receive ``qualified``. Exit 0 is
 reserved for that result; valid incomplete reports exit 2 and invalid input 1.
 """
 
@@ -75,6 +76,12 @@ TOP_KEYS = {
     "schema", "claim", "run_id", "started_at", "finished_at", "artifacts", "environments", "backup", "restore",
     "synthetic", "scenarios", "limitations",
 }
+IMAGE = "ghcr.io/adamgreenwell/wayfindr"
+IMAGE_STORES = {"classic", "containerd"}
+STORE_PLATFORMS = {(architecture, store) for architecture in ("amd64", "arm64") for store in IMAGE_STORES}
+INDEX_TYPES = {"application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.list.v2+json"}
+MANIFEST_TYPES = {"application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"}
+BINDING_KEYS = {"local_image_id", "local_image_descriptor", "execution_reference", "execution_platform"}
 
 
 class Invalid(ValueError):
@@ -148,7 +155,7 @@ def flags(value, keys):
 def empty_report(claim="not_run", limitations=None, *, run_id=None, observed_at=None):
     """Create an honest scaffold, containing no observations or secret values."""
     at = observed_at or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"schema": 1, "claim": claim, "run_id": run_id or str(uuid.uuid4()), "started_at": at, "finished_at": at,
+    return {"schema": 2, "claim": claim, "run_id": run_id or str(uuid.uuid4()), "started_at": at, "finished_at": at,
             "artifacts": [], "environments": [], "backup": None, "restore": None, "synthetic": None,
             "scenarios": [], "limitations": sorted(limitations or {"matrix_incomplete"})}
 
@@ -191,10 +198,48 @@ def parse(raw):
         raise Invalid("input_invalid") from None
 
 
-def artifact(value, start, end):
-    object_shape(value, {"id", "tag", "commit", "architecture", "index_digest", "platform_manifest_digest", "config_digest",
+def descriptor_summary(value):
+    """Project verified private OCI metadata into the public report allowlist.
+
+    Registry annotations and other optional source fields are never public log
+    fields. This projection does not verify a registry chain or a Docker image.
+    """
+    if value is None:
+        return None
+    if type(value) is not dict or not {"mediaType", "digest", "size"} <= set(value):
+        raise Invalid("schema_invalid")
+    return {key: value[key] for key in ("mediaType", "digest", "size")}
+
+
+def artifact_store(value):
+    return "classic" if value["local_image_descriptor"] is None else "containerd"
+
+
+def image_binding(value):
+    pattern(value["local_image_id"], DIGEST)
+    if (value["execution_reference"] != IMAGE + ":" + value["tag"][1:] + "@" + value["index_digest"]
+            or value["execution_platform"] != "linux/" + value["architecture"]):
+        raise Invalid("identity_mismatch")
+    descriptor = value["local_image_descriptor"]
+    if value["local_image_id"] == value["config_digest"]:
+        if descriptor is not None:
+            raise Invalid("identity_mismatch")
+        return
+    if value["local_image_id"] not in {value["index_digest"], value["platform_manifest_digest"]}:
+        raise Invalid("identity_mismatch")
+    object_shape(descriptor, {"mediaType", "digest", "size"})
+    pattern(descriptor["digest"], DIGEST)
+    integer(descriptor["size"], 1, 1_000_000_000)
+    enum(descriptor["mediaType"], INDEX_TYPES if value["local_image_id"] == value["index_digest"] else MANIFEST_TYPES)
+    if descriptor["digest"] != value["local_image_id"]:
+        raise Invalid("identity_mismatch")
+
+
+def artifact(value, start, end, schema=1):
+    keys = {"id", "tag", "commit", "architecture", "index_digest", "platform_manifest_digest", "config_digest",
                          "manifest_sha256", "history_sha256", "installer_sha256", "compose_sha256", "actions_sha256", "publication",
-                         "resolved_at", "chain_verified", "fresh_pull"})
+                         "resolved_at", "chain_verified", "fresh_pull"}
+    object_shape(value, keys | BINDING_KEYS if schema == 2 else keys)
     pattern(value["id"], re.compile(r"artifact-[1-9][0-9]{0,2}\Z"))
     pattern(value["tag"], TAG)
     pattern(value["commit"], COMMIT)
@@ -203,6 +248,8 @@ def artifact(value, start, end):
         pattern(value[key], DIGEST)
     for key in ("manifest_sha256", "history_sha256", "installer_sha256", "compose_sha256", "actions_sha256"):
         pattern(value[key], HEX)
+    if schema == 2:
+        image_binding(value)
     enum(value["publication"], {"published", "pre_publication"})
     boolean(value["chain_verified"])
     boolean(value["fresh_pull"])
@@ -210,14 +257,17 @@ def artifact(value, start, end):
         raise Invalid("time_invalid")
 
 
-def environment(value, start, end):
-    object_shape(value, {"id", "kind", "os", "architecture", "fresh_os", "dedicated", "no_developer_mounts",
+def environment(value, start, end, schema=1):
+    keys = {"id", "kind", "os", "architecture", "fresh_os", "dedicated", "no_developer_mounts",
                          "no_reused_data", "systemd", "docker_engine", "boot_id_before", "boot_id_after",
-                         "reboot_requested_at", "reboot_observed_at", "observer_receipt_sha256"})
+                         "reboot_requested_at", "reboot_observed_at", "observer_receipt_sha256"}
+    object_shape(value, keys | {"image_store"} if schema == 2 else keys)
     pattern(value["id"], re.compile(r"vm-[1-9][0-9]{0,2}\Z"))
     enum(value["kind"], {"actual_vm", "github_runner", "container", "fixture"})
     enum(value["os"], {"ubuntu_24_04", "unsupported"})
     enum(value["architecture"], {"amd64", "arm64", "unsupported"})
+    if schema == 2:
+        enum(value["image_store"], IMAGE_STORES)
     for key in ("fresh_os", "dedicated", "no_developer_mounts", "no_reused_data", "systemd", "docker_engine"):
         boolean(value[key])
     for key in ("boot_id_before", "boot_id_after"):
@@ -245,7 +295,7 @@ def backup(value, environments, artifacts):
     integer(value["remote_disks"], 0, 64)
 
 
-def restore(value, environments, artifacts):
+def restore(value, environments, artifacts, schema=1):
     object_shape(value, {"environment_id", "artifact_id", "installation_identity_sha256", "archive_sha256", "executed", "succeeded", "independent_vm",
                          "origin_verified", "runtime_verified", "observer_receipt_sha256", "serving"})
     if value["environment_id"] not in environments or value["artifact_id"] not in artifacts:
@@ -254,7 +304,7 @@ def restore(value, environments, artifacts):
         pattern(value[key], HEX)
     for key in ("executed", "succeeded", "independent_vm", "origin_verified", "runtime_verified"):
         boolean(value[key])
-    serving(value["serving"])
+    serving(value["serving"], schema)
 
 
 def synthetic(value):
@@ -323,7 +373,7 @@ def operation(value):
         boolean(value["protection"]["hold_owned"])
 
 
-def serving(value):
+def serving(value, schema=1):
     object_shape(value, {"posture", "artifact_id", "services", "postgres_verified", "redis_verified",
                          "configured_origin_verified", "support_loop_verified", "realtime_verified", "maintenance_verified",
                          "writers_stopped_verified", "observer_receipt_sha256"})
@@ -336,17 +386,20 @@ def serving(value):
         boolean(value[key])
     object_shape(value["services"], SERVICES)
     for service in value["services"].values():
-        object_shape(service, {"before_id", "after_id", "image_digest", "healthy", "process_verified"})
+        keys = {"before_id", "after_id", "image_digest", "healthy", "process_verified"}
+        object_shape(service, keys | {"platform_manifest_digest"} if schema == 2 else keys)
         for key in ("before_id", "after_id"):
             if service[key] is not None:
                 pattern(service[key], HEX)
         if service["image_digest"] is not None:
             pattern(service["image_digest"], DIGEST)
+        if schema == 2 and service["platform_manifest_digest"] is not None:
+            pattern(service["platform_manifest_digest"], DIGEST)
         boolean(service["healthy"])
         boolean(service["process_verified"])
 
 
-def scenario(value, environments, artifacts, start, end):
+def scenario(value, environments, artifacts, start, end, schema=1):
     object_shape(value, {"id", "environment_id", "source_artifact_id", "target_artifact_id", "started_at", "finished_at",
                          "execution", "command_profile", "observer", "observer_receipt_sha256", "helper_before", "helper_after",
                          "app_protocol_before", "app_protocol_after", "helper_protocol", "checks", "operation", "serving",
@@ -405,18 +458,27 @@ def scenario(value, environments, artifacts, start, end):
     flags(value["checks"], {"injection_observed", "expectation_verified", "no_duplicate_mutation", "exclusive_operation",
                             "redaction_verified", "prerequisites_verified", "data_verified"})
     operation(value["operation"])
-    serving(value["serving"])
+    serving(value["serving"], schema)
+
+
+def service_platform_matches(service, selected, schema):
+    if schema == 1:
+        return True
+    observed = service["platform_manifest_digest"]
+    return observed == selected["platform_manifest_digest"] or (observed is None and artifact_store(selected) == "classic")
 
 
 def version(tag):
     return tuple(int(part) for part in tag.removeprefix("v").split("."))
 
 
-def qualified_scenario(item, artifacts, environments, issues, data):
+def qualified_scenario(item, artifacts, environments, issues, data, schema=1):
     source, target = artifacts[item["source_artifact_id"]], artifacts[item["target_artifact_id"]]
     current, posture = item["operation"], item["serving"]
     ident = item["id"]
     if source["architecture"] != environments[item["environment_id"]]["architecture"] or target["architecture"] != source["architecture"]:
+        issues.add("identity_mismatch")
+    if schema == 2 and any(artifact_store(selected) != environments[item["environment_id"]]["image_store"] for selected in (source, target)):
         issues.add("identity_mismatch")
     if item["execution"] != "actual_vm" or item["observer"] != "vm_probe_v1" or environments[item["environment_id"]]["kind"] != "actual_vm" or not all(item["checks"].values()):
         issues.add("scenario_unverified")
@@ -481,7 +543,7 @@ def qualified_scenario(item, artifacts, environments, issues, data):
                     or protected["phase"] != "retained" or protected["hold_owned"] or not protected["custody_verified"]
                     or protected["archive_sha256"] is None or protected["manifest_sha256"] is None):
                 issues.add("scenario_unverified")
-        if (version(item["helper_after"]) < (0, 4, 0) or item["app_protocol_before"] != 1
+        if (version(item["helper_after"]) < ((0, 5, 0) if schema == 2 else (0, 4, 0)) or item["app_protocol_before"] != 1
                 or item["app_protocol_after"] != 1 or item["helper_protocol"] != 1):
             issues.add("compatibility_unverified")
         if posture["posture"] != "target":
@@ -522,7 +584,8 @@ def qualified_scenario(item, artifacts, environments, issues, data):
         observed_ids = []
         for service in posture["services"].values():
             if (not service["healthy"] or not service["process_verified"] or service["after_id"] is None or service["before_id"] is None
-                    or service["image_digest"] != selected["config_digest"]
+                    or service["image_digest"] != selected["local_image_id" if schema == 2 else "config_digest"]
+                    or not service_platform_matches(service, selected, schema)
                     or (posture["posture"] == "target" and service["after_id"] == service["before_id"])):
                 issues.add("serving_unverified")
             observed_ids.append(service["after_id"])
@@ -560,14 +623,15 @@ def validate_report(value):
 
 def _validate_report(value):
     object_shape(value, TOP_KEYS)
-    if type(value["schema"]) is not int or value["schema"] != 1:
+    if type(value["schema"]) is not int or value["schema"] not in {1, 2}:
         raise Invalid("schema_invalid")
+    schema = value["schema"]
     enum(value["claim"], CLAIMS)
     identifier(value["run_id"])
     start, end = timestamp(value["started_at"]), timestamp(value["finished_at"])
     if end < start or end - start > dt.timedelta(days=30):
         raise Invalid("time_invalid")
-    arrays = (("artifacts", 64), ("environments", 64), ("scenarios", len(SCENARIOS)), ("limitations", len(LIMITATIONS)))
+    arrays = (("artifacts", 64), ("environments", 64), ("scenarios", len(SCENARIOS) * (4 if schema == 2 else 1)), ("limitations", len(LIMITATIONS)))
     for name, maximum in arrays:
         array(value[name], maximum)
     for limitation in value["limitations"]:
@@ -576,30 +640,43 @@ def _validate_report(value):
         raise Invalid("schema_invalid")
     artifacts, environments, cases = {}, {}, {}
     for item in value["artifacts"]:
-        artifact(item, start, end)
+        artifact(item, start, end, schema)
         if item["id"] in artifacts:
             raise Invalid("schema_invalid")
         artifacts[item["id"]] = item
-    if len({item["tag"] for item in artifacts.values()}) != len(artifacts):
+    identities = {(item["tag"], item["architecture"], artifact_store(item)) if schema == 2 else item["tag"] for item in artifacts.values()}
+    if len(identities) != len(artifacts):
         raise Invalid("schema_invalid")
+    if schema == 2:
+        # The same public release may have observations on several platforms
+        # and stores, but its published identity cannot change between them.
+        releases, platforms = {}, {}
+        for item in artifacts.values():
+            public = {key: item[key] for key in ("commit", "index_digest", "manifest_sha256", "history_sha256", "installer_sha256", "compose_sha256", "actions_sha256")}
+            selected = {key: item[key] for key in ("platform_manifest_digest", "config_digest")}
+            if releases.setdefault(item["tag"], public) != public or platforms.setdefault((item["tag"], item["architecture"]), selected) != selected:
+                raise Invalid("identity_mismatch")
     for item in value["environments"]:
-        environment(item, start, end)
+        environment(item, start, end, schema)
         if item["id"] in environments:
             raise Invalid("schema_invalid")
         environments[item["id"]] = item
     for item in value["scenarios"]:
-        scenario(item, environments, artifacts, start, end)
-        if item["id"] in cases:
+        scenario(item, environments, artifacts, start, end, schema)
+        key = (item["id"], item["environment_id"]) if schema == 2 else item["id"]
+        if key in cases:
             raise Invalid("schema_invalid")
-        cases[item["id"]] = item
+        cases[key] = item
     if value["backup"] is not None:
         backup(value["backup"], environments, artifacts)
     if value["restore"] is not None:
-        restore(value["restore"], environments, artifacts)
+        restore(value["restore"], environments, artifacts, schema)
     if value["synthetic"] is not None:
         synthetic(value["synthetic"])
     issues = set()
-    missing = [name for name in SCENARIOS if name not in cases]
+    if schema == 1:
+        issues.add("legacy_image_binding")
+    missing = [name for name in SCENARIOS if name not in {item["id"] for item in cases.values()}]
     if missing:
         issues.add("scenario_missing")
     if value["limitations"]:
@@ -612,6 +689,10 @@ def _validate_report(value):
                                    or not all(item[key] for key in ("fresh_os", "dedicated", "no_developer_mounts", "no_reused_data", "systemd", "docker_engine")) for item in environments.values()):
         issues.add("vm_isolation_unverified")
     saved, restored, data = value["backup"], value["restore"], value["synthetic"]
+    if schema == 2 and saved is not None:
+        selected, host = artifacts[saved["source_artifact_id"]], environments[saved["environment_id"]]
+        if selected["architecture"] != host["architecture"] or artifact_store(selected) != host["image_store"]:
+            issues.add("backup_unverified")
     if (saved is None or not all(saved[key] for key in ("created", "archive_validated", "custody_verified", "retained", "remote_dependency_verified"))
             or not saved["local_disks"] or not saved["remote_disks"]):
         issues.add("backup_unverified")
@@ -623,19 +704,32 @@ def _validate_report(value):
     if (data is None or not data["erased_content_absent"] or any(not item["verified"] or item["before"] != item["after"] or item["before"] != item["restored"] for item in data["invariants"].values())):
         issues.add("synthetic_invariants_unverified")
     for item in cases.values():
-        qualified_scenario(item, artifacts, environments, issues, data)
+        qualified_scenario(item, artifacts, environments, issues, data, schema)
+    if schema == 2:
+        covered = {combination: set() for combination in STORE_PLATFORMS}
+        for item in cases.values():
+            local_issues = set()
+            qualified_scenario(item, artifacts, environments, local_issues, data, schema)
+            if not local_issues:
+                host = environments[item["environment_id"]]
+                covered.get((host["architecture"], host["image_store"]), set()).add(item["id"])
+        if any(names != set(SCENARIOS) for names in covered.values()):
+            issues.add("image_store_matrix_unverified")
     if restored is not None:
         posture = restored["serving"]
         selected = artifacts[restored["artifact_id"]]
         if (selected["architecture"] != environments[restored["environment_id"]]["architecture"]
                 or posture["artifact_id"] != restored["artifact_id"] or posture["posture"] == "maintenance" or posture["maintenance_verified"]
                 or not all(posture[key] for key in ("postgres_verified", "redis_verified", "configured_origin_verified", "support_loop_verified", "realtime_verified"))
-                or any(not entry["healthy"] or not entry["process_verified"] or entry["after_id"] is None or entry["image_digest"] != selected["config_digest"] for entry in posture["services"].values())
+                or (schema == 2 and artifact_store(selected) != environments[restored["environment_id"]]["image_store"])
+                or any(not entry["healthy"] or not entry["process_verified"] or entry["after_id"] is None
+                       or entry["image_digest"] != selected["local_image_id" if schema == 2 else "config_digest"]
+                       or not service_platform_matches(entry, selected, schema) for entry in posture["services"].values())
                 or len({entry["after_id"] for entry in posture["services"].values()}) != len(SERVICES)):
             issues.add("restore_unverified")
     if saved is not None and data is not None and saved["installation_identity_sha256"] != data["invariants"]["installation_identity"]["before"]:
         issues.add("identity_mismatch")
-    if "vm_reboot" not in cases:
+    if "vm_reboot" not in {item["id"] for item in cases.values()}:
         issues.add("reboot_unverified")
     # An explicitly limited claim never upgrades itself to release qualification.
     status = value["claim"] if value["claim"] != "qualification" else ("unqualified" if issues else "qualified")

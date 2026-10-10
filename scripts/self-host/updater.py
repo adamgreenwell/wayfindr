@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 PROTOCOL = 1
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
 CREDENTIAL = Path("/etc/wayfindr-updater/credential.json")
@@ -67,6 +67,17 @@ ERRORS = {
     "plan_mismatch", "cancel_unavailable",
 }
 ERRORS |= APPLY_ERRORS
+
+
+def helper_upgrade_pending():
+    """An incomplete root-owned code transaction admits observation only.
+
+    Presence also blocks when the marker is malformed or a symlink. The
+    separately reviewed root upgrade tool owns validation and recovery; RPC
+    clients cannot clear this gate.
+    """
+    marker = STATE_DIR / "helper-upgrade.json"
+    return marker.exists() or marker.is_symlink()
 
 
 def apply_state():
@@ -305,7 +316,7 @@ def validate_journal(value: dict, installation_id: str) -> None:
             raise Refusal("journal_corrupt")
         if not isinstance(operation["release_tag"], str) or TAG.fullmatch(operation["release_tag"]) is None or len(operation["release_tag"]) > 128:
             raise Refusal("journal_corrupt")
-        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", "0.3.0", VERSION} or type(operation["mutation_started"]) is not bool:
+        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", "0.3.0", "0.4.0", VERSION} or type(operation["mutation_started"]) is not bool:
             raise Refusal("journal_corrupt")
         if "apply" in operation:
             validate_apply(operation["apply"])
@@ -1049,6 +1060,8 @@ class Controller:
     def dispatch(self, payload, uid):
         self.validate(payload, uid)
         action = payload["action"]
+        if action not in {"capabilities", "status", "logs", "history"} and helper_upgrade_pending():
+            raise Refusal("operation_busy")
         if action == "capabilities":
             self.config.verify_files()
             return self.config.capabilities()
@@ -1279,6 +1292,8 @@ def main():
         operation_id = getattr(args, "operation", None)
         if operation_id is not None and not is_uuid(operation_id):
             raise Refusal("request_invalid")
+        if args.action == "reconcile" and helper_upgrade_pending():
+            raise Refusal("operation_busy")
         # Recovery reads depend on trusted enrollment identity, not a healthy
         # application or unchanged Compose/.env files. Execution still verifies.
         config = Configuration.load(verify_install=args.action == "serve")

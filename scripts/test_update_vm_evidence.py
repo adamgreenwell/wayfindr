@@ -41,18 +41,22 @@ def identifier(label):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "https://fixture.invalid/" + label))
 
 
-def artifact(number, tag):
-    item = {"id": "artifact-" + str(number), "tag": tag, "commit": digest(tag + "commit")[:40], "architecture": "amd64",
+def artifact(number, tag, architecture="amd64", store="classic"):
+    item = {"id": "artifact-" + str(number), "tag": tag, "commit": digest(tag + "commit")[:40], "architecture": architecture,
             "publication": "published", "resolved_at": START, "chain_verified": True, "fresh_pull": True}
     for key in ("index_digest", "platform_manifest_digest", "config_digest"):
-        item[key] = "sha256:" + digest(tag + key)
+        item[key] = "sha256:" + digest(tag + key + (architecture if key != "index_digest" else ""))
     for key in ("manifest_sha256", "history_sha256", "installer_sha256", "compose_sha256", "actions_sha256"):
         item[key] = digest(tag + key)
+    item.update(local_image_id=item["config_digest"] if store == "classic" else item["index_digest"],
+                local_image_descriptor=None if store == "classic" else {"mediaType": "application/vnd.oci.image.index.v1+json",
+                                                                       "digest": item["index_digest"], "size": 1000},
+                execution_reference=EVIDENCE.IMAGE + ":" + tag[1:] + "@" + item["index_digest"], execution_platform="linux/" + architecture)
     return item
 
 
-def environment(number, reboot=False):
-    return {"id": "vm-" + str(number), "kind": "actual_vm", "os": "ubuntu_24_04", "architecture": "amd64",
+def environment(number, reboot=False, architecture="amd64", store="classic"):
+    return {"id": "vm-" + str(number), "kind": "actual_vm", "os": "ubuntu_24_04", "architecture": architecture, "image_store": store,
             "fresh_os": True, "dedicated": True, "no_developer_mounts": True, "no_reused_data": True,
             "systemd": True, "docker_engine": True, "boot_id_before": identifier("boot-before-" + str(number)),
             "boot_id_after": identifier(("boot-after-" if reboot else "boot-before-") + str(number)),
@@ -64,7 +68,8 @@ def environment(number, reboot=False):
 def serving(item, posture="target"):
     return {"posture": posture, "artifact_id": item["id"],
             "services": {name: {"before_id": digest("before-" + name), "after_id": digest("after-" + name),
-                                "image_digest": item["config_digest"], "healthy": True, "process_verified": True}
+                                "image_digest": item["local_image_id"], "healthy": True, "process_verified": True,
+                                "platform_manifest_digest": item["platform_manifest_digest"] if item["local_image_descriptor"] is not None else None}
                          for name in EVIDENCE.SERVICES},
             "postgres_verified": True, "redis_verified": True, "configured_origin_verified": True,
             "support_loop_verified": True, "realtime_verified": True, "maintenance_verified": False,
@@ -120,12 +125,12 @@ def complete_fixture():
             posture.update(posture="maintenance", artifact_id=None, configured_origin_verified=False, support_loop_verified=False,
                            realtime_verified=False, maintenance_verified=True, writers_stopped_verified=True)
             for observed in posture["services"].values():
-                observed.update(healthy=False, process_verified=False, after_id=None, image_digest=None)
+                observed.update(healthy=False, process_verified=False, after_id=None, image_digest=None, platform_manifest_digest=None)
         result["scenarios"].append({"id": name, "environment_id": "vm-1", "source_artifact_id": source["id"],
                                     "target_artifact_id": target["id"], "started_at": START, "finished_at": END,
                                     "execution": "actual_vm", "command_profile": "managed_update_vm_v1", "observer": "vm_probe_v1",
                                     "observer_receipt_sha256": digest("scenario-receipt-" + name), "helper_before": "0.3.0" if name == "new_app_old_helper" else "0.4.0",
-                                    "helper_after": "0.4.0", "app_protocol_before": 0 if name == "old_app_new_helper" else 1,
+                                    "helper_after": "0.5.0" if succeeded else "0.4.0", "app_protocol_before": 0 if name == "old_app_new_helper" else 1,
                                     "app_protocol_after": 0 if name == "old_app_new_helper" else 1, "helper_protocol": 1,
                                     "checks": {key: True for key in ("injection_observed", "expectation_verified", "no_duplicate_mutation",
                                                                     "exclusive_operation", "redaction_verified", "prerequisites_verified", "data_verified")},
@@ -141,6 +146,32 @@ def complete_fixture():
                                                         "refusal_phase": "blocked", "refusal_error": "actions_required", "refusal_mutation_started": False,
                                                         "refusal_receipt_sha256": digest("refusal-receipt"), "fulfillment_receipt_sha256": digest("fulfillment-receipt"),
                                                         "fulfilled_verified": True} if name == "major_actions" else None})
+    # Each store/platform must execute the complete matrix. These are still
+    # invented consistency fixtures, not VM observations or release proof.
+    first_cases = copy.deepcopy(result["scenarios"])
+    first_artifacts = list(result["artifacts"])
+    for number, architecture, store in ((3, "amd64", "containerd"), (4, "arm64", "classic"), (5, "arm64", "containerd")):
+        result["environments"].append(environment(number, True, architecture, store))
+        replacements = {old["id"]: artifact(len(result["artifacts"]) + offset, old["tag"], architecture, store)
+                        for offset, old in enumerate(first_artifacts, 1)}
+        result["artifacts"].extend(replacements.values())
+        for original in first_cases:
+            item = copy.deepcopy(original)
+            item["environment_id"] = "vm-" + str(number)
+            for field in ("source_artifact_id", "target_artifact_id"):
+                item[field] = replacements[item[field]]["id"]
+            item["skipped_artifact_ids"] = [replacements[key]["id"] for key in item["skipped_artifact_ids"]]
+            if item["serving"]["artifact_id"] is not None:
+                selected = replacements[item["serving"]["artifact_id"]]
+                item["serving"]["artifact_id"] = selected["id"]
+                for observed in item["serving"]["services"].values():
+                    observed["image_digest"] = selected["local_image_id"]
+                    observed["platform_manifest_digest"] = selected["platform_manifest_digest"] if store == "containerd" else None
+            target = next(value for value in replacements.values() if value["id"] == item["target_artifact_id"])
+            if item["operation"]["apply"] is not None:
+                for key in ("index_digest", "platform_manifest_digest", "config_digest"):
+                    item["operation"]["apply"][key] = target[key]
+            result["scenarios"].append(item)
     return result
 
 
@@ -164,7 +195,7 @@ class EvidenceTests(unittest.TestCase):
     def test_complete_synthetic_record_only_exercises_consistency(self):
         result = self.validate()
         self.assertEqual("qualified", result["status"])
-        self.assertEqual(25, result["scenario_count"])
+        self.assertEqual(100, result["scenario_count"])
         self.assertEqual([], result["issues"])
         self.assertEqual([], result["missing_scenarios"])
 
@@ -212,9 +243,148 @@ class EvidenceTests(unittest.TestCase):
 
     def test_missing_or_duplicated_cases_cannot_pass(self):
         self.report["scenarios"].pop()
-        self.assert_refused("scenario_missing")
+        self.assert_refused("image_store_matrix_unverified")
         self.report["scenarios"].append(copy.deepcopy(self.report["scenarios"][0]))
         self.assert_refused("schema_invalid")
+
+    def test_all_cases_are_required_on_each_native_platform_and_store(self):
+        self.report["scenarios"] = self.report["scenarios"][:25]
+        result = self.validate()
+        self.assertEqual([], result["missing_scenarios"])
+        self.assert_refused("image_store_matrix_unverified")
+        self.report["scenarios"] = [item for item in self.report["scenarios"] if item["id"] != "pull_failure"]
+        self.assert_refused("scenario_missing")
+
+    def test_legacy_schema_remains_readable_but_can_never_qualify(self):
+        self.report["schema"] = 1
+        self.report["scenarios"] = self.report["scenarios"][:25]
+        self.report["artifacts"] = self.report["artifacts"][:4]
+        self.report["environments"] = self.report["environments"][:2]
+        for item in self.report["artifacts"]:
+            for key in EVIDENCE.BINDING_KEYS:
+                del item[key]
+        for item in self.report["environments"]:
+            del item["image_store"]
+        for item in self.report["scenarios"]:
+            item["helper_after"] = "0.4.0"
+            for observed in item["serving"]["services"].values():
+                del observed["platform_manifest_digest"]
+        for observed in self.report["restore"]["serving"]["services"].values():
+            del observed["platform_manifest_digest"]
+        result = self.validate()
+        self.assertEqual("unqualified", result["status"])
+        self.assertEqual(["legacy_image_binding"], result["issues"])
+        self.assertEqual(25, result["scenario_count"])
+
+    def test_legacy_scaffold_has_explicit_qualification_limitation(self):
+        report = EVIDENCE.empty_report("blocked")
+        report["schema"] = 1
+        result = EVIDENCE.validate_report(report)
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("legacy_image_binding", result["issues"])
+
+    def test_local_binding_has_exact_index_selector_platform_and_descriptor(self):
+        item = self.report["artifacts"][4]
+        original = copy.deepcopy(item)
+        mutations = (("local_image_id", "sha256:" + "f" * 64),
+                     ("execution_reference", EVIDENCE.IMAGE + ":latest"),
+                     ("execution_reference", EVIDENCE.IMAGE + "@" + item["index_digest"]),
+                     ("execution_reference", EVIDENCE.IMAGE + ":" + item["tag"][1:] + "@" + item["config_digest"]),
+                     ("execution_platform", "linux/arm64"),
+                     ("local_image_descriptor", {**item["local_image_descriptor"], "digest": item["platform_manifest_digest"]}))
+        for key, replacement in mutations:
+            with self.subTest(key=key, replacement=replacement):
+                item[key] = replacement
+                self.assert_refused("identity_mismatch")
+                item.clear()
+                item.update(copy.deepcopy(original))
+        item["local_image_descriptor"]["mediaType"] = "application/vnd.oci.image.manifest.v1+json"
+        self.assert_refused("schema_invalid")
+
+    def test_classic_and_containerd_bindings_cannot_be_interchanged(self):
+        item = self.report["artifacts"][0]
+        item["local_image_descriptor"] = {"mediaType": "application/vnd.oci.image.index.v1+json", "digest": item["index_digest"], "size": 1000}
+        self.assert_refused("identity_mismatch")
+        item["local_image_descriptor"] = None
+        self.report["environments"][0]["image_store"] = "containerd"
+        self.assert_refused("identity_mismatch")
+        self.assert_refused("backup_unverified")
+        self.report["environments"][0]["image_store"] = "classic"
+        self.report["environments"][1]["image_store"] = "containerd"
+        self.assert_refused("restore_unverified")
+
+    def test_containerd_services_bind_to_observed_local_id_not_config_digest(self):
+        item = self.report["artifacts"][4]
+        case = next(entry for entry in self.report["scenarios"] if entry["environment_id"] == "vm-3" and entry["id"] == "below_floor")
+        self.assertNotEqual(item["config_digest"], item["local_image_id"])
+        case["serving"]["services"]["web"]["image_digest"] = item["config_digest"]
+        self.assert_refused("serving_unverified")
+
+    def test_index_local_id_does_not_substitute_for_actual_container_platform(self):
+        item = self.report["artifacts"][4]
+        case = next(entry for entry in self.report["scenarios"] if entry["environment_id"] == "vm-3" and entry["id"] == "below_floor")
+        observed = case["serving"]["services"]["web"]
+        self.assertEqual(item["index_digest"], observed["image_digest"])
+        # The other native platform shares the public index and local image ID.
+        other_platform = self.report["artifacts"][12]["platform_manifest_digest"]
+        for replacement in (None, item["index_digest"], item["config_digest"], other_platform):
+            with self.subTest(replacement=replacement):
+                observed["platform_manifest_digest"] = replacement
+                self.assert_refused("serving_unverified")
+                self.assert_refused("image_store_matrix_unverified")
+        del observed["platform_manifest_digest"]
+        self.assert_refused("schema_invalid")
+
+    def test_optional_classic_container_descriptor_must_match_selected_platform(self):
+        selected = self.report["artifacts"][1]
+        observed = self.case()["serving"]["services"]["web"]
+        observed["platform_manifest_digest"] = selected["platform_manifest_digest"]
+        self.assertTrue(self.validate()["qualified"])
+        observed["platform_manifest_digest"] = selected["index_digest"]
+        self.assert_refused("serving_unverified")
+
+    def test_restored_container_descriptor_must_match_selected_platform(self):
+        observed = self.report["restore"]["serving"]["services"]["scheduler"]
+        observed["platform_manifest_digest"] = self.report["artifacts"][1]["platform_manifest_digest"]
+        self.assert_refused("restore_unverified")
+
+    def test_schema2_success_requires_helper_with_the_new_binding_implementation(self):
+        self.case()["helper_after"] = "0.4.0"
+        self.assert_refused("compatibility_unverified")
+        self.assert_refused("image_store_matrix_unverified")
+
+    def test_selected_manifest_local_id_is_supported_with_exact_descriptor(self):
+        for item in self.report["artifacts"]:
+            if item["local_image_descriptor"] is not None:
+                item["local_image_id"] = item["platform_manifest_digest"]
+                item["local_image_descriptor"] = {"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": item["platform_manifest_digest"], "size": 2000}
+        artifacts = {item["id"]: item for item in self.report["artifacts"]}
+        for case in self.report["scenarios"]:
+            if case["serving"]["artifact_id"] is not None:
+                for entry in case["serving"]["services"].values():
+                    entry["image_digest"] = artifacts[case["serving"]["artifact_id"]]["local_image_id"]
+        self.assertTrue(self.validate()["qualified"])
+
+    def test_public_descriptor_summary_drops_optional_registry_data(self):
+        value = {"mediaType": "application/vnd.oci.image.index.v1+json", "digest": "sha256:" + "a" * 64,
+                 "size": 1000, "annotations": {"unknown": "private-source-value"}, "platform": {"os": "linux", "architecture": "amd64"}}
+        self.assertEqual({key: value[key] for key in ("mediaType", "digest", "size")}, EVIDENCE.descriptor_summary(value))
+        self.assertIsNone(EVIDENCE.descriptor_summary(None))
+        self.report["artifacts"][4]["local_image_descriptor"] = value
+        self.assert_refused("schema_invalid")
+        self.assertNotIn("private-source-value", json.dumps(self.validate()))
+
+    def test_same_release_observations_cannot_disagree_across_stores(self):
+        item = self.report["artifacts"][4]
+        for key in ("commit", "index_digest", "manifest_sha256", "config_digest", "platform_manifest_digest"):
+            original = copy.deepcopy(item)
+            item[key] = "f" * 40 if key == "commit" else "f" * 64 if key.endswith("sha256") else "sha256:" + "f" * 64
+            if key == "index_digest":
+                item.update(local_image_id=item[key], execution_reference=EVIDENCE.IMAGE + ":" + item["tag"][1:] + "@" + item[key])
+                item["local_image_descriptor"]["digest"] = item[key]
+            self.assert_refused("identity_mismatch")
+            item.clear()
+            item.update(original)
 
     def test_fixture_runner_and_container_are_not_actual_vm_observations(self):
         for kind in ("github_runner", "container", "fixture"):
@@ -502,6 +672,36 @@ class EvidenceTests(unittest.TestCase):
                         record["scenarios"][0]["operation"]["requested_tag"] = "v9.9.9"
                     else:
                         record["environments"][0]["boot_id_after"] = record["environments"][0]["boot_id_before"]
+                    self.assertFalse(EVIDENCE.validate_report(record)["qualified"])
+                    self.assertTrue(module(copied).validate_report(record)["qualified"])
+        self.assertEqual(original, SOURCE.read_text())
+
+    def test_source_copy_mutations_demonstrate_local_image_and_selector_guards(self):
+        original = SOURCE.read_text()
+        mutations = (
+            ('service["image_digest"] != selected["local_image_id" if schema == 2 else "config_digest"]', 'False', "local-image"),
+            ('        image_binding(value)', '        pass', "selector"),
+            ('or not service_platform_matches(service, selected, schema)', 'or False', "container-platform"),
+            ('if any(names != set(SCENARIOS) for names in covered.values()):', 'if False:', "matrix"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for old, new, kind in mutations:
+                with self.subTest(kind=kind):
+                    self.assertEqual(1, original.count(old))
+                    copied = Path(directory) / (kind + ".py")
+                    copied.write_text(original.replace(old, new, 1))
+                    record = complete_fixture()
+                    if kind == "local-image":
+                        item = record["artifacts"][4]
+                        case = next(entry for entry in record["scenarios"] if entry["environment_id"] == "vm-3" and entry["id"] == "below_floor")
+                        case["serving"]["services"]["web"]["image_digest"] = item["config_digest"]
+                    elif kind == "container-platform":
+                        case = next(entry for entry in record["scenarios"] if entry["environment_id"] == "vm-3" and entry["id"] == "below_floor")
+                        case["serving"]["services"]["web"]["platform_manifest_digest"] = record["artifacts"][12]["platform_manifest_digest"]
+                    elif kind == "selector":
+                        record["artifacts"][4]["execution_reference"] = EVIDENCE.IMAGE + ":latest"
+                    else:
+                        record["scenarios"].pop()
                     self.assertFalse(EVIDENCE.validate_report(record)["qualified"])
                     self.assertTrue(module(copied).validate_report(record)["qualified"])
         self.assertEqual(original, SOURCE.read_text())

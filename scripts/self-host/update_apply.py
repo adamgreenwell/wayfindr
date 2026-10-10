@@ -84,7 +84,7 @@ def verify_transition(config, state_dir, api):
     public = journal["operations"][operation]
     directory = root / "apply" / operation
     state = private_object(directory / "state.json", api)
-    if (set(state) != STATE_KEYS or type(state["schema"]) is not int or state["schema"] != 1 or state["installation_id"] != config.installation_id
+    if (set(state) != STATE_KEYS or type(state["schema"]) is not int or state["schema"] != 2 or state["installation_id"] != config.installation_id
             or state["operation_id"] != operation or state["stage"] not in PROMOTION_STAGES
             or state["plan_id"] != public["plan_id"] or state["target"] != public["target"]
             or state["source"] != public["source"] or "apply" not in public
@@ -98,7 +98,11 @@ def verify_transition(config, state_dir, api):
         raise api.Refusal("configuration_changed")
     artifacts = state["artifacts"]
     expected_image = "ghcr.io/adamgreenwell/wayfindr:" + state["target"]["version"] + "@" + state["target"]["image_digest"]
-    if new["image_reference"] != expected_image or new["overlay_sha256"] != digest(api.encoded(state["overlay"])) or artifacts["index_digest"] != state["target"]["image_digest"]:
+    if (artifacts.get("schema") != 2 or artifacts.get("execution_reference") != expected_image
+            or artifacts.get("execution_platform") not in {"linux/amd64", "linux/arm64"}
+            or not isinstance(artifacts.get("local_image_id"), str) or not DIGEST.fullmatch(artifacts["local_image_id"])
+            or new["image_reference"] != expected_image or new["overlay_sha256"] != digest(api.encoded(state["overlay"])) or artifacts["index_digest"] != state["target"]["image_digest"]
+            or any(item.get("image") != expected_image or item.get("platform") != artifacts["execution_platform"] for item in state["overlay"]["services"].values())):
         raise api.Refusal("configuration_changed")
     for name, field in (("migration.json", "migration_receipt_sha256"), ("runtime.json", "runtime_receipt_sha256")):
         receipt = private_object(directory / name, api)
@@ -203,12 +207,26 @@ class Engine:
         return self.base.call(["exec", container, "php", "artisan", "wayfindr:update-plan", "--ref=" + tag, "--json"], "apply_unavailable", json=True)
 
     def layout(self, container):
-        value = self.base.call(["inspect", "--format", '{"env":{{json .Config.Env}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"user":{{json .Config.User}},"workdir":{{json .Config.WorkingDir}},"mounts":{{json .Mounts}},"created":{{json .Created}},"operation":{{json (index .Config.Labels "io.wayfindr.managed-operation")}}}', container], "runtime_verification_failed", json=True)
+        # Full JSON keeps the selected-manifest field optional on older Docker
+        # APIs; a missing Go-template struct field would fail classic inspect.
+        inspected = self.base.call(["inspect", "--format", "{{json .}}", container], "runtime_verification_failed", json=True)
+        config = inspected["Config"]
+        value = {key: config.get(field) for key, field in (("env", "Env"), ("cmd", "Cmd"), ("entrypoint", "Entrypoint"), ("user", "User"), ("workdir", "WorkingDir"), ("image_reference", "Image"))}
+        value.update(mounts=inspected["Mounts"], created=inspected["Created"], operation=(config.get("Labels") or {}).get("io.wayfindr.managed-operation"),
+                     image_manifest_descriptor=inspected.get("ImageManifestDescriptor"))
         mounts = value["mounts"]
         if not isinstance(mounts, list):
             raise self.api.Refusal("runtime_verification_failed")
         value["mounts"] = sorted([{k: m.get(k) for k in ("Type", "Name", "Source", "Destination", "RW", "Driver")} for m in mounts], key=lambda m: m["Destination"])
         return value
+
+    def manifest_bound(self, layout, state):
+        evidence = state["artifacts"]
+        observed = layout.get("image_manifest_descriptor")
+        # Classic config IDs already select one root filesystem. Containerd
+        # index IDs require the actual selected child, even when .Image matches.
+        return ((observed is None and evidence["local_image_id"] == evidence["config_digest"])
+                or sibling("update_artifacts").platform_descriptor_matches(observed, evidence["platform_manifest_descriptor"]))
 
     def origin(self, web):
         value = self.base.call(["exec", web, "php", "-r", 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();echo json_encode(["origin"=>config("app.url")],JSON_THROW_ON_ERROR);'], "origin_verification_failed", json=True)
@@ -224,26 +242,48 @@ class Engine:
         return self.base.compose + ["-f", str(directory / "target.yml")]
 
     def oneoff(self, directory, operation, state, action):
-        name = "wayfindr-updater-" + ("migration" if action == "migrate" else "apply-" + action) + "-" + operation
+        name = "wayfindr-updater-" + ({"migrate": "migration", "fence": "fence"}.get(action, "apply-" + action)) + "-" + operation
         if self.base.oneoff_active(name):
             raise self.api.Refusal("migration_ambiguous" if action == "migrate" else "recovery_required")
+        existing = self.base.call(["ps", "-a", "-q", "--no-trunc", "--filter", "name=^/" + name + "$"])
+        if existing:
+            # Stateless verification/fence commands may be retried only after
+            # observing the exact completed oneoff. Migration is never replayed.
+            if action == "migrate":
+                raise self.api.Refusal("migration_ambiguous")
+            self.check_oneoff(existing, operation, state, action)
+            self.base.call(["rm", existing], "recovery_required")
         args = ["run", "--no-deps", "--pull=never", "--entrypoint", "php", "--name", name, "-T"]
-        if action != "migrate":
-            args.append("--rm")
         code, raw = self.api.capture(self.staged_compose(directory) + args + ["web", *self.command(operation, state, action)], timeout=3600 if action == "migrate" else 90)
         if code != 0:
             raise self.api.Refusal("migration_failed" if action == "migrate" else "runtime_verification_failed")
-        if action == "migrate":
-            record = self.base.inspect(name)
-            if record["image"] != state["artifacts"]["config_digest"] or record["state"].get("ExitCode") != 0 or self.base.oneoff_active(name):
-                raise self.api.Refusal("migration_ambiguous")
-        elif self.base.oneoff_active(name):
-            raise self.api.Refusal("recovery_required")
+        self.check_oneoff(name, operation, state, action)
+        if self.base.oneoff_active(name):
+            raise self.api.Refusal("migration_ambiguous" if action == "migrate" else "recovery_required")
+        if action != "migrate":
+            self.base.call(["rm", name], "recovery_required")
         return self.api.strict_json(raw, "migration_ambiguous" if action == "migrate" else "runtime_verification_failed")
+
+    def check_oneoff(self, container, operation, state, action):
+        record = self.base.inspect(container)
+        layout = self.layout(container)
+        status = record.get("state", {})
+        if (record["image"] != state["artifacts"]["local_image_id"]
+                or record.get("project") != self.config.value["compose_project"] or record.get("service") != "web"
+                or str(record.get("oneoff")).lower() != "true" or type(status.get("ExitCode")) is not int or status["ExitCode"] != 0
+                or status.get("Status") != "exited" or status.get("Running") is not False
+                or any(status.get(key) is not False for key in ("Paused", "Restarting", "Dead", "OOMKilled")) or status.get("Error")
+                or layout.get("image_reference") != state["artifacts"]["execution_reference"]
+                or not self.manifest_bound(layout, state)
+                or layout.get("entrypoint") != ["php"] or layout.get("cmd") != self.command(operation, state, action)
+                or layout.get("operation") != operation):
+            raise self.api.Refusal("migration_ambiguous" if action == "migrate" else "runtime_verification_failed")
 
     def command(self, operation, state, action, source=False):
         if action == "protocol":
             return ["artisan", "wayfindr:updater-status", "--protocol-contract"]
+        if action == "fence":
+            return ["artisan", "wayfindr:upgrade-window", operation, "--action=enter", "--json"]
         target = state["source"] if source else state["target"]
         return ["artisan", "wayfindr:managed-apply", operation, "--action=" + action,
                 "--plan-id=" + state["plan_id"], "--target-version=" + target["version"], "--commit=" + target["commit"],
@@ -276,7 +316,7 @@ class Engine:
     def target_layout(self, container, service, directory, state, *, processes=True):
         actual = self.layout(container)
         rendered = self.render(directory)["services"][service]
-        image = self.base.call(["image", "inspect", "--format", '{"env":{{json .Config.Env}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"user":{{json .Config.User}},"workdir":{{json .Config.WorkingDir}}}', state["artifacts"]["config_digest"]], "runtime_verification_failed", json=True)
+        image = self.base.call(["image", "inspect", "--format", '{"env":{{json .Config.Env}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"user":{{json .Config.User}},"workdir":{{json .Config.WorkingDir}}}', state["artifacts"]["execution_reference"]], "runtime_verification_failed", json=True)
         expected = self.base.environment_map(image["env"])
         for key, value in rendered["environment"].items():
             if value is None:
@@ -285,7 +325,10 @@ class Engine:
                 raise self.api.Refusal("runtime_verification_failed")
             else:
                 expected[key] = value
-        if (actual["operation"] != state["operation_id"] or self.base.environment_map(actual["env"]) != expected or actual["mounts"] != state["layouts"][service]["mounts"]
+        if (actual["operation"] != state["operation_id"] or actual.get("image_reference") != state["artifacts"]["execution_reference"]
+                or not self.manifest_bound(actual, state)
+                or rendered.get("image") != state["artifacts"]["execution_reference"] or rendered.get("platform") != state["artifacts"]["execution_platform"]
+                or self.base.environment_map(actual["env"]) != expected or actual["mounts"] != state["layouts"][service]["mounts"]
                 or actual["cmd"] != rendered.get("command", image["cmd"]) or actual["entrypoint"] != rendered.get("entrypoint", image["entrypoint"])
                 or actual["user"] != rendered.get("user", image["user"]) or actual["workdir"] != rendered.get("working_dir", image["workdir"])):
             raise self.api.Refusal("runtime_verification_failed")
@@ -312,10 +355,7 @@ class Engine:
         if self.base.oneoff_active("wayfindr-updater-migration-" + operation) or self.base.oneoff_active("wayfindr-updater-fence-" + operation):
             raise self.api.Refusal("recovery_required")
         self.operator_commands_settled(operation)
-        code, raw = self.api.capture(self.staged_compose(directory) + ["run", "--rm", "--no-deps", "--pull=never", "--entrypoint", "php", "--name", "wayfindr-updater-fence-" + operation, "-T", "web", "artisan", "wayfindr:upgrade-window", operation, "--action=enter", "--json"], timeout=30)
-        if code != 0:
-            raise self.api.Refusal("recovery_required")
-        return self.api.strict_json(raw, "recovery_required")
+        return self.oneoff(directory, operation, state, "fence")
 
     def operator_commands_settled(self, operation):
         # A killed Compose client cannot prove its PHP oneoff never started.
@@ -366,7 +406,7 @@ class Applier:
                 self.fail("recovery_required")
         else:
             self.mkdir(directory)
-        state = {"schema": 1, "installation_id": self.config.installation_id, "operation_id": operation,
+        state = {"schema": 2, "installation_id": self.config.installation_id, "operation_id": operation,
                  "plan_id": public["plan_id"], "source": public["source"], "target": public["target"], "stage": "download_intent",
                  "started": time.time(), "old_config": copy.deepcopy(self.config.value), "new_config": None, "overlay": None,
                  "source_context": context, "dependencies": sorted(self.engine.dependencies()),
@@ -380,7 +420,7 @@ class Applier:
     def load(self, directory, operation):
         state = private_object(directory / "state.json", self.api, secure=self.secure)
         public = self.journal.status(operation)["operation"]
-        if (set(state) != STATE_KEYS or type(state["schema"]) is not int or state["schema"] != 1 or state["installation_id"] != self.config.installation_id
+        if (set(state) != STATE_KEYS or type(state["schema"]) is not int or state["schema"] != 2 or state["installation_id"] != self.config.installation_id
                 or state["operation_id"] != operation or state["plan_id"] != public["plan_id"] or state["source"] != public["source"]
                 or state["target"] != public["target"] or state["stage"] not in STAGES or self.config.value not in (state["old_config"], state["new_config"])
                 or not isinstance(state["target_ids"], dict) or not set(state["target_ids"]) <= set(SERVICES)
@@ -418,11 +458,17 @@ class Applier:
         if not isinstance(evidence, dict) or evidence.get("target") != state["target"] or any(evidence.get(key) != public[key] for key in ("index_digest", "platform_manifest_digest", "config_digest", "manifest_sha256", "history_sha256")):
             self.fail("artifact_verification_failed")
         architecture = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
+        expected_reference = "ghcr.io/adamgreenwell/wayfindr:" + state["target"]["version"] + "@" + state["target"]["image_digest"]
+        if (evidence.get("schema") != 2 or evidence.get("execution_reference") != expected_reference
+                or evidence.get("execution_platform") != "linux/" + str(architecture)
+                or not isinstance(evidence.get("local_image_id"), str) or not DIGEST.fullmatch(evidence["local_image_id"])):
+            self.fail("artifact_verification_failed")
         if self.artifacts.verify(state["target"], evidence, architecture, directory / "artifacts") != evidence:
             self.fail("artifact_verification_failed")
         expected = copy.deepcopy(state["overlay"])
         for item in expected["services"].values():
-            item["image"] = evidence["config_digest"]
+            item["image"] = evidence["execution_reference"]
+            item["platform"] = evidence["execution_platform"]
         target_file = directory / "target.yml"
         if self.secure:
             self.api.trusted(target_file)
@@ -466,7 +512,8 @@ class Applier:
         reference = "ghcr.io/adamgreenwell/wayfindr:" + state["target"]["version"] + "@" + state["target"]["image_digest"]
         for service in (*SERVICES, "storage-init"):
             item = overlay["services"].setdefault(service, {})
-            item["image"] = reference
+            item["image"] = state["artifacts"]["execution_reference"]
+            item["platform"] = state["artifacts"]["execution_platform"]
             if service != "storage-init":
                 item.setdefault("environment", {}).update(WAYFINDR_IMAGE=reference, WAYFINDR_AUTO_MIGRATE="0")
                 item.setdefault("labels", {})["io.wayfindr.managed-operation"] = operation
@@ -474,7 +521,8 @@ class Applier:
         state["new_config"] = {**state["old_config"], "image_reference": reference, "overlay_sha256": digest(self.api.encoded(overlay))}
         staging = copy.deepcopy(overlay)
         for item in staging["services"].values():
-            item["image"] = state["artifacts"]["config_digest"]
+            item["image"] = state["artifacts"]["execution_reference"]
+            item["platform"] = state["artifacts"]["execution_platform"]
         self.api.atomic_write(directory / "target.yml", staging)
         self.persist(directory, state, "downloaded")
         self.checkpoint(operation, "target_verified", phase="protecting", **{key: state["artifacts"][key] for key in ("index_digest", "platform_manifest_digest", "config_digest", "manifest_sha256", "history_sha256")})
@@ -496,12 +544,14 @@ class Applier:
         return value
 
     def operator_protocol(self, directory, operation, state):
+        self.verify_staging(directory, operation, state)
         contract = self.engine.oneoff(directory, operation, state, "protocol")
         if (not isinstance(contract, dict) or contract != OPERATOR_CONTRACT
                 or type(contract.get("schema")) is not int or type(contract.get("protocol")) is not int):
             self.fail("apply_unavailable")
 
     def migration(self, directory, operation, state, recovery):
+        self.verify_staging(directory, operation, state)
         if recovery:
             if self.engine.oneoff_active("wayfindr-updater-migration-" + operation):
                 self.fail("migration_ambiguous")
@@ -527,6 +577,7 @@ class Applier:
         self.checkpoint(operation, "migrations_verified", phase="restarting", migration_verified=True, migration_receipt_sha256=state["migration_receipt_sha256"])
 
     def reconcile_services(self, directory, operation, state):
+        self.verify_staging(directory, operation, state)
         self.persist(directory, state, "restart_intent")
         self.checkpoint(operation, "target_restart_intent", phase="restarting")
         self.protector.check_window(self.engine.ensure_target_window(directory, operation, state), operation, {key: state["target"][key] for key in ("version", "commit")}, True)
@@ -535,7 +586,7 @@ class Applier:
             candidates = []
             for container in ids:
                 record = self.engine.inspect(container)
-                if record["image"] == state["artifacts"]["config_digest"] and container != state["source_context"]["containers"][service]:
+                if record["image"] == state["artifacts"]["local_image_id"] and container != state["source_context"]["containers"][service]:
                     if service not in state["creation_intents"]:
                         self.fail("recovery_required")
                     candidates.append(container)
@@ -550,6 +601,7 @@ class Applier:
                     self.fail("recovery_required")
                 state["creation_intents"] = sorted(set(state["creation_intents"]) | {service})
                 self.persist(directory, state, "restart_intent")
+                self.verify_staging(directory, operation, state)
                 self.engine.create(directory, service)
                 ids = self.engine.all_ids(service)
                 if len(ids) != 1 or ids[0] == state["source_context"]["containers"][service]:
@@ -571,13 +623,15 @@ class Applier:
     def check_target(self, record, service, state, running=True):
         status = record.get("state", {})
         if (record.get("id") == state["source_context"]["containers"][service] or not isinstance(record.get("id"), str) or not HASH.fullmatch(record["id"])
-                or record.get("image") != state["artifacts"]["config_digest"] or record.get("project") != self.config.value["compose_project"]
+                or record.get("image") != state["artifacts"]["local_image_id"] or record.get("project") != self.config.value["compose_project"]
                 or record.get("service") != service or str(record.get("oneoff")).lower() != "false" or type(status.get("Running")) is not bool
                 or (running is not None and status["Running"] is not running) or any(status.get(key) is not False for key in ("Paused", "Restarting", "Dead", "OOMKilled"))
                 or status.get("Error") or record.get("restarts") != 0 or (not status["Running"] and status.get("ExitCode") != 0)):
             self.fail("runtime_verification_failed")
 
     def verify_runtime(self, directory, operation, state, source=False):
+        if not source:
+            self.verify_staging(directory, operation, state)
         ids = state["source_context"]["containers"] if source else state["target_ids"]
         if set(ids) != set(SERVICES) or self.engine.service_ids() != ids or sorted(self.engine.dependencies()) != state["dependencies"]:
             self.fail("runtime_verification_failed")
@@ -634,6 +688,7 @@ class Applier:
         self.proof(state["origin"], keys, operation, identity, held, self.api)
 
     def promote(self, directory, operation, state):
+        self.verify_staging(directory, operation, state)
         self.persist(directory, state, "configuration_commit_intent")
         self.checkpoint(operation, "configuration_commit_intent", phase="verifying")
         # Accept only the exact reviewed pair during interruption reconciliation.
@@ -659,6 +714,7 @@ class Applier:
         self.checkpoint(operation, "configuration_committed", phase="verifying", configuration_committed=True)
 
     def finish_target(self, directory, operation, state):
+        self.verify_staging(directory, operation, state)
         self.engine.settled(state["target_ids"], operation)
         self.persist(directory, state, "release_intent")
         self.checkpoint(operation, "apply_release_intent", phase="verifying")
@@ -736,7 +792,7 @@ class Applier:
                 self.journal.check_cancel(operation)
                 self.download(directory, operation, state)
                 # target.yml is bound to the independently verified immutable
-                # config digest. Check compatibility before owning intake or
+                # repository digest and native platform. Check compatibility before owning intake or
                 # stopping a source writer; migration rechecks the same target.
                 protocol_preflight_pending = True
                 self.operator_protocol(directory, operation, state)

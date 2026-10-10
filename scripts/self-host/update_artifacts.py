@@ -47,6 +47,15 @@ INDEX_TYPES = {"application/vnd.oci.image.index.v1+json", "application/vnd.docke
 MANIFEST_TYPES = {"application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"}
 CONFIG_TYPES = {"application/vnd.oci.image.config.v1+json", "application/vnd.docker.container.image.v1+json"}
 LAYER_TYPES = {"application/vnd.oci.image.layer.v1.tar", "application/vnd.oci.image.layer.v1.tar+gzip", "application/vnd.oci.image.layer.v1.tar+zstd", "application/vnd.docker.image.rootfs.diff.tar.gzip"}
+# Docker's older classic inspect serializes container.Config rather than OCI
+# Config. These exact zero values are added by its non-omitempty legacy fields:
+# https://github.com/moby/moby/blob/v28.0.0/api/types/container/config.go
+# https://github.com/moby/moby/blob/v28.0.0/daemon/images/image_inspect.go
+# Never omit an unknown key, change a published field, or normalize containerd.
+LEGACY_CONFIG_DEFAULTS = {"Hostname": "", "Domainname": "", "AttachStdin": False,
+                          "AttachStdout": False, "AttachStderr": False, "Tty": False,
+                          "OpenStdin": False, "StdinOnce": False, "Image": "",
+                          "Volumes": None, "OnBuild": None, "WorkingDir": ""}
 
 
 def _hash(raw):
@@ -56,6 +65,32 @@ def _hash(raw):
 def _same(left, right):
     # Python considers True == 1; release contracts preserve JSON value types.
     return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(right, sort_keys=True, separators=(",", ":"))
+
+
+def platform_descriptor_matches(actual, expected):
+    """Bind a container's selected manifest, allowing only ARM64 v8 spelling.
+
+    Docker may add its selected image platform to a descriptor or omit optional
+    metadata. Exact public manifest bytes (digest/type/size) remain mandatory.
+    """
+    if not isinstance(actual, dict) or not isinstance(expected, dict):
+        return False
+    base = {"mediaType", "digest", "size"}
+    if (not base <= set(actual) or set(actual) - base - {"platform", "annotations"}
+            or not base <= set(expected) or any(not _same(actual[key], expected[key]) for key in base)):
+        return False
+    if "annotations" in actual and ("annotations" not in expected or not _same(actual["annotations"], expected["annotations"])):
+        return False
+    if "platform" in actual:
+        platform, published = actual["platform"], expected.get("platform")
+        if (not isinstance(platform, dict) or not isinstance(published, dict)
+                or not {"os", "architecture"} <= set(platform) or set(platform) - {"os", "architecture", "variant"}
+                or platform["os"] != published.get("os") or platform["architecture"] != published.get("architecture")):
+            return False
+        variants = (None, "v8") if published.get("architecture") == "arm64" else (None,)
+        if platform.get("variant") not in variants or published.get("variant") not in variants:
+            return False
+    return True
 
 
 def _version(value):
@@ -595,6 +630,7 @@ class Artifacts:
     def _chain(self, target, architecture, raw, read):
         if "sha256:" + _hash(raw) != target["image_digest"]:
             raise ValueError()
+        raw_index = raw
         index = _object(raw)
         if type(index.get("schemaVersion")) is not int or index["schemaVersion"] != 2 or index.get("mediaType") not in INDEX_TYPES or not isinstance(index.get("manifests"), list) or not 2 <= len(index["manifests"]) <= 32:
             raise ValueError()
@@ -633,7 +669,12 @@ class Artifacts:
         if image.get("os") != "linux" or image.get("architecture") != architecture or image.get("variant") not in ((None,) if architecture == "amd64" else (None, "v8")) or not isinstance(rootfs, dict) or rootfs.get("type") != "layers" or not isinstance(rootfs.get("diff_ids"), list) or len(rootfs["diff_ids"]) != len(manifest["layers"]) or any(not isinstance(digest, str) or not DIGEST.fullmatch(digest) for digest in rootfs["diff_ids"]):
             raise ValueError()
         self._image_config(image.get("config"), target)
-        return selected["digest"], config["digest"]
+        # Public content digests never stand in for the local Docker image ID.
+        # Docker classic uses the config digest; Docker's containerd store uses
+        # its image target (normally the index, or a selected manifest).
+        return {"platform_manifest_digest": selected["digest"], "config_digest": config["digest"],
+                "image_config": image, "index_descriptor": {"mediaType": index["mediaType"],
+                "digest": target["image_digest"], "size": len(raw_index)}, "platform_descriptor": selected}
 
     def _image_config(self, config, target):
         if not isinstance(config, dict) or config.get("User") not in ("wayfindr", "1000", "1000:1000") or config.get("Entrypoint") != ["wayfindr-entrypoint"] or config.get("Cmd") != ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]:
@@ -673,33 +714,82 @@ class Artifacts:
         self._save(name, content)
         return content
 
-    def _local_image(self, target, architecture, config):
-        reference = IMAGE + "@" + target["image_digest"]
-        raw = self._command(["image", "inspect", "--format", '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"config":{{json .Config}},"digests":{{json .RepoDigests}}}', reference])
-        image = _object(raw)
-        if set(image) != {"id", "os", "architecture", "config", "digests"} or image["id"] != config or image["os"] != "linux" or image["architecture"] != architecture or not isinstance(image["digests"], list) or reference not in image["digests"]:
-            raise ValueError()
-        self._image_config(image["config"], target)
-        return image
+    def _local_config_matches(self, actual, published, classic):
+        if not isinstance(actual, dict):
+            return False
+        expected = dict(published)
+        if classic:
+            for key, default in LEGACY_CONFIG_DEFAULTS.items():
+                if key in actual and key not in published:
+                    if not _same(actual[key], default):
+                        return False
+                    expected[key] = default
+        return _same(actual, expected)
 
-    def _probe(self, target, architecture, platform, config, manifest_raw, baked_history):
-        # Retain the published index selector for later installation checks.
-        # Independent child/config proof above still binds Docker's selection.
+    def _local_image(self, target, architecture, chain):
+        reference = IMAGE + "@" + target["image_digest"]
+        # Inspect as-is: containerd's --platform inspect reports a selected
+        # manifest ID even when create would report the original index ID.
+        # Full JSON also works on classic engines without a Descriptor field.
+        image = _object(self._command(["image", "inspect", "--format", "{{json .}}", reference]))
+        published = chain["image_config"]
+        local_id, descriptor = image.get("Id"), image.get("Descriptor")
+        variant = image.get("Variant")
+        if variant == "":
+            variant = None
+        if (not isinstance(local_id, str) or not DIGEST.fullmatch(local_id)
+                or image.get("Os") != published["os"] or image.get("Architecture") != architecture
+                or variant != published.get("variant")
+                or not isinstance(image.get("RepoDigests"), list) or reference not in image["RepoDigests"]
+                or any(not isinstance(value, str) for value in image["RepoDigests"])
+                or not self._local_config_matches(image.get("Config"), published["config"], local_id == chain["config_digest"] and descriptor is None)
+                or not _same(image.get("RootFS"), {"Type": published["rootfs"]["type"], "Layers": published["rootfs"]["diff_ids"]})):
+            raise ValueError()
+        if local_id == chain["config_digest"]:
+            # A classic engine has no OCI target descriptor. A fabricated
+            # descriptor cannot turn a config ID into a containerd target ID.
+            if descriptor is not None:
+                raise ValueError()
+        else:
+            expected = next((item for item in (chain["index_descriptor"], chain["platform_descriptor"])
+                             if item["digest"] == local_id), None)
+            if expected is None or not isinstance(descriptor, dict):
+                raise ValueError()
+            base = {"mediaType", "digest", "size"}
+            if (not base <= set(descriptor) or set(descriptor) - base - {"platform", "annotations"}
+                    or any(not _same(descriptor[key], expected[key]) for key in base)
+                    or any(key not in expected or not _same(descriptor[key], expected[key])
+                           for key in ("platform", "annotations") if key in descriptor)):
+                raise ValueError()
+        return {"local_image_id": local_id, "local_image_descriptor": descriptor,
+                "execution_reference": IMAGE + ":" + target["version"] + "@" + target["image_digest"],
+                "execution_platform": "linux/" + architecture}
+
+    def _probe(self, target, architecture, chain, manifest_raw, baked_history):
         reference = IMAGE + "@" + target["image_digest"]
         self._command(["pull", "--platform=linux/" + architecture, reference], timeout=TIMEOUT)
-        image = self._local_image(target, architecture, config)
+        binding = self._local_image(target, architecture, chain)
         name = "wayfindr-updater-artifact-" + _hash(str(self.directory).encode())[:24]
-        probe = self._command(["create", "--name", name, "--pull=never", "--platform=linux/" + architecture, "--network=none", "--entrypoint", "/bin/true", config]).decode("ascii").strip()
+        probe = self._command(["create", "--name", name, "--pull=never", "--platform=" + binding["execution_platform"], "--network=none", "--entrypoint", "/bin/true", binding["execution_reference"]]).decode("ascii").strip()
         if not CONTAINER.fullmatch(probe):
             raise ValueError()
         try:
-            state = _object(self._command(["inspect", "--format", '{"id":{{json .Id}},"image":{{json .Image}},"state":{{json .State}},"mounts":{{json .Mounts}},"entrypoint":{{json .Config.Entrypoint}}}', probe]))
-            if set(state) != {"id", "image", "state", "mounts", "entrypoint"} or state["id"] != probe or state["image"] != config or not isinstance(state["state"], dict) or state["state"].get("Status") != "created" or state["state"].get("Running") is not False or state["entrypoint"] != ["/bin/true"] or not isinstance(state["mounts"], list):
+            state = _object(self._command(["inspect", "--format", "{{json .}}", probe]))
+            status, container_config, host = state.get("State"), state.get("Config"), state.get("HostConfig")
+            descriptor = state.get("ImageManifestDescriptor")
+            if (state.get("Id") != probe or state.get("Image") != binding["local_image_id"]
+                    or not isinstance(container_config, dict) or container_config.get("Image") != binding["execution_reference"]
+                    or container_config.get("Entrypoint") != ["/bin/true"] or not isinstance(host, dict) or host.get("NetworkMode") != "none"
+                    or not isinstance(status, dict) or status.get("Status") != "created" or status.get("Running") is not False
+                    or type(status.get("Pid")) is not int or status["Pid"] != 0
+                    or status.get("StartedAt") != "0001-01-01T00:00:00Z" or not isinstance(state.get("Mounts"), list)
+                    or (descriptor is None and binding["local_image_id"] != chain["config_digest"])
+                    or (descriptor is not None and not platform_descriptor_matches(descriptor, chain["platform_descriptor"]))):
                 raise ValueError()
-            # Base Caddy images may declare these anonymous state volumes.
-            # Never attach any installation volume or let an image mask identity.
-            expected_volumes = set(image["config"].get("Volumes", {}))
-            if len(state["mounts"]) != len(expected_volumes) or {item.get("Destination") for item in state["mounts"] if isinstance(item, dict)} != expected_volumes or any(not isinstance(item, dict) or item.get("Type") != "volume" or not isinstance(item.get("Name"), str) or not CONTAINER.fullmatch(item["Name"]) for item in state["mounts"]):
+            # Only the published image's anonymous state volumes may exist.
+            # Never attach installation volumes or let an image mask identity.
+            expected_volumes = set(chain["image_config"]["config"].get("Volumes", {}))
+            if len(state["Mounts"]) != len(expected_volumes) or {item.get("Destination") for item in state["Mounts"] if isinstance(item, dict)} != expected_volumes or any(not isinstance(item, dict) or item.get("Type") != "volume" or not isinstance(item.get("Name"), str) or not CONTAINER.fullmatch(item["Name"]) for item in state["Mounts"]):
                 raise ValueError()
             version = self._copy(probe, "/etc/wayfindr/version", "image-version")
             commit = self._copy(probe, "/etc/wayfindr/commit", "image-commit")
@@ -707,7 +797,11 @@ class Artifacts:
             history = self._copy(probe, "/etc/wayfindr/release-history.json", "image-release-history.json")
             if version not in (target["tag"].encode(), target["tag"].encode() + b"\n") or commit not in (target["commit"].encode(), target["commit"].encode() + b"\n") or release != manifest_raw or not _same(_object(history), baked_history):
                 raise ValueError()
-            return _hash(history)
+            # Recheck after copying: a stale pre-create inspect cannot attest a
+            # different local image selected during the never-started probe.
+            if not _same(self._local_image(target, architecture, chain), binding):
+                raise ValueError()
+            return _hash(history), binding
         finally:
             self._command(["rm", "--volumes", probe])
 
@@ -740,9 +834,9 @@ class Artifacts:
             if not compose_raw or b"\x00" in compose_raw:
                 raise ValueError()
             compose_raw.decode("utf-8")
-            platform, config = self._registry(target, architecture)
-            baked_history_sha256 = self._probe(target, architecture, platform, config, manifest_raw, baked)
-            evidence = {"schema": 1, "target": dict(target), "index_digest": target["image_digest"], "platform_manifest_digest": platform, "config_digest": config,
+            chain = self._registry(target, architecture)
+            baked_history_sha256, binding = self._probe(target, architecture, chain, manifest_raw, baked)
+            evidence = {"schema": 2, "target": dict(target), "index_digest": target["image_digest"], "platform_manifest_digest": chain["platform_manifest_digest"], "config_digest": chain["config_digest"], "platform_manifest_descriptor": chain["platform_descriptor"], **binding,
                         "manifest_sha256": _hash(manifest_raw), "history_sha256": _hash(history_raw), "baked_history_sha256": baked_history_sha256, "digest_asset_sha256": _hash(digest_raw), "compose_sha256": _hash(compose_raw)}
             self._save("artifacts.json", (json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n").encode())
             self._deadline()
@@ -759,10 +853,10 @@ class Artifacts:
         """
         try:
             self._begin(target, architecture, directory)
-            required = {"schema", "target", "index_digest", "platform_manifest_digest", "config_digest", "manifest_sha256", "history_sha256", "baked_history_sha256", "digest_asset_sha256", "compose_sha256"}
-            if not isinstance(evidence, dict) or set(evidence) != required or type(evidence["schema"]) is not int or evidence["schema"] != 1 or not _same(evidence["target"], target) or evidence["index_digest"] != target["image_digest"]:
+            required = {"schema", "target", "index_digest", "platform_manifest_digest", "config_digest", "platform_manifest_descriptor", "local_image_id", "local_image_descriptor", "execution_reference", "execution_platform", "manifest_sha256", "history_sha256", "baked_history_sha256", "digest_asset_sha256", "compose_sha256"}
+            if not isinstance(evidence, dict) or set(evidence) != required or type(evidence["schema"]) is not int or evidence["schema"] != 2 or not _same(evidence["target"], target) or evidence["index_digest"] != target["image_digest"]:
                 raise ValueError()
-            for key in ("index_digest", "platform_manifest_digest", "config_digest"):
+            for key in ("index_digest", "platform_manifest_digest", "config_digest", "local_image_id"):
                 if not isinstance(evidence[key], str) or not DIGEST.fullmatch(evidence[key]):
                     raise ValueError()
             for key in ("manifest_sha256", "history_sha256", "baked_history_sha256", "digest_asset_sha256", "compose_sha256"):
@@ -791,8 +885,9 @@ class Artifacts:
             self._asset_url(release, target["tag"], "release-image-digest.txt", evidence["digest_asset_sha256"])
             def read(_kind, digest, name, size):
                 return self._read(name, digest=digest, size=size)
-            platform, config = self._chain(target, architecture, self._read("image-index.json", digest=target["image_digest"]), read)
-            if platform != evidence["platform_manifest_digest"] or config != evidence["config_digest"]:
+            chain = self._chain(target, architecture, self._read("image-index.json", digest=target["image_digest"]), read)
+            if (chain["platform_manifest_digest"] != evidence["platform_manifest_digest"] or chain["config_digest"] != evidence["config_digest"]
+                    or not _same(chain["platform_descriptor"], evidence["platform_manifest_descriptor"])):
                 raise ValueError()
             version = self._read("image-version", maximum=129)
             commit = self._read("image-commit", maximum=65)
@@ -800,7 +895,9 @@ class Artifacts:
             baked_raw = self._read("image-release-history.json", maximum=COPY_MAXIMUM, digest="sha256:" + evidence["baked_history_sha256"])
             if version not in (target["tag"].encode(), target["tag"].encode() + b"\n") or commit not in (target["commit"].encode(), target["commit"].encode() + b"\n") or release_raw != manifest_raw or not _same(_object(baked_raw), baked):
                 raise ValueError()
-            self._local_image(target, architecture, config)
+            binding = self._local_image(target, architecture, chain)
+            if not _same(binding, {key: evidence[key] for key in binding}):
+                raise ValueError()
             self._deadline()
             return evidence
         except Exception:
