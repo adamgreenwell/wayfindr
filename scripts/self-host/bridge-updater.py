@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from datetime import datetime
 import fcntl
 import hashlib
 import importlib.util
@@ -40,6 +41,17 @@ EVENTS = [("operation_accepted", "accepted"), ("prepare_started", "preparing"),
           ("plan_reported", "preparing"), ("operation_blocked", "blocked"),
           ("operator_started", "downloading"), ("apply_started", "downloading"),
           ("recovery_required", "recovery_required")]
+# Exact public declarations retained by the supported v1.2.0 -> v1.3.0 runner
+# adoption. Canonical hashes bind every Git blob, image, manifest, provenance
+# file and historical CLI byte; they contain no installation or transaction ID.
+QUALIFICATION_RELEASE_IDENTITIES = {
+    "source": "a2ef3276aa4c90f101b120aaf6faabffcdb7918f05dba4ee74a4aa27fa37174a",
+    "target": "432e90363267fc1f3d16193742747ae4dfa7e613e19ceb84e90bf27f3e9ece21",
+}
+QUALIFICATION_HELPER_IDENTITIES = {
+    "source": "e55a3cd88134a030cc1f4da86d6e14f7297962df30dcf8678946955c95c58ddf",
+    "selected": "6c5e9e5cc28a0c1ba6da4955af828e4ac0909a901c12f2a339ad6d2fc98f1436",
+}
 
 
 def journal_state(value, operation_id=None):
@@ -109,13 +121,68 @@ def private_tree(path, *, excluding=None):
     return result
 
 
+def qualification_state(config):
+    """Preserve an existing runner attestation without using it as authority."""
+    path = U.STATE / "qualification"
+    if not U.exists(path):
+        return None
+    if U.identity(path, directory=True)[2:] != [0, 0, 0o700] or {entry.name for entry in path.iterdir()} != {"disposable.json"}:
+        refuse("bridge_qualification_unverified")
+    marker = path / "disposable.json"
+    U.private(marker)
+    if U.identity(marker)[2:] != [0, 0, 0o600]:
+        refuse("bridge_qualification_unverified")
+    value = U.read_json(marker, maximum=2_000_000)
+    keys = {"schema", "purpose", "installation_id", "run_id", "vm_kind", "created_at", "initial_boot_id", "source", "target", "helper"}
+    if (set(value) != keys or type(value["schema"]) is not int or value["schema"] != 2
+            or value["purpose"] != "disposable-update-qualification" or value["installation_id"] != config.installation_id
+            or value["vm_kind"] != "dedicated_vm" or not canonical_uuid(value["run_id"]) or not canonical_uuid(value["initial_boot_id"])
+            or not isinstance(value["created_at"], str)):
+        refuse("bridge_qualification_unverified")
+    try:
+        created = datetime.strptime(value["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        refuse("bridge_qualification_unverified")
+    if created.strftime("%Y-%m-%dT%H:%M:%SZ") != value["created_at"]:
+        refuse("bridge_qualification_unverified")
+    release_keys = {"tag", "version", "commit", "image_digest", "image_reference", "manifest_sha256", "digest_asset_sha256",
+                    "metadata_verified", "minimum_upgrade_from", "protocol_probe_present", "release_id", "release_url",
+                    "required_files", "required_files_present", "source_tree_sha", "source_tree_verified", "helper_version", "helper_protocol"}
+    for role, expected in (("source", {"tag": "v1.2.0", **SOURCE}), ("target", TARGET)):
+        identity = value[role]
+        if (not isinstance(identity, dict) or set(identity) != release_keys
+                or any(identity.get(key) != item for key, item in expected.items())
+                or U.digest(U.encoded(identity)) != QUALIFICATION_RELEASE_IDENTITIES[role]):
+            refuse("bridge_qualification_unverified")
+    helper = value["helper"]
+    if (not isinstance(helper, dict) or set(helper) != {"source", "selected", "transaction_id", "receipt_sha256"}
+            or not canonical_uuid(helper["transaction_id"]) or not isinstance(helper["receipt_sha256"], str)
+            or not U.HEX.fullmatch(helper["receipt_sha256"])):
+        refuse("bridge_qualification_unverified")
+    distribution_keys = {"tag", "commit", "source_tree_sha", "schema", "helper_version", "protocol", "files",
+                         "bundle_sha256", "provenance_files", "upgrade_cli_sha256"}
+    for role, release_role in (("source", "source"), ("selected", "target")):
+        distribution, release = helper[role], value[release_role]
+        if (not isinstance(distribution, dict) or set(distribution) != distribution_keys
+                or type(distribution["schema"]) is not int or distribution["schema"] != 1
+                or type(distribution["protocol"]) is not int or distribution["protocol"] != 1
+                or any(distribution[key] != release[key] for key in ("tag", "commit", "source_tree_sha", "helper_version"))
+                or distribution["protocol"] != release["helper_protocol"]
+                or U.digest(U.encoded({key: distribution[key] for key in ("schema", "helper_version", "protocol", "files")})) != distribution["bundle_sha256"]
+                or U.digest(U.encoded(distribution)) != QUALIFICATION_HELPER_IDENTITIES[role]):
+            refuse("bridge_qualification_unverified")
+    # The nested helper proof describes adoption, so it intentionally remains
+    # bound to the old generation after replacement. Never re-adopt or rewrite it.
+    return private_tree(path)
+
+
 def observe_state(runtime, config, operation_id, expected_sha, *, record=None, distribution=None, recovering=False):
     U.private(U.STATE / "journal.json", 0o600, 1000)
     raw = (U.STATE / "journal.json").read_bytes()
     value = runtime.strict_json(raw, "journal_corrupt")
     state = require_state(runtime, value, config.installation_id, operation_id, expected_sha)
     allowed = {"journal.json", "helper.lock", U.LOCK.name, U.TRANSACTION.name, U.STOP.name,
-               U.RECEIPTS.name, "apply", "protection"}
+               U.RECEIPTS.name, "apply", "protection", "qualification"}
     if recovering:
         allowed |= {".helper-upgrade.next", ".helper-upgrade-stop.next"}
     if {path.name for path in U.STATE.iterdir()} - allowed:
@@ -141,6 +208,14 @@ def observe_state(runtime, config, operation_id, expected_sha, *, record=None, d
             refuse("bridge_unowned_history")
         history = None
     retained["helper-upgrades"] = history
+    qualification = qualification_state(config)
+    if record is not None and "qualification" not in record["retained"]:
+        # The earlier candidate refused every qualification directory. Its
+        # interrupted records can recover only while that absence stays exact.
+        if qualification is not None:
+            refuse("bridge_state_changed")
+    else:
+        retained["qualification"] = qualification
     return raw, value, state, retained
 
 
@@ -319,7 +394,7 @@ def validate_record(record, selected_hash, new, operation_id, expected_sha):
             or record["verified_generation"] != (generations[-1] if generations else None)):
         refuse("bridge_transaction_changed")
     if (not all(isinstance(record[key], dict) for key in ("history", "retained", "preserved", "baseline"))
-            or set(record["retained"]) != {"apply", "protection", "helper-upgrades"}
+            or set(record["retained"]) not in ({"apply", "protection", "helper-upgrades"}, {"apply", "protection", "helper-upgrades", "qualification"})
             or U.digest(U.encoded(record["history"])) != expected_sha):
         refuse("bridge_transaction_changed")
     identity = record["freeze_identity"]

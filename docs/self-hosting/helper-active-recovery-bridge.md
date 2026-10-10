@@ -6,6 +6,13 @@ not establish native acceptance, a release, application recovery or completed
 managed-update qualification. Do not use this candidate on a production host.
 The [normal helper replacement](helper-0.6-candidate.md) remains idle-only.
 
+An ARM64/containerd rehearsal completed two read-only preservation baselines,
+then refused during inspection with `partial_state`, before a bridge transaction,
+helper kill or code exchange. The original candidate did not recognize the
+qualification marker already created by the supported VM runner. The correction
+below has offline coverage; native bridge acceptance is still pending and managed
+qualification remains **0/100**.
+
 ## One narrowly admitted state
 
 `scripts/self-host/bridge-updater.py` provides a separate root-only action for
@@ -101,6 +108,22 @@ credential byte, runtime/state/lifetime-lock identity and application runtime
 binding is preserved. The complete original 0.5 code generation also remains
 retained. Ordinary idle inspection tolerates this custody after a separately
 completed application recovery without adopting it as a normal upgrade receipt.
+
+An existing VM runner attestation may be retained only as the exact root-owned
+private `qualification/disposable.json` subtree with schema 2, a valid canonical
+UTC date and the matching installation. This narrowly supported bridge case
+binds the complete reviewed public v1.2.0/v1.3.0 release declarations and their
+historical 0.4.0/0.5.0 helper declarations, including every source blob, image,
+manifest, provenance file and historical upgrade CLI. Unknown nested fields or
+substituted identity values refuse. These fixed public identities describe the
+original supported runner adoption; they do not select the newly installed 0.6
+helper or admit future release shapes. Its complete bytes and directory/file
+identities must remain unchanged, including its historical helper and boot
+bindings. The bridge does not use the marker as authorization, rewrite it or
+re-adopt the VM. Missing, partial, unknown or changed entries refuse. An interrupted
+record from the earlier candidate, which rejected this subtree, can recover only
+while the subtree remains absent. The normal idle CLI is unchanged; do not delete
+qualification state to bypass its own state checks.
 
 A successful receipt reports `active_operation_preserved = true`,
 `application_changed = false` and the freshly verified helper generation. The
