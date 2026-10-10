@@ -325,7 +325,7 @@ That is point-in-time variability—not long-term drift resistance,
 model-revision evidence, provider or runtime approval, or authority to change
 ADR 0004.
 
-The list below describes the published 1.2.0 capability set; managed-update
+The list below describes the published 1.3.0 capability set; managed-update
 qualification remains pending as stated above.
 
 - browser and CLI first-run setup;
