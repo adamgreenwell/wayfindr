@@ -32,8 +32,10 @@ missed while skimming.
 
 **No operator action required.** There are no new database migrations. Optional
 managed updates remain under disposable-VM qualification. The host helper
-correction below is development source; it has not been published or installed
-by an application update.
+corrections below are development source; they have not been published or
+installed by an application update. Application updates preserve the installed
+helper. Helper replacement remains a separate, explicit administrator command.
+
 
 ### Fixed
 
@@ -51,7 +53,6 @@ by an application update.
   systemd still caches the old generation's frozen state, the CLI explicitly
   reconciles it and verifies the same process again before clearing the
   transaction. Failed verification retains explicit recovery ownership.
-
 
 ## [1.3.0] - 2026-10-10
 
