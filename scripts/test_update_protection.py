@@ -635,7 +635,7 @@ class DockerSettlementTests(unittest.TestCase):
         self.ids = Engine().ids
         self.operation = str(uuid.uuid4())
         self.inspection = {"execs": [], "running": True}
-        self.processes = b"COMMAND\nphp artisan reverb:start --port=8080\n"
+        self.processes = b"PID COMMAND\n123 php artisan reverb:start --port=8080\n"
         self.top_code = 0
         self.present = False
         self.oneoff = "8" * 64
@@ -653,6 +653,11 @@ class DockerSettlementTests(unittest.TestCase):
             value = self.inspection if ".ExecIDs" in args[2] else {"state": self.state}
             return 0, json.dumps(value).encode()
         if args[0] == "top":
+            # The daemon uses the PID column to select the container's tasks.
+            # A command-only ps listing fails before its contents are returned.
+            fields = args[3].split(",") if len(args) == 4 and args[2] == "-eo" else []
+            if "pid" not in fields:
+                return 1, b""
             return self.top_code, self.processes
         if args[0] == "ps":
             return 0, self.oneoff.encode() if self.present else b""
@@ -681,7 +686,7 @@ class DockerSettlementTests(unittest.TestCase):
     def test_orphaned_window_process_blocks_even_after_exec_metadata_disappears(self):
         for action in ("enter", "release"):
             with self.subTest(action=action):
-                self.processes = ("COMMAND\nphp artisan wayfindr:upgrade-window " + self.operation + " --action=" + action + " --json\n").encode()
+                self.processes = ("PID COMMAND\n123 php artisan wayfindr:upgrade-window " + self.operation + " --action=" + action + " --json\n").encode()
                 self.refusal(lambda: self.engine.window(self.ids["web"], self.operation, "enter"))
 
     def test_malformed_exec_inspection_cannot_authorize_recovery(self):

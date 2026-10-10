@@ -102,7 +102,7 @@ class DockerEngine:
         if not isinstance(value, dict) or set(value) != {"execs", "running"} or value["execs"] not in (None, []) or type(value["running"]) is not bool:
             raise self.api.Refusal("recovery_required")
         if value["running"]:
-            processes = self.call(["top", container, "-eo", "args"], "recovery_required")
+            processes = self.call(["top", container, "-eo", "pid,args"], "recovery_required")
             if not processes.strip() or "wayfindr:upgrade-window" in processes:
                 raise self.api.Refusal("recovery_required")
 
