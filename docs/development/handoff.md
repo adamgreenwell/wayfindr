@@ -1,15 +1,17 @@
 # Engineering Handoff & Roadmap
 
-*Living document — updated October 9, 2026 (EDT). For an agent (or engineer) picking up
+*Living document — updated October 10, 2026 (EDT). For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§26](#26-docker-29-helper-recovery-candidate)**
-for the current Docker 29/helper-recovery candidate and its remaining gates,
-then [§25](#25-published-120--october-9-2026) for the current public release and
+**Taking the baton? Start at [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery)**
+for the clean helper upgrade and atomic-exchange recovery evidence and its
+remaining gates, then [§26](#26-docker-29-helper-recovery-candidate) for the
+earlier recovery/artifact-component rehearsal. See
+[§25](#25-published-120--october-9-2026) for the current public release and
 accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for the previous public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–24 are dated snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–26 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -33,7 +35,7 @@ differentiator.
 
 ---
 
-## 2. Current state (October 9, 2026 EDT)
+## 2. Current state (October 10, 2026 EDT)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -63,10 +65,13 @@ action. Unenrolled installs retain their update path. U1–U7 implementation is
 delivered, while U8/#1115, U9/#1116 and epic #1107 remain open. A real newer
 compatible published target and publication of the reviewed [Docker 29
 image-identity/helper fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
-are needed for managed apply. The ARM64/containerd interrupted helper recovery
-and current-release artifact-component candidate checks passed (§26);
-qualification remains false with zero managed scenarios. See §25 for the
-published source.
+are needed for managed apply. The merged helper passed a clean upgrade and
+same-transaction recovery after a kernel-confirmed atomic directory exchange
+and CLI SIGKILL on ARM64/containerd (§27). Earlier interrupted recovery and
+current-release artifact-component checks remain recorded in §26. The new
+process-crash check stopped before the parent-directory fsync; it establishes
+neither power-loss nor reboot durability. Qualification remains false with
+zero managed scenarios. See §25 for the published source.
 
 The previous public `v1.1.1` published October 2 at tag
 `648caa1b`, with the manifest and multi-architecture image at
@@ -419,9 +424,11 @@ Ordered by real dogfood value and dependency, not feature novelty.
    artifacts and aliases verified; ARM64 baked identity verification passed.
    ARM64 official installation/enrollment and idle restart/reboot passed.
    Ordinary separate-VM restore with real erasure replay also passed. The
-   Docker 29 image-binding/helper-lifecycle candidate for #1131 is implemented,
-   with native ARM64/containerd explicit recovery and artifact-component checks
-   passed ([§26](#26-docker-29-helper-recovery-candidate)). Publication of the
+   Docker 29 image-binding/helper-lifecycle fix for #1131 is merged. Native
+   ARM64/containerd clean helper upgrade and post-exchange process-crash recovery
+   passed ([§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery)); earlier
+   recovery/artifact-component checks remain in
+   [§26](#26-docker-29-helper-recovery-candidate). Publication of the
    reviewed fix, a genuine newer compatible application target and the 100-case
    native architecture/image-store qualification matrix remain separate gates.
    Keep `v1.1.1`'s verified public artifacts
@@ -438,8 +445,8 @@ Ordered by real dogfood value and dependency, not feature novelty.
    ordinary separate-VM restore receipt, with exact archive/keys/real ledger
    linkage. Keep U8 and U9 open: source and ordinary recovery cannot establish
    managed protective custody or apply. Those need a genuine newer compatible public
-   target and a supported host-helper lifecycle path for #1131, or a new
-   published source enrolled with the fixed helper. Do not manufacture a release to
+   target and publication of the rehearsed host-helper lifecycle path for #1131,
+   or a new published source enrolled with the fixed helper. Do not manufacture a release to
    complete the matrix or treat its synthetic tests as qualified VM scenarios.
 
 2. **The account area's structural work for 1.0.0 is done (§18).** #994's
@@ -1807,3 +1814,57 @@ during directory exchange, historical terminal apply recovery and the other
 native combinations remain unobserved. Keep U8/#1115, U9/#1116 and epic #1107 open.
 Follow the [qualification plan](../self-hosting/managed-update-qualification.md)
 and preserve all dated §25/source evidence intact.
+
+## 27. Clean helper upgrade and atomic-exchange recovery
+
+On October 10, the [sanitized lifecycle receipt](../self-hosting/evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+records two native trials on one new disposable Ubuntu 24.04.5 ARM64 VM with
+Docker 29.1.3/containerd. Both began with the exact published `v1.2.0`
+application at `56374e9574ed84616aae430d06589cfe2f0b33a0` and helper `0.4.0`.
+The unchanged merged distribution at
+`7b0cbb43bc3d9dbc2d4c97072d3b92e220cbbdae` supplied helper `0.5.0`, the exact
+`e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29`
+bundle and the CLI already bound in §26. No product correction was needed.
+
+The normal uninterrupted upgrade passed first. Its evidence was exported
+before restoring only this VM's own clean, powered-off baseline snapshot.
+The second trial freshly verified the restored published `0.4.0` generation;
+it was not a second independent VM. Earlier lab VMs remained intact.
+
+A private ptrace controller observed the unmodified CLI's actual ARM64
+`renameat2` entry: both `AT_FDCWD` descriptors, exact installed/staging paths
+and `RENAME_EXCHANGE` flags matched. At the kernel-reported syscall-exit stop,
+return value was zero without error, all five modules and directory inodes had
+exchanged, and the unchanged authoritative transaction still recorded
+`staging`. The controller killed and reaped only its owned CLI without resuming
+it. The CLI had not reached its parent-directory fsync or next transaction
+write. Fault-state evidence was exported before recovery.
+
+The old helper remained inactive with MainPID zero beyond a 6.5-second wait;
+the canonical `Restart=on-failure` policy and five-second delay remained
+unchanged. Ordinary upgrade refused with recovery required and the same
+transaction, without changing the pending state. Explicit `recover` with that
+UUID and bundle completed replacement. Both trials authenticated helper `0.5.0`
+through the published application's HMAC client with a new executor generation,
+retained the complete old code, and cleared transaction/stop markers through
+the supported CLI.
+
+Both trials preserved all eight container IDs, PIDs, start times and restart
+counts; nine authority/configuration files' bytes, inodes and metadata;
+runtime/state/lifetime-lock identities; code owner/group/mode `0700`; and journal
+ownership/mode and every field except heartbeat/generation. Nine seeded rows
+across account, user, site, visitor, closed conversation, message, closed ticket,
+attachment and operator setting survived, together with a persisted site
+setting, a 65,613-byte binary containing every octet value and raw encrypted
+setting ciphertext. Fresh PHP processes verified data and decryption using the
+unchanged effective current key; there were zero previous keys, so rotation
+was not exercised. Private authority and fingerprints stay outside the repository.
+
+This proves same-kernel process-crash recovery immediately after exchange,
+before the parent-directory fsync. It does not establish power-loss durability
+or reboot recovery. Historical terminal managed-apply custody remains
+unexercised, as do other native architecture/image-store combinations. The
+helper is merged but unpublished; no newer application target, managed
+protection/apply/migration or full matrix ran. Qualification remains false with
+zero of 100 managed cases. Keep #1131, U8/#1115, U9/#1116 and epic #1107 open,
+and preserve §26 and all earlier dated evidence.

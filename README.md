@@ -185,13 +185,15 @@ support loop. Ordinary archive/restore on a separate clean, unenrolled VM also
 passed without force, using the retained effective key and real post-archive
 erasure ledger. Exact replay, surviving data/files/decryption and the new-contact
 sequence were verified. These observations cover ARM64 over private HTTP; they do
-not establish TLS or user-session broadcasting authorization. Managed apply
-also needs a real newer compatible
-published target and a fix for the [Docker 29 image-identity blocker
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
-An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
-new published source enrolled with the fixed helper; an application image
-update alone does not replace host helper code. Managed scenarios remain **0**;
+not establish TLS or user-session broadcasting authorization. The merged
+[Docker 29 image-identity/helper fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
+passed a separate ARM64/containerd [clean helper upgrade and atomic-exchange
+recovery rehearsal](docs/self-hosting/evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json).
+The helper remains unpublished; managed apply still needs a real newer compatible
+published target and the full native qualification matrix. An application image
+update alone does not replace host helper code. The exchange check proves
+same-kernel process-crash recovery before the parent-directory fsync, without
+establishing power-loss or reboot durability. Managed scenarios remain **0**;
 [U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115) and
 [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open.
 See the [qualification boundary](docs/self-hosting/managed-update-qualification.md).
