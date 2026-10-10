@@ -2,8 +2,9 @@
 """Explicit installation of the restricted preparation, protection and apply host helper.
 
 No container is started or replaced here. Existing enrollments are never changed:
-helper replacement, credential rotation, and unenrollment require their own
-ownership-aware workflow. Root must first adopt and review a supported install.
+helper replacement uses the separate root-only upgrade-updater.py workflow.
+Credential rotation and unenrollment require their own ownership-aware workflow.
+Root must first adopt and review a supported install.
 """
 
 from __future__ import annotations

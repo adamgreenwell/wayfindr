@@ -69,6 +69,23 @@ partial work, or qualify a real newer published source freshly enrolled with the
 fixed helper. Manual helper overwrite, marker deletion, store switching and
 silent enrollment overwrite are not supported recovery paths.
 
+The development `0.5.0` implementation addresses this image binding and adds the
+separate [exact-byte helper upgrade](managed-updater.md#upgrading-the-installed-helper).
+The published `v1.2.0` helper is still `0.4.0`. Implementation tests or a local
+candidate lifecycle rehearsal do not publish the fix or qualify a managed
+source-to-target span. Record actual installed-helper replacement, public target
+identity and the expanded matrix separately.
+
+The [ARM64 Docker 29/containerd candidate receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+records actual same-transaction recovery after interrupting the explicit
+helper-upgrade `recover` command,
+preserving the published `v1.2.0` application and its enrollment while completing
+`0.4.0` → `0.5.0`. Current-public-release `Artifacts.prepare` and retained
+read-only verification also passed. This is candidate helper-lifecycle and
+artifact-component evidence; an uninterrupted fresh upgrade is a separate
+observation. The fix remains unpublished, no newer application target or managed
+operation was created, and all 100 managed scenario cases remain unexecuted.
+
 
 The earlier October 9 publication gate checked public `v1.1.0` → `v1.1.1`.
 Neither immutable tag contains the managed-apply command required by enrollment;
@@ -167,6 +184,18 @@ application identity does not require copying the original helper UUID,
 credential, journal or enrollment marker onto another host.
 
 ## Required matrix
+
+Evidence schema `2` repeats every scenario below for each supported native
+combination: Linux amd64 and arm64, each with the classic and containerd image
+store. These are 25 scenario identifiers across four combinations, or 100
+separately observed cases. A containerd image index is not a config digest:
+record the public index/platform/config digests, observed local ID and
+descriptor, immutable version-plus-digest selector and explicit platform.
+Containerd container observations must identify the selected platform manifest;
+classic container observations may report null for `platform_manifest_digest`.
+Successful schema-2 cases require helper `0.5.0` or later; the application protocol stays
+`1`. Older schema-1 reports remain readable but cannot qualify this expanded
+image-binding matrix. Synthetic fixtures exercise report consistency only.
 
 The scenario identifiers below are the evidence contract identifiers. A grouped
 row requires separate observations for each identifier; one successful operation

@@ -37,6 +37,7 @@ APPLY = module("apply_executor", "scripts/self-host/update_apply.py")
 SOURCE = FIX.SOURCE
 TARGET = {"tag": "v1.1.2", "version": "1.1.2", "commit": "e" * 40, "image_digest": "sha256:" + "f" * 64}
 TARGET_IMAGE = "sha256:" + "a" * 64
+PLATFORM_DESCRIPTOR = {"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:" + "1" * 64, "size": 7311, "platform": {"os": "linux", "architecture": "arm64"}}
 
 
 class Config(UP.Configuration):
@@ -59,9 +60,11 @@ class Artifacts:
             compose = "0" * 64
         else:
             compose = self.config.value["compose_sha256"]
-        return {"schema": 1, "target": target, "index_digest": target["image_digest"], "platform_manifest_digest": "sha256:" + "1" * 64,
-                "config_digest": TARGET_IMAGE, "manifest_sha256": "2" * 64, "history_sha256": "3" * 64,
-                "digest_asset_sha256": "4" * 64, "compose_sha256": compose, "baked_history_sha256": "5" * 64}
+        return {"schema": 2, "target": target, "index_digest": target["image_digest"], "platform_manifest_digest": "sha256:" + "1" * 64,
+                "config_digest": TARGET_IMAGE, "platform_manifest_descriptor": {**PLATFORM_DESCRIPTOR, "platform": {"os": "linux", "architecture": architecture}}, "manifest_sha256": "2" * 64, "history_sha256": "3" * 64,
+                "digest_asset_sha256": "4" * 64, "compose_sha256": compose, "baked_history_sha256": "5" * 64,
+                "local_image_id": self.engine.target_image, "local_image_descriptor": None if self.engine.target_image == TARGET_IMAGE else {"mediaType": "application/vnd.oci.image.index.v1+json", "digest": target["image_digest"], "size": 1609},
+                "execution_reference": "ghcr.io/adamgreenwell/wayfindr:" + target["version"] + "@" + target["image_digest"], "execution_platform": "linux/" + architecture}
 
     def verify(self, target, evidence, architecture, directory):
         if self.engine.fault == "staging":
@@ -80,6 +83,7 @@ class Engine(FIX.Engine):
         self.complete = None
         self.crash = None
         self.origin_stale = False
+        self.target_image = TARGET_IMAGE
 
     def trip(self, stage):
         if self.crash == stage:
@@ -103,7 +107,7 @@ class Engine(FIX.Engine):
     def inspect(self, container):
         for service, identifier in self.targets.items():
             if container == identifier:
-                return {"id": container, "image": TARGET_IMAGE, "project": "wayfindr-self-hosting", "service": service, "oneoff": "False", "restarts": 0,
+                return {"id": container, "image": self.target_image, "project": "wayfindr-self-hosting", "service": service, "oneoff": "False", "restarts": 0,
                         "state": {"Running": self.target_running[service], "Paused": False, "Restarting": False, "Dead": False, "OOMKilled": False, "Error": "", "ExitCode": 0}}
         original = self.ids
         self.ids = self.originals
@@ -277,6 +281,75 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(TARGET["image_digest"], self.config.value["image_reference"].split("@")[1])
         self.assertNotIn(FIX.KEY, json.dumps(self.status()))
         self.assertTrue((self.root / "protection" / self.operation / "archive.tar.gz").exists())
+
+    def test_containerd_index_id_survives_migration_service_reconciliation_and_recovery(self):
+        self.engine.target_image = TARGET["image_digest"]
+        self.engine.crash = "after_create_queue"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        self.recover()
+        self.assertEqual("succeeded", self.status()["operation"]["phase"])
+        self.assertEqual(1, self.engine.calls.count("migrate"))
+        self.assertEqual(1, self.engine.calls.count("create_queue"))
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual(2, state["schema"])
+        self.assertEqual(TARGET_IMAGE, state["artifacts"]["config_digest"])
+        self.assertEqual(TARGET["image_digest"], state["artifacts"]["local_image_id"])
+        for filename in (self.root / "apply" / self.operation / "target.yml", Path(self.config.value["install_dir"]) / "compose.updater.yml"):
+            for service in json.loads(filename.read_bytes())["services"].values():
+                self.assertEqual(state["artifacts"]["execution_reference"], service["image"])
+                self.assertEqual(state["artifacts"]["execution_platform"], service["platform"])
+
+    def test_public_config_digest_is_never_adopted_as_a_containerd_service_id(self):
+        self.engine.target_image = TARGET["image_digest"]
+        self.engine.crash = "after_create_queue"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        self.engine.target_image = TARGET_IMAGE
+        before = self.engine.calls.count("migrate")
+        self.recover()
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual(before, self.engine.calls.count("migrate"))
+        self.assertNotIn("start_queue", self.engine.calls)
+        self.assertNotIn("release", self.engine.calls)
+
+    def test_legacy_apply_schema_is_preserved_and_refused_without_replaying_migration(self):
+        self.engine.crash = "after_migration"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        path = self.root / "apply" / self.operation / "state.json"
+        state = json.loads(path.read_bytes())
+        state["schema"] = 1
+        UP.atomic_write(path, state)
+        before = path.read_bytes()
+        self.recover()
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual(before, path.read_bytes())
+        self.assertEqual(1, self.engine.calls.count("migrate"))
+        self.assertNotIn("receipt", self.engine.calls)
+
+    def test_selector_platform_drift_at_each_execution_boundary_refuses_before_next_action(self):
+        self.assertTrue(self.journal.claim_apply(self.operation, self.generation))
+        directory = self.root / "apply" / self.operation
+        state = self.applier.initial(directory, self.operation)
+        self.applier.download(directory, self.operation, state)
+        target = directory / "target.yml"
+        good = target.read_bytes()
+        for boundary in ("operator_protocol", "migration", "reconcile_services", "verify_runtime", "promote", "finish_target"):
+            for field, bad in (("image", TARGET_IMAGE), ("platform", "linux/unverified")):
+                altered = json.loads(good)
+                altered["services"]["web"][field] = bad
+                target.write_bytes(UP.encoded(altered))
+                before = len(self.engine.calls)
+                with self.subTest(boundary=boundary, field=field):
+                    with self.assertRaises(UP.Refusal) as failure:
+                        args = [directory, self.operation, state]
+                        if boundary == "migration":
+                            args.append(False)
+                        getattr(self.applier, boundary)(*args)
+                    self.assertEqual("configuration_changed", failure.exception.reason)
+                    self.assertEqual(before, len(self.engine.calls))
+                target.write_bytes(good)
 
     def test_incompatible_target_protocol_refuses_before_fencing_draining_or_backup(self):
         original = self.engine.oneoff
@@ -750,16 +823,79 @@ class ProofTests(unittest.TestCase):
         self.assertTrue(APPLY.valid_origin("http://127.0.0.1:8000"))
 
 
+class DockerOneoffTests(unittest.TestCase):
+    def setUp(self):
+        self.operation = str(uuid.uuid4())
+        self.reference = "ghcr.io/adamgreenwell/wayfindr:" + TARGET["version"] + "@" + TARGET["image_digest"]
+        self.state = {"source": SOURCE, "target": TARGET, "plan_id": "d" * 64, "source_context": {"capture_binding_sha256": "e" * 64},
+                      "artifacts": {"config_digest": TARGET_IMAGE, "local_image_id": TARGET["image_digest"], "execution_reference": self.reference, "execution_platform": "linux/arm64", "platform_manifest_descriptor": PLATFORM_DESCRIPTOR}}
+        self.calls = []
+        self.api = types.SimpleNamespace(**vars(FIX.API))
+        self.api.capture = lambda args, **kwargs: (self.calls.append(args) or (0, b'{"verified":true}'))
+        config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
+        self.engine = APPLY.Engine(config, self.api, "/var/lib/wayfindr-updater")
+        self.record = {"image": TARGET["image_digest"], "project": config.value["compose_project"], "service": "web", "oneoff": "True",
+                       "state": {"Status": "exited", "Running": False, "Paused": False, "Restarting": False, "Dead": False, "OOMKilled": False, "Error": "", "ExitCode": 0}}
+        self.layout = {"image_reference": self.reference, "entrypoint": ["php"], "operation": self.operation, "image_manifest_descriptor": PLATFORM_DESCRIPTOR}
+        self.engine.base.inspect = lambda *_: copy.deepcopy(self.record)
+        self.engine.base.oneoff_active = lambda *_: False
+        self.engine.base.call = lambda args, *_args, **_kwargs: self.calls.append(args) or ""
+        self.engine.layout = lambda *_: copy.deepcopy(self.layout)
+
+    def test_every_oneoff_checks_actual_containerd_id_and_exact_command_before_acceptance(self):
+        for action in ("protocol", "assess", "migrate", "receipt", "verify", "fence"):
+            self.layout["cmd"] = self.engine.command(self.operation, self.state, action)
+            with self.subTest(action=action):
+                self.assertEqual({"verified": True}, self.engine.oneoff(Path("/var/private"), self.operation, self.state, action))
+                command = next(args for args in reversed(self.calls) if "run" in args)
+                self.assertIn("--pull=never", command)
+                self.assertNotIn("--rm", command)
+
+    def test_wrong_oneoff_image_selector_command_owner_or_state_is_never_accepted(self):
+        for action in ("protocol", "assess", "migrate", "receipt", "verify", "fence"):
+            self.layout["cmd"] = self.engine.command(self.operation, self.state, action)
+            mutations = (("record", "image", TARGET_IMAGE), ("record", "project", "other"), ("record", "oneoff", "False"),
+                         ("layout", "image_reference", TARGET_IMAGE), ("layout", "entrypoint", ["sh"]), ("layout", "cmd", ["artisan", "migrate"]),
+                         ("layout", "operation", "other"), ("status", "Running", True), ("status", "Status", "created"), ("status", "ExitCode", False))
+            for area, field, wrong in mutations:
+                selected = self.record["state"] if area == "status" else self.record if area == "record" else self.layout
+                good = selected[field]
+                selected[field] = wrong
+                with self.subTest(action=action, area=area, field=field):
+                    with self.assertRaises(UP.Refusal) as failure:
+                        self.engine.check_oneoff("owned-container", self.operation, self.state, action)
+                    self.assertEqual("migration_ambiguous" if action == "migrate" else "runtime_verification_failed", failure.exception.reason)
+                selected[field] = good
+
+    def test_same_index_with_wrong_or_missing_selected_manifest_refuses_every_oneoff(self):
+        for action in ("protocol", "assess", "migrate", "receipt", "verify", "fence"):
+            self.layout["cmd"] = self.engine.command(self.operation, self.state, action)
+            for observed in (None, {**PLATFORM_DESCRIPTOR, "digest": TARGET["image_digest"]}, {**PLATFORM_DESCRIPTOR, "platform": {"os": "linux", "architecture": "amd64"}}, {**PLATFORM_DESCRIPTOR, "size": 7312}):
+                self.layout["image_manifest_descriptor"] = observed
+                with self.subTest(action=action, observed=observed), self.assertRaises(UP.Refusal):
+                    self.engine.check_oneoff("owned-container", self.operation, self.state, action)
+
+    def test_existing_migration_is_never_removed_or_replayed(self):
+        self.engine.base.call = lambda args, *_args, **_kwargs: self.calls.append(args) or ("a" * 64 if args[0] == "ps" else "")
+        with self.assertRaises(UP.Refusal) as failure:
+            self.engine.oneoff(Path("/var/private"), self.operation, self.state, "migrate")
+        self.assertEqual("migration_ambiguous", failure.exception.reason)
+        self.assertFalse(any("run" in args or args[0] == "rm" for args in self.calls))
+
+
 class DockerLayoutTests(unittest.TestCase):
     def setUp(self):
         self.api = types.SimpleNamespace(**vars(FIX.API))
         self.config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
         self.engine = APPLY.Engine(self.config, self.api, "/var/lib/wayfindr-updater")
-        self.state = {"operation_id": "owned-operation", "started": 1, "artifacts": {"config_digest": TARGET_IMAGE}, "layouts": {"queue": {"mounts": []}}}
+        self.reference = "ghcr.io/adamgreenwell/wayfindr:" + TARGET["version"] + "@" + TARGET["image_digest"]
+        self.state = {"operation_id": "owned-operation", "started": 1, "artifacts": {"config_digest": TARGET_IMAGE, "local_image_id": TARGET["image_digest"],
+                      "execution_reference": self.reference, "execution_platform": "linux/arm64", "platform_manifest_descriptor": PLATFORM_DESCRIPTOR}, "layouts": {"queue": {"mounts": []}}}
         self.layout = {"env": ["APP_KEY=private", "WAYFINDR_AUTO_MIGRATE=0"], "mounts": [], "cmd": ["php", "artisan", "queue:work", "redis"],
-                       "entrypoint": ["wayfindr-entrypoint"], "user": "1000", "workdir": "/app/apps/server", "operation": "owned-operation", "created": "2026-01-01T00:00:00Z"}
+                       "entrypoint": ["wayfindr-entrypoint"], "user": "1000", "workdir": "/app/apps/server", "operation": "owned-operation", "created": "2026-01-01T00:00:00Z", "image_reference": self.reference, "image_manifest_descriptor": PLATFORM_DESCRIPTOR}
         self.engine.layout = lambda *_: copy.deepcopy(self.layout)
-        self.engine.render = lambda *_: {"services": {"queue": {"environment": {"APP_KEY": "private", "WAYFINDR_AUTO_MIGRATE": "0"}, "command": ["php", "artisan", "queue:work", "redis"]}}}
+        self.rendered = {"services": {"queue": {"image": self.reference, "platform": "linux/arm64", "environment": {"APP_KEY": "private", "WAYFINDR_AUTO_MIGRATE": "0"}, "command": ["php", "artisan", "queue:work", "redis"]}}}
+        self.engine.render = lambda *_: copy.deepcopy(self.rendered)
         self.image = {"env": [], "cmd": ["frankenphp"], "entrypoint": ["wayfindr-entrypoint"], "user": "1000", "workdir": "/app/apps/server"}
         self.calls = []
         def call(args, *_args, **_kwargs):
@@ -772,16 +908,39 @@ class DockerLayoutTests(unittest.TestCase):
         self.assertFalse(any(args[0] == "top" for args in self.calls))
         self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state)
         self.assertTrue(any(args[0] == "top" for args in self.calls))
+        self.assertTrue(all(args[-1] == self.reference for args in self.calls if args[0] == "image"))
 
     def test_wrong_operation_environment_role_mount_entrypoint_or_age_refuses_before_start(self):
         for field, wrong in (("operation", "other"), ("env", ["APP_KEY=private", "WAYFINDR_AUTO_MIGRATE=1"]), ("cmd", ["php", "artisan", "migrate"]),
-                             ("mounts", [{"Destination": "/app/apps/server/storage", "Name": "other"}]), ("entrypoint", ["sh"]), ("created", "1970-01-01T00:00:00Z")):
+                             ("mounts", [{"Destination": "/app/apps/server/storage", "Name": "other"}]), ("entrypoint", ["sh"]), ("created", "1970-01-01T00:00:00Z"), ("image_reference", TARGET_IMAGE)):
             with self.subTest(field=field):
                 original = copy.deepcopy(self.layout)
                 self.layout[field] = wrong
                 with self.assertRaises(UP.Refusal):
                     self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
                 self.layout = original
+
+    def test_rendered_floating_image_or_wrong_platform_refuses_before_start(self):
+        for field, wrong in (("image", "ghcr.io/adamgreenwell/wayfindr:latest"), ("platform", "linux/amd64")):
+            original = copy.deepcopy(self.rendered)
+            self.rendered["services"]["queue"][field] = wrong
+            with self.subTest(field=field), self.assertRaises(UP.Refusal):
+                self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+            self.rendered = original
+
+    def test_same_index_wrong_selected_manifest_refuses_service_before_start(self):
+        for observed in (None, {**PLATFORM_DESCRIPTOR, "digest": TARGET_IMAGE}, {**PLATFORM_DESCRIPTOR, "platform": {"os": "linux", "architecture": "amd64"}}):
+            self.layout["image_manifest_descriptor"] = observed
+            with self.subTest(observed=observed), self.assertRaises(UP.Refusal):
+                self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+
+    def test_classic_config_id_allows_absent_descriptor_but_rejects_wrong_present_descriptor(self):
+        self.state["artifacts"]["local_image_id"] = TARGET_IMAGE
+        self.layout["image_manifest_descriptor"] = None
+        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        self.layout["image_manifest_descriptor"] = {**PLATFORM_DESCRIPTOR, "digest": TARGET_IMAGE}
+        with self.assertRaises(UP.Refusal):
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
 
     def test_fixed_cli_does_not_use_reserved_version_option_or_raw_migrate(self):
         state = {"source": SOURCE, "target": TARGET, "plan_id": "d" * 64, "source_context": {"capture_binding_sha256": "e" * 64}}

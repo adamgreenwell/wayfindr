@@ -122,6 +122,46 @@ class ApplyContractTests(unittest.TestCase):
         self.assertEqual(operation_id, reloaded.status()["active_operation"])
         self.assertFalse(reloaded.claim_apply(operation_id, self.generation))
 
+    def test_helper_upgrade_preserves_historical_executor_versions_without_rewriting(self):
+        operation_id = self.prepared()
+        value = copy.deepcopy(self.journal.value)
+        value["operations"][operation_id]["executor_version"] = "0.4.0"
+        UP.atomic_write(self.path, value)
+        before = self.path.read_bytes()
+        historical = UP.Journal(self.path, INSTALLATION, secure=False)
+        self.assertEqual("0.4.0", historical.status(operation_id)["operation"]["executor_version"])
+        self.assertEqual(before, self.path.read_bytes())
+        new_id = historical.accept(str(uuid.uuid4()), "v1.2.5", self.generation)[0]
+        self.assertEqual("0.5.0", historical.status(new_id)["operation"]["executor_version"])
+        self.assertEqual("0.4.0", historical.status(operation_id)["operation"]["executor_version"])
+
+    def test_helper_upgrade_gate_blocks_every_mutation_but_keeps_observation(self):
+        controller = self.controller(lambda *_args, **_kwargs: None)
+        operation_id = self.prepared()
+        state_dir = self.path.parent
+        marker = state_dir / "helper-upgrade.json"
+        marker.write_text("incomplete transaction")
+        with patch.object(UP, "STATE_DIR", state_dir):
+            requests = [payload(action, operation_id) for action in ("protect", "recover-protection", "apply", "recover-apply")]
+            requests.extend(payload(action, operation_id, plan_id="d" * 64, request_id=str(uuid.uuid4()), actor={"id": 1}) for action in ("start", "cancel"))
+            prepare = payload("prepare", operation_id, request_id=str(uuid.uuid4()), release_tag="v1.2.5")
+            del prepare["operation_id"]
+            requests.append(prepare)
+            before = self.path.read_bytes()
+            for request in requests:
+                self.refuse("operation_busy", controller.dispatch, request, 0)
+            self.assertEqual(before, self.path.read_bytes())
+            self.assertEqual(operation_id, controller.dispatch(payload("status", operation_id), 0)["operation"]["operation_id"])
+            for action, extra in (("capabilities", {}), ("history", {"cursor": 0, "limit": 20})):
+                request = payload(action, operation_id, **extra)
+                del request["operation_id"]
+                controller.dispatch(request, 0)
+            controller.dispatch(payload("logs", operation_id, cursor=0, limit=20), 0)
+            marker.unlink()
+            marker.symlink_to(state_dir / "missing")
+            self.assertTrue(UP.helper_upgrade_pending())
+            self.refuse("operation_busy", controller.dispatch, payload("apply", operation_id), 0)
+
     def test_only_fresh_complete_prepared_plan_can_be_applied(self):
         for reason in ("no_update_required", "prerequisites_unmet", "prepare_failed", "identity_unverified"):
             operation_id = self.prepared(reason)

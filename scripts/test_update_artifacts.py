@@ -55,6 +55,8 @@ class Refusal(Exception):
 class Fixture:
     def __init__(self, architecture="amd64", **options):
         self.architecture = architecture
+        self.engine = options.get("engine", "classic")
+        self.legacy_config = options.get("legacy_config", False)
         self.urls = {}
         self.fetches = []
         self.commands = []
@@ -73,17 +75,24 @@ class Fixture:
             "User": options.get("user", "wayfindr"),
             "Entrypoint": ["wayfindr-entrypoint"],
             "Cmd": ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"],
+            "WorkingDir": "/app/apps/server", "ExposedPorts": {"80/tcp": {}},
+            "Healthcheck": {"Test": ["CMD", "wayfindr-healthcheck"], "Interval": 5000000000},
             "Env": ["PATH=/usr/local/bin:/usr/bin:/bin", "WAYFINDR_VERSION=" + self.tag, "WAYFINDR_COMMIT=" + self.commit],
             "Labels": {"org.opencontainers.image.source": "https://github.com/adamgreenwell/wayfindr",
                        "org.opencontainers.image.revision": self.commit,
                        "org.opencontainers.image.version": options.get("label_version", "1.2.0")},
         }
+        self.config.update(options.get("extra_config", {}))
         if options.get("volumes"):
             self.config["Volumes"] = options["volumes"]
         if options.get("duplicate_env"):
             self.config["Env"].append("WAYFINDR_VERSION=" + self.tag)
         image_config = {"architecture": options.get("config_architecture", architecture), "os": "linux", "config": self.config,
                         "rootfs": {"type": "layers", "diff_ids": ["sha256:" + "1" * 64]}}
+        if options.get("config_variant") is not None:
+            image_config["variant"] = options["config_variant"]
+        self.rootfs = {"Type": image_config["rootfs"]["type"], "Layers": image_config["rootfs"]["diff_ids"]}
+        self.variant = image_config.get("variant", "")
         self.config_raw = encoded(image_config)
         self.config_digest = digest(self.config_raw)
         docker_types = options.get("docker_types", False)
@@ -113,6 +122,7 @@ class Fixture:
             index["manifests"].append({"mediaType": manifest_type, "digest": "sha256:" + "4" * 64, "size": 23,
                                        "platform": {"os": "unknown", "architecture": "unknown"},
                                        "annotations": {"vnd.docker.reference.type": "attestation-manifest", "vnd.docker.reference.digest": self.child_digest}})
+        self.selected_descriptor = next(deepcopy(item) for item in index["manifests"] if item["digest"] == self.child_digest) if any(item["digest"] == self.child_digest for item in index["manifests"]) else None
         self.index_raw = encoded(index)
         self.index_digest = digest(self.index_raw)
         self.target = {"tag": self.tag, "version": "1.2.0", "commit": self.commit, "image_digest": self.index_digest}
@@ -148,7 +158,13 @@ class Fixture:
         self.copies = {"version": (self.tag + "\n").encode(), "commit": (self.commit + "\n").encode(),
                        "release.json": self.manifest_raw, "release-history.json": encoded(self.baked)}
         self.id = "b" * 64
-        self.actual_id = self.config_digest
+        self.actual_id = {"classic": self.config_digest, "containerd-index": self.index_digest,
+                          "containerd-platform": self.child_digest}[self.engine]
+        self.descriptor = None if self.engine == "classic" else (
+            {"mediaType": index_type, "digest": self.index_digest, "size": len(self.index_raw)}
+            if self.engine == "containerd-index" else next(deepcopy(item) for item in index["manifests"]
+                                                         if item["digest"] == self.child_digest))
+        self.container_descriptor = None if self.engine == "classic" else deepcopy(self.selected_descriptor)
         self.state = "created"
         self.copy_kind = tarfile.REGTYPE
         self.copy_duplicate = False
@@ -177,16 +193,34 @@ class Fixture:
             assert args == ["pull", "--platform=linux/" + self.architecture, artifacts.IMAGE + "@" + self.index_digest]
             return 0, b"pulled"
         if args[:2] == ["image", "inspect"]:
-            return 0, encoded({"id": self.actual_id, "os": "linux", "architecture": self.architecture,
-                               "config": self.config, "digests": [artifacts.IMAGE + "@" + self.index_digest]})
+            assert args == ["image", "inspect", "--format", "{{json .}}", artifacts.IMAGE + "@" + self.index_digest]
+            config = deepcopy(self.config)
+            if self.legacy_config:
+                # Exact v24/v27/early-v28 container.Config serializer defaults,
+                # independently declared here rather than read from the verifier.
+                for key, default in {"Hostname": "", "Domainname": "", "AttachStdin": False,
+                                     "AttachStdout": False, "AttachStderr": False, "Tty": False,
+                                     "OpenStdin": False, "StdinOnce": False, "Image": "",
+                                     "Volumes": None, "OnBuild": None, "WorkingDir": ""}.items():
+                    config.setdefault(key, default)
+            return 0, encoded({"Id": self.actual_id, "Os": "linux", "Architecture": self.architecture, "Variant": self.variant,
+                               "Config": config, "RootFS": self.rootfs, "Descriptor": self.descriptor,
+                               "RepoDigests": [artifacts.IMAGE + "@" + self.index_digest]})
         if args[0] == "create":
-            assert args[-1] == self.config_digest
+            assert args[-1] == artifacts.IMAGE + ":1.2.0@" + self.index_digest
+            assert "--platform=linux/" + self.architecture in args
             assert "--network=none" in args and "--pull=never" in args
             assert args[args.index("--entrypoint") + 1] == "/bin/true"
             return 0, (self.id + "\n").encode()
         if args[0] == "inspect":
             mounts = [{"Type": "volume", "Name": "c" * 64, "Destination": name} for name in self.config.get("Volumes", {})]
-            return 0, encoded({"id": self.id, "image": self.config_digest, "state": {"Status": self.state, "Running": self.state != "created"}, "mounts": mounts, "entrypoint": ["/bin/true"]})
+            assert args[args.index("--format") + 1] == "{{json .}}"
+            return 0, encoded({"Id": self.id, "Image": self.actual_id,
+                               "State": {"Status": self.state, "Running": self.state != "created", "Pid": 0,
+                                         "StartedAt": "0001-01-01T00:00:00Z"},
+                               "Mounts": mounts, "Config": {"Entrypoint": ["/bin/true"], "Image": artifacts.IMAGE + ":1.2.0@" + self.index_digest},
+                               "HostConfig": {"NetworkMode": "none"},
+                               "ImageManifestDescriptor": self.container_descriptor})
         if args[0] == "cp":
             name = args[1].split("/")[-1]
             assert args[1].startswith(self.id + ":/etc/wayfindr/") and args[2] == "-"
@@ -219,8 +253,12 @@ class ArtifactTests(unittest.TestCase):
         result = self.prepare(fixture)
         self.assertNotEqual(result["index_digest"], result["config_digest"])
         self.assertNotEqual(result["platform_manifest_digest"], result["config_digest"])
-        self.assertEqual(result, {"schema": 1, "target": fixture.target, "index_digest": fixture.index_digest,
+        self.assertEqual(result, {"schema": 2, "target": fixture.target, "index_digest": fixture.index_digest,
                                   "platform_manifest_digest": fixture.child_digest, "config_digest": fixture.config_digest,
+                                  "platform_manifest_descriptor": fixture.selected_descriptor,
+                                  "local_image_id": fixture.config_digest, "local_image_descriptor": None,
+                                  "execution_reference": artifacts.IMAGE + ":1.2.0@" + fixture.index_digest,
+                                  "execution_platform": "linux/amd64",
                                   "manifest_sha256": sha(fixture.manifest_raw), "history_sha256": sha(fixture.history_raw),
                                   "baked_history_sha256": sha(fixture.copies["release-history.json"]),
                                   "digest_asset_sha256": sha(fixture.digest_raw), "compose_sha256": sha(fixture.compose_raw)})
@@ -346,15 +384,15 @@ class ArtifactTests(unittest.TestCase):
                     if mutation == "unavailable":
                         return 1, b"secret=customer-data"
                     if mutation == "id":
-                        value["id"] = fixture.index_digest
+                        value["Id"] = fixture.index_digest
                     elif mutation == "architecture":
-                        value["architecture"] = "arm64"
+                        value["Architecture"] = "arm64"
                     elif mutation == "digests":
-                        value["digests"] = []
+                        value["RepoDigests"] = []
                     elif mutation == "revision":
-                        value["config"]["Labels"]["org.opencontainers.image.revision"] = "e" * 40
+                        value["Config"]["Labels"]["org.opencontainers.image.revision"] = "e" * 40
                     else:
-                        value["config"]["Env"] = ["WAYFINDR_VERSION=v1.2.1", "WAYFINDR_COMMIT=" + fixture.commit]
+                        value["Config"]["Env"] = ["WAYFINDR_VERSION=v1.2.1", "WAYFINDR_COMMIT=" + fixture.commit]
                     return code, encoded(value)
                 fixture.commands.clear()
                 fixture.capture = capture
@@ -524,11 +562,318 @@ class ArtifactTests(unittest.TestCase):
                 self.refuses(fixture)
                 self.assertFalse(fixture.commands)
 
-    def test_docker_config_id_cannot_be_index_digest(self):
+    def test_index_local_id_without_matching_descriptor_is_refused(self):
         fixture = Fixture()
         fixture.actual_id = fixture.index_digest
         self.refuses(fixture)
         self.assertEqual(len(fixture.commands), 2)
+
+    def test_classic_and_containerd_ids_remain_distinct_from_public_config(self):
+        for architecture in ("amd64", "arm64"):
+            for engine in ("classic", "containerd-index", "containerd-platform"):
+                with self.subTest(architecture=architecture, engine=engine), tempfile.TemporaryDirectory() as directory:
+                    self.directory = Path(directory)
+                    fixture = Fixture(architecture, engine=engine, variant="v8" if architecture == "arm64" else None)
+                    evidence = self.prepare(fixture)
+                    self.assertEqual(evidence["schema"], 2)
+                    self.assertEqual(evidence["config_digest"], fixture.config_digest)
+                    self.assertEqual(evidence["local_image_id"], fixture.actual_id)
+                    self.assertEqual(evidence["local_image_descriptor"], fixture.descriptor)
+                    self.assertEqual(evidence["execution_reference"], artifacts.IMAGE + ":1.2.0@" + fixture.index_digest)
+                    self.assertEqual(evidence["execution_platform"], "linux/" + architecture)
+                    create = next(command for command in fixture.commands if command[0] == "create")
+                    self.assertEqual(create[-1], evidence["execution_reference"])
+                    self.assertIn("--platform=" + evidence["execution_platform"], create)
+                    self.assertIn("--pull=never", create)
+                    self.assertNotEqual(create[-1], fixture.config_digest)
+                    inspect = next(command for command in fixture.commands if command[0] == "inspect")
+                    expected_format = "{{json .}}"
+                    self.assertEqual(inspect[inspect.index("--format") + 1], expected_format)
+                    fixture.commands.clear()
+                    artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, evidence, architecture, self.directory)
+                    self.assertEqual(len(fixture.commands), 1)
+                    self.assertEqual(fixture.commands[0][:2], ["image", "inspect"])
+
+    def test_classic_legacy_inspect_defaults_preserve_every_published_config_field(self):
+        for architecture in ("amd64", "arm64"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                fixture = Fixture(architecture, legacy_config=True)
+                evidence = self.prepare(fixture)
+                self.assertEqual(evidence["local_image_id"], fixture.config_digest)
+                self.assertIsNone(evidence["local_image_descriptor"])
+                self.assertEqual(json.loads((self.directory / "image-config.json").read_bytes())["config"], fixture.config)
+                fixture.commands.clear()
+                artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, evidence, architecture, self.directory)
+                self.assertEqual(len(fixture.commands), 1)
+
+    def test_legacy_inspect_nondefault_wrong_types_and_containerd_defaults_are_refused(self):
+        defaults = {"Hostname": "", "Domainname": "", "AttachStdin": False, "AttachStdout": False,
+                    "AttachStderr": False, "Tty": False, "OpenStdin": False, "StdinOnce": False,
+                    "Image": "", "Volumes": None, "OnBuild": None, "WorkingDir": ""}
+        for key, default in defaults.items():
+            for value in ((True, 0) if default is False else ("changed", False)):
+                with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                    self.directory = Path(directory)
+                    fixture = Fixture(legacy_config=True)
+                    original = fixture.capture
+                    def capture(command, *, timeout):
+                        code, raw = original(command, timeout=timeout)
+                        if command[len(artifacts.DOCKER):][:2] == ["image", "inspect"]:
+                            actual = json.loads(raw)
+                            actual["Config"][key] = value
+                            return code, encoded(actual)
+                        return code, raw
+                    fixture.capture = capture
+                    self.refuses(fixture)
+                    self.assertFalse(any(command[0] == "create" for command in fixture.commands))
+        for engine in ("containerd-index", "containerd-platform"):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                self.refuses(Fixture(engine=engine, legacy_config=True))
+
+    def test_published_fields_cannot_be_replaced_with_legacy_defaults(self):
+        for key, published, observed in (("WorkingDir", "/app/apps/server", ""),
+                                         ("Volumes", {"/data": {}}, None), ("OnBuild", ["RUN true"], None)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                fixture = Fixture(legacy_config=True, extra_config={key: published})
+                original = fixture.capture
+                def capture(command, *, timeout):
+                    code, raw = original(command, timeout=timeout)
+                    if command[len(artifacts.DOCKER):][:2] == ["image", "inspect"]:
+                        actual = json.loads(raw)
+                        actual["Config"][key] = observed
+                        return code, encoded(actual)
+                    return code, raw
+                fixture.capture = capture
+                self.refuses(fixture)
+                self.assertFalse(any(command[0] == "create" for command in fixture.commands))
+
+    def test_full_public_config_rootfs_and_platform_bind_each_local_store(self):
+        mutations = ("unknown_id", "os", "architecture", "variant", "variant_type", "rootfs_layer", "rootfs_type",
+                     "working_directory", "ports", "healthcheck", "config_extra", "wrong_repository", "wrong_digest")
+        for engine in ("classic", "containerd-index", "containerd-platform"):
+            for mutation in mutations:
+                for phase in ("prepare", "retained"):
+                    with self.subTest(engine=engine, mutation=mutation, phase=phase), tempfile.TemporaryDirectory() as directory:
+                        self.directory = Path(directory)
+                        fixture = Fixture(engine=engine)
+                        evidence = self.prepare(fixture) if phase == "retained" else None
+                        original = fixture.capture
+                        def capture(command, *, timeout):
+                            code, raw = original(command, timeout=timeout)
+                            if command[len(artifacts.DOCKER):][:2] != ["image", "inspect"]:
+                                return code, raw
+                            value = json.loads(raw)
+                            if mutation == "unknown_id":
+                                value["Id"] = "sha256:" + "0" * 64
+                            elif mutation == "os":
+                                value["Os"] = "windows"
+                            elif mutation == "architecture":
+                                value["Architecture"] = "arm64"
+                            elif mutation == "variant":
+                                value["Variant"] = "v9"
+                            elif mutation == "variant_type":
+                                value["Variant"] = False
+                            elif mutation == "rootfs_layer":
+                                value["RootFS"]["Layers"][0] = "sha256:" + "0" * 64
+                            elif mutation == "rootfs_type":
+                                value["RootFS"]["Type"] = "other"
+                            elif mutation == "working_directory":
+                                value["Config"]["WorkingDir"] = "/tmp/altered"
+                            elif mutation == "ports":
+                                value["Config"]["ExposedPorts"]["2375/tcp"] = {}
+                            elif mutation == "healthcheck":
+                                value["Config"]["Healthcheck"]["Test"] = ["NONE"]
+                            elif mutation == "config_extra":
+                                value["Config"]["UnverifiedProperty"] = "new"
+                            elif mutation == "wrong_repository":
+                                value["RepoDigests"] = ["ghcr.io/other/wayfindr@" + fixture.index_digest]
+                            else:
+                                value["RepoDigests"] = [artifacts.IMAGE + "@" + fixture.child_digest]
+                            return code, encoded(value)
+                        fixture.capture = capture
+                        fixture.commands.clear()
+                        if phase == "retained":
+                            with self.assertRaisesRegex(Refusal, r"^artifact_verification_failed$"):
+                                artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, evidence, fixture.architecture, self.directory)
+                            self.assertEqual(len(fixture.commands), 1)
+                        else:
+                            self.refuses(fixture)
+                            self.assertFalse(any(command[0] == "create" for command in fixture.commands))
+
+    def test_containerd_descriptor_digest_media_size_platform_and_shape_are_bound(self):
+        for engine in ("containerd-index", "containerd-platform"):
+            for mutation in ("absent", "digest", "mediaType", "size", "boolean_size", "platform", "urls", "annotations"):
+                with self.subTest(engine=engine, mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                    self.directory = Path(directory)
+                    fixture = Fixture(engine=engine)
+                    if mutation == "absent":
+                        fixture.descriptor = None
+                    elif mutation == "digest":
+                        fixture.descriptor["digest"] = fixture.config_digest
+                    elif mutation == "mediaType":
+                        fixture.descriptor["mediaType"] = "application/example"
+                    elif mutation == "size":
+                        fixture.descriptor["size"] += 1
+                    elif mutation == "boolean_size":
+                        fixture.descriptor["size"] = True
+                    elif mutation == "platform":
+                        fixture.descriptor["platform"] = {"os": "linux", "architecture": "arm64"}
+                    elif mutation == "urls":
+                        fixture.descriptor["urls"] = ["https://other.example/image"]
+                    else:
+                        fixture.descriptor["annotations"] = {"arbitrary": "unverified"}
+                    self.refuses(fixture)
+                    self.assertFalse(any(command[0] == "create" for command in fixture.commands))
+        self.directory = Path(self.temp.name)
+        fixture = Fixture()
+        fixture.descriptor = {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": fixture.config_digest, "size": len(fixture.config_raw)}
+        self.refuses(fixture)
+
+    def test_retained_binding_rejects_valid_store_identity_change_without_mutation(self):
+        fixture = Fixture(engine="containerd-index")
+        evidence = self.prepare(fixture)
+        fixture.actual_id = fixture.child_digest
+        fixture.descriptor = next(deepcopy(item) for item in json.loads(fixture.index_raw)["manifests"] if item["digest"] == fixture.child_digest)
+        fixture.commands.clear()
+        before = {path.name: path.read_bytes() for path in self.directory.iterdir()}
+        with self.assertRaisesRegex(Refusal, r"^artifact_verification_failed$"):
+            artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, evidence, fixture.architecture, self.directory)
+        self.assertEqual(len(fixture.commands), 1)
+        self.assertEqual(before, {path.name: path.read_bytes() for path in self.directory.iterdir()})
+
+    def test_retained_schema1_and_changed_execution_selector_are_refused(self):
+        fixture = Fixture(engine="containerd-index")
+        evidence = self.prepare(fixture)
+        for field, value in (("schema", 1), ("local_image_id", fixture.config_digest), ("local_image_descriptor", None),
+                             ("execution_reference", artifacts.IMAGE + ":1.2.0"), ("execution_reference", artifacts.IMAGE + "@" + fixture.child_digest),
+                             ("execution_platform", "linux/arm64")):
+            with self.subTest(field=field, value=value):
+                changed = {**evidence, field: value}
+                (self.directory / "artifacts.json").write_bytes((json.dumps(changed, sort_keys=True, separators=(",", ":")) + "\n").encode())
+                fixture.commands.clear()
+                with self.assertRaisesRegex(Refusal, r"^artifact_verification_failed$"):
+                    artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, changed, fixture.architecture, self.directory)
+                if field == "schema":
+                    self.assertFalse(fixture.commands)
+                self.assertTrue(all(command[:2] == ["image", "inspect"] for command in fixture.commands))
+
+    def test_never_started_probe_binds_image_reference_network_pid_and_mounts(self):
+        for mutation in ("image", "reference", "network", "pid", "pid_type", "started", "entrypoint", "mount"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                fixture = Fixture(engine="containerd-index")
+                original = fixture.capture
+                def capture(command, *, timeout):
+                    code, raw = original(command, timeout=timeout)
+                    if command[len(artifacts.DOCKER):][0] != "inspect":
+                        return code, raw
+                    value = json.loads(raw)
+                    if mutation == "image":
+                        value["Image"] = fixture.config_digest
+                    elif mutation == "reference":
+                        value["Config"]["Image"] = artifacts.IMAGE + ":1.2.0"
+                    elif mutation == "network":
+                        value["HostConfig"]["NetworkMode"] = "bridge"
+                    elif mutation == "pid":
+                        value["State"]["Pid"] = 42
+                    elif mutation == "pid_type":
+                        value["State"]["Pid"] = False
+                    elif mutation == "started":
+                        value["State"]["StartedAt"] = "2026-10-09T21:00:00Z"
+                    elif mutation == "entrypoint":
+                        value["Config"]["Entrypoint"] = ["wayfindr-entrypoint"]
+                    else:
+                        value["Mounts"] = [{"Type": "bind", "Source": "/opt/wayfindr", "Destination": "/app"}]
+                    return code, encoded(value)
+                fixture.capture = capture
+                self.refuses(fixture)
+                self.assertEqual(fixture.commands[-1], ["rm", "--volumes", fixture.id])
+                self.assertFalse(any(command[0] == "cp" for command in fixture.commands))
+
+    def test_probe_requires_selected_manifest_even_when_index_id_and_reference_match(self):
+        for mutation in ("absent", "index_digest", "config_digest", "other_platform", "mediaType", "size", "boolean_size",
+                         "architecture", "os", "variant", "urls", "annotations"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                fixture = Fixture("arm64", engine="containerd-index", variant="v8")
+                descriptor = fixture.container_descriptor
+                if mutation == "absent":
+                    fixture.container_descriptor = None
+                elif mutation == "index_digest":
+                    descriptor["digest"] = fixture.index_digest
+                elif mutation == "config_digest":
+                    descriptor["digest"] = fixture.config_digest
+                elif mutation == "other_platform":
+                    descriptor["digest"] = "sha256:" + "3" * 64
+                elif mutation == "mediaType":
+                    descriptor["mediaType"] = "application/vnd.oci.image.index.v1+json"
+                elif mutation == "size":
+                    descriptor["size"] += 1
+                elif mutation == "boolean_size":
+                    descriptor["size"] = True
+                elif mutation == "architecture":
+                    descriptor["platform"]["architecture"] = "amd64"
+                elif mutation == "os":
+                    descriptor["platform"]["os"] = "windows"
+                elif mutation == "variant":
+                    descriptor["platform"]["variant"] = "v9"
+                elif mutation == "urls":
+                    descriptor["urls"] = ["https://other.example/image"]
+                else:
+                    descriptor["annotations"] = {"arbitrary": "unverified"}
+                self.refuses(fixture)
+                self.assertEqual(fixture.commands[-1], ["rm", "--volumes", fixture.id])
+                self.assertFalse(any(command[0] == "cp" for command in fixture.commands))
+
+    def test_selected_container_manifest_accepts_only_equivalent_optional_arm64_metadata(self):
+        for metadata in ("no_platform", "implicit_v8", "explicit_v8"):
+            with self.subTest(metadata=metadata), tempfile.TemporaryDirectory() as directory:
+                self.directory = Path(directory)
+                fixture = Fixture("arm64", engine="containerd-index", variant="v8" if metadata != "explicit_v8" else None)
+                if metadata == "no_platform":
+                    fixture.container_descriptor.pop("platform")
+                elif metadata == "implicit_v8":
+                    fixture.container_descriptor["platform"].pop("variant")
+                else:
+                    fixture.container_descriptor["platform"]["variant"] = "v8"
+                evidence = self.prepare(fixture)
+                self.assertEqual(evidence["platform_manifest_descriptor"], fixture.selected_descriptor)
+                self.assertNotEqual(evidence["platform_manifest_digest"], evidence["index_digest"])
+
+    def test_retained_selected_manifest_descriptor_must_equal_verified_public_bytes(self):
+        fixture = Fixture("arm64", engine="containerd-index", variant="v8")
+        evidence = self.prepare(fixture)
+        for key, value in (("digest", fixture.index_digest), ("size", 1), ("platform", {"os": "linux", "architecture": "amd64"})):
+            with self.subTest(key=key):
+                changed = deepcopy(evidence)
+                changed["platform_manifest_descriptor"][key] = value
+                (self.directory / "artifacts.json").write_bytes((json.dumps(changed, sort_keys=True, separators=(",", ":")) + "\n").encode())
+                fixture.commands.clear()
+                with self.assertRaisesRegex(Refusal, r"^artifact_verification_failed$"):
+                    artifacts.Artifacts(fixture, fixture.fetch).verify(fixture.target, changed, fixture.architecture, self.directory)
+                self.assertFalse(fixture.commands)
+
+    def test_local_identity_is_revalidated_after_probe_before_receipt(self):
+        fixture = Fixture(engine="containerd-index")
+        original = fixture.capture
+        inspections = 0
+        def capture(command, *, timeout):
+            nonlocal inspections
+            code, raw = original(command, timeout=timeout)
+            if command[len(artifacts.DOCKER):][:2] == ["image", "inspect"]:
+                inspections += 1
+                if inspections == 2:
+                    value = json.loads(raw)
+                    value["Config"]["WorkingDir"] = "/tmp/replaced"
+                    return code, encoded(value)
+            return code, raw
+        fixture.capture = capture
+        self.refuses(fixture)
+        self.assertEqual(inspections, 2)
+        self.assertEqual(fixture.commands[-1], ["rm", "--volumes", fixture.id])
 
     def test_exact_baked_manifest_and_source_files(self):
         for name in ("version", "commit", "release.json"):

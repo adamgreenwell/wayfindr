@@ -159,7 +159,7 @@ make self-host-test
 Docker is required, because these compare against Docker Compose's own
 behaviour rather than against an assumption about it. The enrolled host helper
 tests also require Python 3.11 or newer. `make host-updater-test` runs its focused
-protocol, journal, and enrollment regressions without enrolling a host.
+protocol, journal, enrollment and helper-replacement regressions without enrolling a host.
 
 Linux CI also runs `apps/server/tests/Fixtures/managed-lease-access.php` in its
 disposable runner as root. This standalone test uses temporary files and the
@@ -180,9 +180,10 @@ cross-user check is explicitly skipped outside an isolated Linux root runtime.
 | `test_host_updater.py` | Durable idempotency, actor/plan-bound start and cancellation, authoritative bounded history, concurrent ownership, real process death, interrupted preparation, uncertain fsync, strict requests, redaction, output limits, and Linux peer credentials. |
 | `test_update_operator.py` | Exact plan/actor/request admission, cross-action replay refusal, concurrent start/cancel, safe cancellation seams, active-backup interruption, schema-boundary refusal, and immutable bounded host history. |
 | `test_updater_enrollment.py` | Trusted ownership and current controller, pre-write application protocol probe, explicit enrollment refusal, startup authentication, namespace mapping, and the web-only Compose overlay. |
+| `test_updater_upgrade.py` | Exact helper generations, frozen-idle admission, racing Start refusal, atomic bundle exchange, interruption recovery, preserved enrollment/custody/lock identity and authenticated startup. Systemd and directory exchange use explicit fixtures here; real Linux VM observations remain separate. |
 | `test_update_apply_contract.py` | Root-only UUID admission, durable claims before workers, interrupted migration intent, receipt-bound completion, safe failure evidence, strict public fields and narrow configuration transition loading. |
 | `test_update_apply.py` | Continuous snapshot-to-verification fencing, checked source fallback, all target services, stale-origin refusal, no migration replay, partial creation reconciliation, and interrupted configuration promotion. |
-| `test_update_artifacts.py` | Independent release provenance, full migration history, OCI platform/index/config identity and refusal of malformed or conflicting artifacts. |
+| `test_update_artifacts.py` | Independent release provenance, full migration history, distinct OCI/platform/config/local identities across classic/containerd, complete Config/RootFS, never-started probe and selected-container-manifest refusals. |
 
 `HostUpdaterProtocolIntegrationTest` runs the real PHP client against an isolated
 Python helper on Linux, including response framing, preparation, revision

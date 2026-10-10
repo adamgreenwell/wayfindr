@@ -74,6 +74,21 @@ partial work, or qualify a real newer published source freshly enrolled with the
 fixed helper. Manual helper overwrite, marker deletion, store switching and
 silent enrollment overwrite are not supported recovery paths.
 
+The development `0.5.0` helper implements distinct public/local image binding,
+selected-container-manifest checks and a separate exact-byte `0.4.0` → `0.5.0`
+[helper upgrade procedure](managed-updater.md#upgrading-the-installed-helper).
+Its review and contract tests are implementation evidence. Actual native
+ARM64/Docker 29/containerd
+[candidate helper recovery and current-release artifact-component checks](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+passed. The fault interrupted explicit recovery of a retained candidate
+transaction; subsequent recovery of that same transaction completed replacement.
+An uninterrupted fresh upgrade remains a separate observation.
+The published `v1.2.0` helper remains `0.4.0`; a newer application image alone
+does not upgrade it. Publication of the reviewed distribution, a newer compatible
+application target and the 100-case native architecture/image-store qualification
+matrix remain separate gates. This candidate run created no managed operation;
+managed qualification remains false with zero managed scenarios.
+
 
 ## Preparation record before the first compatible publication
 
@@ -128,10 +143,11 @@ and ancestors must meet the ownership, mode and symlink checks in
 The first compatible source freezes **helper 0.4.0, protocol 1** behavior.
 There is no need to invent a helper version bump merely
 to create a test pair. Managed apply changes the application image and reviewed
-overlay; it does not replace the installed helper. Helper replacement,
-credential rotation and unenrollment are not implemented. A later app image
-cannot repair a defect in an already enrolled host helper, so finish and review
-the helper integration fixes before first publication.
+overlay; it does not replace the installed helper. The published `v1.2.0`
+distribution's `0.4.0` helper has no helper-replacement command. Credential
+rotation and unenrollment remain unimplemented. A later app image cannot repair
+a defect in an already enrolled host helper; helper replacement needs its own
+reviewed distribution.
 
 Enrollment requires Linux/systemd, Python 3.11+, fixed system Docker/Compose,
 matching amd64 or arm64 architecture, the canonical Compose project and all five

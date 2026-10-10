@@ -456,8 +456,12 @@ class DockerOperatorCommandTests(unittest.TestCase):
             return 0, UP.encoded(LIFECYCLE.APPLY.OPERATOR_CONTRACT)
         engine = object.__new__(LIFECYCLE.APPLY.Engine)
         engine.base = types.SimpleNamespace(compose=["fixed-docker", "compose"], oneoff_active=active,
-                                            settled=lambda *_: None, commands_settled=lambda *_: None)
+                                            settled=lambda *_: None, commands_settled=lambda *_: None,
+                                            call=lambda *_args, **_kwargs: "")
         engine.api = types.SimpleNamespace(capture=capture, strict_json=UP.strict_json, Refusal=UP.Refusal)
+        # These tests isolate argv/deadline/settlement. The real inspect/layout
+        # binding is exercised by DockerOneoffTests in test_update_apply.py.
+        engine.check_oneoff = lambda *_: None
         return engine, calls, names
 
     def test_target_protocol_is_one_fixed_bounded_php_command_without_environment_secrets(self):
@@ -469,8 +473,9 @@ class DockerOperatorCommandTests(unittest.TestCase):
         command, options = calls[0]
         self.assertEqual(90, options["timeout"])
         self.assertEqual(["web", "artisan", "wayfindr:updater-status", "--protocol-contract"], command[-4:])
-        for fixed in ("--no-deps", "--pull=never", "--entrypoint", "php", "--rm", "-T"):
+        for fixed in ("--no-deps", "--pull=never", "--entrypoint", "php", "-T"):
             self.assertIn(fixed, command)
+        self.assertNotIn("--rm", command, "Inspect the completed identity before explicit removal.")
         self.assertNotIn("up", command)
         self.assertNotIn("APP_KEY", str(command))
 

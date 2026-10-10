@@ -1,4 +1,4 @@
-# Enrolling the independent host updater
+# Maintaining the independent host updater
 
 The host helper is an explicit opt-in for an official installer-managed Linux
 VM. It runs independently of Wayfindr's web and queue processes, so its durable
@@ -14,6 +14,11 @@ migrations, and verified serving evidence. The `0.4` helper adds bounded
 operator `start`, `history`, and `cancel` requests, with exact approved-plan,
 request, and numeric actor identities retained in its journal. Recovery remains
 an explicit root-only terminal action.
+
+The `0.5` helper binds Docker classic and containerd image identities separately
+and introduces an explicit root-only upgrade from the exact helper bundle
+published in `v1.2.0`. This development implementation still needs publication
+and the full published source-to-target qualification matrix.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
@@ -618,16 +623,114 @@ does not repair that condition by replacing files behind an active helper.
 The terminal installer refuses `--upgrade` while `.updater-enrolled` exists.
 This prevents a separate terminal controller from replacing an installation
 owned by the helper without sharing its operation lock and journal. Terminal
-upgrades for unenrolled installations behave as before. This foundation has no
-helper replacement, credential rotation, or unenrollment command;
-those operations require a separate ownership-aware implementation. Do not
+upgrades for unenrolled installations behave as before. Credential rotation and
+unenrollment remain separate, unimplemented workflows. Do not
 delete an enrollment marker or journal to clear an interrupted operation.
 
-Existing `0.1` preparation, `0.2` protection and `0.3` apply journal records remain readable.
+Existing `0.1` preparation, `0.2` protection, `0.3` apply and `0.4` operator journal records remain readable.
 New enrollment requires the additional application commands and a recorded hash
 of the reviewed overlay. Re-running enrollment cannot upgrade an older enrollment in place or
-replace its helper files. Its separate replacement/unenrollment workflow has
-not been implemented.
+replace its helper files. Use the separate helper upgrade procedure below.
+
+## Upgrading the installed helper
+
+Application updates and helper replacement are separate operations. Managed
+apply changes the application image and overlay; it does not replace privileged
+host code. The supported helper replacement starts with the exact, unmodified
+five-module `0.4.0` bundle published in `v1.2.0` and targets the reviewed `0.5.0`
+distribution. Other installed bundles refuse. The application protocol remains
+`1`, compatible with the published `v1.2.0` application contract.
+
+Obtain and review a complete distribution in a canonical, root-owned directory
+whose ancestors are root-owned and not writable by other users. The tool does
+not download, select or execute remote code. From that distribution, inspect
+the target bundle and retain its SHA-256 before starting:
+
+```bash
+cd /root/reviewed-wayfindr
+sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py inspect
+sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py upgrade \
+  --expected-bundle-sha256=<reviewed-bundle-sha256>
+```
+
+Use the actual hash returned by `inspect`, which covers the five target helper
+modules; a changed target bundle refuses. The source module hashes, wrapper,
+service unit and tmpfiles rule must match the
+published allowlist. The host must support Python 3.11+, systemd 252+, unified
+cgroup v2 with freezing and `cgroup.kill`, and Linux `renameat2` atomic directory
+exchange, with trusted `/usr/bin/busctl` and `/usr/bin/test` binaries. Missing
+platform/API prerequisites refuse before installing a
+transaction gate. A later filesystem exchange failure retains the stopped
+transaction for explicit recovery; there is no file-by-file fallback.
+
+The command serializes helper upgrades, refuses active or held application
+operations and checks retained recovery ownership. It installs an exact systemd
+gate with both `ConditionPathExists` and `ExecCondition`, verifies the effective
+condition's executable and arguments through typed D-Bus metadata, freezes the
+helper's entire cgroup, then rereads the durable journal. `ExecCondition` also
+guards automatic restarts, which can skip unit start conditions
+([systemd 255 unit startup](https://github.com/systemd/systemd/blob/v255/src/core/unit.c),
+[service conditions](https://github.com/systemd/systemd/blob/v255/src/core/service.c)). The canonical
+`Restart=on-failure` policy is preserved.
+If Start won the race, the old helper is thawed and replacement refuses. Only a
+confirmed idle frozen helper is killed; its cgroup must empty before the service
+is stopped and the existing lifetime lock is acquired. There is no ordinary-stop
+fallback for hosts without this admission protection.
+
+The complete code directory switches atomically, preserving its existing safe
+mode (`0700`, `0750` or `0755`) even under a restrictive root `umask`. The command
+preserves the installation UUID, credential, configuration, application files, runtime
+directory and lifetime-lock inode, journal operations and retained recovery
+bytes. It starts the complete new helper with application mutations blocked,
+checks an authenticated root-peer/HMAC response, a new executor generation and
+the preservation invariants, then admits work. A private success receipt and
+the complete old code generation remain retained. It does not restart application
+containers, migrate a database or rotate credentials.
+
+An interrupted replacement keeps its private transaction and prevents unsafe
+startup or mutation. Run recovery with the reported transaction UUID and the
+same reviewed distribution and bundle hash:
+
+```bash
+sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py recover \
+  --transaction=<recorded-transaction-uuid> \
+  --expected-bundle-sha256=<reviewed-bundle-sha256>
+```
+
+Recovery accepts only the recorded old/new code generations and exact preserved
+state. It resumes the same transaction; it does not reenroll or infer a safe
+state from a missing file. A truncated first transaction record or partial
+systemd gate written before an authoritative transaction exists refuses for
+operator inspection; recovery cannot invent the missing identity or byte proof.
+Keep `/var/lib/wayfindr-updater/helper-upgrade.json`,
+the systemd stop gate and the retained generation intact for this procedure.
+`status`, `history` and `logs` remain observation-only while a new helper is
+running behind the transaction gate. An existing active or interrupted `0.4`
+application update must be settled with its original helper before replacement.
+Historical terminal schema-1 recovery material is retained and validated with
+the pinned original code; it is never converted into an executable schema-2
+operation.
+
+## Docker image identity
+
+Artifact receipt schema `2` records the public index, selected platform manifest
+and raw config digests separately from Docker's observed local image ID and
+descriptor. Classic stores normally use the config digest as the local ID;
+Docker 29 containerd stores can use the index or selected manifest. The helper
+requires a verified mapping, complete image Config and RootFS comparison, the
+native platform and the exact official repository digest. Only known typed
+empty defaults from older classic inspect representations are normalized;
+unknown fields and nondefault changes refuse.
+
+All target execution uses the exact official `version@sha256:index` reference
+and explicit native Linux platform, with pulling disabled after verification.
+The never-started, network-disabled artifact probe verifies baked release bytes
+without installation mounts. Containerd probes, oneoffs and all five application
+roles must also identify the selected platform manifest. Protocol checks,
+migration, replacement, promotion and recovery revalidate the retained binding.
+The public operation's `config_digest` remains a public content digest; it is
+never fabricated from a container's `.Image`. Old private schema-1 apply state
+is preserved and refuses execution by the new helper.
 
 Synthetic tests cover protocol, journal, enrollment, application holds, archive
 verification, and failure/recovery ordering. They do not
