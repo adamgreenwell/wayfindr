@@ -76,7 +76,7 @@ candidate lifecycle rehearsal do not publish the fix or qualify a managed
 source-to-target span. Record actual installed-helper replacement, public target
 identity and the expanded matrix separately.
 
-The [ARM64 Docker 29/containerd candidate receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+The earlier [ARM64 Docker 29/containerd candidate receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
 records actual same-transaction recovery after interrupting the explicit
 helper-upgrade `recover` command,
 preserving the published `v1.2.0` application and its enrollment while completing
@@ -85,6 +85,22 @@ read-only verification also passed. This is candidate helper-lifecycle and
 artifact-component evidence; an uninterrupted fresh upgrade is a separate
 observation. The fix remains unpublished, no newer application target or managed
 operation was created, and all 100 managed scenario cases remain unexecuted.
+
+The subsequent [merged-helper lifecycle receipt](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+records a clean uninterrupted `0.4.0` → `0.5.0` upgrade and explicit
+same-transaction recovery after the unmodified CLI's successful atomic directory
+exchange and SIGKILL. Both trials used one new ARM64/Docker 29/containerd VM,
+reset between trials only through its own clean published-source snapshot.
+The actual syscall-exit stop proved complete generations exchanged while the
+record remained `staging`, before the parent-directory fsync. Both trials
+preserved application containers, authority, journal and seeded data, including
+binary bytes and fresh-process encrypted-setting decryption. This is
+same-kernel process-crash evidence, without power-loss durability or reboot
+recovery. Historical terminal managed-apply custody remains unexercised.
+The helper remains unpublished; no newer application target, managed
+protection/apply/migration or other native/store combination ran. Managed
+qualification remains false with zero of 100 managed cases; #1131, U8/#1115,
+U9/#1116 and epic #1107 remain open.
 
 
 The earlier October 9 publication gate checked public `v1.1.0` → `v1.1.1`.

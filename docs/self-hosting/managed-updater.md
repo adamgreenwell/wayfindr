@@ -18,7 +18,10 @@ an explicit root-only terminal action.
 The `0.5` helper binds Docker classic and containerd image identities separately
 and introduces an explicit root-only upgrade from the exact helper bundle
 published in `v1.2.0`. This development implementation still needs publication
-and the full published source-to-target qualification matrix.
+and the full published source-to-target qualification matrix. A separate
+ARM64/containerd [lifecycle rehearsal](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+passed a clean upgrade and same-transaction process-crash recovery after atomic
+code exchange; the application remained public `v1.2.0`.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
@@ -710,6 +713,16 @@ application update must be settled with its original helper before replacement.
 Historical terminal schema-1 recovery material is retained and validated with
 the pinned original code; it is never converted into an executable schema-2
 operation.
+
+The [native lifecycle receipt](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+records one new ARM64/Docker 29/containerd VM, with its own clean snapshot
+restored between a passed uninterrupted upgrade and an actual post-exchange
+CLI SIGKILL followed by explicit recovery. The fault occurred at successful
+kernel syscall exit while the transaction still recorded `staging`, before the
+parent-directory fsync. This proves same-kernel process-crash recovery, without
+establishing power-loss or reboot durability. Historical terminal managed-apply
+custody was not exercised. The unpublished helper, other native/store
+combinations and published source-to-target managed matrix remain separate gates.
 
 ## Docker image identity
 

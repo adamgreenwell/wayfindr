@@ -79,15 +79,24 @@ selected-container-manifest checks and a separate exact-byte `0.4.0` → `0.5.0`
 [helper upgrade procedure](managed-updater.md#upgrading-the-installed-helper).
 Its review and contract tests are implementation evidence. Actual native
 ARM64/Docker 29/containerd
-[candidate helper recovery and current-release artifact-component checks](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+[earlier candidate helper recovery and current-release artifact-component checks](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
 passed. The fault interrupted explicit recovery of a retained candidate
 transaction; subsequent recovery of that same transaction completed replacement.
-An uninterrupted fresh upgrade remains a separate observation.
+The separate [merged-helper lifecycle receipt](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+records a passed clean uninterrupted upgrade and same-transaction recovery after
+the unmodified CLI's kernel-confirmed atomic exchange and SIGKILL. One new
+ARM64/containerd VM was restored only from its own clean published-source
+snapshot between those two trials. Application containers, authority, journal,
+synthetic rows/binary and fresh-process decryption were preserved. The CLI was
+killed at successful syscall exit before the parent-directory fsync; this
+same-kernel process-crash result establishes neither power-loss nor reboot
+durability. Historical terminal managed-apply custody remains unexercised.
 The published `v1.2.0` helper remains `0.4.0`; a newer application image alone
 does not upgrade it. Publication of the reviewed distribution, a newer compatible
 application target and the 100-case native architecture/image-store qualification
-matrix remain separate gates. This candidate run created no managed operation;
-managed qualification remains false with zero managed scenarios.
+matrix remain separate gates. These helper trials created no managed operation;
+managed qualification remains false with zero managed scenarios. #1131, U8/#1115,
+U9/#1116 and epic #1107 remain open.
 
 
 ## Preparation record before the first compatible publication

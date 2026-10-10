@@ -296,3 +296,56 @@ establish managed protective custody, application apply/migration, an
 active-update reboot, native interruption during directory exchange, historical
 terminal apply recovery, or the other native/store combinations. U8/#1115,
 U9/#1116 and epic #1107 remain open.
+
+
+## October 10, 2026: clean helper upgrade and atomic-exchange recovery
+
+The [sanitized lifecycle receipt](2026-10-10-helper-lifecycle-rehearsal.json)
+records two native trials on one new disposable Ubuntu 24.04.5 ARM64 VM with
+Docker 29.1.3/containerd. The application and enrolled source helper were the
+exact public `v1.2.0`/`0.4.0` distribution. The target was the unchanged merged
+`0.5.0` helper at `7b0cbb43bc3d9dbc2d4c97072d3b92e220cbbdae`, with the exact
+five-module bundle and upgrade CLI already bound in the prior receipt.
+No product correction was required.
+
+The clean uninterrupted upgrade passed. Its evidence was exported before
+restoring only that VM's own clean, powered-off published-source snapshot and
+freshly verifying the second trial's `0.4.0` baseline. These are two trials on
+one VM; earlier lab VMs remained preserved.
+
+For the second trial, a private ptrace controller matched the unmodified CLI's
+actual ARM64 `renameat2` entry, both `AT_FDCWD` descriptors, exact installed and
+staging paths and `RENAME_EXCHANGE` flags. The syscall-exit stop reported zero
+without error; all five module bytes and directory inodes had exchanged while
+the unchanged transaction still recorded `staging`. The controller killed and
+reaped only its owned stopped CLI without resuming it. The parent-directory
+fsync and next transaction write had not been reached. Fault-state evidence
+was exported before recovery.
+
+Beyond a 6.5-second wait, the old helper remained inactive with MainPID zero and
+the canonical `Restart=on-failure`/five-second delay unchanged. Ordinary upgrade
+refused with recovery required and the same transaction without mutation;
+explicit `recover` with that transaction and bundle completed replacement.
+Both trials preserved all eight container IDs/PIDs/start times/restart counts,
+nine authority/configuration files' bytes/inodes/metadata,
+runtime/state/lifetime-lock identities, code owner/group/mode `0700`, and journal
+ownership/mode and all non-heartbeat/generation fields. The published PHP client
+authenticated the new helper through HMAC with a new executor generation;
+the full old code remained retained and transaction/stop markers cleared.
+
+Nine single-row account/user/site/visitor/conversation/message/ticket/attachment/
+operator-setting fixtures, a persisted site setting, a 65,613-byte binary
+containing every octet value and raw encrypted-setting ciphertext survived both
+trials. Fresh PHP processes verified data and decryption with the unchanged
+effective current key and zero previous keys. Rotation was not exercised.
+Raw authority, ciphertext, installation/guest identities, container IDs and
+configuration fingerprints remain private.
+
+This is same-kernel process-crash recovery after successful exchange and before
+the parent-directory fsync. It does not establish power-loss durability or
+reboot recovery. Historical terminal managed-apply custody and the other native
+architecture/image-store combinations remain unobserved. The merged helper is
+unpublished; no newer application target or managed protection/apply/migration
+ran. Managed qualification remains **false with zero of 100 managed cases**.
+Keep #1131, U8/#1115, U9/#1116 and epic #1107 open. Preserve the earlier dated
+receipt and its distinct recovery/artifact-component observations above.
