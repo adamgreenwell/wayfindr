@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real files and generation swaps; modeled Linux manager/freezer/socket only."""
+"""Historical 0.5-to-0.6 bridge; modeled Linux manager/freezer/socket only."""
 import contextlib
 import copy
 import importlib.util
@@ -126,8 +126,10 @@ class BridgeLifecycleTests(unittest.TestCase):
             self.assertTrue(host.bridge()["active_operation_preserved"])
 
     @contextlib.contextmanager
-    def host(self):
-        with tempfile.TemporaryDirectory(prefix="wayfindr-active-bridge-") as temporary:
+    def host(self, target_version="0.6.0"):
+        # The bridge remains a historical 0.6 destination even when the normal
+        # lifecycle CLI advances. Do not broaden product eligibility for it.
+        with patch.object(U, "VERSION", target_version), tempfile.TemporaryDirectory(prefix="wayfindr-active-bridge-") as temporary:
             host = OLD.Host(Path(temporary).resolve(), "0.5.0")
             value = PURE.fixture()
             value["installation_id"] = host.installation_id
@@ -147,6 +149,14 @@ class BridgeLifecycleTests(unittest.TestCase):
                     return B.finish(host.distribution, host.selected(), host.operation_id, host.expected_sha, recovery=record["transaction_id"])
                 host.bridge_recover = recover
                 yield host
+
+    def test_new_helper_destination_refuses_before_transaction(self):
+        with self.host(target_version="0.7.0") as host:
+            with self.assertRaisesRegex(U.UpgradeError, "distribution_changed"):
+                host.bridge()
+            self.assertEqual(0, host.exchange_count)
+            self.assertEqual(0, host.kill_count)
+            self.assertFalse(U.TRANSACTION.exists())
 
     def test_bridge_replaces_only_code_preserving_entire_active_journal_and_locks(self):
         with self.host() as host:

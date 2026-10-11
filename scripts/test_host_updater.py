@@ -162,6 +162,52 @@ class HelperTests(unittest.TestCase):
         self.assertEqual("interrupted_prepare", reloaded.status()["operation"]["error"])
         self.assertIsNone(reloaded.status()["active_operation"])
 
+    def test_published_06_terminal_history_survives_and_new_operations_use_07(self):
+        operation_id = self.accept()
+        self.journal.preparing(operation_id)
+        self.journal.finish(operation_id, "execution_not_available")
+        value = copy.deepcopy(self.journal.value)
+        value["operations"][operation_id]["executor_version"] = "0.6.0"
+        try:
+            self.journal.commit(value)
+        except UP.Refusal as failure:
+            self.fail("Published 0.6 terminal history must remain readable: " + failure.reason)
+        before = self.path.read_bytes()
+        reloaded = UP.Journal(self.path, INSTALLATION, secure=False)
+        self.assertEqual(before, self.path.read_bytes(), "Loading a published journal must not rewrite it.")
+        old_operation = copy.deepcopy(reloaded.value["operations"][operation_id])
+        reloaded.begin_generation(str(uuid.uuid4()))
+        new_id = reloaded.accept(str(uuid.uuid4()), "v1.2.5", reloaded.value["generation"])[0]
+        self.assertEqual("0.7.0", reloaded.value["operations"][new_id]["executor_version"])
+        self.assertEqual(old_operation, reloaded.value["operations"][operation_id])
+
+    def test_published_06_recovery_required_journal_stays_owned_after_restart(self):
+        operation_id = self.accept()
+        self.journal.preparing(operation_id)
+        self.journal.finish(operation_id, "execution_not_available", {
+            "source": {"version": "1.2.0", "commit": "a" * 40}, "plan_id": "d" * 64,
+            "target": {"tag": "v1.2.4", "version": "1.2.4", "commit": "e" * 40,
+                       "image_digest": "sha256:" + "f" * 64}})
+        self.journal.claim_apply(operation_id, str(uuid.uuid4()))
+        self.journal.begin_generation(str(uuid.uuid4()))
+        value = copy.deepcopy(self.journal.value)
+        value["operations"][operation_id]["executor_version"] = "0.6.0"
+        try:
+            self.journal.commit(value)
+        except UP.Refusal as failure:
+            self.fail("Published 0.6 recovery ownership must remain readable: " + failure.reason)
+        before = self.path.read_bytes()
+        reloaded = UP.Journal(self.path, INSTALLATION, secure=False)
+        self.assertEqual(before, self.path.read_bytes())
+        operation = copy.deepcopy(reloaded.value["operations"][operation_id])
+        reloaded.begin_generation(str(uuid.uuid4()))
+        self.assertEqual(operation, reloaded.value["operations"][operation_id])
+        self.assertEqual(operation_id, reloaded.value["active_operation"])
+        self.refusal("operation_busy", reloaded.accept, str(uuid.uuid4()), "v1.2.5", str(uuid.uuid4()))
+        invalid = copy.deepcopy(reloaded.value)
+        invalid["operations"][operation_id]["executor_version"] = "0.8.0"
+        self.refusal("journal_corrupt", UP.validate_journal, invalid, INSTALLATION)
+
     def test_actual_process_death_preserves_accepted_operation(self):
         code = """
 import importlib.util, pathlib, sys, uuid, os

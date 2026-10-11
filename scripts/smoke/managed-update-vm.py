@@ -393,8 +393,10 @@ def approved_helper_source(upgrade, source, selected):
     if (upgrade.VERSION == '0.5.0' and (source, selected) == ('0.4.0', '0.5.0')
             and isinstance(published, dict) and set(published) == names):
         return published
-    if (upgrade.VERSION == '0.6.0' and selected == '0.6.0' and isinstance(published, dict)
-            and set(published) == {'0.4.0', '0.5.0'}
+    expected_sources = {'0.6.0': {'0.4.0', '0.5.0'},
+                        '0.7.0': {'0.4.0', '0.5.0', '0.6.0'}}
+    if (upgrade.VERSION == selected and selected in expected_sources and isinstance(published, dict)
+            and set(published) == expected_sources[selected]
             and all(isinstance(files, dict) and set(files) == names for files in published.values())):
         return published.get(source)
     return None
@@ -423,7 +425,7 @@ def verify_helper_generation(host, binding):
             raise Refusal('helper_provenance_unverified')
     upgrade = helper_upgrade_api(binding)
     no_helper_transaction(upgrade)
-    if selected['protocol'] != host.api.PROTOCOL or selected['helper_version'] not in {'0.4.0', '0.5.0', '0.6.0'}:
+    if selected['protocol'] != host.api.PROTOCOL or selected['helper_version'] not in {'0.4.0', '0.5.0', '0.6.0', '0.7.0'}:
         raise Refusal('helper_provenance_unverified')
     if upgrade.code_hashes(upgrade.CODE) != selected['files']:
         raise Refusal('helper_provenance_unverified')
@@ -433,7 +435,8 @@ def verify_helper_generation(host, binding):
             raise Refusal('helper_provenance_unverified')
     else:
         if (not canonical_uuid(transaction)
-                or (source['helper_version'], selected['helper_version']) not in {('0.4.0', '0.5.0'), ('0.4.0', '0.6.0'), ('0.5.0', '0.6.0')}
+                or (source['helper_version'], selected['helper_version']) not in {('0.4.0', '0.5.0'), ('0.4.0', '0.6.0'), ('0.5.0', '0.6.0'),
+                    ('0.4.0', '0.7.0'), ('0.5.0', '0.7.0'), ('0.6.0', '0.7.0')}
                 or source['protocol'] != 1
                 or approved_helper_source(upgrade, source['helper_version'], selected['helper_version']) != source['files']):
             raise Refusal('helper_provenance_unverified')

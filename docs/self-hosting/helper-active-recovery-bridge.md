@@ -10,6 +10,14 @@ The candidate observations below retain their original source identities and
 do not establish published native acceptance, application recovery or completed
 managed-update qualification. Normal helper replacement remains idle-only.
 
+This bridge is exclusively the historical public 0.5-to-public-0.6 path. Use the
+complete immutable public v1.4.0 distribution at commit
+`0f4312f8f7bfae7dae556ea547fccda2cf66f43e`, including its sibling normal CLI.
+The fixes-only v1.4.1/helper 0.7 candidate is unpublished and deliberately does
+not provide this bridge destination. A mutated or held 0.6 application operation
+is ineligible; the bridge cannot install 0.7, retry that operation or clear its
+recovery ownership.
+
 An ARM64/containerd rehearsal completed two read-only preservation baselines,
 then refused during inspection with `partial_state`, before a bridge transaction,
 helper kill or code exchange. The original candidate did not recognize the
@@ -76,7 +84,7 @@ directory. Missing directories alone do not authorize replacement. Changed or
 unknown helper bytes, a different checkpoint/history, pending commands,
 additional helper processes, maintenance and an unverified source refuse.
 
-The action invokes the corrected candidate's full `Protector.baseline` through
+The action invokes the published 0.6 helper's full `Protector.baseline` through
 a fixed read-only command boundary. It verifies the source image, rendered and
 effective environment, keys, storage binding, upgrade-window status, five
 application roles, PostgreSQL/Redis and the completed storage-init container.
@@ -87,9 +95,12 @@ creates a backup, changes application configuration or runs a migration.
 
 ## Review and retain the binding before replacement
 
-Use an independently reviewed immutable successor distribution with canonical
-root-owned ancestors and files. Review the bridge CLI and its sibling normal
-lifecycle CLI as well as the complete five-module 0.6 bundle. A branch name,
+Independently verify the complete public v1.4.0 source archive against its exact
+published tag and full commit above. Stage that immutable distribution with
+canonical root-owned ancestors and files, for example
+`/root/reviewed-wayfindr-v1.4.0`. Review the bridge CLI and its original sibling
+normal lifecycle CLI as well as the complete five-module 0.6 bundle. Do not
+combine this bridge with a newer normal CLI or helper modules. A branch name,
 reported version or digest freshly supplied by an untrusted tree is insufficient.
 The service must retain its canonical owned helper-upgrade gate. The same Linux,
 systemd, unified-cgroup freeze/kill and atomic-exchange requirements as the
@@ -99,6 +110,7 @@ unverified helper.
 From that reviewed tree, the read-only inspection command is:
 
 ```bash
+cd /root/reviewed-wayfindr-v1.4.0
 /usr/bin/python3 scripts/self-host/bridge-updater.py inspect-apply-bridge \
   --operation="$BRIDGE_OPERATION"
 ```
@@ -111,7 +123,8 @@ Retain the original private journal and independently review the source/runtime
 preservation evidence before proceeding on a disposable qualification host.
 
 After setting `BRIDGE_JOURNAL_SHA256` to that reviewed journal binding and
-`BRIDGE_BUNDLE_SHA256` to the independently reviewed 0.6 bundle digest:
+`BRIDGE_BUNDLE_SHA256` to the independently reviewed public 0.6 bundle digest,
+`eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df`:
 
 ```bash
 /usr/bin/python3 scripts/self-host/bridge-updater.py bridge-apply-recovery \
@@ -180,8 +193,8 @@ preservation proof.
 
 Retain the transaction UUID and all private files. Do not delete markers, edit
 the journal, reenroll, overwrite installed modules or rerun normal replacement.
-After reviewing the retained state, use only the same distribution, operation,
-journal binding, bundle digest and bridge transaction:
+After reviewing the retained state, use only the same public v1.4.0 distribution,
+operation, journal binding, bundle digest and bridge transaction:
 
 ```bash
 /usr/bin/python3 scripts/self-host/bridge-updater.py recover-apply-bridge \
