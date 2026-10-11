@@ -151,9 +151,9 @@ are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
-- The [attached `v1.3.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.3.0/release-manifest.json),
-  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.3.0/release.json)
-  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.3.0/releases/history.json)
+- The [attached `v1.4.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.4.0/release-manifest.json),
+  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.4.0/release.json)
+  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.4.0/releases/history.json)
   describe the current public artifact. Prior release actions still apply to
   installations that skipped them.
 - The [attached `v1.2.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json),
@@ -171,8 +171,8 @@ are recorded below.
   before it.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
   is separate from the immutable published manifest. Development `main` is
-  `1.4.0-dev`; empty current actions do not replace the history carried by
-  `v1.3.0`.
+  `1.5.0-dev`; empty current actions do not replace the history carried by
+  `v1.4.0`.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
