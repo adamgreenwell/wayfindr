@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline eligibility and read-only baseline guards for the active bridge.
+"""Offline eligibility and read-only baseline guards for the historical 0.6 bridge.
 
 The fixture preserves a captured journal's shape, with synthetic private
 identifiers and times. Public release facts remain exact. No native helper,
@@ -166,7 +166,8 @@ class EligibilityTests(unittest.TestCase):
     def test_operation_phase_checkpoint_executor_error_and_mutation_refuse(self):
         for key, replacement in [("phase", "downloading"), ("phase", "blocked"),
                                  ("checkpoint", "target_download_intent"), ("checkpoint", "migration_intent"),
-                                 ("executor_version", "0.4.0"), ("mutation_started", True),
+                                 ("executor_version", "0.4.0"), ("executor_version", "0.6.0"),
+                                 ("executor_version", "0.7.0"), ("mutation_started", True),
                                  ("mutation_started", 0), ("error", None), ("error", "apply_failed"), ("revision", 6)]:
             value = fixture()
             operation(value)[key] = replacement

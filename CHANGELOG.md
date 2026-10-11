@@ -30,9 +30,11 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-10
+
 **No operator action required.** The application adds no release requirements.
-The host-helper correction needs a separately reviewed and published helper
-distribution; this development change does not upgrade an installed helper.
+Host helper `0.7.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper.
 
 ### Fixed
 
@@ -41,8 +43,14 @@ distribution; this development change does not upgrade an installed helper.
   inspects the stopped replacement before starting it. A nonzero creation exit
   reports `apply_failed`; only an actual deadline reports `apply_timeout`.
   Existing ambiguous creation intents remain held and are never automatically
-  replayed. This source correction does not replace an installed helper or
-  qualify managed updates for production use.
+  replayed. This correction does not qualify managed updates for production use.
+- The normal helper CLI admits only exact published `0.4.0`, `0.5.0` or `0.6.0`
+  source bundles on idle installations. Historical `0.6.0` journal records stay
+  readable. Interrupted upgrades to public `0.6.0` must finish with their
+  original public v1.4.0 distribution and transaction before a new upgrade;
+  they cannot be retargeted. The historical active-operation bridge remains
+  limited to the complete public v1.4.0 distribution and its original
+  pre-mutation `0.5.0` failure.
 
 ## [1.4.0] - 2026-10-10
 
