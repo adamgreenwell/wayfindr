@@ -1015,6 +1015,70 @@ class DockerLayoutTests(unittest.TestCase):
         self.assertTrue(any(args[0] == "top" for args in self.calls))
         self.assertTrue(all(args[-1] == self.reference for args in self.calls if args[0] == "image"))
 
+    def test_missing_or_null_web_command_and_entrypoint_inherit_image_defaults(self):
+        self.state["layouts"]["web"] = {"mounts": []}
+        self.layout.update(cmd=self.image["cmd"], entrypoint=self.image["entrypoint"])
+        for command_present in (False, True):
+            for entrypoint_present in (False, True):
+                rendered = copy.deepcopy(self.rendered["services"]["queue"])
+                rendered.pop("command")
+                if command_present:
+                    rendered["command"] = None
+                if entrypoint_present:
+                    rendered["entrypoint"] = None
+                self.rendered["services"]["web"] = rendered
+                with self.subTest(command_present=command_present, entrypoint_present=entrypoint_present):
+                    try:
+                        self.engine.target_layout("a" * 64, "web", Path("/var/private"), self.state, processes=False)
+                    except UP.Refusal as failure:
+                        self.fail("Missing/null Compose command and entrypoint must inherit image defaults: " + failure.reason)
+
+    def test_null_entrypoint_keeps_each_explicit_role_command_strict(self):
+        for service, command in (("queue", ["php", "artisan", "queue:work", "redis"]),
+                                 ("backup-queue", ["php", "artisan", "queue:work", "backups"]),
+                                 ("scheduler", ["php", "artisan", "schedule:work"]),
+                                 ("reverb", ["php", "artisan", "reverb:start"])):
+            self.state["layouts"][service] = {"mounts": []}
+            self.rendered["services"][service] = {**copy.deepcopy(self.rendered["services"]["queue"]), "command": command, "entrypoint": None}
+            self.layout["cmd"] = command
+            with self.subTest(service=service):
+                try:
+                    self.engine.target_layout("a" * 64, service, Path("/var/private"), self.state, processes=False)
+                except UP.Refusal as failure:
+                    self.fail("Null entrypoint must retain the explicit role command: " + failure.reason)
+                self.layout["cmd"] = self.image["cmd"]
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.target_layout("a" * 64, service, Path("/var/private"), self.state, processes=False)
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+    def test_explicit_empty_command_or_entrypoint_never_inherits_image_defaults(self):
+        for field, actual_field in (("command", "cmd"), ("entrypoint", "entrypoint")):
+            for empty in ([], ""):
+                with self.subTest(field=field, empty=empty):
+                    rendered, layout = copy.deepcopy(self.rendered), copy.deepcopy(self.layout)
+                    self.rendered["services"]["queue"][field] = empty
+                    self.layout[actual_field] = self.image[actual_field]
+                    with self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
+                    self.layout[actual_field] = empty
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.rendered, self.layout = rendered, layout
+
+    def test_nonnull_entrypoint_with_missing_or_null_command_refuses_image_CMD(self):
+        for command_present in (False, True):
+            for entrypoint in (["different-entrypoint"], [], ""):
+                with self.subTest(command_present=command_present, entrypoint=entrypoint):
+                    rendered = self.rendered["services"]["queue"]
+                    rendered.pop("command", None)
+                    if command_present:
+                        rendered["command"] = None
+                    rendered["entrypoint"] = entrypoint
+                    self.layout.update(cmd=self.image["cmd"], entrypoint=entrypoint)
+                    with self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
     def test_wrong_operation_environment_role_mount_entrypoint_or_age_refuses_before_start(self):
         for field, wrong in (("operation", "other"), ("env", ["APP_KEY=private", "WAYFINDR_AUTO_MIGRATE=1"]), ("cmd", ["php", "artisan", "migrate"]),
                              ("mounts", [{"Destination": "/app/apps/server/storage", "Name": "other"}]), ("entrypoint", ["sh"]), ("created", "1970-01-01T00:00:00Z"), ("image_reference", TARGET_IMAGE)):
