@@ -30,6 +30,20 @@ missed while skimming.
 
 ## [Unreleased]
 
+**No operator action required.** The application adds no release requirements.
+The host-helper correction needs a separately reviewed and published helper
+distribution; this development change does not upgrade an installed helper.
+
+### Fixed
+
+- Managed application updates create each replacement with Compose's supported
+  `up --no-start --no-deps` command, with builds and pulls disabled. The helper
+  inspects the stopped replacement before starting it. A nonzero creation exit
+  reports `apply_failed`; only an actual deadline reports `apply_timeout`.
+  Existing ambiguous creation intents remain held and are never automatically
+  replayed. This source correction does not replace an installed helper or
+  qualify managed updates for production use.
+
 ## [1.4.0] - 2026-10-10
 
 **No operator action required.** Pull and restart the application; there are no

@@ -303,9 +303,16 @@ class Engine:
         return result
 
     def create(self, directory, service):
-        code, _ = self.api.capture(self.staged_compose(directory) + ["create", "--no-deps", "--pull=never", "--force-recreate", service], timeout=120)
+        # `compose create` has no --no-deps option. `up --no-start`
+        # selects just this role while leaving it stopped for layout checks.
+        try:
+            code, _ = self.api.capture(self.staged_compose(directory) + ["up", "--no-start", "--no-deps", "--no-build", "--pull=never", "--force-recreate", service], timeout=120)
+        except self.api.Refusal as failure:
+            if failure.reason == "prepare_timeout":
+                raise self.api.Refusal("apply_timeout") from None
+            raise
         if code != 0:
-            raise self.api.Refusal("apply_timeout")
+            raise self.api.Refusal("apply_failed")
 
     def render(self, directory):
         code, raw = self.api.capture(self.staged_compose(directory) + ["config", "--format", "json"])
