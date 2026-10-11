@@ -2,25 +2,39 @@
 
 This roadmap is directional and should not include private business strategy.
 
-**Published 1.3.0; managed-update qualification remains open.** Public `v1.3.0`
-is frozen at `1bae329c`. All five
-[exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38056674067)
-and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38057466650)
-passed. Independent public readback verified Release assets, manifest, both
-architecture OCI chains and stable aliases; the
-[publication receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
-records exact identities. The Docker 29 correction, helper `0.5.0` and supported
-helper upgrade CLI are published. Enrolled 1.2.0 hosts must upgrade host helper
-code separately; pulling the application image does not replace it. No operator
-action or migration is required; standing backup-queue guidance remains.
+**Published 1.4.0; managed-update qualification remains open.**
 
-The real 1.2.0 → 1.3.0 minor pair is available for native testing. Publication
-cannot establish installed-helper behavior or fill the managed fault matrix;
-zero managed scenarios are qualified. The earlier 1.2.0 ARM64 source install,
-enrollment, idle restart/reboot and separate ordinary restore remain valid
-private-HTTP evidence. U8/#1115, U9/#1116, #1131 and epic #1107 remain open.
-Development `main` is now `1.4.0-dev` after PR #1136, merge `a61445dc`; all five
-exact-main CI jobs passed, and that reset published no release.
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [publication receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+records the exact public identities.
+
+Helper `0.6.0`, protocol 1, corrects Docker process listings and supports
+separate root-only replacement of exact published `0.4.0` and `0.5.0` bundles.
+Normal replacement remains idle-only. The explicit active-operation bridge
+preserves one admitted failed apply; application recovery remains a separate
+administrator action. Pulling an application image does not replace host helper
+code. No operator action or migration is required for the application release;
+standing backup-queue guidance remains.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty, standing notices and the retained
+1.4.0 history remain intact. This housekeeping does not publish another release
+or choose its feature scope.
 
 An earlier public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1)

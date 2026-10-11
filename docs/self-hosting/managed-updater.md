@@ -21,11 +21,11 @@ protocol `1`, corrects Docker process listings and supports a separate root-only
 replacement of either exact published `0.4.0` or `0.5.0` bundle. Pulling an
 application image does not install or replace host helper code.
 
-This guide describes the included 1.4.0 release-preparation code. Its procedure
-requires an independently verified public source distribution before use; it
-does not claim that 1.4.0 is already published. The
-[current publication receipt](evidence/managed-update/2026-10-10-v1.3.0-publication.json)
-continues to identify `v1.3.0`. The dated
+This guide describes the published 1.4.0 helper distribution, independently
+verified against its exact public commit and Release/image contracts. The
+[current publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+records those identities. Use a reviewed immutable source distribution for each
+administrator command. The dated
 [ordinary candidate observations](helper-0.6-candidate.md#bounded-native-candidate-observations-2026-10-10)
 and separate [active-operation bridge observation](helper-active-recovery-bridge.md#bounded-native-preservation-observation-2026-10-10)
 retain their original source identities and limits.

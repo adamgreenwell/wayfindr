@@ -2,19 +2,20 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.3.0`, at `1bae329c`, published October 10,
-2026. All five exact-main CI jobs and the guarded publisher passed; independent
-readback verified Release assets, manifest, both amd64/arm64 OCI chains and
-stable aliases. This release publishes the Docker 29 correction, helper `0.5.0`
-and its separate supported upgrade CLI. An enrolled 1.2.0 host must upgrade
-its helper separately; an application image pull cannot replace host code.
-No operator action or migration is required; standing backup-queue guidance
-remains. See [Releases](Releases) for the public receipt and exact identities.
-The real 1.2.0 → 1.3.0 minor pair is available, but managed application
-qualification remains open with zero qualified scenarios. Development `main`
-is `1.4.0-dev` after PR #1136; that reset published no release.
+The latest public release is [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0),
+at `0f4312f8`, with release notes dated October 10, 2026. Exact-main CI and
+the guarded publisher passed. Independent public verification and a separate
+raw-evidence audit verified Release assets, source declarations, both amd64/arm64
+OCI chains and stable aliases. Helper `0.6.0` fixes Docker process listings and
+supports separate administrator replacement from exact published 0.4/0.5
+bundles. Application image updates preserve the installed helper. No operator
+action or migration is required for the application; standing backup-queue
+guidance remains. See [Releases](Releases) for the public receipt and identities.
+The genuine 1.2.0 → 1.4.0 pair is available for testing; managed updates remain
+not qualified for production use, with zero managed scenarios qualified.
+Development source is `1.5.0-dev`; this next-cycle reset publishes no release.
 
-The previous public release is `v1.2.0`, at `56374e95`. ARM64 baked identity,
+The earlier public release is `v1.2.0`, at `56374e95`. ARM64 baked identity,
 official source installation/enrollment, idle restart/reboot and separate
 ordinary restore passed over private HTTP. These source and ordinary-recovery
 results remain separate from managed apply and its fault matrix.
@@ -55,10 +56,11 @@ finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v1.3.0`
+## What's in `v1.4.0`
 
-This section describes public `v1.3.0` at `1bae329c`. It includes the Docker 29
-helper correction and supported host-helper replacement. Some foundation was
+This section describes public `v1.4.0` at `0f4312f8`. It includes the Docker 29
+helper corrections, supported idle helper replacement and a bounded explicit
+active-operation bridge. Some foundation was
 available in older releases; consult their release notes when operating them.
 
 1.2.0 adds read-only release review in Operator → Updates and hardens terminal
@@ -74,7 +76,7 @@ Managed execution is implemented but **not qualified for production use**.
 [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
 with zero qualified managed scenarios. The first compatible source can prove
 enrollment, idle reboot and ordinary independent restore. The published
-1.2.0 → 1.3.0 pair now supplies a real target for protection/apply tests. See the
+1.2.0 → 1.4.0 pair supplies a real target for protection/apply tests. See the
 [qualification boundary](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination

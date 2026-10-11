@@ -1,10 +1,14 @@
 # Candidate bridge for the published helper's process-listing failure
 
-This is **unpublished development source** under
-[#1140](https://github.com/adamgreenwell/wayfindr/issues/1140). Offline checks do
-not establish native acceptance, a release, application recovery or completed
-managed-update qualification. Do not use this candidate on a production host.
-The [normal helper replacement](helper-0.6-candidate.md) remains idle-only.
+This page retains the original candidate bridge design and dated observations
+under [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+The corrected bridge and helper 0.6 bytes are now published in v1.4.0; the
+[publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+verifies that separate artifact result. Use the current
+[published administrator guide](managed-updater.md#upgrading-the-installed-helper).
+The candidate observations below retain their original source identities and
+do not establish published native acceptance, application recovery or completed
+managed-update qualification. Normal helper replacement remains idle-only.
 
 An ARM64/containerd rehearsal completed two read-only preservation baselines,
 then refused during inspection with `partial_state`, before a bridge transaction,

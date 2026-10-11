@@ -4,15 +4,16 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§28](#28-published-130-application-and-helper)**
+**Taking the baton? Start at [§29](#29-published-140-application-and-helper)**
 for the current publication and remaining native gates, then
+[§28](#28-published-130-application-and-helper) for the earlier 1.3.0 release,
 [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery) and
 [§26](#26-docker-29-helper-recovery-candidate) for the
 earlier recovery/artifact-component rehearsal. See
-[§25](#25-published-120--october-9-2026) for the previous publication and
+[§25](#25-published-120--october-9-2026) for the earlier 1.2.0 publication and
 accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for an earlier public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–27 are dated snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–28 are dated snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -47,42 +48,30 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v1.2.0` is tagged at
-`56374e9574ed84616aae430d06589cfe2f0b33a0`, with successful exact-main CI
-[38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
-Guarded publisher [38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed; independent readback verified the Release, manifest, OCI index and both
-amd64/arm64 platform/configuration chains, plus stable aliases. Publication was
-October 10 at 00:26 UTC, October 9 EDT. ARM64 never-started-image baked
-version/commit/manifest/history verification passed separately from the public
-OCI checks. ARM64 official source installation/enrollment, idle helper restart
-and autonomous idle guest reboot also passed, with private HTTP/nonce/API
-checks. Ordinary archive/restore on a separate clean, unenrolled VM also passed
-without force, including exact post-archive erasure replay and surviving
-data/files/decryption/sequence checks.
-The release adds review, CLI hardening and optional managed execution;
-one additive audit-event migration runs automatically, with no required operator
-action. Unenrolled installs retain their update path. U1–U7 implementation is
-delivered, while U8/#1115, U9/#1116 and epic #1107 remain open. A real newer
-compatible published target and publication of the reviewed [Docker 29
-image-identity/helper fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
-are needed for managed apply. The merged helper passed a clean upgrade and
-same-transaction recovery after a kernel-confirmed atomic directory exchange
-and CLI SIGKILL on ARM64/containerd (§27). Earlier interrupted recovery and
-current-release artifact-component checks remain recorded in §26. The new
-process-crash check stopped before the parent-directory fsync; it establishes
-neither power-loss nor reboot durability. Qualification remains false with
-zero managed scenarios. See §25 for the published source.
+**Release truth comes first.** Public `v1.4.0` is tagged at
+`0f4312f8f7bfae7dae556ea547fccda2cf66f43e`. Exact-main CI
+[38086965749](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and guarded publisher
+[38098816963](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit
+verified the Release/assets, source declarations, both architecture OCI chains
+and stable aliases. See §29 and the
+[sanitized receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.4.0-publication.json).
+Helper 0.6 is a separate administrator upgrade. Optional managed updates remain
+not qualified for production use; U8/#1115, U9/#1116, #1140 and epic #1107
+remain open with zero qualified managed scenarios. The genuine published
+1.2.0 → 1.4.0 pair is available; publication, installed-helper behavior and
+managed application/recovery/restore evidence remain separate gates.
 
-The previous public `v1.1.1` published October 2 at tag
-`648caa1b`, with the manifest and multi-architecture image at
-`sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`
-(§24). The previous release, `v1.1.0`, published October 1 at `9b634b23` (§22).
-The patch fixes dashboard and widget consistency, mobile controls, keyboard
-context, and release diagnostics. It has no migrations or required operator
-action. Development `main` now begins `1.3.0-dev`, following the separate
-`VERSION` change at `bcb5474a`; required actions stay empty and standing notices
-are preserved.
+The earlier ARM64 public 1.2.0 source installation/enrollment, idle helper
+restart/reboot and ordinary separate-VM restore evidence remains in §25.
+Candidate helper lifecycle and recovery observations retain their original
+limits in §§26–27; a candidate exchange does not become a published helper
+replacement because matching bytes were subsequently published. The previous
+public 1.3.0 release is recorded in §28. Earlier 1.1.1 and 1.1.0 publication
+and hosted-runner evidence remain in §§24 and 22. Development source now
+identifies `1.5.0-dev`; required actions stay empty, standing notices and
+retained release history are preserved. This reset publishes no release.
 
 The public `v1.1.1` artifact passed a
 [hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
@@ -1892,3 +1881,40 @@ verification does not establish installed-helper or managed application
 behavior. Keep the native matrix, missing published prerequisites and
 independent operator acceptance open; this publication receipt qualifies zero
 managed scenarios. #1131, U8/#1115, U9/#1116 and epic #1107 remain open.
+
+
+## 29. Published 1.4.0 application and helper
+
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [sanitized public receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+retains the exact release, helper and OCI identities. Public verification
+finished October 11 UTC, still October 10 EDT. Previous snapshots above keep
+their original identities and qualification limits.
+
+Helper `0.6.0`, protocol 1, corrects Docker process listings and supports
+separate root-only replacement of exact published `0.4.0` and `0.5.0` bundles.
+Normal replacement remains idle-only. The explicit active-operation bridge
+preserves one admitted failed apply; application recovery remains a separate
+administrator action. Pulling an application image does not replace host helper
+code. No operator action or migration is required for the application release;
+standing backup-queue guidance remains.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty, standing notices and the retained
+1.4.0 history remain intact. This housekeeping does not publish another release
+or choose its feature scope.
