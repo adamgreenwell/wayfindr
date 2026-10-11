@@ -1,5 +1,46 @@
 # Managed-update qualification evidence
 
+## October 11, 2026: published helper 0.7 rendered-default refusal
+
+Public [`v1.4.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.1)
+at `fb16730f7fdc052dadaab1af372d0aa225f70d90` passed exact-main CI,
+guarded publication and independent public readback of the Release assets,
+source tree, both OCI platform/configuration chains and version aliases.
+Its complete public helper `0.7.0` distribution was verified separately;
+application image pulls do not replace the host helper.
+
+The [sanitized checkpoint](2026-10-11-rendered-command-default-refusal.json)
+records one ordinary HTTPS Start for public `v1.4.0` → `v1.4.1` on a dedicated
+Ubuntu AMD64/classic source. The operation remains held at revision 17 with
+`recovery_required`, checkpoint `apply_release_intent`,
+`runtime_verification_failed` and `mutation_started: true`. The migration
+receipt is retained; no runtime receipt or configuration commit exists. The
+new web container was created but not started, and the other four source
+writers remain stopped. This is a failed managed application attempt.
+
+A completed read-only diagnostic retained two observations and the actual
+staged Compose render. Replaying the exact published verifier rejects only
+its command and entrypoint comparisons: Compose emits explicit `null` for
+both, while Docker uses the target image defaults. Python's `dict.get` keeps
+a present null instead of selecting the supplied default. The other ten
+layout predicates and the target-container checks pass. This reproduces a
+concrete verifier defect consistent with the private creation-intent boundary;
+the historical failing call site itself was not traced.
+
+The source correction is an **unpublished candidate**. It must distinguish
+missing/null inheritance from explicit empty overrides and retain the other
+verification guards. No correction was installed, and no retry, recovery or
+hold clearance followed this observation. Archive bodies were not exported by
+the diagnostic; post-migration data integrity, target success, post-archive
+erasure and ordinary restore remain unproven for this attempt. The separate
+restore guest's five-writer hold is preserved; no application-key,
+protective-archive or erasure-ledger handoff or ordinary restore ran.
+
+Managed updates remain **not qualified for production use**, with **zero of
+100 managed scenarios qualified**. Publication, helper replacement and a
+reproduced failure do not qualify application upgrade or recovery. Earlier
+entries below retain their original dated identities, claims and limitations.
+
 ## October 10, 2026: v1.4.0 application and helper publication verified
 
 Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
