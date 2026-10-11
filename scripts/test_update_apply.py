@@ -580,6 +580,35 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(1, self.engine.calls.count("create_queue"))
         self.assertNotIn("release", self.engine.calls)
 
+    def test_real_create_refusal_retains_intent_and_never_retries_or_starts(self):
+        api = types.SimpleNamespace(**vars(FIX.API))
+        calls = []
+        api.capture = lambda command, **kwargs: (calls.append(command) or (1, b""))
+        actual = APPLY.Engine(self.config, api, self.root)
+        self.engine.create = actual.create
+        original_config = copy.deepcopy(self.config.value)
+        self.apply()
+        operation = self.status()["operation"]
+        self.assertEqual("apply_failed", operation["error"])
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertTrue(operation["mutation_started"])
+        self.assertTrue(self.engine.held)
+        self.assertTrue(operation["apply"]["migration_verified"])
+        self.assertFalse(operation["apply"]["configuration_committed"])
+        self.assertFalse(operation["apply"]["services_verified"])
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual(["web"], state["creation_intents"])
+        self.assertEqual({}, state["target_ids"])
+        self.recover()
+        self.assertEqual(1, len(calls), "An unobserved create outcome must never be replayed")
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual(original_config, self.config.value)
+        self.assertFalse(self.engine.targets)
+        self.assertFalse(self.engine.running)
+        self.assertNotIn("release", self.engine.calls)
+        self.assertNotIn("prestart_web", self.engine.calls)
+        self.assertNotIn("start_web", self.engine.calls)
+
     def test_fresh_prepare_identity_change_refuses_before_protect(self):
         self.api.plan_facts = lambda *_: ("execution_not_available", {"source": SOURCE, "target": TARGET, "plan_id": "0" * 64})
         self.apply()
@@ -821,6 +850,41 @@ class ProofTests(unittest.TestCase):
         for origin in ("ftp://fixture.invalid", "https://a:b@fixture.invalid", "https://fixture.invalid/path", "https://fixture.invalid/?x=1", "https://fixture.invalid/#fragment", "https://fixture.invalid\n", "https://fixture.invalid:0"):
             self.assertFalse(APPLY.valid_origin(origin), origin)
         self.assertTrue(APPLY.valid_origin("http://127.0.0.1:8000"))
+
+
+class DockerCreationTests(unittest.TestCase):
+    def setUp(self):
+        self.api = types.SimpleNamespace(**vars(FIX.API))
+        self.calls = []
+        self.api.capture = lambda command, **kwargs: (self.calls.append((command, kwargs)) or (0, b""))
+        config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
+        self.engine = APPLY.Engine(config, self.api, "/var/lib/wayfindr-updater")
+
+    def test_each_replacement_is_created_stopped_without_dependencies_build_or_pull(self):
+        directory = Path("/var/lib/wayfindr-updater/apply/operation")
+        for service in APPLY.SERVICES:
+            with self.subTest(service=service):
+                self.engine.create(directory, service)
+                command, options = self.calls[-1]
+                self.assertEqual(self.engine.staged_compose(directory) + [
+                    "up", "--no-start", "--no-deps", "--no-build", "--pull=never", "--force-recreate", service,
+                ], command, "Compose must support creating only one stopped replacement role")
+                self.assertEqual({"timeout": 120}, options)
+        self.assertEqual(len(APPLY.SERVICES), len(self.calls))
+
+    def test_nonzero_create_result_is_a_failure_not_a_claimed_timeout(self):
+        self.api.capture = lambda *_args, **_kwargs: (1, b"")
+        with self.assertRaises(UP.Refusal) as error:
+            self.engine.create(Path("/var/private"), "web")
+        self.assertEqual("apply_failed", error.exception.reason)
+
+    def test_only_actual_capture_deadline_becomes_apply_timeout(self):
+        for reason in ("prepare_timeout", "prepare_unavailable", "prepare_output_invalid"):
+            with self.subTest(reason=reason):
+                self.api.capture = lambda *_args, **_kwargs: (_ for _ in ()).throw(UP.Refusal(reason))
+                with self.assertRaises(UP.Refusal) as error:
+                    self.engine.create(Path("/var/private"), "web")
+                self.assertEqual("apply_timeout" if reason == "prepare_timeout" else reason, error.exception.reason)
 
 
 class DockerOneoffTests(unittest.TestCase):
