@@ -151,12 +151,13 @@ class BridgeLifecycleTests(unittest.TestCase):
                 yield host
 
     def test_new_helper_destination_refuses_before_transaction(self):
-        with self.host(target_version="0.7.0") as host:
-            with self.assertRaisesRegex(U.UpgradeError, "distribution_changed"):
-                host.bridge()
-            self.assertEqual(0, host.exchange_count)
-            self.assertEqual(0, host.kill_count)
-            self.assertFalse(U.TRANSACTION.exists())
+        for version in ("0.7.0", "0.8.0"):
+            with self.subTest(version=version), self.host(target_version=version) as host:
+                with self.assertRaisesRegex(U.UpgradeError, "distribution_changed"):
+                    host.bridge()
+                self.assertEqual(0, host.exchange_count)
+                self.assertEqual(0, host.kill_count)
+                self.assertFalse(U.TRANSACTION.exists())
 
     def test_bridge_replaces_only_code_preserving_entire_active_journal_and_locks(self):
         with self.host() as host:

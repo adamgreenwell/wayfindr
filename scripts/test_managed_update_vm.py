@@ -559,6 +559,8 @@ class HelperProvenanceTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.base = Path(self.directory.name).resolve()
         self.upgrade = VM.module('upgrade-updater')
+        # Keep these fixtures bound to their historical public 0.7 CLI shape.
+        self.upgrade.VERSION = '0.7.0'
         for name, path in {'CODE': self.base / 'lib/wayfindr-updater', 'STATE': self.base / 'state',
                            'RECEIPTS': self.base / 'state/helper-upgrades', 'TRANSACTION': self.base / 'state/helper-upgrade.json',
                            'STOP': self.base / 'state/helper-upgrade-stop', 'DROPIN': self.base / 'systemd/service.d/10-helper-upgrade.conf',
@@ -692,6 +694,43 @@ class HelperProvenanceTests(unittest.TestCase):
         self.upgrade.PUBLISHED['0.6.0'] = {**self.old, 'update_apply.py': 'f' * 64}
         with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
             self.prove()
+
+    def test_07_to_08_requires_exact_four_source_map_and_original_receipt(self):
+        self.upgrade.VERSION = '0.8.0'
+        self.upgrade.PUBLISHED['0.7.0'] = self.old
+        self.source['tag'], self.selected['tag'] = 'v1.4.1', 'v1.4.2'
+        self.transition('0.7.0', '0.8.0')
+        try:
+            binding = self.prove()
+        except VM.Refusal as failure:
+            self.fail('Exact public 0.7 to 0.8 provenance must be admitted: ' + str(failure))
+        self.assertEqual(self.binding, binding)
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        invalid_maps = [
+            {key: files for key, files in original.items() if key != '0.7.0'},
+            {**original, '0.8.0': self.old},
+            {**original, '0.7.0': {**self.old, 'updater.py': 'f' * 64}},
+            {**original, 'updater.py': 'f' * 64},
+        ]
+        for invalid in invalid_maps:
+            with self.subTest(keys=sorted(invalid)):
+                self.upgrade.PUBLISHED = invalid
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+
+    def test_08_cli_retains_each_direct_source_transition_without_multihop_substitution(self):
+        self.upgrade.VERSION = '0.8.0'
+        self.upgrade.PUBLISHED['0.7.0'] = {name: 'e' * 64 for name in self.upgrade.FILES}
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        for source in original:
+            with self.subTest(source=source):
+                self.upgrade.PUBLISHED = {**original, source: self.old}
+                self.transition(source, '0.8.0')
+                self.assertEqual(self.binding, self.prove())
+                self.receipt['from_helper_version'] = '0.3.0'
+                self.save_receipt()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
 
     def test_historical_04_to_06_requires_its_own_exact_cli_map_shape(self):
         self.transition('0.4.0', '0.6.0')

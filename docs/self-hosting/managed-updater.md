@@ -30,11 +30,13 @@ administrator command. The dated
 and separate [active-operation bridge observation](helper-active-recovery-bridge.md#bounded-native-preservation-observation-2026-10-10)
 retain their original source identities and limits.
 
-The fixes-only `v1.4.1` release under preparation includes helper `0.7.0`.
-**Neither v1.4.1 nor helper 0.7 is published.** Its separate candidate procedure
-below is for explicitly reviewed disposable-VM work; the current public release
-remains v1.4.0 with helper 0.6. Pulling an application image does not activate
-this candidate or repair an interrupted application operation.
+Public `v1.4.1` contains helper `0.7.0`, including the supported Compose
+replacement-creation command. The 0.6 procedure and 0.7 candidate section below
+retain their original distribution boundaries. The separate
+[v1.4.2/helper 0.8 source candidate](helper-0.8-candidate.md) adds the runtime
+image-default correction and exact public 0.7 idle-source compatibility; it is
+unpublished. Pulling an application image does not replace the host helper or
+repair an interrupted application operation.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
@@ -826,7 +828,12 @@ procedure and retain its evidence. The compatibility CLI has no 0.6 or 0.7 desti
 The [legacy procedure and dated native observation](helper-0.6-candidate.md#finish-an-interrupted-04-to-05-helper-transaction-first)
 retain their original reviewed source identities.
 
-### Unpublished 0.7 candidate on an idle qualification VM
+### Historical 0.7 candidate procedure on an idle qualification VM
+
+This section preserves the original pre-publication candidate procedure.
+v1.4.1/helper 0.7 is now public; its actual public distribution and source
+archive must be verified separately before use. The paths and candidate hashes
+below still refer to the original reviewed candidate, not the 0.8 successor.
 
 The v1.4.1/helper 0.7 candidate accepts only complete, exact public five-module
 source bundles: 0.4.0 from v1.2.0, 0.5.0 from v1.3.0 or 0.6.0 from v1.4.0.
@@ -890,7 +897,7 @@ with no schema mutation, owned hold, archive or executor custody. It reruns the
 corrected complete read-only baseline before any helper exchange. Its only
 destination is public 0.6, using the complete immutable public v1.4.0 tree above,
 including its original normal CLI. The bridge is deliberately unavailable from
-the new 0.7 distribution and cannot replace a mutated, held 0.6 helper or repair
+the 0.7 or 0.8 distribution and cannot replace a mutated, held helper or repair
 that application's state. Other active operations remain refused.
 
 Use only that guide's root-only `inspect-apply-bridge`, `bridge-apply-recovery`

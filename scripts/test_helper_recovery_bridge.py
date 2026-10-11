@@ -167,7 +167,7 @@ class EligibilityTests(unittest.TestCase):
         for key, replacement in [("phase", "downloading"), ("phase", "blocked"),
                                  ("checkpoint", "target_download_intent"), ("checkpoint", "migration_intent"),
                                  ("executor_version", "0.4.0"), ("executor_version", "0.6.0"),
-                                 ("executor_version", "0.7.0"), ("mutation_started", True),
+                                 ("executor_version", "0.7.0"), ("executor_version", "0.8.0"), ("mutation_started", True),
                                  ("mutation_started", 0), ("error", None), ("error", "apply_failed"), ("revision", 6)]:
             value = fixture()
             operation(value)[key] = replacement
