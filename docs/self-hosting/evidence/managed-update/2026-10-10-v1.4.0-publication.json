@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "repository": "adamgreenwell/wayfindr",
+  "tag": "v1.4.0",
+  "version": "1.4.0",
+  "commit": "0f4312f8f7bfae7dae556ea547fccda2cf66f43e",
+  "source_tree_sha": "5bdfdda67036abecb0be2e110d00d601bd7f4c0d",
+  "verified_at_utc": "2026-10-11T01:00:55.660049+00:00",
+  "main_ci_run_id": 38086965749,
+  "publisher_run_id": 38098816963,
+  "release_id": 409295334,
+  "release_manifest_sha256": "f2ef6656df388ad991861426508b74249652f62b2d80e85439856c1074ff4ed9",
+  "digest_asset_sha256": "7f2d2d7899c9e6c3081936530e25f6767003dbec2c01ceba50820a16707a83fb",
+  "oci_index_digest": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482",
+  "platforms": {
+    "amd64": {
+      "config_digest": "sha256:8f14fdc727797cecea95c1dd4c9faec2b702dc7a58f5b7a23b8bf903cfd4c457",
+      "index_descriptor": {
+        "digest": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 1609
+      },
+      "platform_descriptor": {
+        "digest": "sha256:ce60860add1c8b26deebe89ae4b90c771b2accb005d49cff40f933463d6f1395",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        "size": 7311
+      },
+      "platform_manifest_digest": "sha256:ce60860add1c8b26deebe89ae4b90c771b2accb005d49cff40f933463d6f1395",
+      "rootfs_diff_ids_sha256": "b89ea64a599ecaafa9c7faf3cf28b940eb68823e332c2be7342355249eb4a5bd"
+    },
+    "arm64": {
+      "config_digest": "sha256:6bbb566e6d0eee4b536e5d483026f8c40cd4710e4d82ec3b09300bfa26d2df44",
+      "index_descriptor": {
+        "digest": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 1609
+      },
+      "platform_descriptor": {
+        "digest": "sha256:1c812321d02132e4069242ca2c3eb6c2f0c638f27b485cde8d26997762b92bdd",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        "size": 7311
+      },
+      "platform_manifest_digest": "sha256:1c812321d02132e4069242ca2c3eb6c2f0c638f27b485cde8d26997762b92bdd",
+      "rootfs_diff_ids_sha256": "5f772203ccb4deebcd7e5fa082de9ba16c806e801e979eced941c633e63dad4b"
+    }
+  },
+  "aliases": {
+    "1.4": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482",
+    "1.4.0": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482",
+    "latest": "sha256:8f3b05ddfc368e8f902ea8328e9b07c962313635975ae6a948ba3797c6b8a482"
+  },
+  "latest_release_verified": true,
+  "published_helper": {
+    "additional_cli_sha256": {
+      "scripts/self-host/bridge-updater.py": "bc11f3cd4f991df4db5ed722e92c78b8843e1772bc569fa5461c4599c205b793",
+      "scripts/self-host/upgrade-updater-0.5-recovery.py": "fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616"
+    },
+    "bundle_sha256": "eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df",
+    "commit": "0f4312f8f7bfae7dae556ea547fccda2cf66f43e",
+    "files": {
+      "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
+      "update_apply.py": "ee2a6ac0e566df5b4946e2a0b72a739c9533355e527868a3aa0df79f4c490439",
+      "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+      "update_protection.py": "5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9",
+      "updater.py": "62015b6355f7078702e56b879798fad2c2a144607a28df0ee1286c54f632bc14"
+    },
+    "helper_version": "0.6.0",
+    "protocol": 1,
+    "provenance_files": {
+      "docker/self-hosting/compose.updater.yml": "be3de4a06ceda47480bc49d6e991433b6513f711c462394328df29426c121949",
+      "docker/self-hosting/compose.yml": "0fbb264ebd52094b8cfb20866cd7382733b4e0c9775aaa7e52de7b14c7111f01",
+      "docker/self-hosting/wayfindr-updater.conf": "47aab750e3e8b3c22223877b10c50f7ba340f9acafcc0a1f54f0812843cc9dc5",
+      "docker/self-hosting/wayfindr-updater.service": "f478f16ab8d42796f10b94abd5531d9dae63b01e9e8a26fa59345c426ca96f25",
+      "scripts/self-host/install.sh": "a5482b90df3e3ecd9a7c46e66522c7c338568fd90b3d54145863abd8dcbd9465"
+    },
+    "schema": 1,
+    "source_tree_sha": "5bdfdda67036abecb0be2e110d00d601bd7f4c0d",
+    "tag": "v1.4.0",
+    "upgrade_cli_sha256": "53e33e9361129201855964b2e7f696de42cc92ee1b85b287a91fc4b16ba8222f"
+  },
+  "baked_files_verified": false,
+  "installed_helper_verified": false,
+  "source_archive_verified": false,
+  "qualification": false,
+  "qualified_managed_scenarios": 0,
+  "scope": "Independent public metadata/source/OCI reads only. No downloaded source executed. No image pull/container/VM/installer/enrollment action.",
+  "kind": "published_application_and_helper_artifact_readback",
+  "publication_verified": true,
+  "private_publication_receipt_sha256": "63e7e51cd204b8116a38246be7419b0b2eb8eba226dc316dec829895103f1712",
+  "independent_publication_audit_sha256": "0301472d405fc419e2ef87916e05740c5b76a57ce144f4eca085827fa92af3b2",
+  "limitations": [
+    "This receipt verifies public artifacts and source declarations only. Native baked inspection, installed helper replacement and application behavior require separate evidence.",
+    "Helper 0.6 is a separate administrator upgrade; pulling the application image does not replace host helper code.",
+    "Earlier candidate helper exchanges retain their original candidate scope.",
+    "No managed application-upgrade scenario is qualified by this receipt."
+  ]
+}

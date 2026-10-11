@@ -4,8 +4,9 @@ This is the execution plan and evidence boundary for [U8 / #1115](https://github
 It extends the [disposable-VM evidence contract](disposable-vm-evidence.md)
 for the [independent host updater](managed-updater.md). It does not record a
 completed managed VM qualification. The managed source-to-target matrix below
-remains **proposed and unexecuted**. Actual source and ordinary-recovery
-observations are recorded separately and cannot complete its rows.
+remains **unqualified**. Individual failed or partial attempts retain their
+stated limits. Actual source and ordinary-recovery observations are recorded
+separately and cannot complete its rows.
 
 ## Publication and execution gates
 
@@ -21,14 +22,31 @@ There are three separate results:
    release assets and images, then independently verifies the resulting data,
    services, origin, reboot and restore behavior.
 
-Public `v1.3.0` at `1bae329c4e349017716827dd0ce26b9ba7f9f2ac` now
-supplies the genuine newer target for published `v1.2.0` at
-`56374e9574ed84616aae430d06589cfe2f0b33a0`. All five exact-main CI jobs and
-the guarded publisher passed. Independent readback verified public release
-assets, both amd64/arm64 OCI chains and stable aliases. The
-[publication receipt](evidence/managed-update/2026-10-10-v1.3.0-publication.json)
-also binds the separately published helper `0.5.0` and exact upgrade CLI.
-Development `main` is `1.4.0-dev`; its version reset is separate from publication.
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+also binds helper `0.6.0` and its normal, legacy-recovery and active-operation
+administrator CLIs. Published source `v1.2.0` remains at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty, standing notices and the retained
+1.4.0 history remain intact. This housekeeping does not publish another release
+or choose its feature scope.
 
 **Installed Docker 29 compatibility is still a native gate.** The 1.2.0 helper
 `0.4.0` assumes the local image ID equals the public configuration digest.

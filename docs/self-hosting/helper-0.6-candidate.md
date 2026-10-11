@@ -1,11 +1,14 @@
 # Helper 0.6 candidate and legacy transaction recovery
 
-This is an **unreleased development candidate**, tracked by
-[#1140](https://github.com/adamgreenwell/wayfindr/issues/1140). It does not establish
-publication, production installation acceptance, application recovery or
-completed managed-update qualification. Public v1.3.0 still contains helper 0.5.0. Follow
-the [published helper guide](managed-updater.md#upgrading-the-installed-helper)
-for that release. Do not install candidate code on a production host.
+This page retains the original candidate design and dated native observations
+tracked by [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+The corrected helper 0.6 bytes are now published in v1.4.0; the
+[publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+verifies that separate artifact result. Follow the current
+[published helper guide](managed-updater.md#upgrading-the-installed-helper)
+for administrator commands. The candidate exchanges below retain their original
+identities and do not establish a published helper replacement, application
+recovery or completed managed-update qualification.
 
 ## Normal idle replacement
 

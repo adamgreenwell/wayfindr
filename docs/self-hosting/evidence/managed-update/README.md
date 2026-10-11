@@ -1,5 +1,29 @@
 # Managed-update qualification evidence
 
+## October 10, 2026: v1.4.0 application and helper publication verified
+
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [public-artifact receipt](2026-10-10-v1.4.0-publication.json) binds helper
+`0.6.0`/protocol 1, all five modules, provenance files and the normal, legacy
+recovery and active-operation bridge administrator CLIs. It deliberately
+records no installed helper, baked-image or application behavior claim.
+Earlier candidate exchanges retain their original candidate scope.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
 ## October 10, 2026: published helper process-listing refusal
 
 The first ordinary HTTPS Start attempt for published `v1.2.0` → `v1.3.0`,

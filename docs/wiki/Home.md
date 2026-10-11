@@ -5,19 +5,20 @@ a help centre, consent-based cobrowsing, and durable ticketing — with reportin
 over the conversations and tickets it handles. The project reached `v1.0.0` on
 September 30, 2026.
 
-The latest public release is `v1.3.0`, at `1bae329c`, published October 10,
-2026. All five exact-main CI jobs and the guarded publisher passed; independent
-readback verified Release assets, manifest, both amd64/arm64 OCI chains and
-stable aliases. This release publishes the Docker 29 correction, helper `0.5.0`
-and its separate supported upgrade CLI. An enrolled 1.2.0 host must upgrade
-its helper separately; an application image pull cannot replace host code.
-No operator action or migration is required; standing backup-queue guidance
-remains. See [Releases](Releases) for the public receipt and exact identities.
-The real 1.2.0 → 1.3.0 minor pair is available, but managed application
-qualification remains open with zero qualified scenarios. Development `main`
-is `1.4.0-dev` after PR #1136; that reset published no release.
+The latest public release is [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0),
+at `0f4312f8`, with release notes dated October 10, 2026. Exact-main CI and
+the guarded publisher passed. Independent public verification and a separate
+raw-evidence audit verified Release assets, source declarations, both amd64/arm64
+OCI chains and stable aliases. Helper `0.6.0` fixes Docker process listings and
+supports separate administrator replacement from exact published 0.4/0.5
+bundles. Application image updates preserve the installed helper. No operator
+action or migration is required for the application; standing backup-queue
+guidance remains. See [Releases](Releases) for the public receipt and identities.
+The genuine 1.2.0 → 1.4.0 pair is available for testing; managed updates remain
+not qualified for production use, with zero managed scenarios qualified.
+Development source is `1.5.0-dev`; this next-cycle reset publishes no release.
 
-The previous public release is `v1.2.0`. Its ARM64 published-source install,
+The earlier public release is `v1.2.0`. Its ARM64 published-source install,
 enrollment, idle restart/reboot and separate ordinary restore passed over
 private HTTP. Those observations and older dated evidence remain on
 [Disposable VM Evidence](Disposable-VM-Evidence) and [Releases](Releases).
