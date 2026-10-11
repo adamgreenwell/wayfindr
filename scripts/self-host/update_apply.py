@@ -324,6 +324,16 @@ class Engine:
         actual = self.layout(container)
         rendered = self.render(directory)["services"][service]
         image = self.base.call(["image", "inspect", "--format", '{"env":{{json .Config.Env}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"user":{{json .Config.User}},"workdir":{{json .Config.WorkingDir}}}', state["artifacts"]["execution_reference"]], "runtime_verification_failed", json=True)
+        command, entrypoint = rendered.get("command"), rendered.get("entrypoint")
+        # Compose null inherits the image default; explicit []/"" overrides it.
+        # An entrypoint override suppresses image CMD, so do not infer the
+        # managed role's command when that combination is unspecified.
+        if entrypoint is None:
+            entrypoint = image["entrypoint"]
+        elif command is None:
+            raise self.api.Refusal("runtime_verification_failed")
+        if command is None:
+            command = image["cmd"]
         expected = self.base.environment_map(image["env"])
         for key, value in rendered["environment"].items():
             if value is None:
@@ -336,7 +346,7 @@ class Engine:
                 or not self.manifest_bound(actual, state)
                 or rendered.get("image") != state["artifacts"]["execution_reference"] or rendered.get("platform") != state["artifacts"]["execution_platform"]
                 or self.base.environment_map(actual["env"]) != expected or actual["mounts"] != state["layouts"][service]["mounts"]
-                or actual["cmd"] != rendered.get("command", image["cmd"]) or actual["entrypoint"] != rendered.get("entrypoint", image["entrypoint"])
+                or actual["cmd"] != command or actual["entrypoint"] != entrypoint
                 or actual["user"] != rendered.get("user", image["user"]) or actual["workdir"] != rendered.get("working_dir", image["workdir"])):
             raise self.api.Refusal("runtime_verification_failed")
         try:

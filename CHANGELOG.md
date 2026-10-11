@@ -30,6 +30,26 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-11
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.8.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper.
+
+### Fixed
+
+- Managed runtime checks treat an omitted or explicit `null` Compose command or
+  entrypoint as the image default. Explicit empty overrides remain distinct.
+  The correction is source-tested against a retained native refusal; it does
+  not recover the held operation or establish successful managed qualification.
+- The ordinary helper CLI also admits the exact public `0.7.0` source bundle
+  on an idle installation and preserves historical `0.7.0` executor journals.
+  Pending upgrades to public `0.7.0` remain owned by the original v1.4.1 CLI,
+  complete distribution and transaction UUID. Earlier `0.5.0` and `0.6.0`
+  recovery contracts and the historical v1.4.0 bridge remain unchanged. Active
+  or held application work still refuses replacement. See the
+  [unpublished helper 0.8 candidate contract](docs/self-hosting/helper-0.8-candidate.md).
+
 ## [1.4.1] - 2026-10-10
 
 **No operator action required.** The application adds no release requirements.
