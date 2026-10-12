@@ -759,12 +759,13 @@ class Applier:
     def fallback(self, directory, operation, state, reason):
         protection = self.root / "protection" / operation
         public = self.journal.status(operation)["operation"]
-        if (state["stage"] in {"download_intent", "downloaded"}
+        if (state["stage"] in {"download_intent", "downloaded", "protect_intent"}
                 and not public["apply"]["hold_owned"] and not public["protection"]["hold_owned"]
                 and not protection.exists() and not protection.is_symlink()):
             # Error fallback and explicit recovery can both create the first
             # fence. Verify the still-serving source before either can do so.
-            # Existing protection intents and holds retain their recovery path.
+            # A saved apply intent can precede capture; existing protection
+            # directories and holds retain their recovery path.
             self.verify_origin(directory, operation, state, False, source=True)
         self.checkpoint(operation, "apply_started", phase="protecting")
         if (protection / "state.json").exists():
@@ -868,7 +869,7 @@ class Applier:
                 except Exception as fallback_failure:
                     protection = self.root / "protection" / operation
                     if (isinstance(fallback_failure, self.api.Refusal) and fallback_failure.reason == "origin_verification_failed"
-                            and state["stage"] in {"download_intent", "downloaded"}
+                            and state["stage"] in {"download_intent", "downloaded", "protect_intent"}
                             and not protection.exists() and not protection.is_symlink()):
                         # Report the refused admission, preserving the original
                         # cause for failures after fallback acquired protection.

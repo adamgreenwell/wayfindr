@@ -407,7 +407,7 @@ class ApplyTests(unittest.TestCase):
         self.assertFalse(operation["mutation_started"], "Serving-origin refusal must precede schema mutation")
         for evidence in (operation["apply"], operation["protection"]):
             self.assertFalse(evidence["hold_owned"], "Serving-origin refusal must precede maintenance fencing")
-        self.assertEqual("origin_verification_failed", operation["error"])
+        self.assertEqual("origin_verification_failed", operation["error"], "A refused pre-protection origin admission must be reported")
         self.assertEqual(self.operation, self.status()["active_operation"])
         for name in ("services_verified", "origin_verified", "configuration_committed", "migration_started", "migration_verified"):
             self.assertFalse(operation["apply"][name])
@@ -502,6 +502,56 @@ class ApplyTests(unittest.TestCase):
         self.recover()
         self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
         self.assert_source_origin_refused_without_interruption(config)
+
+    def test_crashed_protect_intent_without_capture_rechecks_origin_before_recovery_fence(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(None)
+                original = self.applier.persist
+                def crash_after_intent(directory, state, stage):
+                    original(directory, state, stage)
+                    if stage == "protect_intent":
+                        raise KeyboardInterrupt()
+                self.applier.persist = crash_after_intent
+                with self.assertRaises(KeyboardInterrupt):
+                    self.apply()
+                path = self.root / "apply" / self.operation / "state.json"
+                before = path.read_bytes()
+                self.assertEqual("protect_intent", json.loads(before)["stage"])
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertFalse((self.root / "protection" / self.operation).exists())
+                self.assertFalse(self.engine.held)
+                self.origin_failure = failure
+                for count in (2, 3):
+                    self.recover()
+                    self.assert_source_origin_refused_without_interruption(config, "protect_intent")
+                    self.assertEqual(count, self.engine.calls.count("source_origin_preflight"))
+                    self.assertEqual(before, path.read_bytes())
+                self.origin_failure = None
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+                self.assertIsNone(self.status()["active_operation"])
+                self.assertEqual(4, self.engine.calls.count("source_origin_preflight"))
+                self.assertIn("origin_held", self.engine.calls)
+                self.assertIn("origin_serving", self.engine.calls)
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertFalse(self.engine.targets)
+                self.assertEqual(config, self.config.value)
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+
+    def test_capture_refusal_before_ownership_reports_failed_origin_admission_without_fencing(self):
+        config = copy.deepcopy(self.config.value)
+        self.source_origin(None)
+        def refuse_before_capture(*_args, **_kwargs):
+            self.origin_failure = "tls"
+            raise UP.Refusal("source_changed")
+        self.protector.capture = refuse_before_capture
+        self.apply()
+        self.assert_source_origin_refused_without_interruption(config, "protect_intent")
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
 
     def test_source_origin_preflight_does_not_replace_existing_held_recovery(self):
         for stage in ("protect_intent", "downloaded"):
