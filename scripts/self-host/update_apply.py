@@ -759,17 +759,34 @@ class Applier:
     def fallback(self, directory, operation, state, reason):
         protection = self.root / "protection" / operation
         public = self.journal.status(operation)["operation"]
-        if (state["stage"] in {"download_intent", "downloaded", "protect_intent"}
-                and not public["apply"]["hold_owned"] and not public["protection"]["hold_owned"]
-                and not protection.exists() and not protection.is_symlink()):
-            # Error fallback and explicit recovery can both create the first
-            # fence. Verify the still-serving source before either can do so.
-            # A saved apply intent can precede capture; existing protection
-            # directories and holds retain their recovery path.
-            self.verify_origin(directory, operation, state, False, source=True)
-        self.checkpoint(operation, "apply_started", phase="protecting")
-        if (protection / "state.json").exists():
+        context = None
+        if protection.exists() or protection.is_symlink():
+            if protection.is_symlink():
+                self.fail("recovery_required")
+            if self.secure:
+                self.api.trusted(protection, directory=True)
             context = self.protector.load_context(protection, operation)
+        if (state["stage"] in {"download_intent", "downloaded", "protect_intent"}
+                and not public["apply"]["hold_owned"] and not public["protection"]["hold_owned"]):
+            # Error fallback and explicit recovery can both create the first
+            # fence. A persisted fence intent alone cannot prove ownership:
+            # capture may have crashed before entering the window or before
+            # recording its already-owned hold in the public journal.
+            unheld = context is None
+            if context is not None and context["stage"] == "fence_intent":
+                self.protector.check_records(context, True)
+                self.engine.settled(context["containers"], operation)
+                value = self.engine.window(context["containers"]["web"], operation, "status")
+                if not isinstance(value, dict) or type(value.get("held")) is not bool:
+                    self.fail("recovery_required")
+                self.protector.check_window(value, operation, context["source"], value["held"])
+                unheld = not value["held"]
+                if unheld and any(context[key] != state["source_context"][key] for key in ("containers", "image", "source", "key_fingerprints", "capture_binding_sha256", "environment_binding")):
+                    self.fail("source_changed")
+            if unheld:
+                self.verify_origin(directory, operation, state, False, source=True)
+        self.checkpoint(operation, "apply_started", phase="protecting")
+        if context is not None:
             state["source_context"] = context
         else:
             self.mkdir(protection)

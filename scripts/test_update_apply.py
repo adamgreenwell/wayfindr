@@ -401,7 +401,7 @@ class ApplyTests(unittest.TestCase):
             APPLY.origin_proof(origin, keys, operation, identity, held, api, opener=Opener())
         self.applier.proof = proof
 
-    def assert_source_origin_refused_without_interruption(self, config, stage="downloaded"):
+    def assert_source_origin_refused_without_interruption(self, config, stage="downloaded", protection_exists=False):
         operation = self.status()["operation"]
         self.assertEqual("recovery_required", operation["phase"])
         self.assertFalse(operation["mutation_started"], "Serving-origin refusal must precede schema mutation")
@@ -426,7 +426,7 @@ class ApplyTests(unittest.TestCase):
         self.config.verify_files()
         keys = UP.read_object(self.root / "apply" / self.operation / "keys.json", 16384, "recovery_required")
         self.assertEqual(self.engine.effective_keys(self.engine.originals["web"]), keys)
-        self.assertFalse((self.root / "protection" / self.operation).exists())
+        self.assertEqual(protection_exists, (self.root / "protection" / self.operation).exists())
         state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
         self.assertEqual(stage, state["stage"])
 
@@ -552,6 +552,184 @@ class ApplyTests(unittest.TestCase):
         self.apply()
         self.assert_source_origin_refused_without_interruption(config, "protect_intent")
         self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+
+    def crash_capture_window(self, *, entered=False, persisted=False):
+        original = self.engine.window
+        persist = self.protector.persist
+        def crash_persist(directory, context, stage):
+            persist(directory, context, stage)
+            if persisted and stage == "fence_intent":
+                raise KeyboardInterrupt()
+        def crash(container, operation, action):
+            if action == "enter":
+                if entered:
+                    original(container, operation, action)
+                raise KeyboardInterrupt()
+            return original(container, operation, action)
+        self.engine.window = crash
+        self.protector.persist = crash_persist
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                self.apply()
+        finally:
+            self.engine.window = original
+            self.protector.persist = persist
+        directory = self.root / "protection" / self.operation
+        self.assertEqual("protect_intent", json.loads((self.root / "apply" / self.operation / "state.json").read_bytes())["stage"])
+        self.assertEqual("fence_intent", json.loads((directory / "state.json").read_bytes())["stage"])
+        self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+        self.assertFalse(self.status()["operation"]["protection"]["hold_owned"])
+        self.assertEqual(entered, self.engine.held)
+        return directory
+
+    def test_persisted_fence_intent_before_enter_rechecks_source_proof_without_creating_hold(self):
+        for persisted, failure in ((persisted, failure) for persisted in (False, True) for failure in ("tls", "missing", "wrong", "timeout")):
+            with self.subTest(persisted=persisted, failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(None)
+                directory = self.crash_capture_window(persisted=persisted)
+                before = {p.name: p.read_bytes() for p in directory.iterdir()}
+                self.origin_failure = failure
+                for count in (2, 3):
+                    self.recover()
+                    self.assert_source_origin_refused_without_interruption(config, "protect_intent", protection_exists=True)
+                    self.assertEqual(count, self.engine.calls.count("source_origin_preflight"))
+                    self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+                self.origin_failure = None
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+                self.assertEqual(4, self.engine.calls.count("source_origin_preflight"))
+                self.assertIsNone(self.status()["active_operation"])
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+                self.assertFalse(self.engine.targets)
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertEqual(config, self.config.value)
+
+    def test_held_window_before_public_checkpoint_keeps_owned_recovery(self):
+        self.source_origin(None)
+        self.crash_capture_window(entered=True)
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"], "A verified same-operation hold must retain recovery when its public checkpoint lags")
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("release", self.engine.calls)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertNotIn("migrate", self.engine.calls)
+
+    def test_unheld_capture_context_replacement_refuses_before_source_proof_or_first_fence(self):
+        self.source_origin(None)
+        baseline = self.protector.baseline
+        layout = self.engine.layout
+        replacements = {role: hashlib.sha256(("replacement-" + role).encode()).hexdigest() for role in self.engine.originals}
+        calls = 0
+        def recreated_layout(container):
+            value = layout(container)
+            if container in replacements.values():
+                value["created"] = "2026-01-02T00:00:00Z"
+            return value
+        def recreated_baseline(operation):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.engine.originals = copy.deepcopy(replacements)
+                self.engine.ids = copy.deepcopy(replacements)
+            return baseline(operation)
+        self.engine.layout = recreated_layout
+        self.protector.baseline = recreated_baseline
+        directory = self.crash_capture_window(persisted=True)
+        before = {p.name: p.read_bytes() for p in directory.iterdir()}
+        config = copy.deepcopy(self.config.value)
+        apply = json.loads((self.root / "apply" / self.operation / "state.json").read_bytes())
+        context = json.loads((directory / "state.json").read_bytes())
+        immutable = ("containers", "image", "source", "key_fingerprints", "capture_binding_sha256", "environment_binding")
+        self.assertEqual(["containers"], [key for key in immutable if context[key] != apply["source_context"][key]])
+        offset = len(self.engine.calls)
+        self.recover()
+        operation = self.status()["operation"]
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertEqual("source_changed", operation["error"], "A new capture baseline must not replace the frozen apply source before its first fence")
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate", "source_origin_preflight"):
+            self.assertNotIn(forbidden, self.engine.calls[offset:], "A changed unheld capture must refuse before proof or first fence: " + forbidden)
+        self.assertFalse(operation["mutation_started"])
+        self.assertFalse(operation["apply"]["hold_owned"])
+        self.assertFalse(operation["protection"]["hold_owned"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(replacements, self.engine.originals)
+        self.assertEqual(config, self.config.value)
+        self.config.verify_files()
+        self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
+    def test_ambiguous_fence_intent_status_or_pending_commands_never_create_first_fence(self):
+        cases = ["unknown", "missing", "schema", "held", "owner", "foreign_held", "ordinary", "source", "ledger", "extra", "pending", "stopped", "partial", "malformed_state", "foreign_context", "symlink_directory"]
+        for fault in cases:
+            with self.subTest(fault=fault):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                directory = self.crash_capture_window()
+                original = self.engine.window
+                def invalid_status(container, operation, action):
+                    value = original(container, operation, action)
+                    if action != "status":
+                        return value
+                    if fault == "unknown":
+                        return None
+                    if fault == "missing":
+                        value.pop("held")
+                    elif fault == "schema":
+                        value["schema"] = True
+                    elif fault == "held":
+                        value["held"] = 0
+                    elif fault == "owner":
+                        value["operation_id"] = str(uuid.uuid4())
+                    elif fault == "foreign_held":
+                        value.update(held=True, operation_id=str(uuid.uuid4()))
+                    elif fault == "ordinary":
+                        value["ordinary_maintenance"] = True
+                    elif fault == "source":
+                        value["source"] = {**value["source"], "commit": "f" * 40}
+                    elif fault == "ledger":
+                        value["ledger_supported"] = False
+                    elif fault == "extra":
+                        value["extra"] = True
+                    return value
+                self.engine.window = invalid_status
+                if fault == "pending":
+                    self.engine.pending_window = "enter"
+                elif fault == "stopped":
+                    self.engine.running = False
+                elif fault == "partial":
+                    (directory / "state.json").unlink()
+                elif fault == "malformed_state":
+                    UP.atomic_write(directory / "state.json", {})
+                elif fault == "foreign_context":
+                    state = json.loads((directory / "state.json").read_bytes())
+                    UP.atomic_write(directory / "state.json", {**state, "operation_id": str(uuid.uuid4())})
+                elif fault == "symlink_directory":
+                    moved = directory.with_name("unadmitted")
+                    directory.rename(moved)
+                    directory.symlink_to(moved, target_is_directory=True)
+                before = {p.name: p.read_bytes() for p in directory.iterdir()}
+                calls = len(self.engine.calls)
+                self.recover()
+                operation = self.status()["operation"]
+                self.assertEqual("recovery_required", operation["phase"])
+                self.assertFalse(operation["mutation_started"])
+                self.assertFalse(operation["apply"]["hold_owned"])
+                self.assertFalse(operation["protection"]["hold_owned"])
+                for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate"):
+                    self.assertNotIn(forbidden, self.engine.calls[calls:], "Uncertain protection ownership must not create a first fence: " + forbidden)
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertFalse(self.engine.held)
+                self.assertFalse(self.engine.targets)
+                self.assertEqual(config, self.config.value)
+                self.config.verify_files()
+                self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
 
     def test_source_origin_preflight_does_not_replace_existing_held_recovery(self):
         for stage in ("protect_intent", "downloaded"):
