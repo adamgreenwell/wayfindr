@@ -318,7 +318,10 @@ class Engine:
         code, raw = self.api.capture(self.staged_compose(directory) + ["config", "--format", "json"])
         if code != 0:
             raise self.api.Refusal("configuration_changed")
-        return self.api.strict_json(raw, "configuration_changed")
+        # Compose re-escapes every literal dollar when serializing config,
+        # including JSON. Undo that one output layer before comparing with
+        # Docker; image defaults and inspected container values stay literal.
+        return self.api.strict_json(raw.replace(b"$$", b"$"), "configuration_changed")
 
     def target_layout(self, container, service, directory, state, *, processes=True):
         actual = self.layout(container)

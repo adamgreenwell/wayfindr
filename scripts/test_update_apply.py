@@ -1015,6 +1015,95 @@ class DockerLayoutTests(unittest.TestCase):
         self.assertTrue(any(args[0] == "top" for args in self.calls))
         self.assertTrue(all(args[-1] == self.reference for args in self.calls if args[0] == "image"))
 
+    def use_serialized_render(self):
+        # Exercise the actual Compose JSON boundary rather than the layout stub.
+        self.engine.render = types.MethodType(APPLY.Engine.render, self.engine)
+        self.api.capture = lambda *_args, **_kwargs: (0, json.dumps(self.rendered).encode())
+
+    def test_backup_queue_compose_escape_matches_actual_created_argv(self):
+        self.use_serialized_render()
+        self.state["layouts"]["backup-queue"] = {"mounts": []}
+        # Exact command pair captured from Docker 29 / Compose during the
+        # public 1.4.1 -> 1.4.2 upgrade; the worker was still stopped.
+        self.rendered["services"]["backup-queue"] = {
+            **copy.deepcopy(self.rendered["services"]["queue"]), "entrypoint": None,
+            "command": ["sh", "-c", 'exec php artisan queue:work backups --queue="$${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600'],
+        }
+        self.layout["cmd"] = ["sh", "-c", 'exec php artisan queue:work backups --queue="${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600']
+        actual, rendered = copy.deepcopy(self.layout), copy.deepcopy(self.rendered)
+        try:
+            self.engine.target_layout("a" * 64, "backup-queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Compose JSON dollar escaping must match the actual stopped backup worker: " + failure.reason)
+        self.assertEqual(actual, self.layout, "Inspected container argv must never be unescaped")
+        self.assertEqual(rendered, self.rendered)
+        self.assertFalse(any(args[0] == "top" for args in self.calls))
+
+    def test_explicit_command_and_entrypoint_dollars_decode_only_one_serialization_layer(self):
+        self.use_serialized_render()
+        for serialized, literal in (("$${QUEUE:-backups}", "${QUEUE:-backups}"),
+                                    ("$$QUEUE", "$QUEUE"), ("$$$$", "$$"),
+                                    ("\\$$QUEUE", "\\$QUEUE"), ("$$(printf untouched)", "$(printf untouched)")):
+            with self.subTest(serialized=serialized):
+                self.rendered["services"]["queue"].update(command=["printf", serialized], entrypoint=["wrapper", serialized])
+                self.layout.update(cmd=["printf", literal], entrypoint=["wrapper", literal])
+                try:
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                except UP.Refusal as failure:
+                    self.fail("Explicit command and entrypoint must decode one Compose serialization layer: " + failure.reason)
+                for field in ("cmd", "entrypoint"):
+                    original = self.layout[field]
+                    self.layout[field] = [original[0], serialized]
+                    with self.subTest(field=field), self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
+                    self.layout[field] = original
+
+    def test_escaped_compose_command_still_rejects_expansion_injection_and_argument_changes(self):
+        self.use_serialized_render()
+        command = 'exec php artisan queue:work backups --queue="${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600'
+        self.rendered["services"]["queue"]["command"] = ["sh", "-c", 'exec php artisan queue:work backups --queue="$${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600']
+        for wrong in (["sh", "-c", command.replace("${BACKUP_QUEUE:-backups}", "$${BACKUP_QUEUE:-backups}")],
+                      ["sh", "-c", command.replace("${BACKUP_QUEUE:-backups}", "backups")],
+                      ["sh", "-c", command + "; printf injected"],
+                      ["sh", "-c", command.replace("exec php", "php")],
+                      ["sh", "-c", command, "unexpected-argument"]):
+            with self.subTest(wrong=wrong):
+                self.layout["cmd"] = wrong
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+    def test_inherited_image_command_and_entrypoint_keep_literal_double_dollars(self):
+        self.use_serialized_render()
+        self.image.update(cmd=["printf", "$$IMAGE_COMMAND"], entrypoint=["wrapper", "$$IMAGE_ENTRYPOINT"])
+        self.rendered["services"]["queue"].update(command=None, entrypoint=None)
+        self.layout.update(cmd=self.image["cmd"], entrypoint=self.image["entrypoint"])
+        try:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Inherited image defaults must retain their literal double dollars: " + failure.reason)
+        for field in ("cmd", "entrypoint"):
+            original = self.layout[field]
+            self.layout[field] = [original[0], original[1].replace("$$", "$")]
+            with self.subTest(field=field), self.assertRaises(UP.Refusal) as failure:
+                self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+            self.assertEqual("runtime_verification_failed", failure.exception.reason)
+            self.layout[field] = original
+
+    def test_compose_serialization_also_preserves_literal_environment_dollars(self):
+        self.use_serialized_render()
+        self.rendered["services"]["queue"]["environment"]["LITERAL_VALUE"] = "one$$two$$$$three"
+        self.layout["env"].append("LITERAL_VALUE=one$two$$three")
+        try:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Compose JSON must preserve literal environment dollars: " + failure.reason)
+        self.layout["env"][-1] = "LITERAL_VALUE=one$$two$$$$three"
+        with self.assertRaises(UP.Refusal) as failure:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
     def test_missing_or_null_web_command_and_entrypoint_inherit_image_defaults(self):
         self.state["layouts"]["web"] = {"mounts": []}
         self.layout.update(cmd=self.image["cmd"], entrypoint=self.image["entrypoint"])
