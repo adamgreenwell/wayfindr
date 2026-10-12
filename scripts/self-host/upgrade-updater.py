@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit root-only replacement of exact published 0.4 through 0.8 host helpers.
+"""Explicit root-only replacement of exact published 0.4 through 0.9 host helpers.
 
 Review a root-owned distribution first, obtain its bundle hash with ``inspect``,
 then pass that exact hash to ``upgrade``. An interruption requires ``recover``
@@ -32,7 +32,7 @@ import uuid
 
 
 sys.dont_write_bytecode = True
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 CODE = Path("/usr/local/lib/wayfindr-updater")
 STATE = Path("/var/lib/wayfindr-updater")
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
@@ -92,6 +92,13 @@ PUBLISHED = {"0.4.0": {
     "update_apply.py": "a5bedb58d64f8680ab8474da4e62d5e55b7223ae9ab25f397e72708300765d52",
     "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
     "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
+}, "0.9.0": {
+    # Exact v1.4.3 bytes, commit 4376acbd271e88c329e612efecfba753531bb4a9.
+    "updater.py": "4c743ff24ed93909024cb18d261c010de5e7ef249c2e1e6560ae4bc46c72d346",
+    "update_protection.py": "5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9",
+    "update_apply.py": "c547ee6e62a95a1c1689c69f0298064b440e7eb904f004552f16051e7392ea57",
+    "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+    "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
 }}
 LEGACY_BUNDLE_SHA256 = "e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29"
 LEGACY_RECOVERY_CLI_SHA256 = "fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616"
@@ -104,6 +111,9 @@ PUBLIC_07_COMMIT = "fb16730f7fdc052dadaab1af372d0aa225f70d90"
 PUBLIC_08_BUNDLE_SHA256 = "36d9cb8a15021ae78832b8b080a0c3707b9d1c1fca1a9142f6c714cbd1a1d92a"
 PUBLIC_08_RECOVERY_CLI_SHA256 = "b1f5ab67e59d84ec1a4e39d9351683af423b75b5f733359c226a0a6ebd7745a7"
 PUBLIC_08_COMMIT = "79ae1e96b267f0bac4ff4dc15bbc8380e394f999"
+PUBLIC_09_BUNDLE_SHA256 = "a0609d7799e6f31b1eb8ca14cbdbd3aeb3801ab381507dfb5b5f5b8b0b0405da"
+PUBLIC_09_RECOVERY_CLI_SHA256 = "e40832563998271f2cec09b7c280f82d91374a23310a7f81c6c2642a6d80c51f"
+PUBLIC_09_COMMIT = "4376acbd271e88c329e612efecfba753531bb4a9"
 UNIT_SHA = "f478f16ab8d42796f10b94abd5531d9dae63b01e9e8a26fa59345c426ca96f25"
 TMPFILES_SHA = "47aab750e3e8b3c22223877b10c50f7ba340f9acafcc0a1f54f0812843cc9dc5"
 WRAPPER = b'#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/wayfindr-updater/updater.py "$@"\n'
@@ -911,6 +921,14 @@ def refuse_legacy_transaction():
                 and record.get("bundle_sha256") == PUBLIC_08_BUNDLE_SHA256):
             validate_record(record, PUBLIC_08_BUNDLE_SHA256, PUBLISHED["0.8.0"])
             refuse("public_08_helper_recovery_required")
+        # Original public 0.9 bytes and CLI still own an interrupted UUID.
+        # A successor cannot replace its destination or repair a held apply.
+        if (type(record.get("schema")) is int and record["schema"] == 1
+                and record.get("old") in (PUBLISHED.get("0.4.0"), PUBLISHED.get("0.5.0"), PUBLISHED.get("0.6.0"), PUBLISHED.get("0.7.0"), PUBLISHED.get("0.8.0"))
+                and record.get("new") == PUBLISHED.get("0.9.0")
+                and record.get("bundle_sha256") == PUBLIC_09_BUNDLE_SHA256):
+            validate_record(record, PUBLIC_09_BUNDLE_SHA256, PUBLISHED["0.9.0"])
+            refuse("public_09_helper_recovery_required")
 
 
 def validate_generation(record, current, staged):
@@ -1150,6 +1168,11 @@ def main():
             result["legacy_recovery"] = {"helper_version": "0.8.0", "bundle_sha256": PUBLIC_08_BUNDLE_SHA256,
                                          "cli_sha256": PUBLIC_08_RECOVERY_CLI_SHA256,
                                          "release_tag": "v1.4.2", "commit": PUBLIC_08_COMMIT,
+                                         "relative_cli_path": "scripts/self-host/upgrade-updater.py"}
+        if reason == "public_09_helper_recovery_required":
+            result["legacy_recovery"] = {"helper_version": "0.9.0", "bundle_sha256": PUBLIC_09_BUNDLE_SHA256,
+                                         "cli_sha256": PUBLIC_09_RECOVERY_CLI_SHA256,
+                                         "release_tag": "v1.4.3", "commit": PUBLIC_09_COMMIT,
                                          "relative_cli_path": "scripts/self-host/upgrade-updater.py"}
         if isinstance(failure, StartupError):
             result["startup_stage"] = failure.stage

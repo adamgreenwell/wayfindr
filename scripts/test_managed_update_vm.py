@@ -794,6 +794,51 @@ class HelperProvenanceTests(unittest.TestCase):
                     self.prove()
         self.rpc.assert_not_called()
 
+    def test_09_to_010_requires_exact_six_source_map_and_original_receipt(self):
+        self.upgrade.VERSION = '0.10.0'
+        self.upgrade.PUBLISHED.update({version: {name: 'e' * 64 for name in self.upgrade.FILES}
+                                       for version in ('0.7.0', '0.8.0')})
+        self.upgrade.PUBLISHED['0.9.0'] = self.old
+        self.source['tag'], self.selected['tag'] = 'v1.4.3', 'v1.4.4'
+        self.transition('0.9.0', '0.10.0')
+        self.assertEqual(self.binding, self.prove())
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        invalid_maps = [
+            {key: files for key, files in original.items() if key != missing}
+            for missing in original
+        ] + [
+            {**original, '0.10.0': self.old},
+            {**original, '0.3.0': self.old},
+            {**original, '0.9.0': {**self.old, 'update_apply.py': 'f' * 64}},
+            {**original, '0.4.0': {'updater.py': 'f' * 64}},
+            {**original, '0.8.0': None},
+            self.old,
+        ]
+        for invalid in invalid_maps:
+            with self.subTest(keys=sorted(invalid)):
+                self.upgrade.PUBLISHED = invalid
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
+    def test_010_cli_retains_each_direct_source_transition_with_exact_receipt(self):
+        self.upgrade.VERSION = '0.10.0'
+        self.upgrade.PUBLISHED.update({version: {name: 'e' * 64 for name in self.upgrade.FILES}
+                                       for version in ('0.7.0', '0.8.0', '0.9.0')})
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        for source in original:
+            with self.subTest(source=source):
+                self.upgrade.PUBLISHED = {**original, source: self.old}
+                self.transition(source, '0.10.0')
+                self.assertEqual(self.binding, self.prove())
+                self.receipt['from_helper_version'] = '0.8.0' if source != '0.8.0' else '0.9.0'
+                self.save_receipt()
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
     def test_historical_04_to_06_requires_its_own_exact_cli_map_shape(self):
         self.transition('0.4.0', '0.6.0')
         with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):

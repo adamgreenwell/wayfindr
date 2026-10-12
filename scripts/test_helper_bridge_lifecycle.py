@@ -151,7 +151,7 @@ class BridgeLifecycleTests(unittest.TestCase):
                 yield host
 
     def test_new_helper_destination_refuses_before_transaction(self):
-        for version in ("0.7.0", "0.8.0", "0.9.0"):
+        for version in ("0.7.0", "0.8.0", "0.9.0", "0.10.0"):
             with self.subTest(version=version), self.host(target_version=version) as host:
                 with self.assertRaisesRegex(U.UpgradeError, "distribution_changed"):
                     host.bridge()
