@@ -12,6 +12,10 @@ separately and cannot complete its rows.
 
 The public v1.4.2/helper 0.8 release chain, source and image aliases passed
 independent audits; the publication receipt's baked-file gate remains incomplete.
+A [subsequent static OCI-layer readback](evidence/managed-update/2026-10-12-v1.4.2-registry-baked-identity.json)
+verified the four baked identity files for both public architectures, including
+all later layers that could affect those paths. This separate registry-content
+proof leaves native image-probe and runtime qualification gates unchanged.
 The separate administrator helper exchange passed its actual-output audits.
 The fresh AMD64/classic public v1.4.1 → v1.4.2
 attempt then failed with `recovery_required` / `runtime_verification_failed`.

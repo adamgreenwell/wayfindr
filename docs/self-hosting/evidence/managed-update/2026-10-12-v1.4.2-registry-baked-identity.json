@@ -1,0 +1,60 @@
+{
+  "architectures": {
+    "amd64": {
+      "compressed_bytes": 36239864,
+      "config_digest": "sha256:ec2b39aa40f69c9ab9c52e3fcfbc01384a7b2972a2bdb2fd35d3e5fe68e282c6",
+      "platform_manifest_digest": "sha256:5e12c3b4fb6cf0368a98bc5dd7cc43ec63292d33ca8c75349ce9fbe7a1da1959",
+      "uncompressed_bytes": 175204352,
+      "verified_layers": 14
+    },
+    "arm64": {
+      "compressed_bytes": 34359649,
+      "config_digest": "sha256:409f9ab5a5f125d67c137eb4dd09f0da542392853b4b6bdc55f0287780dd7212",
+      "platform_manifest_digest": "sha256:3a376fe267b932155ceaed1012e14bd051c919b9aa3f27baedd823589d102870",
+      "uncompressed_bytes": 170979328,
+      "verified_layers": 14
+    }
+  },
+  "checks": [
+    "Every retained suffix layer matches its compressed manifest digest and size and its uncompressed config diff_id.",
+    "The verified suffix independently establishes both parent directories and all four selected identity files; every later layer is checked for affecting paths, whiteouts and link targets.",
+    "Version and commit match the published tag and source commit; release manifest bytes match the public asset and baked history matches the expected public history object.",
+    "Saved source, downloaded layers and extracted selected file bytes retain full file-identity and SHA256 custody."
+  ],
+  "commit": "79ae1e96b267f0bac4ff4dc15bbc8380e394f999",
+  "date_utc": "2026-10-12",
+  "earlier_layers_not_downloaded": "Layers 0-22 precede the independently established selected paths; layers 23-36 were checked for each architecture.",
+  "final_files": {
+    "/etc/wayfindr/commit": {
+      "bytes": 40,
+      "sha256": "401b1c20b2fa5e85543fe655c2cf56c160a096de9fc05ad0f2675a03da9da61a"
+    },
+    "/etc/wayfindr/release-history.json": {
+      "bytes": 29836,
+      "sha256": "685949ff586807139b127228a83597de4fd8232caa1ce81f9e027dcdb6104783"
+    },
+    "/etc/wayfindr/release.json": {
+      "bytes": 1111,
+      "sha256": "a1caa3c6317001df3a476f5845cee2214614d562125405012ae71308ef0b3254"
+    },
+    "/etc/wayfindr/version": {
+      "bytes": 6,
+      "sha256": "906eba7069b06e719efc9b176bf7e23db8b68c267d5fcc5aa150e56fdef3c274"
+    }
+  },
+  "final_files_identical_between_architectures": true,
+  "independent_readback_sha256": "a9ddcd4895957a6fb4b939afb7e348333ae3024dfd1ab0ee3b3d775620635786",
+  "index_digest": "sha256:301adcdb7f9db2f2db588d4389b37ce92e5522c1b2f77f253b783c4148d8da13",
+  "installed_helper_verified_by_this_audit": false,
+  "kind": "published_oci_static_identity_file_readback",
+  "native_image_probe_or_runtime_verified": false,
+  "old_publication_receipts_modified": false,
+  "original_publication_receipt_sha256": "d502b305c0717666ac7eaae75622b9d3e9c0c3fbff0e1f6567061d35ae72b3fa",
+  "qualification": false,
+  "qualified_managed_scenarios": 0,
+  "registry_baked_content_verified": true,
+  "root_actual_audit_sha256": "fec0700c5e4e5efa1d3a733727051623796f243b684d055ea4bea0f64a5043d3",
+  "schema": 1,
+  "scope": "Static identity-file contents of the exact public AMD64 and ARM64 OCI images.",
+  "tag": "v1.4.2"
+}
