@@ -1,0 +1,119 @@
+{
+  "date_utc": "2026-10-12",
+  "environment": {
+    "architecture": "amd64",
+    "disposable": true,
+    "docker": "29.1.3",
+    "helper": "0.8.0",
+    "image_store": "classic",
+    "os": "Ubuntu Server 24.04 LTS"
+  },
+  "issue": "https://github.com/adamgreenwell/wayfindr/issues/1150",
+  "kind": "published_managed_upgrade_failed_native_observation",
+  "limits": [
+    "A passed partial-result or diagnostic audit validates the recorded evidence, not application-upgrade success.",
+    "The saved layout refusal is reproduced without claiming an unavailable historical exception stack.",
+    "The helper catch path can write apply_release_intent while reacquiring the fence; it does not prove release or complete runtime verification.",
+    "Recorded migration verification is a journal observation; this receipt does not independently validate the migration receipt body.",
+    "The correction requires distinct authorized helper delivery and fresh native qualification. Existing failed operations remain preserved."
+  ],
+  "ordinary_operator": {
+    "bounded_observer_failure": "bounded_read_only_poll_timeout",
+    "independent_partial_audit_sha256": "790a994a1125df657fde7dccfbbf833cbf21a9518fdb0482ec7bab1ac565e579",
+    "last_received_api_checkpoint": "target_verified",
+    "last_received_api_phase": "protecting",
+    "last_received_api_revision": 8,
+    "post_retries": 0,
+    "root_partial_audit_sha256": "4e0710cb06e7eb638ee9163b2b5acef7388f283f5c82544102a1a4ce4e073f31",
+    "start_posts": 1,
+    "successful_status_observations": 30,
+    "successful_terminal_consumption_accepted": false,
+    "terminal_api_result": null,
+    "transient_get_failures": 383
+  },
+  "preserved_boundaries": {
+    "active_helper_replaced": false,
+    "creation_intents_cleared": false,
+    "hold_released": false,
+    "older_held_operations_changed": false,
+    "recovery_attempted": false,
+    "restore_vm_writers_remain_held": true,
+    "source_keys_archive_or_ledger_handed_to_restore": false,
+    "start_replayed": false
+  },
+  "publication": {
+    "baked_files_verified": false,
+    "independent_audit_sha256": "cda2ded83ea2c04b76edd813ba65b1f47ee97d094b577d623d2558ab48d4a1c5",
+    "publication_receipt_sha256": "d502b305c0717666ac7eaae75622b9d3e9c0c3fbff0e1f6567061d35ae72b3fa",
+    "scope": "public release chain, source and image aliases",
+    "verified": true
+  },
+  "qualification": false,
+  "qualified_managed_scenarios": 0,
+  "read_only_native_observation": {
+    "checkpoint": "apply_release_intent",
+    "configuration_committed": false,
+    "creation_intents": [
+      "backup-queue",
+      "queue",
+      "web"
+    ],
+    "error": "runtime_verification_failed",
+    "hold_owned": true,
+    "mutation_started": true,
+    "phase": "recovery_required",
+    "private_capture_sha256": "8d60127724ac19361257a6e1744471006ad6fbb754b184b6fbf8fef4b3839677",
+    "private_stage": "restart_intent",
+    "recorded_target_roles": [
+      "web",
+      "queue"
+    ],
+    "revision": 17,
+    "role_states": {
+      "disposable_s3": "running",
+      "postgres": "running",
+      "redis": "running",
+      "source_reverb": "exited",
+      "source_scheduler": "exited",
+      "target_backup_queue": "created",
+      "target_queue": "running",
+      "target_web": "running"
+    },
+    "root_actual_review_sha256": "59123f130f67fecfd2f73a286e6c59c0995082baf50f59f426334030b1a394ab",
+    "runtime_receipt_sha256": null
+  },
+  "saved_public_verifier_reproduction": {
+    "backup_queue_refuses": "runtime_verification_failed",
+    "docker_argument": "--queue=\"${BACKUP_QUEUE:-backups}\"",
+    "independent_reproduction_sha256": "496367c9a76a2cb5f51e29824f8bc789dbe60a529347bb497ad2803e188424d1",
+    "layout_predicates_failed": [
+      "command"
+    ],
+    "layout_predicates_passed": 11,
+    "only_in_memory_rendered_command_substitution_passes": true,
+    "original_exception_stack_retained": false,
+    "public_apply_sha256": "a5bedb58d64f8680ab8474da4e62d5e55b7223ae9ab25f397e72708300765d52",
+    "rendered_argument": "--queue=\"$${BACKUP_QUEUE:-backups}\"",
+    "web_and_queue_pass": true
+  },
+  "schema": 1,
+  "source": {
+    "commit": "fb16730f7fdc052dadaab1af372d0aa225f70d90",
+    "tag": "v1.4.1"
+  },
+  "target": {
+    "commit": "79ae1e96b267f0bac4ff4dc15bbc8380e394f999",
+    "config_digest": "sha256:ec2b39aa40f69c9ab9c52e3fcfbc01384a7b2972a2bdb2fd35d3e5fe68e282c6",
+    "index_digest": "sha256:301adcdb7f9db2f2db588d4389b37ce92e5522c1b2f77f253b783c4148d8da13",
+    "platform_manifest_digest": "sha256:5e12c3b4fb6cf0368a98bc5dd7cc43ec63292d33ca8c75349ce9fbe7a1da1959",
+    "tag": "v1.4.2"
+  },
+  "unverified": [
+    "complete target serving",
+    "post-migration logical data and attachment contents",
+    "protective archive body",
+    "authenticated user private-channel delivery and worker completion",
+    "post-archive erasure",
+    "ordinary second-VM restore"
+  ]
+}

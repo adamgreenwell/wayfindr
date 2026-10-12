@@ -8,6 +8,31 @@ remains **unqualified**. Individual failed or partial attempts retain their
 stated limits. Actual source and ordinary-recovery observations are recorded
 separately and cannot complete its rows.
 
+## Latest native observation — v1.4.2/helper 0.8
+
+The public v1.4.2/helper 0.8 release chain, source and image aliases passed
+independent audits; the publication receipt's baked-file gate remains incomplete.
+The separate administrator helper exchange passed its actual-output audits.
+The fresh AMD64/classic public v1.4.1 → v1.4.2
+attempt then failed with `recovery_required` / `runtime_verification_failed`.
+Its private stage is `restart_intent`: target web and queue are running,
+backup-queue is created, and source scheduler/reverb remain stopped. The
+runtime receipt is null and configuration promotion has not completed.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-12-v1.4.2-compose-command-escaping.json)
+separates the bounded HTTPS observer timeout from native revision 17. Separate
+saved-output audits prove one Start and no POST replay. An unchanged-public-code
+replay isolates the backup worker's Compose JSON dollar escaping; the other
+layout predicates pass. [Issue #1150](https://github.com/adamgreenwell/wayfindr/issues/1150)
+tracks the correction, distinct helper delivery and fresh native qualification.
+
+No retry, recovery, active helper replacement, creation-intent clearing or hold
+release occurred. The second VM remains empty, unenrolled and writer-held; no
+Source keys, ledger or archive were handed over. Older held operations remain
+untouched. Target data/archive verification, delivery, post-archive erasure and
+ordinary restore remain unaccepted. **Zero of 100 scenarios are qualified.**
+The publication and historical observations below retain their dated scope.
+
 ## Publication and execution gates
 
 There are three separate results:
