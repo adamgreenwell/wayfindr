@@ -30,6 +30,28 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-10-12
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.10.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+updates and restore remain under disposable-VM qualification.
+
+### Fixed
+
+- The managed updater verifies the serving source's configured HTTPS origin and
+  fresh release/key-bound proof before taking maintenance ownership. Early
+  fallback and explicit pre-protection recovery repeat that admission, so a
+  missing trusted issuer or invalid proof cannot stop source writers first.
+  Existing protected recovery and held/released target verification remain in
+  force. This addresses the lab-trust gap observed during the public
+  v1.4.2-to-v1.4.3 attempt; its failed operation remains preserved.
+- The ordinary helper CLI admits the exact public `0.9.0` bundle on an idle
+  installation and preserves historical executor journals. Pending upgrades to
+  public `0.9.0` still require their original v1.4.3 distribution and transaction
+  UUID. Active or held application work refuses replacement. See the
+  [helper 0.10 candidate contract](docs/self-hosting/helper-0.10-candidate.md).
+
 ## [1.4.3] - 2026-10-11
 
 **No operator action required.** The application adds no release requirements.

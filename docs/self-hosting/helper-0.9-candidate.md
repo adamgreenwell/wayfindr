@@ -1,11 +1,13 @@
-# Helper 0.9 candidate compatibility
+# Helper 0.9 compatibility
 
-Application v1.4.3 and helper 0.9.0 are an unpublished source candidate. Public
-v1.4.2 contains the original helper 0.8.0. Candidate review, exact-main CI,
-publication, complete public-source readback and native qualification remain
-separate gates. This page records the source contract, not an install command.
+Application v1.4.3 and helper 0.9.0 were published from
+`4376acbd271e88c329e612efecfba753531bb4a9`. Public v1.4.2 contains the original
+helper 0.8.0. Publication and native qualification remain separate gates. The
+[subsequent native attempt](managed-update-qualification.md) remains failed;
+the [helper 0.10 candidate](helper-0.10-candidate.md) is unpublished. This page
+retains the 0.9 distribution contract, not an install command.
 
-The candidate keeps protocol 1 and corrects Compose JSON dollar escaping in
+Helper 0.9 keeps protocol 1 and corrects Compose JSON dollar escaping in
 runtime verification. Only the rendered Compose serialization layer is decoded;
 Docker's inspected values and inherited image defaults stay literal. The
 [public v1.4.1-to-v1.4.2 failure](managed-update-qualification.md) remains a failed
@@ -43,7 +45,7 @@ The exact public 0.8 bundle SHA-256 is
 `36d9cb8a15021ae78832b8b080a0c3707b9d1c1fca1a9142f6c714cbd1a1d92a`.
 Its published `update_apply.py` SHA-256 remains
 `a5bedb58d64f8680ab8474da4e62d5e55b7223ae9ab25f397e72708300765d52`.
-The corrected candidate module cannot substitute for those historical bytes.
+The corrected 0.9 module cannot substitute for those historical bytes.
 The 0.9 CLI identifies the original v1.4.2 delivery for a valid pending 0.8
 transaction before host-service access or mutation. Normal 0.8 recovery uses the
 original schema-1 helper transaction, not a schema-2 bridge or application apply.
@@ -51,7 +53,7 @@ original schema-1 helper transaction, not a schema-2 bridge or application apply
 The separate active-operation bridge remains limited to its original
 pre-mutation 0.5 failure and the complete public v1.4.0 distribution with helper
 0.6. It is unavailable from the 0.7, 0.8 and 0.9 distributions. No existing
-application hold becomes eligible for this candidate.
+application hold becomes eligible for this distribution.
 
 ## Verification limits
 

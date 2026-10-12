@@ -1,5 +1,30 @@
 # Managed-update qualification evidence
 
+## October 12, 2026: public helper 0.9 origin-trust refusal
+
+The [sanitized receipt](2026-10-12-v1.4.3-origin-trust.json) records the fresh
+AMD64/classic public v1.4.2 → v1.4.3 attempt using separately upgraded public
+helper 0.9. Exactly one ordinary HTTPS Start ran. Its GET-only observer timed
+out at the last reachable API revision 8; separate read-only native captures
+found revision 18, `recovery_required` / `origin_verification_failed`, after
+migration. All five target roles were running, with no accepted runtime receipt
+or configuration promotion.
+
+The guest's default certificate trust rejected the lab issuer with verification
+error 20. The same fresh `/up` challenge using the exact captured lab CA, with
+hostname and chain verification required, returned a correctly signed held
+v1.4.3 response. This establishes a missed host-trust prerequisite; the original
+suppressed exception stack remains unavailable. The private export and an
+independent public-verifier replay preserve the journal, migration receipt,
+source SQL and two local attachment bodies. External objects, target data,
+delivery, erasure and separate-VM restore remain unverified.
+
+No trust installation, Start replay, recovery, helper replacement or hold
+release followed the failure. The restore peer remains writer-held; older VMs
+and held operations remain untouched. [#1153](https://github.com/adamgreenwell/wayfindr/issues/1153)
+tracks the unpublished helper 0.10 correction and fresh qualification. Managed
+qualification remains **false, with zero of 100 scenarios qualified**.
+
 ## October 11, 2026: published helper 0.7 rendered-default refusal
 
 Public [`v1.4.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.1)

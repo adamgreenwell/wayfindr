@@ -8,7 +8,43 @@ remains **unqualified**. Individual failed or partial attempts retain their
 stated limits. Actual source and ordinary-recovery observations are recorded
 separately and cannot complete its rows.
 
-## Latest native observation — v1.4.2/helper 0.8
+## Latest native observation — v1.4.3/helper 0.9
+
+The fresh AMD64/classic public v1.4.2 → v1.4.3 attempt used the separately
+upgraded public helper 0.9. One ordinary HTTPS Start was accepted; the bounded
+observer then received maintenance responses and timed out without replaying
+Start. Its last reachable API status was revision 8, `protecting` /
+`target_verified`. Separate read-only native captures found revision 18,
+`recovery_required` / `origin_verification_failed`, with schema mutation begun.
+All five target v1.4.3 roles were running, but runtime verification and
+configuration promotion had not completed. The web health check returns an
+unhealthy result while the owned hold returns HTTP 503; that alone does not
+diagnose the failure.
+
+The guest's normal HTTPS trust rejected the private lab issuer with certificate
+verification error 20. Repeating the read-only `/up` probe using the exact
+independently captured lab CA, with hostname and chain verification enabled,
+returned HTTP 503 and a valid operation/key/release-bound v1.4.3 proof. This
+establishes a host trust prerequisite missed by the lab setup. It does not
+reconstruct the suppressed historical exception stack or prove complete serving.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-12-v1.4.3-origin-trust.json)
+binds the independent partial API, native and TLS audits. The private apply and
+protection directories, archive, migration receipt and journal were exported
+read-only. Archive and migration hashes match the journal. An independent replay
+of the public archive verifier accepted the source SQL, two local attachment
+bodies and declared key fingerprints. External object bodies, archive restore
+and post-migration data verification remain unaccepted.
+
+No certificate installation, Start replay, recovery, helper replacement or hold
+release occurred on that failed VM. Its Restore peer remains writer-held without
+Source keys, archive or ledger handoff. All older VMs and held operations remain
+untouched. The [helper 0.10 source candidate](helper-0.10-candidate.md) checks the
+serving source origin before fencing, and repeats that admission before explicit
+recovery of a pre-protection refusal. It is unpublished. **Zero of 100 scenarios
+are qualified.**
+
+## Previous native observation — v1.4.2/helper 0.8
 
 The public v1.4.2/helper 0.8 release chain, source and image aliases passed
 independent audits; the publication receipt's baked-file gate remains incomplete.
@@ -151,6 +187,29 @@ checkpoint. Refuse absent or mismatched bindings. Retain an out-of-band guest
 console, a bounded timeout and a way to reconnect. Record which actor requested
 each mutation. A local developer Docker daemon, shared VM or production origin
 must never become an implicit fallback target.
+
+### Configured-origin trust before Start
+
+Verify the enrolled HTTPS origin from the **guest host**, using its normal
+system trust store, before starting a managed update. A browser on another
+machine or a client supplied with a private CA does not establish host trust.
+The helper's bounded network probe uses normal system trust and strips custom
+process environment; passing `SSL_CERT_FILE` to an unrelated shell is insufficient.
+
+Use a publicly trusted certificate, or explicitly install a reviewed private
+issuer into that disposable host's operating-system trust store during lab
+setup. Authenticate the issuer against the certificate exported through the
+trusted guest/container connection and record its fingerprint before installation.
+On Ubuntu, an approved PEM CA with a `.crt` suffix belongs in
+`/usr/local/share/ca-certificates/`; `sudo update-ca-certificates` refreshes the
+system store. Trust only the public issuer certificate, never a private key.
+Do not use `--insecure`, an unverified SSL context or a helper-code patch.
+
+Record a successful host-default HTTPS chain and hostname check, a fresh signed
+source-release proof and the still-serving source state before Start. Preserve
+the separate browser/client trust and TLS material checks. Correcting lab trust
+does not convert an earlier failed operation into a successful upgrade or
+authorize recovery of an existing held VM.
 
 No procedure below requires a test-only bypass in the shipped helper. A fault
 controller operates outside the helper, within the explicitly disposable guest,

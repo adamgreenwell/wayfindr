@@ -1,11 +1,12 @@
 # Engineering Handoff & Roadmap
 
-*Living document — updated October 10, 2026 (EDT). For an agent (or engineer) picking up
+*Living document — updated October 12, 2026 (EDT). For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§29](#29-published-140-application-and-helper)**
-for the current publication and remaining native gates, then
+**Taking the baton? Start at [§30](#30-public-143-origin-trust-failure-and-helper-010-candidate)**
+for the latest failed native attempt and unpublished correction, then
+[§29](#29-published-140-application-and-helper) for earlier publication gates and
 [§28](#28-published-130-application-and-helper) for the earlier 1.3.0 release,
 [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery) and
 [§26](#26-docker-29-helper-recovery-candidate) for the
@@ -1918,3 +1919,41 @@ Development source now identifies the next line as `1.5.0-dev`. The
 required-action declaration remains empty, standing notices and the retained
 1.4.0 history remain intact. This housekeeping does not publish another release
 or choose its feature scope.
+
+
+## 30. Public 1.4.3 origin-trust failure and helper 0.10 candidate
+
+On October 12, public `v1.4.3`/helper `0.9.0` from
+`4376acbd271e88c329e612efecfba753531bb4a9` was used for a fresh AMD64/classic
+v1.4.2 → v1.4.3 attempt. The separate supported helper exchange, installation,
+seed and ordinary Plan checks passed. One ordinary HTTPS Start ran; its GET-only
+observer timed out without replay. The last reachable API status was revision 8,
+while subsequent read-only native captures found revision 18,
+`recovery_required` / `origin_verification_failed`, after migration. All five
+target roles were running; runtime verification and configuration promotion
+remained incomplete. See the
+[sanitized failed-attempt receipt](../self-hosting/evidence/managed-update/2026-10-12-v1.4.3-origin-trust.json).
+
+The guest's default HTTPS trust rejected the lab issuer. A read-only probe using
+the exact captured CA, with chain and hostname verification required, returned
+a correctly signed held target response. This establishes a missed lab-trust
+prerequisite without reconstructing the original suppressed exception stack.
+The exported journal, apply/protection state, migration receipt and protective
+archive passed separate audits. The public archive verifier accepted source SQL
+and two local attachment bodies; external objects and restore remain unverified.
+
+The failed Source and writer-held Restore peer remain preserved. No trust
+installation, Start replay, recovery, active helper replacement, hold release
+or Source-key/archive/ledger handoff occurred. Older VMs and held operations stay
+untouched. Managed qualification remains **0/100**; keep U8/#1115, #1140 and
+epic #1107 open.
+
+[#1153](https://github.com/adamgreenwell/wayfindr/issues/1153) tracks the
+[helper 0.10 source candidate](../self-hosting/helper-0.10-candidate.md): strict
+serving-source origin admission before protection, including early fallback and
+explicit pre-protection recovery; exact public 0.9 idle-source compatibility;
+historical journal readability and original pending-transaction ownership.
+Source prepares **v1.4.4**, with no new required application action and the
+standing backup notice preserved. This is an unpublished candidate. Publication,
+public readback, native helper exchange, complete application upgrade and
+ordinary separate-VM restore each require their own evidence.
