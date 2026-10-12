@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 PROTOCOL = 1
 CONFIG = Path("/etc/wayfindr-updater/installation.json")
 CREDENTIAL = Path("/etc/wayfindr-updater/credential.json")
@@ -316,7 +316,7 @@ def validate_journal(value: dict, installation_id: str) -> None:
             raise Refusal("journal_corrupt")
         if not isinstance(operation["release_tag"], str) or TAG.fullmatch(operation["release_tag"]) is None or len(operation["release_tag"]) > 128:
             raise Refusal("journal_corrupt")
-        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", VERSION} or type(operation["mutation_started"]) is not bool:
+        if not isinstance(operation["phase"], str) or operation["phase"] not in PHASES or not isinstance(operation["checkpoint"], str) or operation["checkpoint"] not in CHECKPOINTS or not isinstance(operation["executor_version"], str) or operation["executor_version"] not in {"0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", VERSION} or type(operation["mutation_started"]) is not bool:
             raise Refusal("journal_corrupt")
         if "apply" in operation:
             validate_apply(operation["apply"])

@@ -37,10 +37,13 @@ retain their original distribution boundaries. The separate
 image-default correction and exact public 0.7 idle-source compatibility. Its
 subsequent application upgrade failed; the
 [qualification record](managed-update-qualification.md) preserves that result.
-The next [v1.4.3/helper 0.9 source candidate](helper-0.9-candidate.md) corrects
+Public [v1.4.3/helper 0.9](helper-0.9-candidate.md) corrects
 Compose JSON dollar escaping and adds exact public 0.8 idle-source compatibility.
-It remains unpublished. Pulling an application image does not replace the host
-helper or repair an interrupted application operation.
+Its subsequent application attempt exposed a missing lab host-CA trust
+prerequisite. The [helper 0.10 source candidate](helper-0.10-candidate.md) adds
+serving-origin verification before protection and exact public 0.9 idle-source
+compatibility. It remains unpublished. Pulling an application image does not
+replace the host helper or repair an interrupted application operation.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
