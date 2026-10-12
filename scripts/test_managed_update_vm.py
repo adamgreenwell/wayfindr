@@ -732,6 +732,68 @@ class HelperProvenanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
                     self.prove()
 
+    def test_08_to_09_requires_exact_five_source_map_and_original_receipt(self):
+        self.upgrade.VERSION = '0.9.0'
+        self.upgrade.PUBLISHED.update({'0.7.0': {name: 'e' * 64 for name in self.upgrade.FILES},
+                                       '0.8.0': self.old})
+        self.source['tag'], self.selected['tag'] = 'v1.4.2', 'v1.4.3'
+        self.transition('0.8.0', '0.9.0')
+        self.assertEqual(self.binding, self.prove(), 'exact public 0.8 to 0.9 provenance must be admitted')
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        invalid_maps = [
+            {key: files for key, files in original.items() if key != missing}
+            for missing in original
+        ] + [
+            {**original, '0.9.0': self.old},
+            {**original, '0.3.0': self.old},
+            {**original, '0.8.0': {**self.old, 'updater.py': 'f' * 64}},
+            {**original, '0.4.0': {'updater.py': 'f' * 64}},
+            {**original, '0.7.0': None},
+            {**original, 'updater.py': 'f' * 64},
+            self.old,
+        ]
+        for invalid in invalid_maps:
+            with self.subTest(keys=sorted(invalid)):
+                self.upgrade.PUBLISHED = invalid
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
+    def test_09_cli_retains_each_direct_source_transition_without_multihop_substitution(self):
+        self.upgrade.VERSION = '0.9.0'
+        self.upgrade.PUBLISHED.update({version: {name: 'e' * 64 for name in self.upgrade.FILES}
+                                       for version in ('0.7.0', '0.8.0')})
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        for source in original:
+            with self.subTest(source=source):
+                self.upgrade.PUBLISHED = {**original, source: self.old}
+                self.transition(source, '0.9.0')
+                self.assertEqual(self.binding, self.prove())
+                self.receipt['from_helper_version'] = '0.8.0' if source != '0.8.0' else '0.7.0'
+                self.save_receipt()
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
+    def test_09_provenance_refuses_wrong_cli_version_and_unsupported_transitions(self):
+        self.upgrade.VERSION = '0.9.0'
+        self.upgrade.PUBLISHED.update({'0.7.0': self.old, '0.8.0': self.old})
+        self.transition('0.8.0', '0.9.0')
+        for version in ('0.8.0', '0.10.0'):
+            with self.subTest(cli_version=version):
+                self.upgrade.VERSION = version
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+        self.upgrade.VERSION = '0.9.0'
+        for source, selected in (('0.3.0', '0.9.0'), ('0.9.0', '0.9.0'), ('0.8.0', '0.10.0')):
+            with self.subTest(source=source, selected=selected):
+                self.transition(source, selected)
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+        self.rpc.assert_not_called()
+
     def test_historical_04_to_06_requires_its_own_exact_cli_map_shape(self):
         self.transition('0.4.0', '0.6.0')
         with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
@@ -988,8 +1050,12 @@ class HelperProvenanceTests(unittest.TestCase):
              HelperProvenanceTests, 'test_06_to_07_source_requires_exact_versioned_allowlist_and_original_receipt'),
             ("or approved_helper_source(upgrade, source['helper_version'], selected['helper_version']) != source['files']", 'or False',
              HelperProvenanceTests, 'test_historical_04_to_06_requires_its_own_exact_cli_map_shape'),
+            ("or approved_helper_source(upgrade, source['helper_version'], selected['helper_version']) != source['files']", 'or False',
+             HelperProvenanceTests, 'test_08_to_09_requires_exact_five_source_map_and_original_receipt'),
             ("or receipt['from_helper_version'] != source['helper_version']", 'or False',
              HelperProvenanceTests, 'test_second_upgrade_receipt_cannot_substitute_for_the_application_bundled_source'),
+            ("or receipt['from_helper_version'] != source['helper_version']", 'or False',
+             HelperProvenanceTests, 'test_09_cli_retains_each_direct_source_transition_without_multihop_substitution'),
             ("upgrade.STATE / '.helper-upgrade-stop.next'", "upgrade.STATE / '.unused-test-path'",
              HelperProvenanceTests, 'test_every_pending_upgrade_marker_and_scratch_including_dangling_symlinks_refuses'),
             ("or any(operation[key] is not None for key in ('source', 'target', 'plan_id'))", 'or False',

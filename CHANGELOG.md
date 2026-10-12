@@ -30,6 +30,29 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-11
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.9.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+updates and restore remain under disposable-VM qualification.
+
+### Fixed
+
+- Managed runtime verification decodes one layer of Compose JSON dollar
+  escaping before comparing the rendered configuration with Docker. This
+  corrects the backup-worker command refusal observed during the public
+  v1.4.1-to-v1.4.2 attempt while preserving exact inspected commands and inherited
+  image defaults. Saved-output replay and source regressions do not qualify a
+  complete application upgrade or recover its held partial transition.
+- The ordinary helper CLI admits the exact public `0.8.0` bundle on an idle
+  installation and preserves historical `0.8.0` executor journals. Interrupted
+  upgrades to public `0.8.0` must finish with the original v1.4.2 distribution and
+  the same transaction UUID before a distinct successor transaction. Earlier
+  recovery contracts and the historical v1.4.0 bridge stay unchanged. Active or
+  held application work still refuses replacement. See the
+  [helper 0.9 candidate contract](docs/self-hosting/helper-0.9-candidate.md).
+
 ## [1.4.2] - 2026-10-11
 
 **No operator action required.** The application adds no release requirements.
@@ -48,7 +71,7 @@ the application image does not upgrade an installed helper.
   complete distribution and transaction UUID. Earlier `0.5.0` and `0.6.0`
   recovery contracts and the historical v1.4.0 bridge remain unchanged. Active
   or held application work still refuses replacement. See the
-  [unpublished helper 0.8 candidate contract](docs/self-hosting/helper-0.8-candidate.md).
+  [helper 0.8 compatibility contract](docs/self-hosting/helper-0.8-candidate.md).
 
 ## [1.4.1] - 2026-10-10
 

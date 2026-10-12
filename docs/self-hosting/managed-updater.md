@@ -33,10 +33,14 @@ retain their original source identities and limits.
 Public `v1.4.1` contains helper `0.7.0`, including the supported Compose
 replacement-creation command. The 0.6 procedure and 0.7 candidate section below
 retain their original distribution boundaries. The separate
-[v1.4.2/helper 0.8 source candidate](helper-0.8-candidate.md) adds the runtime
-image-default correction and exact public 0.7 idle-source compatibility; it is
-unpublished. Pulling an application image does not replace the host helper or
-repair an interrupted application operation.
+[public v1.4.2/helper 0.8 contract](helper-0.8-candidate.md) adds the runtime
+image-default correction and exact public 0.7 idle-source compatibility. Its
+subsequent application upgrade failed; the
+[qualification record](managed-update-qualification.md) preserves that result.
+The next [v1.4.3/helper 0.9 source candidate](helper-0.9-candidate.md) corrects
+Compose JSON dollar escaping and adds exact public 0.8 idle-source compatibility.
+It remains unpublished. Pulling an application image does not replace the host
+helper or repair an interrupted application operation.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
@@ -673,8 +677,9 @@ themselves verify this source distribution. A moving branch, a candidate archive
 or a reported helper version cannot substitute for that public source proof.
 Public v1.4.0/helper 0.6 is verified in the publication receipt above; its
 complete immutable source distribution must still be independently verified
-before execution. The v1.4.1/helper 0.7 candidate remains unpublished and cannot
-substitute for that public distribution when recovering an older transaction.
+before execution. Public v1.4.1/helper 0.7 and v1.4.2/helper 0.8 cannot substitute
+for the original destination distribution when recovering an older transaction.
+The v1.4.3/helper 0.9 source candidate remains unpublished.
 
 Stage the reviewed complete distribution in a canonical, root-owned directory
 such as `/root/reviewed-wayfindr-v1.4.0` for the public 0.6 commands below. Every
@@ -822,7 +827,7 @@ original UUID, source `0.4.0`, target `0.5.0`, `preserved = true` and
 `application_changed = false`. Retain that receipt and both original recovery
 evidence and code generations. Authenticated status must verify the resulting
 idle 0.5 helper before a distinct normal upgrade, using the public 0.6 procedure
-above or the separately reviewed unpublished 0.7 candidate procedure below.
+above or another independently reviewed, eligible public successor distribution.
 If recovery refuses or an application operation remains active, stop this
 procedure and retain its evidence. The compatibility CLI has no 0.6 or 0.7 destination.
 The [legacy procedure and dated native observation](helper-0.6-candidate.md#finish-an-interrupted-04-to-05-helper-transaction-first)
@@ -897,7 +902,7 @@ with no schema mutation, owned hold, archive or executor custody. It reruns the
 corrected complete read-only baseline before any helper exchange. Its only
 destination is public 0.6, using the complete immutable public v1.4.0 tree above,
 including its original normal CLI. The bridge is deliberately unavailable from
-the 0.7 or 0.8 distribution and cannot replace a mutated, held helper or repair
+the 0.7, 0.8 or 0.9 distribution and cannot replace a mutated, held helper or repair
 that application's state. Other active operations remain refused.
 
 Use only that guide's root-only `inspect-apply-bridge`, `bridge-apply-recovery`
