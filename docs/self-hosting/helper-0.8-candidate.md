@@ -1,9 +1,16 @@
 # Helper 0.8 candidate compatibility
 
-Application v1.4.2 and helper 0.8.0 are an unpublished source candidate. Public
-v1.4.1 contains helper 0.7.0. Publication, a complete immutable public source
-distribution and native qualification remain separate gates; this page records
-the candidate contract, not a command to install it.
+This page preserves the original helper 0.8 candidate contract. Application
+v1.4.2 and helper 0.8.0 are now public at commit
+`79ae1e96b267f0bac4ff4dc15bbc8380e394f999`. The separate administrator helper
+exchange passed its actual-output audits; the subsequent application upgrade
+failed with a backup-worker verification refusal. See the
+[dated qualification record](managed-update-qualification.md) for its partial
+runtime state and recovery boundaries. The next
+[v1.4.3/helper 0.9 candidate](helper-0.9-candidate.md) remains unpublished.
+
+The contract below retains its original source and verification limits; it is
+not a command to recover the failed application operation.
 
 The candidate keeps protocol 1. Ordinary root-only replacement admits only the
 complete exact five-module public bundles for helper 0.4.0 (v1.2.0), 0.5.0
