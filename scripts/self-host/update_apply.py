@@ -757,8 +757,16 @@ class Applier:
         self.journal.apply_finish(operation, None, "succeeded")
 
     def fallback(self, directory, operation, state, reason):
-        self.checkpoint(operation, "apply_started", phase="protecting")
         protection = self.root / "protection" / operation
+        public = self.journal.status(operation)["operation"]
+        if (state["stage"] in {"download_intent", "downloaded"}
+                and not public["apply"]["hold_owned"] and not public["protection"]["hold_owned"]
+                and not protection.exists() and not protection.is_symlink()):
+            # Error fallback and explicit recovery can both create the first
+            # fence. Verify the still-serving source before either can do so.
+            # Existing protection intents and holds retain their recovery path.
+            self.verify_origin(directory, operation, state, False, source=True)
+        self.checkpoint(operation, "apply_started", phase="protecting")
         if (protection / "state.json").exists():
             context = self.protector.load_context(protection, operation)
             state["source_context"] = context
@@ -796,7 +804,7 @@ class Applier:
         directory = self.root / "apply" / operation
         state = None
         fallback_attempted = False
-        protocol_preflight_pending = False
+        pre_protection_preflight_pending = False
         try:
             if recovery:
                 state = self.load(directory, operation) if (directory / "state.json").exists() or (directory / "state.json").is_symlink() else self.pre_start_recovery(directory, operation)
@@ -814,9 +822,13 @@ class Applier:
                 # target.yml is bound to the independently verified immutable
                 # repository digest and native platform. Check compatibility before owning intake or
                 # stopping a source writer; migration rechecks the same target.
-                protocol_preflight_pending = True
+                pre_protection_preflight_pending = True
                 self.operator_protocol(directory, operation, state)
-                protocol_preflight_pending = False
+                # Use the same verified TLS and fresh identity proof required
+                # after apply, while the original application still serves.
+                # Refusal must not enter fallback, which would itself fence it.
+                self.verify_origin(directory, operation, state, False, source=True)
+                pre_protection_preflight_pending = False
                 self.journal.check_cancel(operation)
                 self.persist(directory, state, "protect_intent")
                 context = self.protector.capture(operation, retain_hold=True)
@@ -849,12 +861,18 @@ class Applier:
             reason = failure.reason if isinstance(failure, self.api.Refusal) else "apply_failed"
             public = self.journal.status(operation)["operation"]
             private_intent = state is not None and state["stage"] in {"migration_intent", "migrated", "restart_intent", "runtime_verified", *PROMOTION_STAGES}
-            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted and not protocol_preflight_pending:
+            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted and not pre_protection_preflight_pending:
                 try:
                     self.fallback(directory, operation, state, reason)
                     return
-                except Exception:
-                    pass
+                except Exception as fallback_failure:
+                    protection = self.root / "protection" / operation
+                    if (isinstance(fallback_failure, self.api.Refusal) and fallback_failure.reason == "origin_verification_failed"
+                            and state["stage"] in {"download_intent", "downloaded"}
+                            and not protection.exists() and not protection.is_symlink()):
+                        # Report the refused admission, preserving the original
+                        # cause for failures after fallback acquired protection.
+                        reason = fallback_failure.reason
             elif state is not None and (public["mutation_started"] or private_intent):
                 try:
                     self.verify_staging(directory, operation, state)
@@ -863,7 +881,7 @@ class Applier:
                     self.checkpoint(operation, "apply_release_intent", phase="verifying", hold_owned=True)
                 except Exception:
                     pass
-            # A refused or unsettled pre-protection protocol probe leaves the
+            # A refused or unsettled pre-protection probe leaves the
             # source untouched. Automatic fallback would itself fence/drain it.
             # Retain ownership for explicit recovery without claiming a verified
             # failed-safe outcome or inventing a maintenance hold.

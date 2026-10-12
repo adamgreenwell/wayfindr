@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import ssl
 from email.message import Message
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ import subprocess
 import tempfile
 import types
 import unittest
+import urllib.error
 import uuid
 from unittest.mock import patch
 
@@ -244,8 +246,9 @@ class ApplyTests(unittest.TestCase):
 
     def proof(self, origin, keys, operation, identity, held, api):
         assert origin == "https://fixture.invalid" and keys["current"] == FIX.KEY and held == self.engine.held
-        self.engine.calls.append("origin_held" if held else "origin_serving")
-        self.engine.trip("origin_held" if held else "origin_serving")
+        label = "source_origin_preflight" if not held and identity == SOURCE and "enter" not in self.engine.calls else "origin_held" if held else "origin_serving"
+        self.engine.calls.append(label)
+        self.engine.trip(label)
         if self.engine.origin_stale:
             raise UP.Refusal("origin_verification_failed")
 
@@ -273,7 +276,7 @@ class ApplyTests(unittest.TestCase):
         self.assertTrue(all(self.engine.target_running.values()))
         self.assertEqual("retained", self.status()["operation"]["protection"]["phase"])
         self.assertFalse(self.status()["operation"]["protection"]["services_recovered"])
-        for first, second in (("artifacts", "enter"), ("backup", "migrate"), ("migrate", "create_web"), ("prestart_web", "start_web"), ("role_reverb", "release"), ("origin_held", "release"), ("release", "origin_serving")):
+        for first, second in (("artifacts", "protocol"), ("protocol", "source_origin_preflight"), ("source_origin_preflight", "enter"), ("backup", "migrate"), ("migrate", "create_web"), ("prestart_web", "start_web"), ("role_reverb", "release"), ("origin_held", "release"), ("release", "origin_serving")):
             self.assertLess(self.engine.calls.index(first), self.engine.calls.index(second))
         self.assertEqual(1, self.engine.calls.count("backup"))
         self.assertEqual(1, self.engine.calls.count("migrate"))
@@ -375,6 +378,170 @@ class ApplyTests(unittest.TestCase):
         state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
         self.assertEqual("downloaded", state["stage"])
         self.assertFalse((self.root / "protection" / self.operation).exists())
+
+    def source_origin(self, failure):
+        self.origin_failure = failure
+        test = self
+
+        class Opener:
+            def open(self, request, timeout):
+                if test.origin_failure == "tls":
+                    raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))
+                if test.origin_failure == "timeout":
+                    raise TimeoutError("origin response timeout")
+                challenge = request.get_header("X-wayfindr-update-challenge")
+                held = test.engine.held
+                payload = json.dumps([1, challenge, test.operation if held else None, SOURCE["version"], SOURCE["commit"]], separators=(",", ":")).encode()
+                derived = hmac.digest(FIX.KEY.encode(), b"wayfindr-managed-origin-v1", "sha256")
+                value = hmac.new(derived, payload, "sha256").hexdigest()
+                return Response(503 if held else 200, [] if test.origin_failure == "missing" else ["f" * 64] if test.origin_failure == "wrong" else [value])
+
+        def proof(origin, keys, operation, identity, held, api):
+            self.proof(origin, keys, operation, identity, held, api)
+            APPLY.origin_proof(origin, keys, operation, identity, held, api, opener=Opener())
+        self.applier.proof = proof
+
+    def assert_source_origin_refused_without_interruption(self, config, stage="downloaded"):
+        operation = self.status()["operation"]
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertFalse(operation["mutation_started"], "Serving-origin refusal must precede schema mutation")
+        for evidence in (operation["apply"], operation["protection"]):
+            self.assertFalse(evidence["hold_owned"], "Serving-origin refusal must precede maintenance fencing")
+        self.assertEqual("origin_verification_failed", operation["error"])
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        for name in ("services_verified", "origin_verified", "configuration_committed", "migration_started", "migration_verified"):
+            self.assertFalse(operation["apply"][name])
+        self.assertIsNone(operation["apply"]["runtime_receipt_sha256"])
+        self.assertIsNone(operation["apply"]["migration_receipt_sha256"])
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate", "receipt"):
+            self.assertNotIn(forbidden, self.engine.calls, "A refused serving-origin proof must leave the source untouched: " + forbidden)
+        self.assertFalse(any(call.startswith(("create_", "start_")) for call in self.engine.calls))
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(200, self.engine.web_status(self.engine.originals["web"]))
+        self.assertEqual(self.engine.originals, self.engine.service_ids())
+        self.assertEqual(config, self.config.value)
+        self.assertEqual(config, UP.read_object(self.configpath, 16384, "configuration_changed"))
+        self.config.verify_files()
+        keys = UP.read_object(self.root / "apply" / self.operation / "keys.json", 16384, "recovery_required")
+        self.assertEqual(self.engine.effective_keys(self.engine.originals["web"]), keys)
+        self.assertFalse((self.root / "protection" / self.operation).exists())
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual(stage, state["stage"])
+
+    def test_source_origin_tls_missing_wrong_proof_and_timeout_refuse_before_protection(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(failure)
+                self.apply()
+                self.assert_source_origin_refused_without_interruption(config)
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.recover()
+                self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+                self.assert_source_origin_refused_without_interruption(config)
+
+    def test_repaired_source_origin_allows_only_explicit_verified_source_recovery(self):
+        self.source_origin("tls")
+        config = copy.deepcopy(self.config.value)
+        self.apply()
+        self.assert_source_origin_refused_without_interruption(config)
+        self.origin_failure = None
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("origin_serving", self.engine.calls)
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(config, self.config.value)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+
+    def test_artifact_failure_and_untrusted_origin_never_enter_fallback_fence(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.engine.fault = "download"
+                self.source_origin(failure)
+                self.apply()
+                self.assert_source_origin_refused_without_interruption(config, "download_intent")
+                self.assertEqual(1, self.engine.calls.count("artifacts"))
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.recover()
+                self.assertEqual(1, self.engine.calls.count("artifacts"))
+                self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+                self.assert_source_origin_refused_without_interruption(config, "download_intent")
+
+    def test_artifact_failure_with_verified_origin_keeps_existing_safe_fallback(self):
+        self.engine.fault = "download"
+        self.source_origin(None)
+        self.apply()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertEqual("apply_timeout", self.status()["operation"]["apply"]["error"])
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertLess(self.engine.calls.index("source_origin_preflight"), self.engine.calls.index("enter"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("origin_serving", self.engine.calls)
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertFalse(self.engine.targets)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+
+    def test_crashed_source_origin_preflight_rechecks_before_any_recovery_fence(self):
+        self.engine.crash = "source_origin_preflight"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.source_origin("tls")
+        config = copy.deepcopy(self.config.value)
+        self.recover()
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+        self.assert_source_origin_refused_without_interruption(config)
+
+    def test_source_origin_preflight_does_not_replace_existing_held_recovery(self):
+        for stage in ("protect_intent", "downloaded"):
+            with self.subTest(stage=stage):
+                self.setUp()
+                self.engine.crash_after_stop = True
+                with self.assertRaises(KeyboardInterrupt):
+                    self.apply()
+                self.assertTrue(self.engine.held)
+                self.assertTrue(self.status()["operation"]["protection"]["hold_owned"])
+                path = self.root / "apply" / self.operation / "state.json"
+                state = UP.read_object(path, 1_000_000, "recovery_required")
+                self.assertEqual("protect_intent", state["stage"])
+                state["stage"] = stage
+                UP.atomic_write(path, state)
+                self.engine.crash_after_stop = False
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"], "Existing held recovery must not require a serving-source proof")
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+
+    def test_completed_protection_recovers_without_requesting_a_serving_source_proof(self):
+        def crash_before_migration(*_args):
+            raise KeyboardInterrupt()
+        self.applier.migration = crash_before_migration
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual("protected", state["stage"])
+        self.assertTrue(self.engine.held)
+        self.assertFalse(self.engine.running)
+        self.assertEqual(1, self.engine.calls.count("backup"))
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"], "Existing protected recovery must not require a serving-source proof")
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
 
     def test_broken_public_realtime_cannot_complete_or_release_the_target(self):
         self.engine.fault = "realtime_target"
@@ -639,9 +806,15 @@ class ApplyTests(unittest.TestCase):
 
     def test_source_fallback_origin_is_verified_before_release(self):
         self.engine.fault = "download"
-        self.engine.origin_stale = True
+        original = self.applier.proof
+        def stale_held_origin(origin, keys, operation, identity, held, api):
+            original(origin, keys, operation, identity, held, api)
+            if held:
+                raise UP.Refusal("origin_verification_failed")
+        self.applier.proof = stale_held_origin
         self.apply()
         self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("apply_timeout", self.status()["operation"]["apply"]["error"])
         self.assertTrue(self.engine.held)
         self.assertNotIn("release", self.engine.calls)
 
@@ -809,26 +982,30 @@ class Response:
 
 
 class ProofTests(unittest.TestCase):
-    def proof(self, held, tamper=None):
+    def proof(self, held, tamper=None, identity=SOURCE):
         class Opener:
             def open(_self, request, timeout):
                 challenge = request.get_header("X-wayfindr-update-challenge")
-                payload = json.dumps([1, challenge, "operation" if held else None, SOURCE["version"], SOURCE["commit"]], separators=(",", ":")).encode()
+                payload = json.dumps([1, challenge, "operation" if held else None, identity["version"], identity["commit"]], separators=(",", ":")).encode()
                 derived = hmac.digest(FIX.KEY.encode(), b"wayfindr-managed-origin-v1", "sha256")
                 value = hmac.new(derived, payload, "sha256").hexdigest()
                 return Response(302 if tamper == "redirect" else 503 if held else 200,
                                 [] if tamper == "missing" else [value, value] if tamper == "duplicate" else ["f" * 64] if tamper == "stale" else [value])
-        APPLY.origin_proof("https://fixture.invalid", {"current": FIX.KEY}, "operation", SOURCE, held, FIX.API, opener=Opener())
+        APPLY.origin_proof("https://fixture.invalid", {"current": FIX.KEY}, "operation", identity, held, FIX.API, opener=Opener())
 
     def test_nonce_proof_matches_php_contract_held_and_released(self):
         self.proof(True)
         self.proof(False)
 
+    def test_serving_public_142_source_uses_existing_proof_contract(self):
+        self.proof(False, identity={"version": "1.4.2", "commit": "79ae1e96b267f0bac4ff4dc15bbc8380e394f999"})
+
     def test_stale_missing_duplicate_and_redirect_proofs_refuse(self):
-        for tamper in ("stale", "missing", "duplicate", "redirect"):
-            with self.subTest(tamper=tamper), self.assertRaises(UP.Refusal) as error:
-                self.proof(True, tamper)
-            self.assertEqual("origin_verification_failed", error.exception.reason)
+        for held in (False, True):
+            for tamper in ("stale", "missing", "duplicate", "redirect"):
+                with self.subTest(held=held, tamper=tamper), self.assertRaises(UP.Refusal) as error:
+                    self.proof(held, tamper)
+                self.assertEqual("origin_verification_failed", error.exception.reason)
 
     def test_origin_network_child_is_bounded_and_never_receives_application_key(self):
         child = types.SimpleNamespace(returncode=0, communicate=lambda request, timeout: (b'{"status":503,"proof":"' + b"a" * 64 + b'"}', None), poll=lambda: 0)
