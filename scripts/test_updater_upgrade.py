@@ -307,7 +307,7 @@ class UpgradeTests(unittest.TestCase):
             before = UPGRADE.snapshot(config)
             old_journal = UPGRADE.read_json(host.state / "journal.json")
             result = host.upgrade()
-            self.assertEqual("0.8.0", result["helper_version"])
+            self.assertEqual("0.9.0", result["helper_version"])
             self.assertEqual(self.source_version, result["from_helper_version"])
             self.assertEqual(host.installation_id, result["installation_id"])
             self.assertFalse(result["application_changed"])
@@ -1450,7 +1450,7 @@ class Applier:
                 with self.assertRaisesRegex(UPGRADE.UpgradeError, "recovery_required|helper_not_running"):
                     host.upgrade()
                 result = host.recover()
-                self.assertEqual("0.8.0", result["helper_version"])
+                self.assertEqual("0.9.0", result["helper_version"])
                 self.assertEqual(host.installation_id, result["installation_id"])
                 self.assertEqual(1, host.exchange_count)
                 self.assertFalse(UPGRADE.TRANSACTION.exists())
@@ -1525,7 +1525,7 @@ class Applier:
                 with patch.object(UPGRADE, "create", crash), self.assertRaises(Crash):
                     host.upgrade()
                 result = host.recover()
-                self.assertEqual("0.8.0", result["helper_version"])
+                self.assertEqual("0.9.0", result["helper_version"])
                 self.assertEqual(1, host.exchange_count)
                 self.assertTrue(list(UPGRADE.RECEIPTS.glob("*.incomplete-*")), "Interrupted bytes must be retained for inspection.")
 
@@ -1640,7 +1640,7 @@ class LegacyRecoveryTests(unittest.TestCase):
         return legacy
 
     def test_public_source_allowlists_and_legacy_target_are_exact(self):
-        self.assertEqual({"0.4.0", "0.5.0", "0.6.0", "0.7.0"}, set(UPGRADE.PUBLISHED))
+        self.assertEqual({"0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0"}, set(UPGRADE.PUBLISHED))
         legacy = self.legacy_cli()
         self.assertEqual("0.5.0", legacy.VERSION)
         self.assertEqual(legacy.PUBLISHED, UPGRADE.PUBLISHED["0.4.0"])
@@ -1704,7 +1704,7 @@ class LegacyRecoveryTests(unittest.TestCase):
                     host.write(host.distribution / "scripts/self-host" / name, (ROOT / "scripts/self-host" / name).read_bytes(), 0o644)
                 with host.activated(), patch.object(successor, "PUBLISHED", approved):
                     result = host.upgrade()
-                    self.assertEqual(("0.5.0", "0.8.0"), (result["from_helper_version"], result["helper_version"]))
+                    self.assertEqual(("0.5.0", "0.9.0"), (result["from_helper_version"], result["helper_version"]))
                     self.assertNotEqual(transaction, result["transaction_id"])
                     self.assertEqual(old_receipt_bytes, old_path.read_bytes())
                     self.assertEqual(declaration["files"], successor.code_hashes(Path(result["retained_old_code"])))
@@ -1746,7 +1746,7 @@ class Published06RecoveryTests(unittest.TestCase):
         return result
 
     def test_public_06_source_map_bundle_and_recovery_delivery_are_exact(self):
-        self.assertEqual("0.8.0", UPGRADE.VERSION)
+        self.assertEqual("0.9.0", UPGRADE.VERSION)
         self.assertEqual({
             "updater.py": "62015b6355f7078702e56b879798fad2c2a144607a28df0ee1286c54f632bc14",
             "update_protection.py": "5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9",
@@ -1851,7 +1851,7 @@ class Published07RecoveryTests(unittest.TestCase):
                 "code_directory_mode": 0o755}
 
     def test_public_07_source_map_bundle_and_recovery_delivery_are_exact(self):
-        self.assertEqual("0.8.0", UPGRADE.VERSION)
+        self.assertEqual("0.9.0", UPGRADE.VERSION)
         self.assertEqual({
             "updater.py": "0d1be7850fb3979d62219d0fa6909ebf2b923ea8fb4d89173e02cf6679b0cb14",
             "update_protection.py": "5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9",
@@ -1944,6 +1944,113 @@ class Published07UpgradeTests(UpgradeTests):
     # The complete interruption/race/custody suite also applies to an idle
     # original public 0.7 generation, including terminal 0.7 journal history.
     source_version = "0.7.0"
+
+
+class Published08RecoveryTests(unittest.TestCase):
+    tree = staticmethod(Published06RecoveryTests.tree)
+
+    def record(self, host, source, stage):
+        return {"schema": 1, "transaction_id": str(uuid.uuid4()), "installation_id": host.installation_id,
+                "bundle_sha256": UPGRADE.PUBLIC_08_BUNDLE_SHA256, "old": UPGRADE.PUBLISHED[source],
+                "new": UPGRADE.PUBLISHED["0.8.0"], "preserved": {}, "stage": stage,
+                "history": None, "retained": {}, "previous_generation": str(uuid.uuid4()),
+                "verified_generation": str(uuid.uuid4()) if stage == "verified" else None,
+                "code_directory_mode": 0o755}
+
+    def test_public_08_source_map_bundle_and_recovery_delivery_are_exact(self):
+        self.assertEqual("0.9.0", UPGRADE.VERSION)
+        self.assertEqual({
+            "updater.py": "03441ccb0aa614ad22f160502872230c9f19ab9f7d2a519b8abea6fa9c5ccce5",
+            "update_protection.py": "5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9",
+            "update_apply.py": "a5bedb58d64f8680ab8474da4e62d5e55b7223ae9ab25f397e72708300765d52",
+            "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+            "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
+        }, UPGRADE.PUBLISHED["0.8.0"])
+        declaration = {"schema": 1, "helper_version": "0.8.0", "protocol": 1,
+                       "files": UPGRADE.PUBLISHED["0.8.0"]}
+        self.assertEqual("36d9cb8a15021ae78832b8b080a0c3707b9d1c1fca1a9142f6c714cbd1a1d92a",
+                         UPGRADE.digest(UPGRADE.encoded(declaration)))
+        self.assertEqual(UPGRADE.PUBLIC_08_BUNDLE_SHA256, UPGRADE.digest(UPGRADE.encoded(declaration)))
+        self.assertEqual("b1f5ab67e59d84ec1a4e39d9351683af423b75b5f733359c226a0a6ebd7745a7",
+                         UPGRADE.PUBLIC_08_RECOVERY_CLI_SHA256)
+        self.assertEqual("79ae1e96b267f0bac4ff4dc15bbc8380e394f999", UPGRADE.PUBLIC_08_COMMIT)
+
+    def test_pending_public_08_destination_refuses_before_host_access_at_every_stage(self):
+        published = UPGRADE.PUBLISHED
+        for source in ("0.4.0", "0.5.0", "0.6.0", "0.7.0"):
+            for stage in ("prepared", "frozen_idle", "staging", "switched", "starting", "verified", "prepared_scratch"):
+                with self.subTest(source=source, stage=stage), tempfile.TemporaryDirectory() as directory:
+                    host = Host(Path(directory).resolve(), source)
+                    with host.activated(), patch.object(UPGRADE, "PUBLISHED", published):
+                        record = self.record(host, source, stage.removesuffix("_scratch"))
+                        pending = host.state / (".helper-upgrade.next" if stage.endswith("_scratch") else "helper-upgrade.json")
+                        host.write(pending, UPGRADE.encoded(record), 0o600)
+                        host.write(UPGRADE.STOP, (record["transaction_id"] + "\n").encode(), 0o600)
+                        before = self.tree(host.root)
+                        with patch.object(UPGRADE, "supported") as supported:
+                            for recovery in (None, record["transaction_id"]):
+                                with self.assertRaisesRegex(UPGRADE.UpgradeError, "public_08_helper_recovery_required"):
+                                    UPGRADE.finish(host.distribution, host.selected(), recovery=recovery)
+                            supported.assert_not_called()
+                        self.assertEqual(before, self.tree(host.root), "The original UUID and every retained inode/byte must stay unchanged.")
+                        self.assertEqual([], host.commands)
+                        self.assertEqual((0, 0), (host.kill_count, host.exchange_count))
+                        self.assertFalse(UPGRADE.LOCK.exists())
+                        self.assertFalse(host.dropin.exists())
+
+    def test_malformed_public_08_transaction_never_receives_supported_recovery_routing(self):
+        published = UPGRADE.PUBLISHED
+        for key, value in (("transaction_id", "invalid"), ("installation_id", "invalid"), ("stage", "unknown"),
+                           ("verified_generation", "invalid"), ("code_directory_mode", 0o777), ("extra", True)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                host = Host(Path(directory).resolve())
+                with host.activated(), patch.object(UPGRADE, "PUBLISHED", published):
+                    record = self.record(host, "0.4.0", "prepared")
+                    record[key] = value
+                    host.write(UPGRADE.TRANSACTION, UPGRADE.encoded(record), 0o600)
+                    before = self.tree(host.root)
+                    with patch.object(UPGRADE, "supported") as supported:
+                        with self.assertRaisesRegex(UPGRADE.UpgradeError, "transaction_changed"):
+                            host.upgrade()
+                        supported.assert_not_called()
+                    self.assertEqual(before, self.tree(host.root))
+
+    def test_changed_public_08_identity_and_schema2_never_enter_legacy_routing(self):
+        published = UPGRADE.PUBLISHED
+        changes = (("schema", 2), ("schema", True), ("old", published["0.8.0"]),
+                   ("old", {**published["0.6.0"], "updater.py": "f" * 64}),
+                   ("new", {**published["0.8.0"], "update_apply.py": "f" * 64}),
+                   ("bundle_sha256", "f" * 64))
+        for key, value in changes:
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                host = Host(Path(directory).resolve())
+                with host.activated(), patch.object(UPGRADE, "PUBLISHED", published):
+                    record = self.record(host, "0.6.0", "prepared")
+                    record[key] = value
+                    host.write(UPGRADE.TRANSACTION, UPGRADE.encoded(record), 0o600)
+                    before = self.tree(host.root)
+                    # A different contract must fall through to normal strict
+                    # admission; never advertise it as recoverable public 0.8.
+                    UPGRADE.refuse_legacy_transaction()
+                    self.assertEqual(before, self.tree(host.root))
+
+    def test_public_08_refusal_reports_exact_immutable_recovery_pointers(self):
+        with patch.object(UPGRADE.sys, "argv", ["upgrade-updater.py", "recover", "--transaction", str(uuid.uuid4()), "--expected-bundle-sha256", "a" * 64]), \
+                patch.object(UPGRADE, "finish", side_effect=UPGRADE.UpgradeError("public_08_helper_recovery_required")), \
+                patch.object(UPGRADE, "exists", return_value=False), contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(1, UPGRADE.main())
+        result = json.loads(output.getvalue())
+        self.assertEqual("public_08_helper_recovery_required", result["reason"])
+        self.assertEqual({"helper_version": "0.8.0", "bundle_sha256": UPGRADE.PUBLIC_08_BUNDLE_SHA256,
+                          "cli_sha256": UPGRADE.PUBLIC_08_RECOVERY_CLI_SHA256, "release_tag": "v1.4.2",
+                          "commit": UPGRADE.PUBLIC_08_COMMIT,
+                          "relative_cli_path": "scripts/self-host/upgrade-updater.py"}, result["legacy_recovery"])
+
+
+class Published08UpgradeTests(UpgradeTests):
+    # Run every lifecycle, race, retained-custody and active-hold refusal
+    # against an idle original 0.8 generation, including its journal history.
+    source_version = "0.8.0"
 
 
 if __name__ == "__main__":
