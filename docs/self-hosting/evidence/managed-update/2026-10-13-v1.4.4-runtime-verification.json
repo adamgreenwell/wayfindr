@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-13",
+  "kind": "published_managed_upgrade_failed_native_observation",
+  "issue": "https://github.com/adamgreenwell/wayfindr/issues/1153",
+  "environment": {
+    "architecture": "amd64",
+    "disposable": true,
+    "docker": "29.1.3",
+    "helper": "0.10.0",
+    "image_store": "classic",
+    "os": "Ubuntu Server 24.04 LTS"
+  },
+  "source": {
+    "tag": "v1.4.3",
+    "commit": "4376acbd271e88c329e612efecfba753531bb4a9"
+  },
+  "target": {
+    "tag": "v1.4.4",
+    "commit": "8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4",
+    "index_digest": "sha256:d157f9a483e6e395f04e729412297a299b78cf05bfc44d705c36b0dc87fabf4f",
+    "platform_manifest_digest": "sha256:41e811be6e64198122144cc789a8a1b7a49ecf1aebf1afdb4c2960560f5da1ab",
+    "config_digest": "sha256:e2a5e0cc81c83feb65ea34fb8887b266bd107d0928ae9f2ed8805282897b3363"
+  },
+  "pre_start_checkpoint": {
+    "original_plan_survived_helper_and_ssh_process_restart": true,
+    "same_boot_and_installed_public_helper_verified": true,
+    "normal_host_tls_and_source_fixture_rechecked": true,
+    "root_actual_audit_sha256": "8a9a0ca8e16cce0355f72afe90cce68e498d65da2da2c58dd0b4ddc0c95c36b8",
+    "independent_actual_audit_sha256": "0a9072e25ff7a56bd2102ed324453138e0952b690c4a3b271920f1f1e856a31b",
+    "accepted_consumption_sha256": "733c2fc81e560bfb89830daede78e54ca715b06a1dda510d20d71ae048957af7"
+  },
+  "ordinary_operator": {
+    "start_posts": 1,
+    "start_response_status": 202,
+    "post_retries": 0,
+    "saved_http_records": 156,
+    "last_received_api_revision": 8,
+    "last_received_api_phase": "protecting",
+    "last_received_api_checkpoint": "target_verified",
+    "terminal_api_result": null,
+    "successful_terminal_consumption_accepted": false,
+    "local_observer_exit": "FileNotFoundError_saving_http_record_then_cookies_and_failure",
+    "local_observer_exit_basis": "root_execution_stderr_observation",
+    "saved_client_failure_file": false,
+    "bounded_poll_timeout_established": false,
+    "root_native_observation_audit_sha256": "d8c9fe5827e656b06ed39aeb9b73978983a8be3fb687ee4671f4ddb5cd1e5c2a"
+  },
+  "read_only_native_observation": {
+    "revision": 18,
+    "phase": "recovery_required",
+    "checkpoint": "apply_release_intent",
+    "error": "runtime_verification_failed",
+    "mutation_started": true,
+    "hold_owned": true,
+    "private_stage": "restart_intent",
+    "five_target_roles_running": true,
+    "target_role_restart_counts": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "configuration_committed": false,
+    "runtime_receipt_sha256": null,
+    "migration_receipt_sha256": "02a978f9ca04c75ddb7aa52d0bda96c96f8544422cbbb567533c00dd7812478a",
+    "migration_receipt_matches_journal": true,
+    "historical_runtime_failure_subcause": "unknown"
+  },
+  "failed_operation_preservation": {
+    "private_export_sha256": "ed9547ac811fb95bcfb3e8adb5366a8bc6fd205603a4eca19722d36489484b4b",
+    "original_full9_manifest_sha256": "65d95aae0af7642aa69a3bc3466ca64aee398340f146fd02a98e34e7c426cbe7",
+    "root_actual_audit_sha256": "0fe8fb2a01250e0d39108c66d8737f90870c56613e86909cc6250261d629d4ef",
+    "independent_actual_audit_sha256": "3a359f698a85bb36475699520c7458df4352d2b9a0c48f6a024886e511ab90fa",
+    "accepted_consumption_sha256": "b2762a4403241bc5dc3023728a3a74e1a5f3225262b7dbe100529dd85322ef5a",
+    "protective_archive_sha256": "57c2075b037c5a4d7bef45092ee636b46804ee49bd57b047a290839e5ed17575",
+    "protective_manifest_sha256": "cb30eccefc4a617ff70d48b1bafbfac031245a815688574a8c156915061fbd65",
+    "archive_hash_matches_journal": true,
+    "public_archive_verifier_replay_passed": true,
+    "source_sql_and_two_local_attachment_bodies_verified": true,
+    "declared_key_fingerprints_verified": 2,
+    "archive_verifier_result_sha256": "94e0287175ef711dd24f72f23a9e9126acabe6a0763a99a744d0b84ebcd89b61",
+    "private_operation_trees_stable_during_export": true,
+    "journal_changed_only_by_monotonic_heartbeat": true,
+    "external_object_bodies_verified": false,
+    "archive_restored": false
+  },
+  "preserved_boundaries": {
+    "post_start_certificate_or_trust_store_installed": false,
+    "start_replayed": false,
+    "recovery_attempted": false,
+    "post_start_active_helper_replaced": false,
+    "hold_released": false,
+    "older_vms_or_held_operations_changed": false,
+    "restore_vm_writers_remain_held": true,
+    "source_keys_archive_or_ledger_handed_to_restore": false
+  },
+  "limits": [
+    "The accepted pre-Start checkpoint, one Start, native failure and read-only private export are separate evidence boundaries.",
+    "The local observer exited on a filesystem save error; no saved client failure file or bounded poll timeout is established.",
+    "The apply_release_intent catch-path label does not prove configuration promotion or locate the historical runtime refusal.",
+    "Five running target roles do not establish runtime verification, application data survival, delivery or complete serving.",
+    "The public archive verifier checks the source SQL/local attachment inventory and declared key fingerprints; it does not verify external objects or restore.",
+    "The container endpoint diagnostic timed out at TCP connection establishment; it did not test TLS trust or reconstruct the original helper refusal."
+  ],
+  "unverified": [
+    "historical runtime failure subcause",
+    "complete target serving",
+    "post-migration logical data and attachment contents",
+    "external attachment object bodies",
+    "authenticated user private-channel delivery and worker completion",
+    "post-archive erasure",
+    "ordinary second-VM restore"
+  ],
+  "qualification": false,
+  "qualified_managed_scenarios": 0,
+  "offline_saved_runtime_replay": {
+    "public_helper_code": "0.10.0",
+    "all_five_check_target_passed": true,
+    "all_five_target_layout_without_process_probe_passed": true,
+    "all_five_role_ready_saved_args_projection_passed": true,
+    "runtime_receipt_present": false,
+    "laravel_log_present": false,
+    "historical_failure_location_or_cause_proven": false,
+    "actual_replay_sha256": "5b28db9b365050c8ba329d109e40e43e236c4d41c5345d72f15b45c9a392cb94",
+    "receipt_sha256": "294728362bfc7e3c01545c9e676e7f2079263e70900333db841188e99a0e3ba7",
+    "native_or_application_commands_executed": false,
+    "uncaptured_paths": [
+      "writers",
+      "dependencies",
+      "settled",
+      "application_runtime_receipt_verification",
+      "held_web_status",
+      "origin_proof",
+      "realtime_receipt",
+      "historical_first_refusal_or_cause"
+    ]
+  },
+  "read_only_container_endpoint_diagnostic": {
+    "normal_peer_and_name_verification_required": true,
+    "one_fixed_target_web_php_exec": true,
+    "tcp_connection_attempts": 1,
+    "tcp_connected": false,
+    "tcp_errno": 110,
+    "tcp_error": "Connection timed out",
+    "TLS_handshake_attempts": 0,
+    "TLS_handshake_verified": false,
+    "certificate_trust_tested": false,
+    "historical_helper_failure_cause_proven": false,
+    "HTTP_WSS_auth_or_application_bytes_sent": false,
+    "application_bootstrapped": false,
+    "guest_files_written": false,
+    "failed_operation_and_hold_unchanged": true,
+    "root_actual_audit_sha256": "d3990fdc7afd5356c4ce914ad10fce5a03d204e499ae20702b5169da33f1cab7",
+    "independent_actual_audit_sha256": "65cdff8d9822179c722e1f181d3132ea2e087489a96785dca50d9d6c3e717a8d",
+    "native_capture_sha256": "6b2fc1678d3350ccd8b82684eac2ea2d736735d9e6d794f6b851dea6b4818dca",
+    "public_diagnostic_sha256": "09758b3ade936cad7667a350a2e39c2b63db9cd24f13f51427b39e09f5db3146"
+  }
+}

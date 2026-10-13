@@ -40,7 +40,7 @@ differentiator.
 
 ---
 
-## 2. Current state (October 12, 2026 EDT)
+## 2. Current state (October 13, 2026 EDT)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -64,8 +64,12 @@ Helper 0.10 is a separate administrator upgrade. Optional managed updates remain
 not qualified for production use; U8/#1115, U9/#1116, #1140 and epic #1107
 remain open with zero of 100 managed scenarios qualified. The earlier public
 1.4.2 → 1.4.3 attempt remains preserved in recovery (§30). Fresh 1.4.4
-qualification uses a new pair; publication, installed-helper behavior and
-managed application/recovery/restore evidence remain separate gates.
+qualification used a new pair. Its separately installed helper 0.10 and
+pre-Start continuity checkpoint passed, but one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation (§32).
+The new Source and Restore holds remain preserved. Publication,
+installed-helper behavior and managed application/recovery/restore evidence
+remain separate gates.
 
 The earlier ARM64 public 1.2.0 source installation/enrollment, idle helper
 restart/reboot and ordinary separate-VM restore evidence remains in §25.
@@ -2017,3 +2021,42 @@ development `VERSION` returned to `1.5.0`, so source builds identify
 and preserves standing notices; `releases/history.json` still contains the
 published 1.4.4 declaration unchanged. This housekeeping publishes no release
 and chooses no feature scope for 1.5.0.
+
+## 32. Public 1.4.4 runtime refusal — October 13, 2026
+
+The fresh AMD64/classic public `v1.4.3` → `v1.4.4` pair progressed beyond
+provisioning. Public helper `0.10.0` was installed separately. Paired native
+pre-Start audits rechecked the source fixture, normal host HTTPS trust and the
+original unstarted Plan after helper/SSH process replacement within the same
+boot. These accepted checkpoints do not qualify a complete application update.
+
+One ordinary HTTPS Start returned HTTP 202. The local observer stopped on a
+filesystem save error after 156 HTTP records; no saved client failure file,
+terminal result or bounded poll timeout is established. Separate read-only
+native captures found revision 18, `recovery_required` /
+`runtime_verification_failed`, with mutation begun, the hold owned, all five
+expected target roles running and no recorded restarts. Configuration promotion
+is false and the runtime receipt is null. The catch-path checkpoint does not
+locate the historical subcause, which remains unknown.
+
+Paired saved-output audits accepted a read-only private export. Its operation
+trees stayed stable, the journal changed only by monotonic heartbeat, and the
+migration and protective archive hashes match the journal. A separate replay of
+the public archive verifier accepted the source SQL, two local attachment files
+and declared key fingerprints. The [sanitized dated receipt](../self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+records the exact hashes and evidence limits.
+
+A separate pure-PHP diagnostic in the exact target web container timed out
+connecting to its configured public HTTPS endpoint (TCP errno 110, zero TLS
+attempts). Paired audits accepted the raw observation and unchanged held state.
+Certificate trust was not tested, and the historical helper subcause remains
+unknown. Inspect the container-to-own-public-endpoint routing/firewall path
+before another qualification attempt; keep any future trust setup conditional
+on a successful TCP connection and normal certificate verification.
+
+No post-Start trust change, Start replay, recovery, helper replacement or hold
+release occurred. The paired Restore VM remains writer-held without Source
+keys, archive or ledger transfer. Older failed VMs and held operations remain
+untouched. Target data, external objects, authenticated delivery, erasure and
+ordinary separate-VM restore remain unaccepted. U8/#1115, U9/#1116, #1140,
+#1150, #1153 and epic #1107 stay open with **0/100** managed scenarios qualified.

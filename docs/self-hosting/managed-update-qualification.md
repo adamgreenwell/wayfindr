@@ -8,7 +8,53 @@ remains **unqualified**. Individual failed or partial attempts retain their
 stated limits. Actual source and ordinary-recovery observations are recorded
 separately and cannot complete its rows.
 
-## Latest native observation — v1.4.3/helper 0.9
+## Latest native observation — v1.4.4/helper 0.10
+
+The fresh AMD64/classic public v1.4.3 → v1.4.4 attempt used the separately
+installed public helper 0.10. Before Start, paired native audits rechecked the
+source fixture, normal host HTTPS trust and the original unstarted Plan after
+the helper and SSH processes restarted within the same guest boot. One ordinary
+HTTPS Start then returned HTTP 202. The local observer stopped on a filesystem
+save error after 156 saved HTTP records; it did not establish a poll timeout or
+save a terminal result. Start was not replayed.
+
+Separate read-only native captures found revision 18, `recovery_required` /
+`runtime_verification_failed`, with schema mutation begun and the hold owned.
+All five target v1.4.4 roles were running with the expected image and operation
+identity and zero recorded restarts. The private apply stage remains
+`restart_intent`; the runtime receipt is null and configuration promotion has
+not completed. The catch-path `apply_release_intent` checkpoint does not locate
+the original refusal. Its historical subcause remains unknown.
+
+An offline replay of the published helper's `check_target`,
+`target_layout(processes=False)` and role-readiness checks passes for all five
+roles using the saved Docker evidence. The readiness replay uses an explicit
+projection of the saved process arguments. Uncaptured writer, dependency,
+settlement, application-receipt, held-origin and realtime paths remain unknown;
+no application verification command was rerun on the held guest.
+
+A subsequent read-only diagnostic in the exact target web container attempted
+one connection to its configured public HTTPS endpoint. TCP establishment timed
+out with errno 110; zero TLS negotiations occurred. Paired raw-output audits
+accepted that observation and the unchanged failed operation/hold. This proves
+a current container-to-public-endpoint reachability blocker. It does not test
+certificate trust or reconstruct the original helper refusal. Host HTTPS trust
+alone does not establish that the container can reach and verify that endpoint.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+binds the pre-Start, native and private-export audits. A read-only export retained
+the operation's stable private trees, before/after journal, installed helper
+identities and bounded Docker evidence. Migration and protective archive hashes
+match the journal. The public archive verifier accepted the source SQL, two
+local attachment bodies and declared key fingerprints. This does not verify
+post-migration target data, external objects, delivery, erasure or restore.
+
+No post-Start trust change, recovery, helper replacement or hold release occurred.
+The separate Restore VM remains writer-held without Source keys, archive or
+ledger handoff. All older VMs and held operations remain untouched. **Zero of
+100 scenarios are qualified.**
+
+## Previous native observation — v1.4.3/helper 0.9
 
 The fresh AMD64/classic public v1.4.2 → v1.4.3 attempt used the separately
 upgraded public helper 0.9. One ordinary HTTPS Start was accepted; the bounded
@@ -191,6 +237,18 @@ each mutation. A local developer Docker daemon, shared VM or production origin
 must never become an implicit fallback target.
 
 ### Configured-origin trust before Start
+
+Admit the configured public browser endpoint from the **web container** as well
+as from the host. First establish TCP reachability, including the route from a
+Docker bridge back to that VM's published HTTPS port. Then check normal PHP
+peer and hostname verification with no application bootstrap or authenticated
+traffic. A TCP timeout leaves certificate trust untested. PHP's
+[certificate search locations](https://www.php.net/manual/en/function.openssl-get-cert-locations.php)
+and [SSL context options](https://www.php.net/manual/en/context.ssl.php) describe
+the container's own trust configuration; installing an issuer on the host does
+not populate the image's trust store. Record these admissions separately before
+Start. The published helper 0.10 host-origin check does not establish this
+container connection.
 
 Verify the enrolled HTTPS origin from the **guest host**, using its normal
 system trust store, before starting a managed update. A browser on another
