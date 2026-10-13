@@ -1,5 +1,23 @@
 # Managed-update qualification evidence
 
+## October 12, 2026: v1.4.4/helper 0.10 publication verified
+
+The [sanitized publication receipt](2026-10-12-v1.4.4-publication.json) records
+separate root and independent audits of the public Release/assets, complete
+source archive, both AMD64/ARM64 OCI chains and stable aliases. Static registry
+layer readback also verified the baked version, commit, release manifest and
+history on both architectures. No downloaded source or image code was executed
+for those checks. The public website has separate provider-completion and
+homepage-delivery evidence.
+
+Helper 0.10 remains a separate administrator upgrade. Fresh disposable guests
+were created and booted, with their raw provisioning receipts delivered; native
+helper exchange, complete application upgrade and ordinary separate-VM restore
+remain separate gates. The earlier origin-trust failure and held Restore peer
+below remain preserved. Managed qualification remains **false, with zero of
+100 scenarios qualified**. Publication and source regressions do not close U8,
+#1140, #1153 or epic #1107.
+
 ## October 12, 2026: public helper 0.9 origin-trust refusal
 
 The [sanitized receipt](2026-10-12-v1.4.3-origin-trust.json) records the fresh

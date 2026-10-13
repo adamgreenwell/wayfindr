@@ -13,8 +13,8 @@ managed-update qualification. Normal helper replacement remains idle-only.
 This bridge is exclusively the historical public 0.5-to-public-0.6 path. Use the
 complete immutable public v1.4.0 distribution at commit
 `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`, including its sibling normal CLI.
-The fixes-only v1.4.1/helper 0.7 candidate is unpublished and deliberately does
-not provide this bridge destination. A mutated or held 0.6 application operation
+The published v1.4.1/helper 0.7 distribution deliberately does not provide
+this bridge destination. A mutated or held 0.6 application operation
 is ineligible; the bridge cannot install 0.7, retry that operation or clear its
 recovery ownership.
 

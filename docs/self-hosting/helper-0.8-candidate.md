@@ -6,8 +6,12 @@ v1.4.2 and helper 0.8.0 are now public at commit
 exchange passed its actual-output audits; the subsequent application upgrade
 failed with a backup-worker verification refusal. See the
 [dated qualification record](managed-update-qualification.md) for its partial
-runtime state and recovery boundaries. The next
-[v1.4.3/helper 0.9 candidate](helper-0.9-candidate.md) remains unpublished.
+runtime state and recovery boundaries. Its successor
+[v1.4.3/helper 0.9](helper-0.9-candidate.md) is published, followed by
+[v1.4.4/helper 0.10](helper-0.10-candidate.md); see the
+[v1.4.4 publication receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+Installed-helper replacement and native managed qualification remain separate
+from public artifact verification.
 
 The contract below retains its original source and verification limits; it is
 not a command to recover the failed application operation.

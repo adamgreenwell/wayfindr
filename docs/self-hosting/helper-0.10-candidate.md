@@ -1,10 +1,12 @@
-# Helper 0.10 candidate compatibility
+# Helper 0.10 compatibility
 
-Helper 0.10.0 is an unpublished source candidate. Public v1.4.3 contains
-helper 0.9.0. Candidate tests, merge, publication, public readback and native
-qualification are separate gates; this page provides no installation command.
+Helper 0.10.0 is published in v1.4.4. The Release/assets, source archive and
+both architecture image identities passed separate public readback audits;
+see the [publication receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+Public v1.4.3 retains helper 0.9.0. Installed-helper replacement and native
+qualification remain separate gates; this page provides no installation command.
 
-The candidate verifies the serving source's configured origin before taking
+The helper verifies the serving source's configured origin before taking
 maintenance ownership or stopping a writer. It uses the existing fresh
 challenge and release/key-bound response proof, with normal host certificate
 and hostname verification. Target protocol admission and source-origin proof
@@ -16,7 +18,7 @@ Explicit recovery of a durably pre-protection attempt repeats the source
 origin check before any fallback that could fence it. A later operation that
 already owns protection keeps its existing recovery procedure. Held and released
 target-origin verification remain mandatory; the early source proof cannot
-substitute for them. The candidate does not import a private CA or disable TLS
+substitute for them. The helper does not import a private CA or disable TLS
 verification.
 
 The [v1.4.2 → v1.4.3 native attempt](managed-update-qualification.md) remains

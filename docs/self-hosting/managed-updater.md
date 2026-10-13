@@ -21,9 +21,9 @@ which keeps protocol `1`, corrects Docker process listings and supports a separa
 replacement of either exact published `0.4.0` or `0.5.0` bundle. Pulling an
 application image does not install or replace host helper code.
 
-This guide describes the published 1.4.0 helper distribution, independently
-verified against its exact public commit and Release/image contracts. The
-[current publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+The helper 0.6 procedures below describe the published 1.4.0 distribution,
+independently verified against its exact public commit and Release/image contracts. The
+[dated publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
 records those identities. Use a reviewed immutable source distribution for each
 administrator command. The dated
 [ordinary candidate observations](helper-0.6-candidate.md#bounded-native-candidate-observations-2026-10-10)
@@ -40,9 +40,12 @@ subsequent application upgrade failed; the
 Public [v1.4.3/helper 0.9](helper-0.9-candidate.md) corrects
 Compose JSON dollar escaping and adds exact public 0.8 idle-source compatibility.
 Its subsequent application attempt exposed a missing lab host-CA trust
-prerequisite. The [helper 0.10 source candidate](helper-0.10-candidate.md) adds
+prerequisite. Public [v1.4.4/helper 0.10](helper-0.10-candidate.md) adds
 serving-origin verification before protection and exact public 0.9 idle-source
-compatibility. It remains unpublished. Pulling an application image does not
+compatibility. Its [publication receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+records separate root and independent Release/assets, complete source archive
+and both architecture image-identity audits. Helper replacement remains a
+separate administrator upgrade. Pulling an application image does not
 replace the host helper or repair an interrupted application operation.
 
 Optional managed updates remain under disposable-VM qualification and are not
@@ -680,9 +683,9 @@ themselves verify this source distribution. A moving branch, a candidate archive
 or a reported helper version cannot substitute for that public source proof.
 Public v1.4.0/helper 0.6 is verified in the publication receipt above; its
 complete immutable source distribution must still be independently verified
-before execution. Public v1.4.1/helper 0.7 and v1.4.2/helper 0.8 cannot substitute
-for the original destination distribution when recovering an older transaction.
-The v1.4.3/helper 0.9 source candidate remains unpublished.
+before execution. Public v1.4.1/helper 0.7, v1.4.2/helper 0.8, v1.4.3/helper 0.9
+and v1.4.4/helper 0.10 cannot substitute for the original destination distribution
+when recovering an older transaction.
 
 Stage the reviewed complete distribution in a canonical, root-owned directory
 such as `/root/reviewed-wayfindr-v1.4.0` for the public 0.6 commands below. Every

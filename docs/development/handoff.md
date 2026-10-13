@@ -4,8 +4,10 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§30](#30-public-143-origin-trust-failure-and-helper-010-candidate)**
-for the latest failed native attempt and unpublished correction, then
+**Taking the baton? Start at [§31](#31-published-144-and-fresh-qualification-checkpoint)**
+for verified publication and the fresh qualification boundary, then
+[§30](#30-public-143-origin-trust-failure-and-helper-010-candidate)
+for the preserved failed native attempt and its source correction,
 [§29](#29-published-140-application-and-helper) for earlier publication gates and
 [§28](#28-published-130-application-and-helper) for the earlier 1.3.0 release,
 [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery) and
@@ -14,7 +16,7 @@ earlier recovery/artifact-component rehearsal. See
 [§25](#25-published-120--october-9-2026) for the earlier 1.2.0 publication and
 accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for an earlier public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–28 are dated snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–30 are preserved snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -38,7 +40,7 @@ differentiator.
 
 ---
 
-## 2. Current state (October 10, 2026 EDT)
+## 2. Current state (October 12, 2026 EDT)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -49,19 +51,20 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** Public `v1.4.0` is tagged at
-`0f4312f8f7bfae7dae556ea547fccda2cf66f43e`. Exact-main CI
-[38086965749](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+**Release truth comes first.** Public `v1.4.4` is tagged at
+`8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4`. Exact-main CI
+[38301307593](https://github.com/adamgreenwell/wayfindr/actions/runs/38301307593)
 and guarded publisher
-[38098816963](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
-passed. Independent public verification and a separate raw-evidence audit
-verified the Release/assets, source declarations, both architecture OCI chains
-and stable aliases. See §29 and the
-[sanitized receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.4.0-publication.json).
-Helper 0.6 is a separate administrator upgrade. Optional managed updates remain
+[38321421228](https://github.com/adamgreenwell/wayfindr/actions/runs/38321421228)
+passed. Root and independent saved-output audits verified the Release/assets,
+complete source archive, both architecture OCI chains and stable aliases, plus
+static registry-layer identity files for both architectures. See §31 and the
+[sanitized receipt](../self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+Helper 0.10 is a separate administrator upgrade. Optional managed updates remain
 not qualified for production use; U8/#1115, U9/#1116, #1140 and epic #1107
-remain open with zero qualified managed scenarios. The genuine published
-1.2.0 → 1.4.0 pair is available; publication, installed-helper behavior and
+remain open with zero of 100 managed scenarios qualified. The earlier public
+1.4.2 → 1.4.3 attempt remains preserved in recovery (§30). Fresh 1.4.4
+qualification uses a new pair; publication, installed-helper behavior and
 managed application/recovery/restore evidence remain separate gates.
 
 The earlier ARM64 public 1.2.0 source installation/enrollment, idle helper
@@ -411,17 +414,24 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Build on public 1.2.0 source and ordinary-recovery evidence (§25).** Public
-   artifacts and aliases verified; ARM64 baked identity verification passed.
-   ARM64 official installation/enrollment and idle restart/reboot passed.
-   Ordinary separate-VM restore with real erasure replay also passed. The
-   Docker 29 image-binding/helper-lifecycle fix for #1131 is merged. Native
-   ARM64/containerd clean helper upgrade and post-exchange process-crash recovery
-   passed ([§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery)); earlier
-   recovery/artifact-component checks remain in
-   [§26](#26-docker-29-helper-recovery-candidate). Publication of the
-   reviewed fix, a genuine newer compatible application target and the 100-case
-   native architecture/image-store qualification matrix remain separate gates.
+1. **Qualify the published 1.4.4 correction on fresh guests (§31).** Public
+   helper 0.10, the complete source archive, both architecture OCI chains and
+   static baked identity files are verified. Keep the public 1.4.2 → 1.4.3
+   origin-trust failure and its held Restore peer unchanged (§30). On the fresh
+   pair, separately admit copied boot/host-key evidence and strict first contact,
+   install the public 1.4.3 baseline, and prove the supported idle helper
+   0.9 → 0.10 exchange. Verify the guest's normal HTTPS trust and serving-source
+   proof before one ordinary application Start. Complete target, protective
+   archive, delivery, erasure and ordinary separate-VM restore evidence before
+   counting a managed scenario. The full 100-case native architecture/image-store
+   matrix remains open.
+
+   Earlier public 1.2.0 ARM64 installation/enrollment, idle restart/reboot and
+   ordinary erasure-aware separate-VM restore remain in §25. The candidate
+   ARM64/containerd helper exchange and process-crash recovery retain their
+   original scope in [§27](#27-clean-helper-upgrade-and-atomic-exchange-recovery);
+   earlier recovery/artifact-component checks remain in
+   [§26](#26-docker-29-helper-recovery-candidate).
    Keep `v1.1.1`'s verified public artifacts
    and hosted-runner results as historical evidence (§24). Earlier
    publication and hosted-runner evidence stays specific to `v1.1.0` (§22),
@@ -435,10 +445,9 @@ Ordered by real dogfood value and dependency, not feature novelty.
    Retain the accepted source installation/enrollment, idle restart/reboot and
    ordinary separate-VM restore receipt, with exact archive/keys/real ledger
    linkage. Keep U8 and U9 open: source and ordinary recovery cannot establish
-   managed protective custody or apply. Those need a genuine newer compatible public
-   target and publication of the rehearsed host-helper lifecycle path for #1131,
-   or a new published source enrolled with the fixed helper. Do not manufacture a release to
-   complete the matrix or treat its synthetic tests as qualified VM scenarios.
+   managed protective custody or apply. A published correction supplies a target,
+   not a completed native scenario. Do not manufacture a release to complete the
+   matrix or treat its synthetic tests as qualified VM scenarios.
 
 2. **The account area's structural work for 1.0.0 is done (§18).** #994's
    epic, the overview that was a hub and a settings page at once, is split:
@@ -1957,3 +1966,54 @@ Source prepares **v1.4.4**, with no new required application action and the
 standing backup notice preserved. This is an unpublished candidate. Publication,
 public readback, native helper exchange, complete application upgrade and
 ordinary separate-VM restore each require their own evidence.
+
+
+## 31. Published 1.4.4 and fresh qualification checkpoint
+
+Public [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4)
+is frozen at `8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4`, tree
+`fea4d5a820ecc70bb166ea9601b38133928c5ac1`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38301307593)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38321421228)
+passed. Separate root and independent audits accepted the public Release/assets,
+all 1,622 source-archive Git blobs, both AMD64/ARM64 OCI platform/configuration
+chains and the `1.4.4`/`1.4`/`latest` aliases. Static, digest-verified registry
+layer readback also accepted the baked version, commit, release manifest and
+history on both architectures. These are public artifact checks, not a native
+image probe or installed-helper verification. Exact identities and limits are
+in the [sanitized publication receipt](../self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+
+The public website update in [wayfindr-site #10](https://github.com/adamgreenwell/wayfindr-site/pull/10)
+has separate provider-completion and public-delivery evidence. After a cache
+purge, the normal homepage and the earlier query variant returned identical
+HTML containing v1.4.4/helper 0.10. Website delivery does not qualify a managed
+application update.
+
+Helper `0.10.0`, protocol 1, verifies the serving source's HTTPS origin before
+taking maintenance ownership, including early fallback and explicit
+pre-protection recovery. It admits exact public helper `0.9.0` for supported
+idle replacement while retaining original pending-transaction ownership and
+historical recovery restrictions. It remains a separate administrator upgrade;
+pulling the application image does not replace an installed helper. The
+application adds no required operator action; standing backup-queue guidance
+and retained release history remain intact.
+
+At the fresh provisioning checkpoint on October 12 EDT / October 13 UTC, two
+new AMD64 guests had been created and booted, and complete raw creation/boot
+receipts had been delivered. This establishes provisioning only; cloud-init,
+copied host-key acceptance, strict SSH contact, software installation and
+application behavior require their own accepted evidence. The older failed
+Source and held Restore operations in §30 remain untouched. No recovery or
+hold release was performed for them.
+
+Managed updates remain **not qualified for production use**, with **0/100**
+managed scenarios qualified. Keep U8/#1115, U9/#1116, #1140, #1153 and epic
+#1107 open. Public readback does not establish a native helper exchange,
+complete application upgrade, recovery, delivery, erasure or separate-VM restore.
+
+Only after publication and all three public readback boundaries passed,
+development `VERSION` returned to `1.5.0`, so source builds identify
+`1.5.0-dev`. The prescribed declaration reset leaves required actions empty
+and preserves standing notices; `releases/history.json` still contains the
+published 1.4.4 declaration unchanged. This housekeeping publishes no release
+and chooses no feature scope for 1.5.0.

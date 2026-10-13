@@ -13,7 +13,7 @@ and still accepts the original Wayfindr-signed proxy format for existing
 integrations. Older `v0.7.0` predates that direct-provider support. See the
 [inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
 
-The capability list below describes public `v1.4.0` at `0f4312f8`.
+The capability list below describes public `v1.4.4` at `8ce37cb4`.
 The Status section separates implementation, verified public artifacts and
 ARM64 source/ordinary-recovery evidence from open managed-update qualification.
 
@@ -157,6 +157,35 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4`, with release notes dated
+October 12, 2026. All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38301307593)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38321421228)
+passed. Root and independent public audits verified the Release/assets, exact
+source archive, both amd64/arm64 OCI chains and static baked identities, and
+`1.4.4`/`1.4`/`latest` aliases. The [publication receipt](docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+records the exact public identities and verification limits.
+
+Helper `0.10.0`, protocol 1, checks the serving source's configured origin with
+normal TLS and fresh release/key-bound proof before taking maintenance
+ownership. It remains a separate root-only administrator upgrade; pulling an
+application image does not replace an installed helper. No operator action or
+migration is required for the application release; standing notices remain.
+
+The public `v1.4.3` → `v1.4.4` pair is available for fresh disposable-VM testing.
+Installed-helper replacement, a complete managed application upgrade, recovery
+and separate-VM restore remain independent gates. Managed updates are **not
+qualified for production use**, with **0/100** managed scenarios qualified.
+Earlier failed operations and held installations retain their original recovery
+contracts. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty; standing notices and all retained
+release history remain intact. This housekeeping publishes no release and does
+not choose its feature scope.
+
+### Dated v1.4.0 publication (October 10, 2026)
+
 Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
 is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
 All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
@@ -184,7 +213,7 @@ or separate-VM restore. Managed updates remain **not qualified for production
 use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
 #1140 and epic #1107 remain open.
 
-The previous public release is `v1.3.0` at `1bae329c`; its
+An earlier public release is `v1.3.0` at `1bae329c`; its
 [dated publication receipt](docs/self-hosting/evidence/managed-update/2026-10-10-v1.3.0-publication.json)
 retains the original 0.5 helper and image identities.
 
@@ -259,10 +288,6 @@ From 1.0.0 the version number carries the operator-action signal, as
 See the [release notes](CHANGELOG.md). If you are several releases behind, read
 each release in between. `v0.11.0` carries a session-secret security fix, and
 `v0.10.0` sends an email reply backlog left over from `v0.9.0`.
-Development source now identifies the next line as `1.5.0-dev`. The
-required-action declaration remains empty, standing notices and the retained
-1.4.0 history remain intact. This housekeeping does not publish another release
-or choose its feature scope.
 
 The public `v1.1.1` artifact passed a
 [fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
