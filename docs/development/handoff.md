@@ -420,17 +420,21 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Qualify the published 1.4.4 correction on fresh guests (§31).** Public
-   helper 0.10, the complete source archive, both architecture OCI chains and
-   static baked identity files are verified. Keep the public 1.4.2 → 1.4.3
-   origin-trust failure and its held Restore peer unchanged (§30). On the fresh
-   pair, separately admit copied boot/host-key evidence and strict first contact,
-   install the public 1.4.3 baseline, and prove the supported idle helper
-   0.9 → 0.10 exchange. Verify the guest's normal HTTPS trust and serving-source
-   proof before one ordinary application Start. Complete target, protective
-   archive, delivery, erasure and ordinary separate-VM restore evidence before
-   counting a managed scenario. The full 100-case native architecture/image-store
-   matrix remains open.
+1. **Admit a new 1.4.4 qualification pair after the runtime refusal (§32).**
+   Public helper 0.10 and both architecture images are verified (§31). The
+   October 13 pair completed helper installation and pre-Start admission, then
+   its one Start reached `recovery_required` / `runtime_verification_failed`.
+   Preserve that Source, its writer-held Restore peer and all older failed VMs
+   and operations unchanged. The later TCP timeout and captured firewall policy
+   identify a current container-to-public-endpoint blocker; the historical
+   helper subcause and TLS trust remain unknown. Additional fresh VMs require
+   separate authorization. On those guests, admit scoped container TCP access,
+   normal TLS verification and configured object-store access from application
+   and migration contexts before freezing the fixture and allowing one Start.
+   Keep each VM's trust material separate. Complete target, protective archive,
+   delivery, erasure and ordinary separate-VM restore evidence before counting
+   a managed scenario. The full 100-case native architecture/image-store matrix
+   remains open.
 
    Earlier public 1.2.0 ARM64 installation/enrollment, idle restart/reboot and
    ordinary erasure-aware separate-VM restore remain in §25. The candidate

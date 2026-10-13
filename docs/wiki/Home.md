@@ -14,15 +14,23 @@ before maintenance ownership. It remains a separate administrator upgrade;
 application image updates preserve the installed helper. No operator action or
 migration is required for the application; standing notices remain. See
 [Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
-The public `v1.4.3` → `v1.4.4` pair is available for fresh testing; installed-helper
-replacement, complete managed apply/recovery and separate-VM restore still need
-their own native evidence. Managed updates remain **not qualified for production
-use**, with **0/100** scenarios qualified. Earlier failed operations retain their
-original recovery contracts. Development source is `1.5.0-dev`;
-this next-cycle reset publishes no release.
+The October 13 fresh `v1.4.3` → `v1.4.4` attempt passed separate helper 0.10
+installation and pre-Start continuity checks, then one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation. Five saved
+target-role layout/readiness checks pass; complete runtime verification,
+recovery and separate-VM restore remain unaccepted. Its Source and Restore
+holds and all older held operations remain preserved. Managed updates remain
+**not qualified for production use**, with **0/100** scenarios qualified. The
+[dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+separates the later TCP timeout with zero TLS attempts and current firewall-policy
+inference from the unknown historical refusal cause. Before Start on a separately
+approved additional fresh pair, check web/migration access to its configured
+public HTTPS and external object store, then normal TLS; keep any lab rules
+scoped and Restore's own CA/bundle independent. Existing holds are not repair
+targets. Development source is `1.5.0-dev`; this reset publishes no release.
 
-The earlier public release is `v1.2.0`. Its ARM64 published-source install,
-enrollment, idle restart/reboot and separate ordinary restore passed over
+Earlier `v1.2.0` evidence covers its ARM64 published-source install,
+enrollment, idle restart/reboot and separate ordinary restore over
 private HTTP. Those observations and older dated evidence remain on
 [Disposable VM Evidence](Disposable-VM-Evidence) and [Releases](Releases).
 

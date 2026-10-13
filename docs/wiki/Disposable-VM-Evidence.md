@@ -14,12 +14,32 @@ before maintenance ownership. It remains a separate administrator upgrade;
 application image updates preserve the installed helper. No operator action or
 migration is required for the application; standing notices remain. See
 [Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
-The public `v1.4.3` → `v1.4.4` pair is available for fresh testing; installed-helper
-replacement, complete managed apply/recovery and separate-VM restore still need
-their own native evidence. Managed updates remain **not qualified for production
-use**, with **0/100** scenarios qualified. Earlier failed operations retain their
-original recovery contracts. Development source is `1.5.0-dev`;
-this next-cycle reset publishes no release.
+The October 13 fresh AMD64/classic `v1.4.3` → `v1.4.4` attempt passed separate
+helper 0.10 installation and pre-Start continuity checks. One ordinary HTTPS
+Start returned 202, then native captures found `recovery_required` /
+`runtime_verification_failed` after mutation. Saved Docker layout/readiness
+checks pass for all five target roles, but configuration promotion and runtime
+verification remain incomplete. The [dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+retains the limits; uncaptured runtime/origin/realtime paths and the original
+refusal cause remain unknown.
+
+A later connection from the target web container to its own public HTTPS
+endpoint timed out at TCP, with zero TLS attempts. A read-only policy capture
+supports a current firewall inference: same-bridge traffic bypasses public-port
+DNAT and reaches local INPUT without an allow before default DROP. No packet
+trace or historical first-cause proof was captured. Before Start on a separately
+approved additional fresh pair, check configured public HTTPS and external
+S3/object-store reachability from web and managed migration contexts, then normal
+TLS and client access. Scope any lab rules to that VM's own application bridge
+and exact endpoints while retaining the SSH restriction. Restore keeps its own
+CA/bundle outside attachment restore scope; Source fixture/object evidence does
+not establish container access or external-object transfer.
+
+The current Source and Restore holds and all older held operations remain
+preserved, without recovery or Source keys/archive/ledger handoff to Restore.
+Managed updates remain **not qualified for production use**, with **0/100**
+scenarios qualified. Development source is `1.5.0-dev`; this reset publishes no
+release.
 
 The earlier public release, `v1.2.0` at `56374e95`, was published October 9 EDT
 (October 10 UTC). Its public Release, manifest, both platform image chains and
