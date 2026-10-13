@@ -9,6 +9,37 @@ pulling and restarting, a minor adds features and self-migrating schema, and a
 patch only fixes. The release notes and manifest remain the authoritative
 detail.
 
+## Current publication: v1.4.4 and helper 0.10.0
+
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4`, with release notes dated
+October 12, 2026. All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38301307593)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38321421228)
+passed. Root and independent public audits verified the Release/assets, exact
+source archive, both amd64/arm64 OCI chains and static baked identities, and
+`1.4.4`/`1.4`/`latest` aliases. The [publication receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+records the exact public identities and verification limits.
+
+Helper `0.10.0`, protocol 1, checks the serving source's configured origin with
+normal TLS and fresh release/key-bound proof before taking maintenance
+ownership. It remains a separate root-only administrator upgrade; pulling an
+application image does not replace an installed helper. No operator action or
+migration is required for the application release; standing notices remain.
+
+The public `v1.4.3` → `v1.4.4` pair is available for fresh disposable-VM testing.
+Installed-helper replacement, a complete managed application upgrade, recovery
+and separate-VM restore remain independent gates. Managed updates are **not
+qualified for production use**, with **0/100** managed scenarios qualified.
+Earlier failed operations and held installations retain their original recovery
+contracts. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty; standing notices and all retained
+release history remain intact. This housekeeping publishes no release and does
+not choose its feature scope.
+
+## Dated v1.4.0 publication (October 10, 2026)
+
 Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
 is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
 All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
@@ -39,12 +70,7 @@ or separate-VM restore. Managed updates remain **not qualified for production
 use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
 #1140 and epic #1107 remain open.
 
-Development source now identifies the next line as `1.5.0-dev`. The
-required-action declaration remains empty, standing notices and the retained
-1.4.0 history remain intact. This housekeeping does not publish another release
-or choose its feature scope.
-
-The previous public release was
+An earlier public release was
 [`v1.3.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.3.0), at
 `1bae329c4e349017716827dd0ce26b9ba7f9f2ac`.
 [Exact-main CI 38056674067](https://github.com/adamgreenwell/wayfindr/actions/runs/38056674067)
@@ -151,9 +177,9 @@ are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
-- The [attached `v1.4.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.4.0/release-manifest.json),
-  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.4.0/release.json)
-  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.4.0/releases/history.json)
+- The [attached `v1.4.4` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.4.4/release-manifest.json),
+  [tagged declaration](https://github.com/adamgreenwell/wayfindr/blob/v1.4.4/release.json)
+  and [retained history](https://github.com/adamgreenwell/wayfindr/blob/v1.4.4/releases/history.json)
   describe the current public artifact. Prior release actions still apply to
   installations that skipped them.
 - The [attached `v1.2.0` manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json),
@@ -172,7 +198,7 @@ are recorded below.
 - [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
   is separate from the immutable published manifest. Development `main` is
   `1.5.0-dev`; empty current actions do not replace the history carried by
-  `v1.4.0`.
+  `v1.4.4`.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can

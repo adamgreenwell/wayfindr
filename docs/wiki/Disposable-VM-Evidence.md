@@ -5,18 +5,21 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
-The latest public release is [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0),
-at `0f4312f8`, with release notes dated October 10, 2026. Exact-main CI and
-the guarded publisher passed. Independent public verification and a separate
-raw-evidence audit verified Release assets, source declarations, both amd64/arm64
-OCI chains and stable aliases. Helper `0.6.0` fixes Docker process listings and
-supports separate administrator replacement from exact published 0.4/0.5
-bundles. Application image updates preserve the installed helper. No operator
-action or migration is required for the application; standing backup-queue
-guidance remains. See [Releases](Releases) for the public receipt and identities.
-The genuine 1.2.0 → 1.4.0 pair is available for testing; managed updates remain
-not qualified for production use, with zero managed scenarios qualified.
-Development source is `1.5.0-dev`; this next-cycle reset publishes no release.
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb4`, dated October 12, 2026. Exact-main CI and the guarded publisher
+passed. Separate root and independent audits verified Release/assets, the source
+archive, both architecture OCI chains and static baked identities, and stable
+aliases. Helper `0.10.0` checks the serving source's trusted configured origin
+before maintenance ownership. It remains a separate administrator upgrade;
+application image updates preserve the installed helper. No operator action or
+migration is required for the application; standing notices remain. See
+[Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+The public `v1.4.3` → `v1.4.4` pair is available for fresh testing; installed-helper
+replacement, complete managed apply/recovery and separate-VM restore still need
+their own native evidence. Managed updates remain **not qualified for production
+use**, with **0/100** scenarios qualified. Earlier failed operations retain their
+original recovery contracts. Development source is `1.5.0-dev`;
+this next-cycle reset publishes no release.
 
 The earlier public release, `v1.2.0` at `56374e95`, was published October 9 EDT
 (October 10 UTC). Its public Release, manifest, both platform image chains and
