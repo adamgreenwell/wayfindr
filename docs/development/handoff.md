@@ -1,11 +1,13 @@
 # Engineering Handoff & Roadmap
 
-*Living document — updated October 12, 2026 (EDT). For an agent (or engineer) picking up
+*Living document — updated October 13, 2026 (EDT). For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§31](#31-published-144-and-fresh-qualification-checkpoint)**
-for verified publication and the fresh qualification boundary, then
+**Taking the baton? Start at [§32](#32-public-144-runtime-refusal--october-13-2026)**
+for the current failed-operation holds and container reachability blocker, then
+[§31](#31-published-144-and-fresh-qualification-checkpoint)
+for verified publication and the original fresh qualification checkpoint,
 [§30](#30-public-143-origin-trust-failure-and-helper-010-candidate)
 for the preserved failed native attempt and its source correction,
 [§29](#29-published-140-application-and-helper) for earlier publication gates and
@@ -16,7 +18,7 @@ earlier recovery/artifact-component rehearsal. See
 [§25](#25-published-120--october-9-2026) for the earlier 1.2.0 publication and
 accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for an earlier public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–30 are preserved snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–31 are preserved snapshots, kept
 for their evidence rather than their currency.
 
 ---
@@ -40,7 +42,7 @@ differentiator.
 
 ---
 
-## 2. Current state (October 12, 2026 EDT)
+## 2. Current state (October 13, 2026 EDT)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -64,8 +66,12 @@ Helper 0.10 is a separate administrator upgrade. Optional managed updates remain
 not qualified for production use; U8/#1115, U9/#1116, #1140 and epic #1107
 remain open with zero of 100 managed scenarios qualified. The earlier public
 1.4.2 → 1.4.3 attempt remains preserved in recovery (§30). Fresh 1.4.4
-qualification uses a new pair; publication, installed-helper behavior and
-managed application/recovery/restore evidence remain separate gates.
+qualification used a new pair. Its separately installed helper 0.10 and
+pre-Start continuity checkpoint passed, but one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation (§32).
+The new Source and Restore holds remain preserved. Publication,
+installed-helper behavior and managed application/recovery/restore evidence
+remain separate gates.
 
 The earlier ARM64 public 1.2.0 source installation/enrollment, idle helper
 restart/reboot and ordinary separate-VM restore evidence remains in §25.
@@ -414,17 +420,21 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Qualify the published 1.4.4 correction on fresh guests (§31).** Public
-   helper 0.10, the complete source archive, both architecture OCI chains and
-   static baked identity files are verified. Keep the public 1.4.2 → 1.4.3
-   origin-trust failure and its held Restore peer unchanged (§30). On the fresh
-   pair, separately admit copied boot/host-key evidence and strict first contact,
-   install the public 1.4.3 baseline, and prove the supported idle helper
-   0.9 → 0.10 exchange. Verify the guest's normal HTTPS trust and serving-source
-   proof before one ordinary application Start. Complete target, protective
-   archive, delivery, erasure and ordinary separate-VM restore evidence before
-   counting a managed scenario. The full 100-case native architecture/image-store
-   matrix remains open.
+1. **Admit a new 1.4.4 qualification pair after the runtime refusal (§32).**
+   Public helper 0.10 and both architecture images are verified (§31). The
+   October 13 pair completed helper installation and pre-Start admission, then
+   its one Start reached `recovery_required` / `runtime_verification_failed`.
+   Preserve that Source, its writer-held Restore peer and all older failed VMs
+   and operations unchanged. The later TCP timeout and captured firewall policy
+   identify a current container-to-public-endpoint blocker; the historical
+   helper subcause and TLS trust remain unknown. Additional fresh VMs require
+   separate authorization. On those guests, admit scoped container TCP access,
+   normal TLS verification and configured object-store access from application
+   and migration contexts before freezing the fixture and allowing one Start.
+   Keep each VM's trust material separate. Complete target, protective archive,
+   delivery, erasure and ordinary separate-VM restore evidence before counting
+   a managed scenario. The full 100-case native architecture/image-store matrix
+   remains open.
 
    Earlier public 1.2.0 ARM64 installation/enrollment, idle restart/reboot and
    ordinary erasure-aware separate-VM restore remain in §25. The candidate
@@ -2017,3 +2027,50 @@ development `VERSION` returned to `1.5.0`, so source builds identify
 and preserves standing notices; `releases/history.json` still contains the
 published 1.4.4 declaration unchanged. This housekeeping publishes no release
 and chooses no feature scope for 1.5.0.
+
+## 32. Public 1.4.4 runtime refusal — October 13, 2026
+
+The fresh AMD64/classic public `v1.4.3` → `v1.4.4` pair progressed beyond
+provisioning. Public helper `0.10.0` was installed separately. Paired native
+pre-Start audits rechecked the source fixture, normal host HTTPS trust and the
+original unstarted Plan after helper/SSH process replacement within the same
+boot. These accepted checkpoints do not qualify a complete application update.
+
+One ordinary HTTPS Start returned HTTP 202. The local observer stopped on a
+filesystem save error after 156 HTTP records; no saved client failure file,
+terminal result or bounded poll timeout is established. Separate read-only
+native captures found revision 18, `recovery_required` /
+`runtime_verification_failed`, with mutation begun, the hold owned, all five
+expected target roles running and no recorded restarts. Configuration promotion
+is false and the runtime receipt is null. The catch-path checkpoint does not
+locate the historical subcause, which remains unknown.
+
+Paired saved-output audits accepted a read-only private export. Its operation
+trees stayed stable, the journal changed only by monotonic heartbeat, and the
+migration and protective archive hashes match the journal. A separate replay of
+the public archive verifier accepted the source SQL, two local attachment files
+and declared key fingerprints. The [sanitized dated receipt](../self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+records the exact hashes and evidence limits.
+
+A separate pure-PHP diagnostic in the exact target web container timed out
+connecting to its configured public HTTPS endpoint (TCP errno 110, zero TLS
+attempts). Paired audits accepted the raw observation and unchanged held state.
+Certificate trust was not tested, and the historical helper subcause remains
+unknown. Inspect the container-to-own-public-endpoint routing/firewall path
+before another qualification attempt; keep any future trust setup conditional
+on a successful TCP connection and normal certificate verification.
+
+The read-only policy snapshot shows same-bridge HTTPS excluded from DNAT,
+a local Docker proxy listener and UFW INPUT default DROP with only the Mac's
+SSH allow. A new same-bridge connection therefore appears to reach host INPUT
+without an applicable HTTPS allow. This inference agrees with the timeout;
+there is no packet trace or recovered historical exception. The unavailable
+bridge-netfilter sysctl and retained nft stderr remain explicit evidence limits.
+No firewall modification or second endpoint connection occurred.
+
+No post-Start trust change, Start replay, recovery, helper replacement or hold
+release occurred. The paired Restore VM remains writer-held without Source
+keys, archive or ledger transfer. Older failed VMs and held operations remain
+untouched. Target data, external objects, authenticated delivery, erasure and
+ordinary separate-VM restore remain unaccepted. U8/#1115, U9/#1116, #1140,
+#1150, #1153 and epic #1107 stay open with **0/100** managed scenarios qualified.

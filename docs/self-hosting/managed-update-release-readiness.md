@@ -26,12 +26,30 @@ ownership. It remains a separate root-only administrator upgrade; pulling an
 application image does not replace an installed helper. No operator action or
 migration is required for the application release; standing notices remain.
 
-The public `v1.4.3` → `v1.4.4` pair is available for fresh disposable-VM testing.
-Installed-helper replacement, a complete managed application upgrade, recovery
-and separate-VM restore remain independent gates. Managed updates are **not
-qualified for production use**, with **0/100** managed scenarios qualified.
-Earlier failed operations and held installations retain their original recovery
-contracts. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+The October 13 fresh AMD64/classic public `v1.4.3` → `v1.4.4` attempt passed
+its separate helper 0.10 installation and pre-Start continuity checks. One
+ordinary HTTPS Start returned 202, then native captures found
+`recovery_required` / `runtime_verification_failed` after mutation. Saved
+Docker layout and readiness checks pass for all five target roles; configuration
+promotion and runtime verification remain incomplete. The [dated failed-attempt
+receipt](evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+records the exact limits. The current Source and Restore holds, and all older
+held operations, remain preserved without recovery or Source handoff to Restore.
+Managed updates are **not qualified for production use**, with **0/100** managed
+scenarios qualified. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+
+A later container-to-own-public-HTTPS connection timed out before TLS. A
+read-only policy capture supports a current routing/firewall inference: traffic
+from the same bridge bypasses public-port DNAT and reaches local INPUT without
+an allow before default DROP. No packet trace or historical first-cause proof
+was captured, and certificate trust remains untested by that diagnostic.
+Before Start on a separately approved additional fresh pair, admit configured
+public HTTPS and external S3/object-store reachability from web and managed
+migration contexts, then normal TLS and client access. Any lab rules must stay
+scoped to that VM's own application bridge and exact endpoints, preserving the
+existing SSH restriction. Restore keeps its own CA/bundle outside attachment
+restore scope; a Source-side fixture proof does not establish container access
+or external-object transfer. See the [pre-Start admission boundary](managed-update-qualification.md#configured-origin-trust-before-start).
 
 Development source now identifies the next line as `1.5.0-dev`. The
 required-action declaration remains empty; standing notices and all retained

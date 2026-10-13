@@ -19,8 +19,13 @@ ownership. It remains a separate root-only administrator upgrade; pulling an
 application image does not replace an installed helper. No operator action or
 migration is required for the application release; standing notices remain.
 
-The public `v1.4.3` → `v1.4.4` pair is available for fresh disposable-VM testing.
-Installed-helper replacement, a complete managed application upgrade, recovery
+The fresh AMD64/classic public `v1.4.3` → `v1.4.4` attempt passed its separate
+helper 0.10 installation and pre-Start continuity checks, then one accepted
+Start ended in `recovery_required` / `runtime_verification_failed` after
+mutation. Five target roles are running; configuration promotion and runtime
+verification remain incomplete. The [dated native receipt](../self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+records the failure and read-only preservation evidence. Its Source and Restore
+holds remain preserved. A complete managed application upgrade, recovery
 and separate-VM restore remain independent gates. Managed updates are **not
 qualified for production use**, with **0/100** managed scenarios qualified.
 Earlier failed operations and held installations retain their original recovery

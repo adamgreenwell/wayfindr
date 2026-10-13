@@ -172,12 +172,20 @@ ownership. It remains a separate root-only administrator upgrade; pulling an
 application image does not replace an installed helper. No operator action or
 migration is required for the application release; standing notices remain.
 
-The public `v1.4.3` → `v1.4.4` pair is available for fresh disposable-VM testing.
-Installed-helper replacement, a complete managed application upgrade, recovery
+The October 13 AMD64/classic `v1.4.3` → `v1.4.4` attempt passed its separate
+helper installation and pre-Start checks, then its one Start reached
+`recovery_required` / `runtime_verification_failed` after mutation. The Source,
+its writer-held Restore peer and all older failed operations remain preserved.
+A later container connection timed out before TLS; a read-only firewall snapshot
+supports a current bridge-to-public-HTTPS INPUT blocker. The historical helper
+subcause and container TLS trust remain unknown. See the [dated failed-attempt
+receipt](docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+and [qualification plan](docs/self-hosting/managed-update-qualification.md).
+Another fresh pair needs separate authorization and scoped container TCP/TLS
+and object-store admission before Start. Complete application upgrade, recovery
 and separate-VM restore remain independent gates. Managed updates are **not
 qualified for production use**, with **0/100** managed scenarios qualified.
-Earlier failed operations and held installations retain their original recovery
-contracts. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
 
 Development source now identifies the next line as `1.5.0-dev`. The
 required-action declaration remains empty; standing notices and all retained
