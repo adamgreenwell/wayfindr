@@ -4,8 +4,9 @@ Application v1.4.3 and helper 0.9.0 were published from
 `4376acbd271e88c329e612efecfba753531bb4a9`. Public v1.4.2 contains the original
 helper 0.8.0. Publication and native qualification remain separate gates. The
 [subsequent native attempt](managed-update-qualification.md) remains failed;
-the [helper 0.10 candidate](helper-0.10-candidate.md) is unpublished. This page
-retains the 0.9 distribution contract, not an install command.
+the successor [helper 0.10](helper-0.10-candidate.md) is published in v1.4.4 with
+separate [public readback evidence](evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+This page retains the 0.9 distribution contract, not an install command.
 
 Helper 0.9 keeps protocol 1 and corrects Compose JSON dollar escaping in
 runtime verification. Only the rendered Compose serialization layer is decoded;

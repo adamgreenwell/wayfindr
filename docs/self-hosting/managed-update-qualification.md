@@ -39,10 +39,12 @@ and post-migration data verification remain unaccepted.
 No certificate installation, Start replay, recovery, helper replacement or hold
 release occurred on that failed VM. Its Restore peer remains writer-held without
 Source keys, archive or ledger handoff. All older VMs and held operations remain
-untouched. The [helper 0.10 source candidate](helper-0.10-candidate.md) checks the
+untouched. Published [v1.4.4/helper 0.10](helper-0.10-candidate.md) checks the
 serving source origin before fencing, and repeats that admission before explicit
-recovery of a pre-protection refusal. It is unpublished. **Zero of 100 scenarios
-are qualified.**
+recovery of a pre-protection refusal. Its [public readback receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+verifies the Release/assets, complete source archive and both architecture image
+identities. Native helper replacement, complete application upgrade and ordinary
+separate-VM restore remain separate gates. **Zero of 100 scenarios are qualified.**
 
 ## Previous native observation — v1.4.2/helper 0.8
 
