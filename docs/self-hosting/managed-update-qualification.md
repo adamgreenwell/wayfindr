@@ -19,7 +19,7 @@ save error after 156 saved HTTP records; it did not establish a poll timeout or
 save a terminal result. Start was not replayed.
 
 Separate read-only native captures found revision 18, `recovery_required` /
-`runtime_verification_failed`, with schema mutation begun and the hold owned.
+`runtime_verification_failed`, with `mutation_started: true` and the hold owned.
 All five target v1.4.4 roles were running with the expected image and operation
 identity and zero recorded restarts. The private apply stage remains
 `restart_intent`; the runtime receipt is null and configuration promotion has

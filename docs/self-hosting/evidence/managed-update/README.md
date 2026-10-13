@@ -1,5 +1,36 @@
 # Managed-update qualification evidence
 
+## October 13, 2026: public helper 0.10 runtime refusal and lab reachability
+
+The [sanitized failed-attempt receipt](2026-10-13-v1.4.4-runtime-verification.json)
+records the fresh AMD64/classic public v1.4.3 → v1.4.4 attempt with separately
+installed helper 0.10. Paired pre-Start continuity audits passed; one ordinary
+HTTPS Start returned 202. Native revision 18 is `recovery_required` /
+`runtime_verification_failed`, with `mutation_started: true`, five expected
+target roles running, no runtime receipt or configuration promotion, and the
+hold owned. The local observer stopped on a filesystem save error after 156
+HTTP records; a terminal result or bounded poll timeout is not established.
+
+Paired read-only export audits preserve the stable operation trees, journal,
+migration receipt and protective archive. The public archive verifier accepted
+source SQL, two local attachment bodies and declared key fingerprints. Saved
+container/layout and process-readiness checks pass; uncaptured runtime paths,
+target data, external objects, delivery, erasure and restore remain unaccepted.
+
+A pure-PHP check in the target web container timed out at TCP establishment;
+zero TLS handshakes occurred. Later read-only firewall/routing metadata supports
+a current same-bridge-to-host INPUT blocker: Docker DNAT excludes that bridge,
+and UFW defaults to DROP with only the Mac's SSH allow. This is a policy
+inference consistent with the timeout, not a packet trace or proof of the
+historical helper refusal. Certificate trust remains untested by this check.
+
+No firewall/trust repair, Start replay, recovery, helper replacement or hold
+release followed the failure. Restore remains held without Source keys,
+archive or ledger transfer; all older VMs and held operations remain untouched.
+The next fresh lab must admit container endpoint TCP/TLS and configured object
+store access before Start. Managed qualification remains **false, with zero of
+100 scenarios qualified**; U8/#1115, #1153 and epic #1107 remain open.
+
 ## October 12, 2026: v1.4.4/helper 0.10 publication verified
 
 The [sanitized publication receipt](2026-10-12-v1.4.4-publication.json) records

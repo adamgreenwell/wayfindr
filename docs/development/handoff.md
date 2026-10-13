@@ -1,11 +1,13 @@
 # Engineering Handoff & Roadmap
 
-*Living document — updated October 12, 2026 (EDT). For an agent (or engineer) picking up
+*Living document — updated October 13, 2026 (EDT). For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§31](#31-published-144-and-fresh-qualification-checkpoint)**
-for verified publication and the fresh qualification boundary, then
+**Taking the baton? Start at [§32](#32-public-144-runtime-refusal--october-13-2026)**
+for the current failed-operation holds and container reachability blocker, then
+[§31](#31-published-144-and-fresh-qualification-checkpoint)
+for verified publication and the original fresh qualification checkpoint,
 [§30](#30-public-143-origin-trust-failure-and-helper-010-candidate)
 for the preserved failed native attempt and its source correction,
 [§29](#29-published-140-application-and-helper) for earlier publication gates and
@@ -16,7 +18,7 @@ earlier recovery/artifact-component rehearsal. See
 [§25](#25-published-120--october-9-2026) for the earlier 1.2.0 publication and
 accepted ARM64 source/ordinary-recovery evidence, then
 [§24](#24-published-111--october-2-2026) for an earlier public artifact.
-Then §5 (conventions) and §7 (gotchas). Sections 8–30 are preserved snapshots, kept
+Then §5 (conventions) and §7 (gotchas). Sections 8–31 are preserved snapshots, kept
 for their evidence rather than their currency.
 
 ---
