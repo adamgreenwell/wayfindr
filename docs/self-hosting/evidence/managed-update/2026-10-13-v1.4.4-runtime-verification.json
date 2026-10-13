@@ -102,7 +102,8 @@
     "The apply_release_intent catch-path label does not prove configuration promotion or locate the historical runtime refusal.",
     "Five running target roles do not establish runtime verification, application data survival, delivery or complete serving.",
     "The public archive verifier checks the source SQL/local attachment inventory and declared key fingerprints; it does not verify external objects or restore.",
-    "The container endpoint diagnostic timed out at TCP connection establishment; it did not test TLS trust or reconstruct the original helper refusal."
+    "The container endpoint diagnostic timed out at TCP connection establishment; it did not test TLS trust or reconstruct the original helper refusal.",
+    "The routing/firewall interpretation is an inference from a later read-only policy snapshot and the TCP timeout; no packet trace or original helper exception stack was captured."
   ],
   "unverified": [
     "historical runtime failure subcause",
@@ -156,5 +157,33 @@
     "independent_actual_audit_sha256": "65cdff8d9822179c722e1f181d3132ea2e087489a96785dca50d9d6c3e717a8d",
     "native_capture_sha256": "6b2fc1678d3350ccd8b82684eac2ea2d736735d9e6d794f6b851dea6b4818dca",
     "public_diagnostic_sha256": "09758b3ade936cad7667a350a2e39c2b63db9cd24f13f51427b39e09f5db3146"
+  },
+  "read_only_network_metadata": {
+    "root_actual_audit_sha256": "835269842dd1bfb98b638fed889433a0b544c67f9244b16262e5e1778a42d345",
+    "independent_actual_audit_sha256": "2b505157b540dd7ddd01a65b0d93be223c6030eca1f238b3010b620839edd527",
+    "native_capture_sha256": "5db77f7175194509f81f2369a150706e137982e0b5e9f9ecaa34d8249c3fb543",
+    "network_metadata_sha256": "c92418b0ee8bec59ec9e14f8a1e9a3e0f1c2fc5c2cdb2bdeceb42ddfaf1b5845",
+    "command_count": 13,
+    "commands_returning_zero": 12,
+    "bridge_netfilter_sysctl_returncode": 1,
+    "bridge_netfilter_sysctl_result": "proc_parameter_unavailable",
+    "nft_stderr_retained": true,
+    "same_failed_operation_hold_target_and_helper_before_after": true,
+    "TCP_connections": 0,
+    "TLS_handshake_attempts": 0,
+    "Docker_execs": 0,
+    "network_firewall_or_hold_changed": false,
+    "captured_policy": {
+      "same_bridge_traffic_excluded_from_public_HTTPS_DNAT": true,
+      "destination_is_local_VM_address": true,
+      "docker_proxy_listens_on_published_HTTPS_port": true,
+      "IPv4_INPUT_default_DROP": true,
+      "only_UFW_user_INPUT_allow_is_Mac_SSH": true,
+      "bridge_to_host_public_HTTPS_INPUT_allow_present": false
+    },
+    "current_policy_inference": "same_bridge_HTTPS_bypasses_DNAT_and_reaches_local_INPUT_without_a_NEW_connection_allow_before_default_DROP",
+    "current_policy_analysis_sha256": "56f319d39af1cbdd5b4659dc4aed43418c59e1177a8cb60cb2e282913a93570e",
+    "packet_trace_captured": false,
+    "historical_helper_first_refusal_proven": false
   }
 }

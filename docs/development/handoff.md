@@ -2054,6 +2054,14 @@ unknown. Inspect the container-to-own-public-endpoint routing/firewall path
 before another qualification attempt; keep any future trust setup conditional
 on a successful TCP connection and normal certificate verification.
 
+The read-only policy snapshot shows same-bridge HTTPS excluded from DNAT,
+a local Docker proxy listener and UFW INPUT default DROP with only the Mac's
+SSH allow. A new same-bridge connection therefore appears to reach host INPUT
+without an applicable HTTPS allow. This inference agrees with the timeout;
+there is no packet trace or recovered historical exception. The unavailable
+bridge-netfilter sysctl and retained nft stderr remain explicit evidence limits.
+No firewall modification or second endpoint connection occurred.
+
 No post-Start trust change, Start replay, recovery, helper replacement or hold
 release occurred. The paired Restore VM remains writer-held without Source
 keys, archive or ledger transfer. Older failed VMs and held operations remain

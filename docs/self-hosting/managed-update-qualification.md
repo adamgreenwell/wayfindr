@@ -41,6 +41,16 @@ a current container-to-public-endpoint reachability blocker. It does not test
 certificate trust or reconstruct the original helper refusal. Host HTTPS trust
 alone does not establish that the container can reach and verify that endpoint.
 
+A separate read-only network capture retained routes, firewall rules, listeners
+and the owned Docker network. Its policy shows that HTTPS DNAT excludes the
+same bridge, the published port has a local Docker proxy listener, and UFW's
+incoming default is DROP with only the Mac's SSH allow. The inferred route
+therefore reaches host INPUT without an allow for the container's new HTTPS
+connection, consistent with the observed timeout. This is a current policy
+inference, not a packet trace or proof of the helper's historical first refusal.
+One bridge-netfilter sysctl query was unavailable; its nonzero result and nft's
+stderr remain in the evidence. No firewall change or second connection was made.
+
 The [dated failed-attempt receipt](evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
 binds the pre-Start, native and private-export audits. A read-only export retained
 the operation's stable private trees, before/after journal, installed helper
