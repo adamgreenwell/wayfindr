@@ -1,14 +1,15 @@
 # Helper 0.11 candidate
 
-Helper 0.11.0 is prepared for application release v1.4.5 and remains unpublished
-until guarded publication and independent public readback complete. Public
-v1.4.4 still delivers helper 0.10.0. Publication, a native installed-helper
-exchange and successful application-upgrade qualification remain separate
-gates. This page provides no installation command.
+Helper 0.11.0 is published in application release v1.4.5. Guarded publication,
+complete public source-archive readback and both architecture image identities
+passed independent checks; see the [publication receipt](evidence/managed-update/2026-10-14-v1.4.5-publication.json).
+Native installed-helper exchange and application-upgrade/restore qualification
+remain pending. The helper requires a separate administrator upgrade; an
+application image pull does not replace it. This page provides no installation command.
 
 Docker health checks appear in a container's `ExecIDs` while their processes
-run. The published protection guard refuses every nonempty list immediately.
-The candidate instead waits up to ten seconds for all existing execs to settle,
+run. Helper 0.10's protection guard refuses every nonempty list immediately.
+Helper 0.11 waits up to ten seconds for all existing execs to settle,
 using one monotonic deadline across polling and the final process check. It does
 not exempt health checks or ignore unknown commands. Persistent execs, malformed
 metadata, Docker errors, deadline expiry and hidden upgrade-window processes
@@ -41,5 +42,5 @@ The self-host suite passes with 1,043 Python cases run, including one Linux-only
 peer-credential case skipped on macOS, plus the shell contracts. Tests cover transient and
 persistent execs, malformed and failed inspection, deadline exhaustion,
 historical journals, idle 0.10 replacement and interrupted 0.10 transactions.
-These checks do not establish publication or native helper 0.11 qualification.
+These source checks do not establish native helper 0.11 qualification.
 Managed application qualification remains **0/100**.
