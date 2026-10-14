@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic harness tests. No real VM, Docker, interruption, reboot or restore."""
 
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -838,6 +839,125 @@ class HelperProvenanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
                     self.prove()
                 self.rpc.assert_not_called()
+
+    def reviewed_011_cli_sources(self):
+        # Read the reviewed local declaration without importing a second CLI or
+        # replacing any current/retained code hash validator.
+        raw = (ROOT / 'scripts/self-host/upgrade-updater.py').read_bytes()
+        tree = ast.parse(raw)
+        return next(ast.literal_eval(item.value) for item in tree.body
+                    if isinstance(item, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == 'PUBLISHED'
+                            for target in item.targets))
+
+    def prepare_011_provenance(self, source='0.10.0'):
+        self.upgrade.VERSION = '0.11.0'
+        self.upgrade.PUBLISHED = copy.deepcopy(self.reviewed_011_cli_sources())
+        # These existing private fixtures contain synthetic retained old bytes.
+        # Keep their exact digest binding; the canonical public map is checked
+        # independently below rather than pretending synthetic bytes are public.
+        self.upgrade.PUBLISHED[source] = self.old
+        self.source['tag'], self.selected['tag'] = 'v1.4.4', 'v1.4.5'
+        self.transition(source, '0.11.0')
+
+    def test_reviewed_011_cli_uses_exact_public_010_map_and_target_bytes(self):
+        canonical = self.reviewed_011_cli_sources()
+        self.upgrade.VERSION = '0.11.0'
+        self.upgrade.PUBLISHED = canonical
+        self.assertEqual({'0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0'}, set(canonical))
+        self.assertEqual({
+            'updater.py': '9d3161e6fbee5d2c174db49f82a543b6d8ce11014e9010a016e5598cf56215b8',
+            'update_protection.py': '5650a8591897ab9ed3f08b0d0d86315c0e7267bfa8cea96ca17d00ea33a813b9',
+            'update_apply.py': 'fde82095b14c4d3244b410f6e901b8fe7c7492057e899f7abbac1316512b6400',
+            'update_artifacts.py': '8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812',
+            'protection_archive.py': '50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944',
+        }, VM.approved_helper_source(self.upgrade, '0.10.0', '0.11.0'))
+        actual = self.distribution('v1.4.5', '0.11.0', self.upgrade.code_hashes(self.upgrade.CODE))
+        self.assertEqual('d7aca2f4cf4b3aa0068fe6ffcf86e05ec3c22b292a5f0b0878ee4ce780324f9f', actual['bundle_sha256'])
+        self.assertEqual('761d3daf7cbc9220ef0cb924cf99f7f86508e8630781bf47a0320445da7058bb', actual['upgrade_cli_sha256'])
+        self.rpc.assert_not_called()
+
+    def test_011_each_direct_source_requires_exact_original_receipt(self):
+        for source in self.reviewed_011_cli_sources():
+            with self.subTest(source=source):
+                self.prepare_011_provenance(source)
+                self.rpc.reset_mock()
+                self.assertEqual(self.binding, self.prove())
+                self.rpc.assert_called_once_with(self.api, self.host.config, None, expected_pid=123)
+                self.assertEqual(source, self.binding['source']['helper_version'])
+                self.receipt['from_helper_version'] = '0.9.0' if source != '0.9.0' else '0.10.0'
+                self.save_receipt()
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
+    def test_011_missing_extra_mixed_and_modified_source_maps_refuse_before_rpc(self):
+        self.prepare_011_provenance()
+        original = copy.deepcopy(self.upgrade.PUBLISHED)
+        invalid = [{key: files for key, files in original.items() if key != missing}
+                   for missing in original] + [
+            {**original, '0.11.0': self.old}, {**original, '0.12.0': self.old},
+            {**original, '0.3.0': self.old}, self.old,
+            {**original, 'updater.py': 'f' * 64},
+            {**original, '0.10.0': {**self.old, 'update_protection.py': 'f' * 64}},
+            {**original, '0.4.0': {'updater.py': 'f' * 64}},
+            {**original, '0.8.0': None},
+        ]
+        for files in invalid:
+            with self.subTest(keys=sorted(files)):
+                self.upgrade.PUBLISHED = files
+                self.rpc.reset_mock()
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+                self.rpc.assert_not_called()
+
+    def test_011_unknown_versions_and_wrong_cli_never_gain_provenance(self):
+        self.prepare_011_provenance()
+        for version in ('0.10.0', '0.12.0'):
+            with self.subTest(cli_version=version):
+                self.upgrade.VERSION = version
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+        self.upgrade.VERSION = '0.11.0'
+        for source, selected in (('0.3.0', '0.11.0'), ('0.11.0', '0.11.0'),
+                                 ('0.10.0', '0.12.0'), ('0.12.0', '0.11.0')):
+            with self.subTest(source=source, selected=selected):
+                self.transition(source, selected)
+                with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+                    self.prove()
+        self.rpc.assert_not_called()
+
+    def test_011_keeps_cli_transaction_retained_bytes_and_live_generation_guards(self):
+        self.prepare_011_provenance()
+        self.assertEqual(self.binding, self.prove())
+        self.rpc.reset_mock()
+        original_cli = self.selected['upgrade_cli_sha256']
+        self.selected['upgrade_cli_sha256'] = 'f' * 64
+        with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+            self.prove()
+        self.selected['upgrade_cli_sha256'] = original_cli
+        self.rpc.assert_not_called()
+        for path in (self.upgrade.TRANSACTION, self.upgrade.STOP, self.upgrade.GATE_TEMP):
+            with self.subTest(pending=str(path)):
+                path.write_text('pending')
+                try:
+                    with self.assertRaisesRegex(VM.Refusal, 'helper_upgrade_pending'):
+                        self.prove()
+                finally:
+                    path.unlink()
+        retained = self.retained / 'updater.py'
+        old = retained.read_bytes()
+        retained.write_bytes(old + b'changed')
+        with self.assertRaisesRegex(VM.Refusal, 'helper_provenance_unverified'):
+            self.prove()
+        retained.write_bytes(old)
+        self.rpc.assert_not_called()
+        stale = copy.deepcopy(self.observed['status'])
+        stale['generation'] = str(uuid.uuid4())
+        self.rpc.side_effect = lambda *_args, **_kwargs: stale
+        with self.assertRaisesRegex(VM.Refusal, 'helper_identity_unverified'):
+            self.prove()
 
     def test_historical_04_to_06_requires_its_own_exact_cli_map_shape(self):
         self.transition('0.4.0', '0.6.0')
