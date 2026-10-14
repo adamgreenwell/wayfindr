@@ -635,22 +635,35 @@ class DockerSettlementTests(unittest.TestCase):
         self.ids = Engine().ids
         self.operation = str(uuid.uuid4())
         self.inspection = {"execs": [], "running": True}
+        self.inspections = []
         self.processes = b"PID COMMAND\n123 php artisan reverb:start --port=8080\n"
         self.top_code = 0
+        self.capture_seconds = 0
+        self.capture_error = None
+        self.now = 1000.0
+        clock = types.SimpleNamespace(monotonic=lambda: self.now, sleep=self.advance)
+        timer = patch.object(PROTECT, "time", clock)
+        timer.start()
+        self.addCleanup(timer.stop)
         self.present = False
         self.oneoff = "8" * 64
         self.state = {"Status": "exited", "Running": False, "Paused": False, "Restarting": False,
                       "Dead": False, "OOMKilled": False, "Error": "", "ExitCode": 0}
         self.calls = []
+        self.timeouts = []
         api = types.SimpleNamespace(**API.__dict__)
         api.capture = self.capture
         self.engine = PROTECT.DockerEngine(self.config, api, self.root)
 
     def capture(self, command, **kwargs):
         self.calls.append(command)
+        self.timeouts.append(kwargs.get("timeout"))
+        self.now += self.capture_seconds
+        if self.capture_error is not None:
+            raise self.capture_error
         args = command[5:]
         if args[0] == "inspect":
-            value = self.inspection if ".ExecIDs" in args[2] else {"state": self.state}
+            value = (self.inspections.pop(0) if self.inspections else self.inspection) if ".ExecIDs" in args[2] else {"state": self.state}
             return 0, json.dumps(value).encode()
         if args[0] == "top":
             # The daemon uses the PID column to select the container's tasks.
@@ -662,6 +675,11 @@ class DockerSettlementTests(unittest.TestCase):
         if args[0] == "ps":
             return 0, self.oneoff.encode() if self.present else b""
         raise AssertionError("A settlement refusal must precede every Docker side effect")
+
+    def advance(self, seconds):
+        self.assertGreater(seconds, 0)
+        self.assertLessEqual(seconds, PROTECT.EXEC_SETTLE_POLL_SECONDS)
+        self.now += seconds
 
     def refusal(self, action):
         with self.assertRaises(UP.Refusal) as failure:
@@ -683,6 +701,45 @@ class DockerSettlementTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.refusal(lambda: self.engine.window(self.ids["web"], self.operation, action))
 
+    def test_transient_health_check_exec_must_finish_before_process_verification(self):
+        self.inspections = [{"execs": ["9" * 64], "running": True}, {"execs": [], "running": True}]
+        try:
+            self.engine.commands_settled(self.ids["web"])
+        except UP.Refusal as failure:
+            self.fail("A transient exec must be allowed to settle before refusal: " + failure.reason)
+        self.assertEqual(["inspect", "inspect", "top"], [command[5] for command in self.calls])
+        self.assertAlmostEqual(1000 + PROTECT.EXEC_SETTLE_POLL_SECONDS, self.now)
+
+    def test_unknown_created_or_long_running_exec_remains_a_bounded_refusal(self):
+        self.inspection = {"execs": ["9" * 64], "running": False}
+        self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
+        self.assertAlmostEqual(1000 + PROTECT.EXEC_SETTLE_SECONDS, self.now)
+        self.assertTrue(all(command[5] == "inspect" for command in self.calls))
+        self.assertTrue(all(0 < timeout <= PROTECT.EXEC_SETTLE_SECONDS for timeout in self.timeouts))
+
+    def test_inspection_and_process_commands_share_the_remaining_settlement_budget(self):
+        self.capture_seconds = 2
+        self.inspections = [{"execs": ["9" * 64], "running": True}, {"execs": [], "running": True}]
+        self.engine.commands_settled(self.ids["web"])
+        self.assertEqual(3, len(self.timeouts))
+        for observed, expected in zip(self.timeouts, [10, 7.9, 5.9]):
+            self.assertAlmostEqual(expected, observed)
+
+    def test_slow_daemon_or_process_response_cannot_extend_admission_past_deadline(self):
+        for elapsed in (PROTECT.EXEC_SETTLE_SECONDS, PROTECT.EXEC_SETTLE_SECONDS / 2):
+            with self.subTest(command_seconds=elapsed):
+                self.calls.clear()
+                self.capture_seconds = elapsed
+                self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
+
+    def test_daemon_error_is_not_retried_or_given_an_unbounded_timeout(self):
+        self.capture_seconds = PROTECT.EXEC_SETTLE_SECONDS
+        self.capture_error = subprocess.TimeoutExpired("fixture-docker", PROTECT.EXEC_SETTLE_SECONDS)
+        self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(PROTECT.EXEC_SETTLE_SECONDS, self.timeouts[0])
+        self.assertEqual(1000 + PROTECT.EXEC_SETTLE_SECONDS, self.now)
+
     def test_orphaned_window_process_blocks_even_after_exec_metadata_disappears(self):
         for action in ("enter", "release"):
             with self.subTest(action=action):
@@ -691,7 +748,9 @@ class DockerSettlementTests(unittest.TestCase):
 
     def test_malformed_exec_inspection_cannot_authorize_recovery(self):
         for value in ({}, {"execs": [], "running": True, "unexpected": True}, {"execs": [], "running": 1},
-                      {"execs": "", "running": True}, {"execs": False, "running": True}):
+                      {"execs": "", "running": True}, {"execs": False, "running": True},
+                      {"execs": [None], "running": True}, {"execs": [1], "running": True},
+                      {"execs": ["invalid-exec-id"], "running": True}):
             with self.subTest(value=value):
                 self.inspection = value
                 self.refusal(lambda: self.engine.commands_settled(self.ids["web"]))
