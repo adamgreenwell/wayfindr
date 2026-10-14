@@ -26,14 +26,24 @@ ownership. It remains a separate root-only administrator upgrade; pulling an
 application image does not replace an installed helper. No operator action or
 migration is required for the application release; standing notices remain.
 
-The October 13 fresh AMD64/classic public `v1.4.3` → `v1.4.4` attempt passed
+## October 14 native checkpoint
+
+The [fresh AMD64 checkpoint](evidence/managed-update/2026-10-14-helper010-failedsafe-amd64.json) passed the normal idle public helper 0.10 exchange. One ordinary v1.4.3 → v1.4.4 Start failed safely before application mutation, migration or protective backup, with the original services, configured origin and source data verified. The exact original refusal cause remains unresolved. Later normal health-check exec observations reproduce a published refusal path without proving its historical cause.
+
+A separate ordinary v1.4.3 backup/production-erasure/restore drill passed one normal `RestoreService(path, false)` call and two fresh verifiers. Both effective keys and survivor binary reads passed; erasure replay left the victim absent and its ticket scrubbed. Two pre-service harness refusals remain saved, with the original PostgreSQL baseline verified before the corrected canonical-environment oneoffs. Root and independent reviews accepted the results and private archive before retiring the fresh pair and their temporary copies. Older VMs and held operations remain preserved. The sum of the two server cleanup-interval gains was 13.94 GiB of available space, without exclusive attribution; Mac physical reclamation is unconfirmed after four temporary images were removed.
+
+[PR #1162](https://github.com/adamgreenwell/wayfindr/pull/1162) contains the unpublished helper 0.11 exec-settlement candidate. No newer public release or native helper 0.11 qualification is established. Managed application qualification remains **0/100**; an ordinary source-version restore cannot stand in for a successful managed upgrade or protective-archive recovery.
+
+### Earlier October 13 attempt remains held
+
+The earlier October 13 fresh AMD64/classic public `v1.4.3` → `v1.4.4` attempt passed
 its separate helper 0.10 installation and pre-Start continuity checks. One
 ordinary HTTPS Start returned 202, then native captures found
 `recovery_required` / `runtime_verification_failed` after mutation. Saved
 Docker layout and readiness checks pass for all five target roles; configuration
 promotion and runtime verification remain incomplete. The [dated failed-attempt
 receipt](evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
-records the exact limits. The current Source and Restore holds, and all older
+records the exact limits. The original October 13 Source and Restore holds, and all older
 held operations, remain preserved without recovery or Source handoff to Restore.
 Managed updates are **not qualified for production use**, with **0/100** managed
 scenarios qualified. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.

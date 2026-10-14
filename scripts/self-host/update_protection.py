@@ -19,6 +19,8 @@ import time
 SERVICES = ("web", "queue", "backup-queue", "scheduler", "reverb")
 CONTAINER = re.compile(r"[0-9a-f]{64}\Z")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+EXEC_SETTLE_SECONDS = 10
+EXEC_SETTLE_POLL_SECONDS = 0.1
 STAGES = {"fence_intent", "drain_intent", "backup_intent", "resume_intent", "release_intent", "complete"}
 APPLY_OPERATOR_SETTINGS = r'$a->make(App\Support\Settings\OperatorSettings::class)->applyOverrides();'
 CAPTURE_BINDING = r'[$a["config"]->get("database"),$a["config"]->get("filesystems"),$a["config"]->get("wayfindr.attachments"),$a["config"]->get("wayfindr.backup"),$a["config"]->get("wayfindr.erasure"),App\Support\Backup\BackupService::appKeyFingerprints()]'
@@ -98,12 +100,30 @@ class DockerEngine:
         # Closing a Docker client is not proof that its PHP exec has exited.
         # ExecIDs also cover created/not-yet-started execs. Check processes as
         # well: a failed daemon cancellation can remove an exec's metadata.
-        value = self.call(["inspect", "--format", '{"execs":{{json .ExecIDs}},"running":{{json .State.Running}}}', container], "recovery_required", json=True)
-        if not isinstance(value, dict) or set(value) != {"execs", "running"} or value["execs"] not in (None, []) or type(value["running"]) is not bool:
-            raise self.api.Refusal("recovery_required")
+        # Normal health checks can briefly appear here, too. Wait for the same
+        # empty-exec predicate; never infer an exec is safe from its command.
+        deadline = time.monotonic() + EXEC_SETTLE_SECONDS
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise self.api.Refusal("recovery_required")
+            value = self.call(["inspect", "--format", '{"execs":{{json .ExecIDs}},"running":{{json .State.Running}}}', container], "recovery_required", timeout=remaining, json=True)
+            if (time.monotonic() >= deadline or not isinstance(value, dict) or set(value) != {"execs", "running"}
+                    or type(value["running"]) is not bool or (value["execs"] is not None
+                    and (type(value["execs"]) is not list or any(type(item) is not str or not CONTAINER.fullmatch(item) for item in value["execs"])))):
+                raise self.api.Refusal("recovery_required")
+            if value["execs"] in (None, []):
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise self.api.Refusal("recovery_required")
+            time.sleep(min(EXEC_SETTLE_POLL_SECONDS, remaining))
         if value["running"]:
-            processes = self.call(["top", container, "-eo", "pid,args"], "recovery_required")
-            if not processes.strip() or "wayfindr:upgrade-window" in processes:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise self.api.Refusal("recovery_required")
+            processes = self.call(["top", container, "-eo", "pid,args"], "recovery_required", timeout=remaining)
+            if time.monotonic() >= deadline or not processes.strip() or "wayfindr:upgrade-window" in processes:
                 raise self.api.Refusal("recovery_required")
 
     def settled(self, ids, operation):

@@ -124,7 +124,7 @@ class ApplyContractTests(unittest.TestCase):
 
     def test_helper_upgrade_preserves_historical_executor_versions_without_rewriting(self):
         operation_id = self.prepared()
-        for version in ("0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0"):
+        for version in ("0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0"):
             with self.subTest(version=version):
                 value = copy.deepcopy(self.journal.value)
                 value["operations"][operation_id]["executor_version"] = version
@@ -134,7 +134,7 @@ class ApplyContractTests(unittest.TestCase):
                 self.assertEqual(version, historical.status(operation_id)["operation"]["executor_version"])
                 self.assertEqual(before, self.path.read_bytes())
                 new_id = historical.accept(str(uuid.uuid4()), "v1.2.5", self.generation)[0]
-                self.assertEqual("0.10.0", historical.status(new_id)["operation"]["executor_version"])
+                self.assertEqual("0.11.0", historical.status(new_id)["operation"]["executor_version"])
                 self.assertEqual(version, historical.status(operation_id)["operation"]["executor_version"])
 
     def test_helper_upgrade_gate_blocks_every_mutation_but_keeps_observation(self):

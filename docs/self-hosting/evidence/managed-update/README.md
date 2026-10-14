@@ -1,5 +1,13 @@
 # Managed-update qualification evidence
 
+## October 14, 2026: helper 0.10 exchange, failed-safe preservation and ordinary restore
+
+The [sanitized native checkpoint](2026-10-14-helper010-failedsafe-amd64.json) records a normal idle helper 0.9 → published 0.10 exchange on the fresh AMD64 Source VM. One ordinary v1.4.3 → v1.4.4 Start ended `failed_safe` / `previous_serving_verified` before application mutation, migration or protective backup. The original services and configured origin were verified, with no active operation or owned hold. Two fresh data snapshots, both effective keys and local/remote attachment reads passed. The historical refusal cause remains unresolved; later health-check observations reproduce a normal exec-refusal path without identifying the historical exec.
+
+A separate ordinary v1.4.3 drill passed backup, production erasure, an authenticated survivor-object read before application-key transfer, one normal `RestoreService(path, false)` call and two fresh verifiers. Both keys decrypted, wrong writer keys failed, surviving local/remote binaries were read, and the post-backup erased visitor stayed absent with its ticket scrubbed. Two harness refusals before `RestoreService` remain saved. A read-only capture verified the clean PostgreSQL baseline; the corrected oneoffs used the full 77-name canonical environment, applied only the ten accepted Source names, retained all other values and checked all 86 effective values before Laravel. Root and independent reviews accepted the native results and complete private evidence archive.
+
+After their test purpose was complete and evidence accepted, the fresh pair, both system disks, two stopped server copies and four temporary Mac images were deleted. All eleven older server VMs, held operations, switches, original receipts and shared pristine image were preserved. The sum of the two server cleanup-interval gains was 13.94 GiB of available space; this is not a continuous start-to-end measurement or exclusive filesystem attribution. The Mac images reported 7.24 GiB of allocated storage; physical reclamation is unconfirmed. Private cleanup receipts remain saved beside the archive. [PR #1162](https://github.com/adamgreenwell/wayfindr/pull/1162) prepares the unpublished helper 0.11 exec-settlement correction. Neither that candidate nor the ordinary restore establishes successful managed upgrade or protective-archive recovery. Managed qualification remains **false, with 0/100 scenarios qualified**.
+
 ## October 13, 2026: public helper 0.10 runtime refusal and lab reachability
 
 The [sanitized failed-attempt receipt](2026-10-13-v1.4.4-runtime-verification.json)
