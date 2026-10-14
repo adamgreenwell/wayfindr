@@ -8,7 +8,25 @@ remains **unqualified**. Individual failed or partial attempts retain their
 stated limits. Actual source and ordinary-recovery observations are recorded
 separately and cannot complete its rows.
 
-## Latest native observation — v1.4.4/helper 0.10
+## October 14 native checkpoint — failed-safe preservation and ordinary restore
+
+The [fresh AMD64 checkpoint](evidence/managed-update/2026-10-14-helper010-failedsafe-amd64.json)
+records a normal public helper 0.9 → 0.10 exchange and one v1.4.3 → v1.4.4
+Start that ended `failed_safe` / `previous_serving_verified` before application
+mutation, migration or protective backup. The original services, configured
+origin and source data were verified. Its exact historical refusal cause
+remains unresolved.
+
+A separate ordinary v1.4.3 backup, production erasure and restore drill passed
+one normal `RestoreService(path, false)` call and two fresh verifiers. It does
+not establish a successful managed upgrade or protective-archive recovery.
+After the results and private archive were accepted, these two fresh VMs and
+their temporary copies were deleted. Older VMs and held operations, including
+the October 13 attempt below, remain preserved. Managed qualification remains
+**0/100**. The helper 0.11 correction in [PR #1162](https://github.com/adamgreenwell/wayfindr/pull/1162)
+is unpublished and has not undergone native qualification.
+
+## Earlier October 13 native observation — v1.4.4/helper 0.10
 
 The fresh AMD64/classic public v1.4.3 → v1.4.4 attempt used the separately
 installed public helper 0.10. Before Start, paired native audits rechecked the
