@@ -30,6 +30,34 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-10-14
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.11.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+upgrades and protective-archive recovery remain unqualified, with **0/100**
+managed scenarios qualified.
+
+### Fixed
+
+- The managed-update protection guard waits up to ten seconds for existing Docker
+  execs to settle before fencing writers. One monotonic deadline covers polling
+  and the final process check. Transient health checks can finish normally;
+  persistent execs, malformed metadata, Docker errors, deadline expiry and hidden
+  upgrade-window processes still refuse protection. No command is exempted.
+- The ordinary helper CLI admits the complete, unchanged public `0.10.0` bundle
+  on an independently verified idle installation. Historical executor journals
+  remain readable, and interrupted upgrades to `0.10.0` retain their original
+  v1.4.4 distribution and CLI. Mixed, modified and held installations remain
+  ineligible. See the [helper 0.11 contract](docs/self-hosting/helper-0.11-candidate.md).
+
+### Changed
+
+- Updated the v1.4.4 publication record and native qualification evidence,
+  including failed-safe source preservation, a separate ordinary v1.4.3 restore
+  and retirement of the fresh test lab. Earlier VMs and held operations remain
+  preserved; these observations do not qualify managed application upgrades.
+
 ## [1.4.4] - 2026-10-12
 
 **No operator action required.** The application adds no release requirements.

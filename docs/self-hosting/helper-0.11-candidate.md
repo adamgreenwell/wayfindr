@@ -1,9 +1,10 @@
 # Helper 0.11 candidate
 
-Helper 0.11.0 is an unpublished source candidate. Public v1.4.4 still delivers
-helper 0.10.0. Publication, a native installed-helper exchange and successful
-application-upgrade qualification remain separate gates. This page provides
-no installation command.
+Helper 0.11.0 is prepared for application release v1.4.5 and remains unpublished
+until guarded publication and independent public readback complete. Public
+v1.4.4 still delivers helper 0.10.0. Publication, a native installed-helper
+exchange and successful application-upgrade qualification remain separate
+gates. This page provides no installation command.
 
 Docker health checks appear in a container's `ExecIDs` while their processes
 run. The published protection guard refuses every nonempty list immediately.
