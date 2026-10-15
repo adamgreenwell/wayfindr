@@ -146,7 +146,8 @@ Work is shared only when all of the following match:
 A requester ID is retained server-side for authorization and audit; it is not a
 reason to duplicate equivalent shared work. A different allowed input partition
 must not reuse a broader viewer's answer. Personalized draft refinement uses the
-agent's current draft revision and never overwrites shared conversation output.
+agent's current draft revision, is partitioned by the owning agent and draft,
+and never overwrites shared conversation output.
 
 Freshness is checked before display and use, not just when generating. New
 conversation activity may leave prior authorized output readable with insertion
@@ -189,7 +190,14 @@ light/dark themes and the supported dashboard locales.
 ## Provider context and grounding
 
 Send only bounded subject/message text needed by the capability, serialized in
-chronological order with generic sender roles. Exclude visitor/agent profiles,
+chronological order with generic sender roles. When the agent explicitly invokes
+refinement, its permitted task input additionally includes the current unsent
+composer draft and validated refinement options. Bound and scrub that draft at
+the final provider boundary under the same effective character ceiling. Automatic
+preparation and shared suggestion tasks never receive unsent composer text. The
+agent-facing **How Assist uses this conversation** disclosure must explain that
+choosing refinement sends the current unsent draft to the configured processor.
+Exclude visitor/agent profiles,
 identity fields, message metadata and timestamps, attachment data, page/cobrowse
 state and private contact notes. The common deterministic scrubber and effective
 character ceiling apply at the final provider boundary to the entire input.
@@ -273,17 +281,24 @@ migration specification or a claim that new tables already exist.
 | Probe receipt | Actor/account, exact proposed revision, time, sanitized outcome and reported usage. | Synthetic input only; no prompt, output, key or raw provider error in audit. |
 | Preparation/generation | Opaque work/generation IDs, local scope, requester, capability, fingerprint/revisions, state, usage reservation and bounded timing. | Queue carries IDs/revision references, not transcript, source passages or credentials. |
 | Suggestion | Bounded text or validated fields, local source IDs/revisions, included source position and provenance. | Support content, visible only within current authority; not public widget data or content-free metadata. |
-| Refinement preview | Agent and draft revision, bounded candidate text and source references. | Agent-owned transient preview; Apply/Cancel, not a shared result or draft archive. |
+| Refinement input/preview | Owning agent, parent conversation, draft revision, bounded scrubbed input/candidate text and source references. | Private transient storage; encrypted input if queued, queue IDs only, Apply/Cancel, never a shared result or draft archive. |
 | Audit and feedback | Account/site/actor and work IDs, event/reason code, revisions, route/model, timing and reported tokens; viewed/used/rejected outcome. | No prompts, output bodies, original/edited draft bodies, credentials, raw transcripts or free-text feedback. |
 
 Keep only the latest suggestion per capability and equivalent-authority
 partition, plus at most one preceding authorized output during refresh/failure.
 Discard superseded output when replacement succeeds; do not build an output or
-prompt history. Refinement previews expire on apply, cancel or workspace end and
-must not persist in durable browser storage. Cached insufficient-context and
+prompt history. Keep the original unsent draft in the owning composer. Queued
+refinement may retain only the bounded scrubbed task input in encrypted,
+agent/account/conversation-bound transient storage for at most 15 minutes; delete
+it on completion, failure, cancel or expiry. Never put its body in the queue,
+audit, shared cache or durable browser storage. Preview candidates expire on
+apply, cancel, workspace end or the same 15-minute maximum. Dispatch, read and
+Apply recheck ownership, parent authority, current policy and draft revision;
+expired work cannot call or apply. These input and preview stores join the
+export/erasure/retention inventory below and must not become a draft history. Cached insufficient-context and
 failure receipts hold reason/revision metadata, not rejected provider text.
 
-Suggestion and preview stores participate in conversation/site/account deletion
+Suggestion, refinement-input and preview stores participate in conversation/site/account deletion
 and applicable visitor export/erasure and retention inventories. Preserve
 [ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md) in-flight erasure
 admission and fencing. Every external attempt carrying visitor-derived text,

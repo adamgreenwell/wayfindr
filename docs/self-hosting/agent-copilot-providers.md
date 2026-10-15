@@ -34,7 +34,10 @@ Account destinations remain subject to operator network policy.
 "Private" means hidden from the visitor, not local processing. Grounded drafts
 introduce a new data-boundary change: only bounded relevant passages from allowed
 published same-account articles, plus minimum transcript context, may reach the
-configured processor through the scrubber. Today's knowledge suggestions send
+configured processor through the scrubber. Explicit draft refinement may also
+send the current bounded, scrubbed unsent composer text and validated refinement
+options; automatic preparation never sends that draft. The agent data-use
+disclosure must state this before refinement. Today's knowledge suggestions send
 bounded transcript context, receive validated search phrases, and rank articles
 locally, as documented below; attachments and cobrowse snapshots remain excluded.
 

@@ -42,7 +42,9 @@ compact layouts, square controls, restrained color, and site color as orientatio
 
 "Private" means hidden from the customer. Allowed, bounded support text still
 reaches the configured model provider. **How Assist uses this conversation**
-explains the selected processor and permitted context without showing secrets.
+explains the selected processor and permitted context, including that explicitly
+choosing refinement sends the current bounded, scrubbed unsent draft. Automatic
+preparation never sends composer text. The disclosure never shows secrets.
 
 ## Existing foundations and new scope
 
@@ -232,7 +234,11 @@ account-visible outcomes without blocking manual replies.
 
 Retrieve bounded relevant passages from allowed published same-account articles.
 Send only selected excerpts and minimum transcript context through the existing
-scrubber. Validate structured citation identifiers against the supplied sources
+scrubber. Explicit refinement may additionally send the current bounded, scrubbed
+unsent draft and validated refinement options under the agent-facing disclosure.
+Keep queued draft input encrypted, private to its agent/parent conversation,
+subject to erasure, and transient for at most 15 minutes; delete it when terminal.
+Queue only IDs and never store a draft history. Validate structured citation identifiers against the supplied sources
 and re-resolve publication/access/freshness before display or insertion. Clearly
 distinguish conversation facts, article-backed guidance, and missing information.
 
