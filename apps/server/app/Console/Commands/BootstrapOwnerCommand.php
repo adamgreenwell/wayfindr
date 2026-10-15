@@ -17,13 +17,19 @@ class BootstrapOwnerCommand extends Command
         {--name=Support Owner : Name for the owner}
         {--site=Default Site : Name for the first site}
         {--domain= : Optional domain for the first site}
-        {--status : Observe the completed request and its current initial bindings only}';
+        {--status : Observe the completed request and its current initial bindings only}
+        {--completion-only : With --status, require the durable receipt without restricting later ownership changes}';
 
     protected $description = 'Bootstrap a fresh instance with an ordinary owner and a private, expiring password-setting claim.';
 
     public function handle(BootstrapOwner $bootstrap): int
     {
         try {
+            if ($this->option('completion-only') && ! $this->option('status')) {
+                $this->line('{"status":"held","code":"owner_bootstrap_invalid_request"}');
+
+                return self::FAILURE;
+            }
             if ($this->option('status')) {
                 if ($this->option('email') !== null || $this->option('claim-file') !== null) {
                     $this->line('{"status":"held","code":"owner_bootstrap_invalid_request"}');
@@ -34,7 +40,7 @@ class BootstrapOwnerCommand extends Command
                 $receipt = $bootstrap->status((string) $this->option('request-id'));
                 $this->line(json_encode($receipt, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
-                return $receipt['initial_binding_ready'] ? self::SUCCESS : self::FAILURE;
+                return $this->option('completion-only') || $receipt['initial_binding_ready'] ? self::SUCCESS : self::FAILURE;
             }
 
             $receipt = $bootstrap->handle([

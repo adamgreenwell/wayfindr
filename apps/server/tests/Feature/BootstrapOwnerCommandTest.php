@@ -277,6 +277,39 @@ test('unknown requests and invalid canonical identifiers return only fixed failu
     expect($exit)->toBe(1)->and($receipt)->toBe(['status' => 'held', 'code' => 'owner_bootstrap_invalid_request']);
 });
 
+test('completion-only status preserves legitimate later ownership changes without promoting the initial binding', function (): void {
+    ownerBootstrapOutput($this->ownerOptions);
+    $original = User::query()->sole();
+    $successor = User::factory()->create([
+        'account_id' => $original->account_id, 'account_role' => AccountRole::Owner, 'platform_role' => null,
+    ]);
+    $original->update(['account_role' => AccountRole::Admin]);
+    Site::query()->sole()->supportAgents()->sync([$successor->id]);
+    unlink($this->ownerClaim);
+    DB::table('password_reset_tokens')->delete();
+
+    [$strict, $initial] = ownerBootstrapOutput(['--status' => true, '--request-id' => $this->ownerRequest]);
+    [$completed, $later] = ownerBootstrapOutput(['--status' => true, '--completion-only' => true, '--request-id' => $this->ownerRequest]);
+    expect($strict)->toBe(1)->and($completed)->toBe(0)->and($later)->toBe($initial)
+        ->and($later['initial_binding_ready'])->toBeFalse()->and($later['bootstrap_receipt']['status'])->toBe('completed')
+        ->and($later['management_authority'])->toBeFalse()->and($later['claim_consumption'])->toBe('not_observed')
+        ->and(file_exists($this->ownerClaim))->toBeFalse()->and(DB::table('password_reset_tokens')->count())->toBe(0);
+    Notification::assertNothingSent();
+});
+
+test('completion-only never bypasses missing or invalid receipts and cannot bootstrap an owner', function (): void {
+    $options = ['--status' => true, '--completion-only' => true, '--request-id' => $this->ownerRequest];
+    [$exit, $receipt] = ownerBootstrapOutput($options);
+    expect($exit)->toBe(1)->and($receipt['code'])->toBe('owner_bootstrap_not_completed');
+    [$exit, $receipt] = ownerBootstrapOutput(array_replace($this->ownerOptions, ['--completion-only' => true]));
+    expect($exit)->toBe(1)->and($receipt['code'])->toBe('owner_bootstrap_invalid_request')
+        ->and(User::query()->count())->toBe(0)->and(file_exists($this->ownerClaim))->toBeFalse();
+    ownerBootstrapOutput($this->ownerOptions);
+    DB::table('owner_bootstrap_requests')->where('id', 1)->update(['receipt' => '{}']);
+    [$exit, $receipt] = ownerBootstrapOutput($options);
+    expect($exit)->toBe(1)->and($receipt['code'])->toBe('owner_bootstrap_replay_refused');
+});
+
 test('concurrent identical PostgreSQL requests commit once and return the same private claim receipt', function (): void {
     if (DB::getDriverName() !== 'pgsql') {
         $this->markTestSkipped('The real multi-process lock regression requires the disposable PostgreSQL test database.');

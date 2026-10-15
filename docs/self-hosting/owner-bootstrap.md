@@ -33,4 +33,13 @@ php artisan wayfindr:bootstrap-owner --status \
   --request-id=64b764b2-552c-49a0-bf5f-25277b51d590
 ```
 
-Status is read-only: it accesses neither claim files nor reset tokens and sends nothing. It separates the durable completed bootstrap receipt from the currently observed initial account/owner/site binding. Exit zero means those initial bindings currently remain ready, including no operator grant; it does not mean the claim was consumed, the owner has signed in, or the caller has management authority. Missing tokens do not prove consumption. Use this as an **initial** startup gate, not a perpetual restriction on legitimate later ownership transfers or agent changes. Later changes do not erase the initial receipt.
+Status is read-only: it accesses neither claim files nor reset tokens and sends nothing. It separates the durable completed bootstrap receipt from the currently observed initial account/owner/site binding. Default exit zero means those initial bindings currently remain ready, including no operator grant; it does not mean the claim was consumed, the owner has signed in, or the caller has management authority. Missing tokens do not prove consumption. Use the default status as an **initial** activation gate, not a perpetual restriction on legitimate later ownership transfers or agent changes. Later changes do not erase the initial receipt.
+
+After initial activation has been independently accepted, a subsequent runtime startup can use:
+
+```sh
+php artisan wayfindr:bootstrap-owner --status --completion-only \
+  --request-id=64b764b2-552c-49a0-bf5f-25277b51d590
+```
+
+`--completion-only` still requires the exact request's valid durable completed receipt. It returns the current `initial_binding_ready` observation unchanged, including `false` after a legitimate ownership transfer, but its exit status does not require the original owner/site binding to remain in place. It does not grant management authority, prove a current login or claim, reissue credentials, or replace the strict first-activation check. The flag is refused without `--status`.
