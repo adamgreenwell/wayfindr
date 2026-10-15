@@ -38,6 +38,10 @@ Schedule::command('wayfindr:expire-break-glass-grants')
     ->everyFiveMinutes()
     ->description('Stamp overdue break-glass grants as expired and audit the transition.');
 
+Schedule::command('wayfindr:expire-ai-usage-reservations')
+    ->everyMinute()
+    ->description('Release expired unsent AI holds and bounded concurrency leases.');
+
 Schedule::command('wayfindr:sweep-orphaned-attachments')
     ->hourly()
     ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');
