@@ -17,6 +17,21 @@ return [
             'mode' => env('WAYFINDR_AI_NETWORK_MODE', 'public-only'),
             'private_grants' => env('WAYFINDR_AI_PRIVATE_DESTINATIONS', '[]'),
         ],
+
+        // New account attempts remain denied until an operator supplies finite
+        // ceilings and the adapter's output bound is enforced. Account values
+        // can only narrow these limits; existing manual installation work is
+        // not silently enrolled in this new admission path.
+        'usage' => [
+            'daily_requests' => env('WAYFINDR_AI_DAILY_REQUESTS', 0),
+            'daily_tokens' => env('WAYFINDR_AI_DAILY_TOKENS', 0),
+            'concurrency' => env('WAYFINDR_AI_CONCURRENCY', 0),
+            'max_output_tokens' => env('WAYFINDR_AI_MAX_OUTPUT_TOKENS', 0),
+            'queue_ttl_seconds' => env('WAYFINDR_AI_QUEUE_TTL_SECONDS', 300),
+            'claim_ttl_seconds' => env('WAYFINDR_AI_CLAIM_TTL_SECONDS', 30),
+            'dispatch_ttl_seconds' => env('WAYFINDR_AI_DISPATCH_TTL_SECONDS', 30),
+            'retry_cooldown_seconds' => env('WAYFINDR_AI_RETRY_COOLDOWN_SECONDS', 60),
+        ],
     ],
 
     'mail' => [
