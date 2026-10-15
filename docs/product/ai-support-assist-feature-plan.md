@@ -176,7 +176,7 @@ cannot reroute an inaccessible site's data. Disable/disconnect remains available
 | Endpoint or route | Conditional on provider; preserve OpenRouter's explicit upstream and retention/no-fallback policy. |
 | Test connection | Synthetic sample only; distinguish configuration validity, connectivity, and output quality. |
 | Behavior | Enabled sites default to Prepare when opened after deliberate admin enablement; Manual and Off remain available in the behavior/site policy controls, separately from connection source. |
-| Tasks and context | Summary, reply draft and relevant articles on conversation open; ticket details on conversion open. Published same-account sources; no attachments or cobrowse snapshots. |
+| Tasks and context | Summary and reply draft on conversation open; ticket details on conversion open. Relevant articles controls both the knowledge task and published same-account article context in every task: Off means no article retrieval/passages, including reply/refinement; transcript-only help remains. Disclose bounded passage sharing before On. Policy changes invalidate affected work/output. No attachments or cobrowse snapshots. |
 | Usage | Request/token allowance, concurrency limits, observed usage and sanitized failures. Dollar amounts are estimates unless actual provider billing is known. |
 
 Draft form edits and tests do not change the active connection. A test is tied to
