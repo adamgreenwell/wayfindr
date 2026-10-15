@@ -79,8 +79,12 @@ Saved-key masking is status only, with no retrieval or reveal of the saved key.
    usage and one generation before enqueueing. Equivalent concurrent opens share
    work. Reopening unchanged input creates no new provider charge.
 4. The worker rechecks authority, enabled policy, connection revision, sources,
-   erasure state and allowance immediately before the external attempt. It
-   selects coherent bounded input at execution. The complete work identity,
+   target eligibility, erasure state and allowance immediately before the
+   external attempt. Ticket
+   details require that the conversation still has no linked ticket and that
+   the requester can still create one; a competing conversion cancels the work
+   before transmission. The worker selects coherent bounded input at execution.
+   The complete work identity,
    including subject, message, knowledge and effective context/policy revisions,
    must match the reservation. If it changed,
    cancel or atomically supersede/rekey and reserve the new identity before any
@@ -93,6 +97,15 @@ Saved-key masking is status only, with no retrieval or reveal of the saved key.
    in the background. Reopening or explicit **Refresh** ensures current input.
    A deliberate Refresh may replace an otherwise current result; concurrent
    refreshes still coalesce into one active generation for equivalent input.
+
+In **Manual** mode, opening the workspace or conversion form never invokes
+ensure. An empty Assist rail offers **Prepare suggestions**, which deliberately
+ensures the enabled, eligible summary/reply/knowledge tasks independently. The
+conversion form offers **Suggest ticket details** for that task. These initial
+actions use the same authorization, cache, shared-work, usage and worker checks
+as automatic ensure; they cannot retry a cached failure or bypass its cooldown.
+Existing output instead offers Refresh or eligible Try again. **Off** offers no
+generation action. The composer and normal ticket form remain usable throughout.
 
 Each generation makes at most one external attempt. Failure is terminal for its
 automatic ensure fingerprint: reopening never retries it automatically. **Try
@@ -110,6 +123,10 @@ All states preserve normal support and existing agent edits.
 Work is shared only when all of the following match:
 
 - Account, site, conversation and capability.
+- Capability-specific target eligibility, including the still-unlinked
+  conversation state for ticket details. Recheck it at completion and before use;
+  a competing conversion withdraws the ticket suggestion without changing the
+  already-created ticket.
 - Permitted-context/source partition and effective authorization/policy revision.
 - Subject and selected message content revisions, including edits/deletions and
   activity that makes the context stale; newest message ID alone is insufficient.

@@ -35,6 +35,10 @@ compact layouts, square controls, restrained color, and site color as orientatio
   and compatible local or self-hosted model servers.
 - Preserve the ordinary support workflow when AI is disabled, unavailable,
   unconfigured, or out of budget.
+- In Manual mode, opening never generates. Offer **Prepare suggestions** in an
+  empty rail for the enabled conversation tasks and **Suggest ticket details**
+  in conversion. Both use the same ensure/cache/authority/usage contract; Off
+  offers no generation action.
 
 "Private" means hidden from the customer. Allowed, bounded support text still
 reaches the configured model provider. **How Assist uses this conversation**
@@ -105,6 +109,9 @@ details fills only an untouched form using a current suggestion; stale output
 cannot populate it. The agent separately submits ticket creation. Preparing
 these details is an account/site task control distinct from the three tasks
 that run on conversation open.
+Recheck that conversion remains eligible before dispatch, at completion and
+before use. If another agent has created a linked ticket, cancel or withdraw the
+suggestion without sending obsolete work or changing that ticket.
 
 An empty composer offers **Insert into reply**. When the composer has text,
 Assist offers a preview rather than silently replacing it. **Improve my draft**
@@ -243,12 +250,12 @@ for the contract, both UI slices, and full-flow qualification.
 | [3. Provider adapters endpoint policy and probes](https://github.com/adamgreenwell/wayfindr/issues/1168) | P1 | 2 | Reuse current adapters, document extensions and enforce deployment-aware destinations through redirects. Synthetic probes test the proposed revision and never send customer text; errors exclude secrets. |
 | [4. Account and site administration](https://github.com/adamgreenwell/wayfindr/issues/1169) | P2 | 2, 3, 9 | Option 1's single grouped account connection form with two-column desktop rows and behavior/task/site/usage controls below. Cover all connection states; separate draft/test/save/enable; preserve active config during edits and existing manual behavior on upgrade. |
 | [5. Automatic preparation lifecycle](https://github.com/adamgreenwell/wayfindr/issues/1170) | P1 | 2, 3, 9 | Idempotent ensure on conversation open plus ticket-details ensure on conversion open, equivalent-viewer deduplication, revision-aware cache, worker fencing and retry cooldown. Prove concurrent opens create one generation; changed messages/configuration invalidate results; GET/prefetch never generate. |
-| [6. Conversation Assist panel](https://github.com/adamgreenwell/wayfindr/issues/1171) | P2 | 5; Option 1 selected | Persistent collapsible right rail with stacked Catch up, Suggested reply and Sources; insertion/refresh beside the suggestion, separate composer send, and all four states. Ticket conversion automatically prepares enabled details but applies only to an untouched form before separate creation. Preserve edits; qualify keyboard, small viewport, themes and locales. |
+| [6. Conversation Assist panel](https://github.com/adamgreenwell/wayfindr/issues/1171) | P2 | 5; Option 1 selected | Persistent collapsible right rail with stacked Catch up, Suggested reply and Sources; insertion/refresh beside the suggestion, separate composer send, and all six contract states. Manual mode provides initial preparation actions; Off never generates. Ticket conversion prepares eligible enabled details but applies only to an untouched form before separate creation. Preserve edits; qualify keyboard, small viewport, themes and locales. |
 | [7. Published knowledge grounded drafts](https://github.com/adamgreenwell/wayfindr/issues/1172) | P1 | 5, 6 | Relevant passage retrieval and validated citations with access/publication rechecks. Synthetic cases cover conflicting/deleted sources, injection, fabricated citations, unsupported claims and cross-account sources. |
 | [8. Refine the agent draft](https://github.com/adamgreenwell/wayfindr/issues/1173) | P2 | 6, 7 | Clarify/shorten/tone/translate with preview, cancel, original preservation and draft-revision checks. No shared-output overwrite, hidden insertion or send. |
 | [9. Budgets concurrency and failures](https://github.com/adamgreenwell/wayfindr/issues/1174) | P1 | 2 | Atomic request/token reservations, reconciliation, output/concurrency caps and reset rules. Concurrent requests cannot overspend allowances; timeout/unknown usage cannot create free retries or unbounded reservations. |
 | [10. Audits feedback and retention](https://github.com/adamgreenwell/wayfindr/issues/1175) | P1 | 4–9 | Account-visible content-free audit, adoption/rejection events, bounded usage reporting and export/deletion/retention integration. Verify visibility, secret exclusion, duplicate feedback and deletion races. |
-| [11. Full flow qualification rollout and documentation](https://github.com/adamgreenwell/wayfindr/issues/1176) | P1 | 1–10 | Qualify both Option 1 screens and all four states with fake-provider journeys, tenant isolation, grounding/refinement evaluation, accessible responsive UAT, upgrade/off behavior, pilot criteria and rollback. Runtime/provider quality and deployment are separate evidence boundaries. |
+| [11. Full flow qualification rollout and documentation](https://github.com/adamgreenwell/wayfindr/issues/1176) | P1 | 1–10 | Qualify both Option 1 screens, all six Assist states (Preparing, Ready, Stale, Unavailable, Disabled and Insufficient context), and all admin connection states. The mock illustrates four states without limiting qualification. Cover fake-provider journeys, tenant isolation, grounding/refinement evaluation, accessible responsive UAT, automatic/manual/off and upgrade behavior, pilot criteria and rollback. Runtime/provider quality and deployment are separate evidence boundaries. |
 
 The dependency order is 1 → 2 → 3 and 9 → 4 and 5 → 6 → 7 → 8 → 10 → 11.
 UI work can use fixtures while its backend dependencies are implemented; that
