@@ -21,7 +21,7 @@
   ],
   "selection": {
     "number": 1,
-    "asset": "conversation-rail-v2.png",
+    "asset": "conversation-rail-v3.png",
     "selected_on": "2026-10-15",
     "direction": "Conversation rail",
     "surfaces": [
@@ -43,6 +43,15 @@
       "original_asset": "conversation-rail.png",
       "reason": "Remove the saved API-key eye/reveal affordance to match the write-only credential contract after PR #1179 review.",
       "prompt": "Use case: precise-object-edit.\nAsset type: selected Wayfindr UI mock board repair.\nInput image 1 is the edit target, not a style reference.\nPrimary request: make exactly one tiny correction to the existing image. In the TOP RIGHT account-admin AI connection screen, locate the API key field containing masked dots, with the adjacent text 'Saved · replace to rotate'. REMOVE the small eye/reveal icon at the far right INSIDE that masked API key field. Fill the icon's pixels with the same plain white input background so it reads as a saved-credential status field with NO reveal control. Keep the masked dots, field border, API key label, adjacent saved/replace text, helper text, and all other elements exactly unchanged.\nConstraints: preserve the entire original board and its original landscape dimensions/aspect ratio; both full screens; conversation rail layout; account form layout; every text string; typography; colors; spacing; every Preparing, Ready, Stale and Unavailable specimen in both state rows; all buttons and source links. Do not crop, redraw, redesign, relocate or change any other content. No eye icon or reveal affordance may remain anywhere in the saved-credential field. This is a precise removal of one small UI icon, with no other changes."
+    },
+    {
+      "date": "2026-10-15",
+      "mode": "built-in image_gen edit",
+      "asset": "conversation-rail-v3.png",
+      "original_asset": "conversation-rail.png",
+      "input_asset": "conversation-rail-v2.png",
+      "reason": "Replace the binary behavior toggle with visible Prepare when opened, Manual and Off choices, and add the separate Ticket details task for conversion while preserving write-only saved-credential status after PR #1179 review.",
+      "prompt": "Use case: precise-object-edit.\nAsset type: selected Wayfindr UI mock board repair, revision 3.\nInput image 1 is the exact edit target.\nPrimary request: correct ONLY the behavior/tasks controls in the LOWER PART of the TOP RIGHT account-admin AI connection screenshot, below its connection/test divider. Replace the current binary switch and its 'Prepare suggestions when a conversation opens' heading/helper with a compact labeled 'Behavior' radio group showing all THREE choices at once: 'Prepare when opened' SELECTED, 'Manual' UNSELECTED, and 'Off' UNSELECTED. These must be visibly separate labeled radio choices, not a toggle or hidden dropdown.\nKeep the checked Summary, Reply draft, and Relevant articles task checkboxes. Add one separate checked checkbox labeled exactly 'Ticket details', with adjacent smaller helper exactly 'On ticket conversion'. All FOUR task labels must be genuinely visible and readable. Keep Site scope / Harbor Supply and Usage limits beneath these task controls. Use compact spacing inside only this lower admin area to fit, preserving the current grouped single-form hierarchy and overall screen size.\nHard invariants: preserve the existing saved API-key masked-status field with NO eye icon, NO reveal icon, NO Show key affordance. Preserve the rest of the original image: entire landscape board dimensions/aspect ratio; both full screenshots; conversation right rail with Catch up, Suggested reply and Sources; normal composer and Send reply; connection-source radio choice, name/provider/model/endpoint/key fields, connection-test/save controls; every Preparing, Ready, Stale and Unavailable specimen in both bottom state rows; all text, colors, typography and layout outside the specific lower admin control region. No cropping, new screens, new tabs, redesign, or other added features."
     }
   ]
 }
