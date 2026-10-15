@@ -75,9 +75,15 @@ does not grant autonomous customer replies or external business actions.
 
 ### Selected visual direction
 
-[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail-v4.png)
+[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail-v5.png)
 is the selected visual reference for both screens and their Preparing, Ready,
 Stale, and Unavailable states. The selection prerequisite is satisfied.
+
+Revision 5 visibly discloses beside **Relevant articles** that selected, bounded
+published article passages reach the configured provider for grounded drafts.
+The agent rail includes **How Assist uses this conversation** as its data-use
+disclosure entry point. Earlier selected-board revisions remain provenance
+archives; revision 5 is the current implementation reference.
 
 The transcript and normal reply composer occupy the main column. A persistent,
 collapsible right rail stacks **Catch up**, **Suggested reply**, and **Sources**.
