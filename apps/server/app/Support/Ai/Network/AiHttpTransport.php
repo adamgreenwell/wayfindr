@@ -96,7 +96,9 @@ final readonly class AiHttpTransport
 
             // A new cURL-only terminal handler owns its connection pool. There
             // is no stream fallback, redirect/retry middleware or shared client.
-            $handler = $this->terminalHandler ?? new CurlHandler;
+            $handler = $this->terminalHandler ?? new CurlHandler([
+                'handle_factory' => new BoundedAiCurlFactory(fn (): float => $this->remaining($deadline)),
+            ]);
             $response = $handler($request, $options)->wait();
             $this->checkResponse($response, $deadline);
 

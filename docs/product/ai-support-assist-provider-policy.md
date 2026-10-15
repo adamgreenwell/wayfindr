@@ -56,10 +56,13 @@ configuration and provider routes; private topology is not debug/audit output.
 `AiHttpTransport` exposes a narrow send operation, with no caller-supplied Guzzle,
 handler, stream, proxy, TLS or raw-cURL options. It uses a fresh cURL-only terminal
 handler, no redirect middleware, verified TLS, disabled proxies and address pins.
+Its owned single-use cURL factory prevents internal handler retries. Response
+headers are capped at 32 KiB and 128 lines before retention, cumulatively across
+interim responses and trailers; every received line also checks the deadline.
 All redirects fail without forwarding credentials. Request origin/Host must match
 the connection. The 20-second total deadline includes DNS (itself capped at five seconds),
-with connection time capped at five seconds. Requests are capped at 64 KiB and
-received bodies at 256 KiB, including chunked responses. The first transport requests identity encoding and rejects
+with connection time capped at five seconds. Request bodies are capped at 64 KiB and
+received bodies at 256 KiB, including chunked responses. The transport requests identity encoding and rejects
 encoded responses, avoiding decompression expansion. Errors contain stable reason
 codes without request bodies, credentials, raw provider responses or exception
 chains.

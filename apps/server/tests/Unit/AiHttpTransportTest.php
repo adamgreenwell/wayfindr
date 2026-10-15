@@ -7,14 +7,19 @@ use App\Support\Ai\Network\AiHttpTransport;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Network\AiNetworkPolicy;
 use App\Support\Ai\Network\AiOutboundAdmission;
+use App\Support\Ai\Network\BoundedAiCurlFactory;
 use App\Support\Ai\Network\UnavailableAiOutboundAdmission;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Handler\CurlFactory;
+use GuzzleHttp\Handler\EasyHandle;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\Utils;
 use Psr\Http\Message\RequestInterface;
+use Symfony\Component\Process\Process;
 
 function aiTransportConnection(int $account = 12, string $host = 'models.example.test', string $key = 'private-key-a'): ResolvedAgentCopilotConnection
 {
@@ -67,6 +72,57 @@ function aiTransportFailure(Closure $send, string $reason): AiNetworkException
     }
 
     test()->fail('Expected a sanitized AI network failure: '.$reason);
+}
+
+/** Exercise the production cURL path against one disposable loopback response. */
+function aiTransportLoopback(string $wireResponse, Closure $assertResponse): void
+{
+    $script = <<<'PHP'
+    $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error);
+    if ($server === false) { exit(1); }
+    echo stream_socket_get_name($server, false)."\n";
+    flush();
+    $client = stream_socket_accept($server, 3);
+    if ($client === false) { exit(2); }
+    stream_set_timeout($client, 3);
+    while (($line = fgets($client)) !== false && trim($line) !== '') {}
+    $response = base64_decode($argv[1], true);
+    while ($response !== '') {
+        $written = @fwrite($client, substr($response, 0, 1024));
+        if ($written === false || $written === 0) { break; }
+        $response = substr($response, $written);
+    }
+    fclose($client);
+    fclose($server);
+    PHP;
+    $server = new Process([PHP_BINARY, '-n', '-r', $script, base64_encode($wireResponse)], timeout: 5);
+    try {
+        $server->start();
+        $readyBy = hrtime(true) / 1e9 + 2;
+        while (! str_contains($server->getOutput(), "\n") && $server->isRunning() && hrtime(true) / 1e9 < $readyBy) {
+            usleep(1_000);
+        }
+        $address = trim($server->getOutput());
+        expect($address)->toMatch('/\A127\.0\.0\.1:[0-9]+\z/', 'The isolated HTTP fixture must bind loopback before a request starts.');
+        $origin = 'http://'.$address;
+        $connection = new ResolvedAgentCopilotConnection(12, 'account', str_repeat('a', 64), 'openai-compatible', 'synthetic-model', $origin.'/v1', '', 'synthetic-key');
+        $dns = new class implements AiDnsResolver
+        {
+            public function resolve(string $host, float $deadline): array
+            {
+                throw new LogicException('The loopback literal must never use DNS.');
+            }
+        };
+        $policy = new AiNetworkPolicy($dns, ['mode' => 'operator-private', 'private_grants' => [[
+            'account_id' => 12, 'source' => 'account', 'origin' => $origin, 'ips' => ['127.0.0.1'],
+        ]]], 'synthetic-test-revision');
+        $assertResponse(new AiHttpTransport($policy, aiTransportAdmission()), $connection, $origin.'/v1/models');
+        expect($server->wait())->toBe(0, 'The local HTTP fixture must terminate cleanly.');
+    } finally {
+        if ($server->isRunning()) {
+            $server->stop(0);
+        }
+    }
 }
 
 test('AI transport default admission denies before DNS and terminal dispatch', function (): void {
@@ -208,6 +264,108 @@ test('AI transport refuses protocol switching at the header boundary', function 
 
     aiTransportFailure(fn () => $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models'), 'http_error');
     expect($accepted)->toBeFalse('A protocol upgrade must be refused before any upgraded body is accepted.');
+});
+
+test('production AI cURL accepts bounded interim blocks and a final response', function (): void {
+    $wire = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 102 Processing\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: </synthetic>; rel=preload\r\n\r\n"
+        ."HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+    aiTransportLoopback($wire, function (AiHttpTransport $transport, ResolvedAgentCopilotConnection $connection, string $url): void {
+        $response = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        expect($response->getStatusCode())->toBe(200)->and((string) $response->getBody())->toBe('{}');
+    });
+});
+
+test('production AI cURL caps cumulative header bytes and lines before the body', function (string $wire): void {
+    aiTransportLoopback($wire, function (AiHttpTransport $transport, ResolvedAgentCopilotConnection $connection, string $url): void {
+        aiTransportFailure(fn () => $transport->send($connection, 'probe', 'local-attempt', 'GET', $url), 'response_headers_too_large');
+    });
+})->with([
+    'header byte ceiling' => ["HTTP/1.1 200 OK\r\nX-Large: ".str_repeat('x', 32_768)."\r\nContent-Length: 2\r\n\r\n{}"],
+    'header line ceiling' => ["HTTP/1.1 200 OK\r\n".str_repeat("X-Small: a\r\n", 129)."Content-Length: 2\r\n\r\n{}"],
+    'interim blocks share the same ceiling' => [str_repeat("HTTP/1.1 103 Early Hints\r\n".str_repeat("X-Small: a\r\n", 12)."\r\n", 10)."HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"],
+    'trailers count even when discarded' => ["HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n".str_repeat("X-Trailer: a\r\n", 129)."\r\n"],
+]);
+
+test('production AI cURL accepts the exact cumulative header ceilings', function (string $headers): void {
+    aiTransportLoopback($headers.'{}', function (AiHttpTransport $transport, ResolvedAgentCopilotConnection $connection, string $url): void {
+        $response = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        expect($response->getStatusCode())->toBe(200)->and((string) $response->getBody())->toBe('{}');
+    });
+})->with([
+    'exact byte ceiling' => [function (): string {
+        $prefix = "HTTP/1.1 200 OK\r\nX-Pad: ";
+        $suffix = "\r\nContent-Length: 2\r\nConnection: close\r\n\r\n";
+
+        return $prefix.str_repeat('x', 32_768 - strlen($prefix) - strlen($suffix)).$suffix;
+    }],
+    'exact line ceiling' => ["HTTP/1.1 200 OK\r\n".str_repeat("X-Small: a\r\n", 124)."Content-Length: 2\r\nConnection: close\r\n\r\n"],
+]);
+
+test('AI header cap refuses an offending line before retaining it in Guzzle', function (): void {
+    $factory = new BoundedAiCurlFactory(static fn () => null);
+    $easy = new EasyHandle;
+    $callback = (new ReflectionMethod($factory, 'headerFunction'))->invoke($factory, $easy);
+    $status = "HTTP/1.1 200 OK\r\n";
+    expect($callback(null, $status))->toBe(strlen($status));
+    expect($callback(null, 'X-Provider: '.str_repeat('private-header-marker', 2_000)."\r\n"))->toBe(0)
+        ->and($easy->headers)->toBe(['HTTP/1.1 200 OK'], 'The excessive provider line must not enter Guzzle header storage.')
+        ->and($easy->onHeadersException->reason)->toBe('response_headers_too_large');
+});
+
+test('AI header callback enforces the deadline on every line and redacts its trace', function (): void {
+    $calls = 0;
+    $factory = new BoundedAiCurlFactory(function () use (&$calls): void {
+        if (++$calls === 2) {
+            throw new AiNetworkException('deadline_exceeded');
+        }
+    });
+    $easy = new EasyHandle;
+    $callback = (new ReflectionMethod($factory, 'headerFunction'))->invoke($factory, $easy);
+    $previous = ini_set('zend.exception_ignore_args', '0');
+    try {
+        $callback(null, "HTTP/1.1 200 OK\r\n");
+        expect($callback(null, "X-Provider: private-header-trace-marker\r\n"))->toBe(0)
+            ->and($easy->headers)->toBe(['HTTP/1.1 200 OK'])
+            ->and($easy->onHeadersException->reason)->toBe('deadline_exceeded')
+            ->and((string) $easy->onHeadersException)->not->toContain('private-header-trace-marker');
+    } finally {
+        ini_set('zend.exception_ignore_args', $previous);
+    }
+});
+
+test('AI cURL factory is single use even when Guzzle tries an internal retry', function (): void {
+    $factory = new BoundedAiCurlFactory(static fn () => null);
+    $easy = $factory->create(new Request('GET', 'http://127.0.0.1:1/v1/models'), []);
+    $retries = 0;
+    $dispatches = 0;
+    aiTransportFailure(function () use ($factory, $easy, &$retries, &$dispatches): void {
+        CurlFactory::finish(function (RequestInterface $request, array $options) use ($factory, &$retries, &$dispatches) {
+            $retries++;
+            $retry = $factory->create($request, $options);
+            $dispatches++;
+            $factory->release($retry);
+
+            return Create::promiseFor(new Response(200));
+        }, $easy, $factory)->wait();
+    }, 'transport_failed');
+    expect($retries)->toBe(1, 'The fixture must exercise Guzzle’s actual no-response retry path.')
+        ->and($dispatches)->toBe(0, 'The second create must fail before another transfer can start.');
+});
+
+test('AI cURL factory errors redact credential-bearing requests and options', function (): void {
+    $factory = new BoundedAiCurlFactory(static fn () => null);
+    $request = new Request('GET', 'https://private-factory-topology.test/v1/models', ['Authorization' => 'Bearer private-factory-key']);
+    $first = $factory->create($request, []);
+    $factory->release($first);
+    $previous = ini_set('zend.exception_ignore_args', '0');
+    try {
+        $error = aiTransportFailure(fn () => $factory->create($request, ['synthetic-marker' => 'private-factory-options']), 'transport_failed');
+        expect((string) $error)->not->toContain('private-factory-topology', 'private-factory-key', 'private-factory-options')
+            ->and($error->getTrace()[0]['args'][0])->toBeInstanceOf(SensitiveParameterValue::class)
+            ->and($error->getTrace()[0]['args'][1])->toBeInstanceOf(SensitiveParameterValue::class);
+    } finally {
+        ini_set('zend.exception_ignore_args', $previous);
+    }
 });
 
 test('AI transport rejects foreign Host before forwarding a key', function (array $headers): void {
