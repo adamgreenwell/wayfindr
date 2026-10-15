@@ -75,7 +75,7 @@ does not grant autonomous customer replies or external business actions.
 
 ### Selected visual direction
 
-[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail-v3.png)
+[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail-v4.png)
 is the selected visual reference for both screens and their Preparing, Ready,
 Stale, and Unavailable states. The selection prerequisite is satisfied.
 

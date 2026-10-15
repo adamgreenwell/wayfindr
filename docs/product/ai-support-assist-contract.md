@@ -3,7 +3,7 @@
 Date: 2026-10-15
 
 This is the implementation contract for [issue 1166](https://github.com/adamgreenwell/wayfindr/issues/1166)
-and the selected [Option 1 mock](../design/ai-support-assist/2026-10-15/conversation-rail-v3.png).
+and the selected [Option 1 mock](../design/ai-support-assist/2026-10-15/conversation-rail-v4.png).
 It defines required behavior for the downstream Assist layer. This documentation
 does not activate that behavior: the [current copilot](../self-hosting/agent-copilot-providers.md)
 remains on demand and uses an installation-owned connection. The
