@@ -36,9 +36,9 @@ final readonly class AiHttpTransport
     /** @param array<string, string|list<string>> $headers */
     public function send(
         #[SensitiveParameter] ResolvedAgentCopilotConnection $connection,
-        string $purpose,
-        string $attemptId,
-        string $method,
+        #[SensitiveParameter] string $purpose,
+        #[SensitiveParameter] string $attemptId,
+        #[SensitiveParameter] string $method,
         #[SensitiveParameter] string $url,
         #[SensitiveParameter] array $headers = [],
         #[SensitiveParameter] string $body = '',
@@ -47,6 +47,7 @@ final readonly class AiHttpTransport
         $claim = null;
         $dispatch = null;
         $settlementAttempted = false;
+        $settlementCompleted = false;
 
         try {
             // Claim before DNS, then consume that claim at the wire boundary.
@@ -150,6 +151,8 @@ final readonly class AiHttpTransport
             // Until then, keep the conservative debit and bounded lease.
             $settlementAttempted = true;
             $this->admission->markUnknown($attemptId, $dispatch, 'usage_unavailable');
+            $settlementCompleted = true;
+            $this->remaining($deadline);
 
             return new AiHttpResult($response, $attemptId, $dispatch);
         } catch (Throwable $exception) {
@@ -162,7 +165,7 @@ final readonly class AiHttpTransport
                     break;
                 }
             }
-            if ($settlementAttempted) {
+            if ($settlementAttempted && ! $settlementCompleted) {
                 $reason = 'usage_reconciliation_unavailable';
             }
 

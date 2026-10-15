@@ -203,6 +203,30 @@ test('AI outcome persistence failure withholds a successful response without ret
         ->and(array_column($admission->events, 0))->toBe(['claim', 'dns', 'dispatch', 'unknown'], 'An ambiguous outcome write must withhold output and leave its bounded lease for recovery.');
 });
 
+test('AI successful outcome persistence cannot return output after the absolute deadline', function (): void {
+    $admission = new AiLifecycleAdmissionFixture;
+    $clock = hrtime(true) / 1e9;
+    $admission->unknownAction = function () use (&$clock): void {
+        $clock += 21;
+    };
+    $calls = 0;
+    $transport = new AiHttpTransport(aiLifecyclePolicy($admission), $admission, function () use (&$calls) {
+        $calls++;
+
+        return Create::promiseFor(new Response(200, [], 'private-output-marker'));
+    }, function () use (&$clock): float {
+        return $clock;
+    });
+
+    expect(aiLifecycleReason(fn () => $transport->send(aiLifecycleConnection(), 'synthetic_probe', 'attempt', 'GET', 'https://models.example.test/v1/models')))
+        ->toBe('deadline_exceeded', 'A successful outcome write cannot extend the absolute deadline or expose late output.')
+        ->and($calls)->toBe(1)
+        ->and($admission->events)->toBe([
+            ['claim', 'attempt'], ['dns'], ['dispatch', 'attempt', 'claim-nonce'],
+            ['unknown', 'attempt', 'dispatch-nonce', 'usage_unavailable'],
+        ], 'A persisted outcome must not be retried when its deadline fence refuses the result.');
+});
+
 test('AI known unsent cleanup failure remains sanitized and does not transmit', function (): void {
     $admission = new AiLifecycleAdmissionFixture;
     $admission->cancelAction = fn () => throw new RuntimeException('private-usage-store-error');
