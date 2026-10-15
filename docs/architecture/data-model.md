@@ -131,13 +131,26 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   coexist mid-deployment, so no process may delete another's rows. Those hidden
   rows are never collected. The subscribable side is polymorphic because the
   package is; only agents are ever attached.
+- `account_ai_connections`: at most one row per account, deleted with that
+  account. Proposed and active configurations are encrypted separately; an
+  installation selection references its revision without copying the operator
+  key. Opaque proposal/test/active revisions, fingerprint and policy identity
+  bind a successful synthetic test to the exact configuration, and a test
+  generation fences duplicate or superseded probes. Explicit activation changes
+  the processor; draft edits leave active processing intact. `enabled` pauses
+  processing, while `uses_installation_default` preserves the existing manual
+  path only until deliberate selection or disconnect retires that eligibility.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
   conversation, one row per conversation, overwritten by each refresh instead
   of kept as history. Every worker write is guarded on `generation`, so a
   superseded job cannot publish its answer, and `source_last_message_id` is
   what lets a ready summary be marked stale once the conversation moves on. No
   prompt text is stored; `requested_by_id` is kept so the worker can re-derive
-  that agent's access immediately before any text reaches the provider.
+  that agent's access immediately before any text reaches the provider. All
+  four copilot stores also carry a nullable 64-character `connection_revision`:
+  requests stamp the resolved processor identity, workers recheck it before
+  dispatch/publication, and readers withhold unversioned or superseded output.
+  Existing queued work without a stamp cannot run; a fresh manual request can.
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly

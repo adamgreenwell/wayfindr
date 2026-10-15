@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'conversation_id',
     'requested_by_id',
     'generation',
+    'connection_revision',
     'status',
     'draft',
     'source_last_message_id',

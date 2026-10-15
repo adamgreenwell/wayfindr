@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Models\OperatorSetting;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\AgentCopilotSdkFactory;
 use App\Support\Ai\AgentCopilotUnavailable;
 use App\Support\Ai\CopilotAgent;
+use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -144,3 +146,123 @@ test('provider credentials are encrypted in the shared settings store', function
         ->and((string) $stored)->not->toContain('super-secret-provider-key')
         ->and(app(OperatorSettings::class)->get('ai.api_key'))->toBe('super-secret-provider-key');
 });
+
+test('attaching a resolved connection leaves the original prompt unchanged', function (): void {
+    $connection = new ResolvedAgentCopilotConnection(
+        accountId: 12,
+        source: 'installation',
+        revision: str_repeat('a', 64),
+        provider: 'ollama',
+        model: 'qwen3.5:4b',
+        endpoint: 'http://localhost:11434',
+        openRouterProvider: '',
+        apiKey: '',
+    );
+    $original = new AgentCopilotPrompt('draft_reply', 'Draft for review.', 'Synthetic question.', 20);
+    $scoped = $original->withConnection($connection);
+
+    expect($original->connection)->toBeNull()
+        ->and($scoped)->not->toBe($original)
+        ->and($scoped->connection)->toBe($connection)
+        ->and([$scoped->purpose, $scoped->instructions, $scoped->input, $scoped->timeoutSeconds])
+        ->toBe([$original->purpose, $original->instructions, $original->input, $original->timeoutSeconds]);
+});
+
+test('fresh sdk drivers preserve explicit connection configuration without mutating globals', function (string $driver): void {
+    $before = config('ai');
+    $factory = app(AgentCopilotSdkFactory::class);
+    $a = $factory->make($driver, 'model-a', 'https://a.example.test/v1', 'key-a');
+    $b = $factory->make($driver, 'model-b', 'https://b.example.test/v1', 'key-b');
+    $again = $factory->make($driver, 'model-a', 'https://a.example.test/v1', 'key-a');
+
+    expect($a)->not->toBe($b)
+        ->and($again)->not->toBe($a)
+        ->and($a->driver())->toBe($driver)
+        ->and($a->providerCredentials())->toBe(['key' => 'key-a'])
+        ->and($b->providerCredentials())->toBe(['key' => 'key-b'])
+        ->and($again->providerCredentials())->toBe(['key' => 'key-a'])
+        ->and($a->defaultTextModel())->toBe('model-a')
+        ->and($b->defaultTextModel())->toBe('model-b')
+        ->and($again->defaultTextModel())->toBe('model-a')
+        ->and($a->additionalConfiguration()['url'])->toBe('https://a.example.test/v1')
+        ->and($b->additionalConfiguration()['url'])->toBe('https://b.example.test/v1')
+        ->and($again->additionalConfiguration()['url'])->toBe('https://a.example.test/v1')
+        ->and($again->additionalConfiguration()['store'])->toBeFalse()
+        ->and(config('ai'))->toBe($before);
+})->with(['anthropic', 'gemini', 'ollama', 'openai', 'openai-compatible', 'openrouter']);
+
+test('resolved installation calls isolate credentials model endpoint and upstream across a reused adapter', function (): void {
+    // Deliberately disagree with both explicit connections. The adapter must
+    // not take routing or credentials from these process-wide defaults.
+    config()->set('ai.providers.wayfindr', [
+        'driver' => 'openrouter', 'key' => 'wrong-global-key',
+        'url' => 'https://wrong.example.test/v1',
+        'models' => ['text' => ['default' => 'wrong-model']],
+        'openrouter' => ['provider' => 'wrong-upstream'],
+    ]);
+    $before = config('ai');
+    $connections = [
+        new ResolvedAgentCopilotConnection(12, 'installation', str_repeat('a', 64), 'openrouter', 'model-a', 'https://a.example.test/v1', 'amazon-bedrock', 'key-a'),
+        new ResolvedAgentCopilotConnection(24, 'installation', str_repeat('b', 64), 'openrouter', 'model-b', 'https://b.example.test/v1', 'anthropic', 'key-b'),
+    ];
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request) => Http::response([
+        'id' => 'generation-test',
+        'model' => $request['model'],
+        'choices' => [['message' => ['role' => 'assistant', 'content' => 'A reviewable candidate.'], 'finish_reason' => 'stop']],
+        'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 4],
+    ]));
+    $provider = app(AgentCopilotProvider::class);
+    $prompt = new AgentCopilotPrompt('draft_reply', 'Draft for review.', 'Synthetic question.');
+
+    foreach ([$connections[0], $connections[1], $connections[0]] as $connection) {
+        $result = $provider->generate($prompt->withConnection($connection));
+
+        expect($result->provider)->toBe('openrouter/'.$connection->openRouterProvider)
+            ->and($result->model)->toBe($connection->model)
+            ->and($result->promptTokens)->toBe(12)
+            ->and($result->completionTokens)->toBe(4);
+    }
+
+    $requests = Http::recorded()->map(fn (array $pair): array => [
+        $pair[0]->url(), $pair[0]->header('Authorization'), $pair[0]['model'], $pair[0]['provider'],
+    ])->all();
+
+    expect($requests)->toBe([
+        ['https://a.example.test/v1/chat/completions', ['Bearer key-a'], 'model-a', ['order' => ['amazon-bedrock'], 'allow_fallbacks' => false, 'zdr' => true]],
+        ['https://b.example.test/v1/chat/completions', ['Bearer key-b'], 'model-b', ['order' => ['anthropic'], 'allow_fallbacks' => false, 'zdr' => true]],
+        ['https://a.example.test/v1/chat/completions', ['Bearer key-a'], 'model-a', ['order' => ['amazon-bedrock'], 'allow_fallbacks' => false, 'zdr' => true]],
+    ])->and(config('ai'))->toBe($before);
+});
+
+test('account owned outbound calls remain blocked even when sdk or http fakes are installed', function (bool $fakeAgent): void {
+    Http::preventStrayRequests();
+    Http::fake(['*' => Http::response([
+        'id' => 'unauthorized-generation',
+        'model' => 'model-a',
+        'choices' => [['message' => ['role' => 'assistant', 'content' => 'This call must never happen.'], 'finish_reason' => 'stop']],
+        'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
+    ])]);
+
+    if ($fakeAgent) {
+        CopilotAgent::fake(['A fake is not authorization.']);
+    }
+
+    $connection = new ResolvedAgentCopilotConnection(
+        accountId: 12,
+        source: 'account',
+        revision: str_repeat('a', 64),
+        provider: 'openai-compatible',
+        model: 'model-a',
+        endpoint: 'http://127.0.0.1:11434/v1',
+        openRouterProvider: '',
+        apiKey: 'account-secret',
+    );
+    $prompt = (new AgentCopilotPrompt('configuration_probe', 'Synthetic probe.', 'No customer data.'))->withConnection($connection);
+
+    expect(fn () => app(AgentCopilotProvider::class)->generate($prompt))
+        ->toThrow(AgentCopilotUnavailable::class, 'account_endpoint_policy_pending');
+
+    Http::assertNothingSent();
+    CopilotAgent::assertNeverPrompted();
+})->with([true, false]);

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\TicketLabel;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationTicketSuggestionOutputParser;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
@@ -46,6 +48,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
     public function handle(
         AgentCopilotProvider $provider,
+        AgentCopilotConnectionResolver $connections,
         ConversationTicketSuggestionPromptBuilder $promptBuilder,
         ConversationTicketSuggestionOutputParser $outputParser,
     ): void {
@@ -119,7 +122,14 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 return;
             }
 
-            $result = $provider->generate($context->prompt);
+            $connection = $connections->forAccount((int) $conversation->site->account_id);
+            if ($connection === null || $suggestion->connection_revision !== $connection->revision) {
+                $this->recordFailure($suggestion, 'connection_changed');
+
+                return;
+            }
+
+            $result = $provider->generate($context->prompt->withConnection($connection));
             $output = $outputParser->parse(mb_substr(trim($result->text), 0, 8_000));
 
             if ($output === null) {
@@ -140,7 +150,44 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                     ->values()
                     ->all();
 
-            DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion): void {
+            DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion, $connections): void {
+                $accountId = (int) $suggestion->conversation->site->account_id;
+                if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                    return;
+                }
+
+                $suggestion = ConversationCopilotTicketSuggestion::query()
+                    ->with(['conversation.site.account', 'requestedBy'])
+                    ->whereKey($suggestion->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotTicketSuggestion::STATUS_RUNNING)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($suggestion === null) {
+                    return;
+                }
+
+                $conversation = $suggestion->conversation;
+                $requester = $suggestion->requestedBy;
+                if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('createTicket', $conversation)) {
+                    $this->recordFailure($suggestion, 'access_revoked');
+
+                    return;
+                }
+
+                if (! $connections->isCurrent($accountId, $suggestion->connection_revision)) {
+                    $this->recordFailure($suggestion, 'connection_changed');
+
+                    return;
+                }
+
+                if ($conversation->tickets()->exists()) {
+                    $this->recordFailure($suggestion, 'ticket_exists');
+
+                    return;
+                }
+
                 $updated = ConversationCopilotTicketSuggestion::query()
                     ->whereKey($suggestion->id)
                     ->where('generation', $this->generation)
@@ -250,6 +297,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             'metadata' => [
                 'suggestion_id' => $suggestion->id,
                 'generation' => $this->generation,
+                'connection_revision' => $suggestion->connection_revision,
                 ...$metadata,
             ],
             'occurred_at' => now(),

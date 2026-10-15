@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateConversationCopilotReplyDraft;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Models\User;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,16 +27,22 @@ final class AgentConversationCopilotReplyDraftController extends Controller
     public function store(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): RedirectResponse {
-        abort_unless($configuration->isReady(), 404);
-
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
 
-        [$draft, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation): array {
+        [$draft, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation, $connections): array {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $connection = $connections->forAccount($accountId);
+            abort_unless($connection !== null, 404);
+
             // The conversation lock serializes the first request, when no draft
             // row exists yet and therefore cannot itself be locked.
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
@@ -45,7 +52,16 @@ final class AgentConversationCopilotReplyDraftController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if ($draft?->hasFreshPendingRequest()) {
+            // A running row is also the erasure-visible external-call claim.
+            // Keep it intact until that attempt finishes rather than replacing
+            // its start marker when a connection changes mid-call.
+            if ($draft?->hasFreshPendingRequest()
+                && $draft->status === ConversationCopilotReplyDraft::STATUS_RUNNING
+                && $draft->connection_revision !== $connection->revision) {
+                abort(409, __('conversations.flash.ai_reply_draft_pending'));
+            }
+
+            if ($draft?->hasFreshPendingRequest() && $draft->connection_revision === $connection->revision) {
                 return [$draft, false];
             }
 
@@ -53,6 +69,7 @@ final class AgentConversationCopilotReplyDraftController extends Controller
             $values = [
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
+                'connection_revision' => $connection->revision,
                 'status' => ConversationCopilotReplyDraft::STATUS_PENDING,
                 'draft' => null,
                 'source_last_message_id' => null,
@@ -87,6 +104,7 @@ final class AgentConversationCopilotReplyDraftController extends Controller
                 'metadata' => [
                     'draft_id' => $draft->id,
                     'generation' => $draft->generation,
+                    'connection_revision' => $draft->connection_revision,
                 ],
                 'occurred_at' => now(),
             ]);
@@ -149,12 +167,11 @@ final class AgentConversationCopilotReplyDraftController extends Controller
     public function show(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): Response {
-        abort_unless($configuration->isReady(), 404);
-
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         $latestTextMessageId = $conversation->messages()
             ->whereNotNull('body')
             ->whereRaw("TRIM(body) <> ''")
@@ -166,10 +183,15 @@ final class AgentConversationCopilotReplyDraftController extends Controller
 
         $latestConversationMessageId = $conversation->messages()->max('id');
 
+        $draft = $conversation->copilotReplyDraft()->first();
+        if ($draft !== null && ! $connections->isCurrent((int) $conversation->site->account_id, $draft->connection_revision)) {
+            $draft = null;
+        }
+
         return response()->view('agent.conversations.partials.copilot-reply-draft', [
             'conversation' => $conversation,
             'conversationReturnQuery' => $returnPath->query($request),
-            'copilotReplyDraft' => $conversation->copilotReplyDraft()->first(),
+            'copilotReplyDraft' => $draft,
             'latestConversationMessageId' => (int) $latestConversationMessageId,
         ])->header('Cache-Control', 'no-store, private');
     }

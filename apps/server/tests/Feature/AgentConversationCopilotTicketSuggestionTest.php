@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\GenerateConversationCopilotTicketSuggestion;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotTicketSuggestion;
@@ -17,6 +18,7 @@ use App\Models\Ticket;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
@@ -192,6 +194,7 @@ test('requesting ticket details queues one id-only job and records safe audit me
     expect($event->metadata)->toBe([
         'suggestion_id' => $suggestion->id,
         'generation' => $suggestion->generation,
+        'connection_revision' => $suggestion->connection_revision,
     ]);
 
     $this->actingAs($world['agent'])
@@ -461,6 +464,7 @@ test('a new attachment-only message visibly stales a ticket suggestion and block
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotTicketSuggestion::STATUS_READY,
         'title' => 'Help requested',
         'priority' => 'normal',
@@ -539,4 +543,205 @@ test('ticket creation rejects labels from another account without creating a tic
         ->assertSessionHasErrors('label_ids.0');
 
     expect(Ticket::query()->count())->toBe(0);
+});
+
+/** Provider callback runs inside the external wait boundary without making a network call. */
+function conversationCopilotTicketSuggestionRevisionProvider(Closure $callback): AgentCopilotProvider
+{
+    return new class($callback) implements AgentCopilotProvider
+    {
+        public int $calls = 0;
+
+        public ?AgentCopilotPrompt $prompt = null;
+
+        public function __construct(private readonly Closure $callback) {}
+
+        public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
+        {
+            $this->calls++;
+            $this->prompt = $prompt;
+            ($this->callback)();
+
+            return new AgentCopilotResult('{"title":"Generated title","priority":"normal"}', 'fake', 'fake');
+        }
+
+        public function probe(): AgentCopilotResult
+        {
+            throw new LogicException('A generation must not run a connection probe.');
+        }
+    };
+}
+
+test('ticket-suggestion generations reject connection changes before and during provider work', function (bool $duringCall, bool $disable, bool $accountDisabled = false): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotTicketSuggestion();
+    $job = queueConversationCopilotTicketSuggestion($world);
+    $requestedRevision = ConversationCopilotTicketSuggestion::query()->sole()->connection_revision;
+    $change = static function () use ($disable, $accountDisabled, $world): void {
+        if ($accountDisabled) {
+            AccountAiConnection::query()->forceCreate(['account_id' => $world['account']->id, 'enabled' => false]);
+
+            return;
+        }
+        app(OperatorSettings::class)->set($disable ? 'ai.provider' : 'ai.model', $disable ? '' : 'replacement-model');
+    };
+    if (! $duringCall) {
+        $change();
+    }
+    $fake = conversationCopilotTicketSuggestionRevisionProvider(function () use ($duringCall, $change): void {
+        if ($duringCall) {
+            $change();
+        }
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    $artifact = ConversationCopilotTicketSuggestion::query()->sole();
+    expect($fake->calls)->toBe($duringCall ? 1 : 0)
+        ->and($artifact->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_FAILED)
+        ->and($artifact->failure_code)->toBe('connection_changed');
+    if ($duringCall) {
+        expect($fake->prompt?->connection?->accountId)->toBe((int) $world['account']->id)
+            ->and($fake->prompt?->connection?->revision)->toBe($requestedRevision);
+    }
+})->with([
+    'rotated while queued' => [false, false],
+    'disabled while queued' => [false, true],
+    'rotated during provider' => [true, false],
+    'disabled during provider' => [true, true],
+    'account disabled while queued' => [false, false, true],
+    'account disabled during provider' => [true, false, true],
+]);
+
+test('ticket-suggestion pending work coalesces only within the requested connection revision', function (): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotTicketSuggestion();
+    $oldJob = queueConversationCopilotTicketSuggestion($world);
+    $old = ConversationCopilotTicketSuggestion::query()->sole();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-ticket-suggestion.store', $world['conversation']->support_code))
+        ->assertRedirect();
+
+    $replacement = $old->fresh();
+    expect($replacement->generation)->not->toBe($old->generation)
+        ->and($replacement->connection_revision)->not->toBe($old->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotTicketSuggestion::class, 2);
+    $fake = conversationCopilotTicketSuggestionRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+    app()->call([$oldJob, 'handle']);
+    expect($fake->calls)->toBe(0)
+        ->and($replacement->fresh()->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_PENDING);
+});
+
+test('ticket-suggestion legacy queued work cannot adopt the current installation connection', function (): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotTicketSuggestion();
+    $job = queueConversationCopilotTicketSuggestion($world);
+    ConversationCopilotTicketSuggestion::query()->sole()->forceFill(['connection_revision' => null])->save();
+    $fake = conversationCopilotTicketSuggestionRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(0)
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->failure_code)->toBe('connection_changed');
+});
+
+test('ticket-suggestion output is withheld after connection changes and for unversioned legacy rows', function (bool $legacy): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    $message = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotTicketSuggestion();
+    $revision = app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision;
+    ConversationCopilotTicketSuggestion::query()->create([
+        'conversation_id' => $world['conversation']->id,
+        'requested_by_id' => $world['agent']->id,
+        'generation' => (string) Str::uuid(),
+        'connection_revision' => $legacy ? null : $revision,
+        'status' => ConversationCopilotTicketSuggestion::STATUS_READY,
+        'title' => 'A private obsolete ticket title.',
+        'priority' => 'normal',
+        'label_ids' => [],
+        'source_last_message_id' => $message->id,
+        'source_message_count' => 1,
+        'requested_at' => now(),
+        'completed_at' => now(),
+    ]);
+    if (! $legacy) {
+        app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+    }
+
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.copilot-ticket-suggestion.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete ticket title.');
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete ticket title.');
+})->with(['superseded revision' => false, 'legacy revision' => true]);
+
+test('ticket-suggestion completion rechecks requester authority after the provider wait', function (): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotTicketSuggestion();
+    $job = queueConversationCopilotTicketSuggestion($world);
+    $fake = conversationCopilotTicketSuggestionRevisionProvider(function () use ($world): void {
+        $world['agent']->forceFill(['deactivated_at' => now()])->save();
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(1)
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_FAILED)
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->failure_code)->toBe('access_revoked');
+});
+
+test('ticket-suggestion rotation cannot replace an in-flight claim used by visitor erasure', function (): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help.']);
+    configureConversationCopilotTicketSuggestion();
+    queueConversationCopilotTicketSuggestion($world);
+    $artifact = ConversationCopilotTicketSuggestion::query()->sole();
+    $artifact->forceFill([
+        'status' => ConversationCopilotTicketSuggestion::STATUS_RUNNING,
+        'started_at' => now(),
+    ])->save();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-ticket-suggestion.store', $world['conversation']->support_code))
+        ->assertStatus(409);
+
+    $retained = $artifact->fresh();
+    expect($retained->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_RUNNING)
+        ->and($retained->generation)->toBe($artifact->generation)
+        ->and($retained->started_at->equalTo($artifact->started_at))->toBeTrue()
+        ->and($retained->connection_revision)->toBe($artifact->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotTicketSuggestion::class, 1);
+});
+
+test('ticket suggestion completion withdraws a competing conversion created during the provider wait', function (): void {
+    $world = conversationCopilotTicketSuggestionWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help.']);
+    configureConversationCopilotTicketSuggestion();
+    $job = queueConversationCopilotTicketSuggestion($world);
+    $fake = conversationCopilotTicketSuggestionRevisionProvider(function () use ($world): void {
+        Ticket::factory()->for($world['account'])->for($world['site'])
+            ->for($world['conversation'])->for($world['visitor'], 'requester')->create();
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(1)
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_FAILED)
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->failure_code)->toBe('ticket_exists')
+        ->and(ConversationCopilotTicketSuggestion::query()->sole()->title)->toBeNull();
 });

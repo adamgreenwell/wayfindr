@@ -14,8 +14,10 @@ use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
 use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushFactory;
+use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\LaravelAgentCopilotProvider;
+use App\Support\Ai\UnavailableAccountAiConnectionProbe;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
@@ -83,6 +85,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(DatabaseRestorer::class, PostgresDatabaseRestorer::class);
         $this->app->bind(OidcClient::class, SocialiteOidcClient::class);
         $this->app->bind(AgentCopilotProvider::class, LaravelAgentCopilotProvider::class);
+        $this->app->bind(AccountAiConnectionProbe::class, UnavailableAccountAiConnectionProbe::class);
 
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload

@@ -20,7 +20,7 @@ use App\Models\User;
 use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
@@ -68,7 +68,7 @@ class AgentConversationController extends Controller
         private readonly ConversationReturnPath $conversationReturnPath,
     ) {}
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization, AgentCopilotConfiguration $copilotConfiguration, KnowledgeArticleSuggestionMatcher $knowledgeArticleMatcher): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization, AgentCopilotConnectionResolver $copilotConnections, KnowledgeArticleSuggestionMatcher $knowledgeArticleMatcher): View
     {
         $agent = $request->user();
 
@@ -102,16 +102,23 @@ class AgentConversationController extends Controller
             ->filter(fn ($message): bool => filled($message->body))
             ->max('id');
         $latestConversationMessageId = $messages->max('id');
-        $copilotSummaryAvailable = $copilotConfiguration->isReady() && $latestSummarizableMessageId !== null;
+        $copilotConnection = $copilotConnections->forAccount((int) $conversation->site->account_id);
+        $copilotSummaryAvailable = $copilotConnection !== null && $latestSummarizableMessageId !== null;
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
             : null;
-        $copilotReplyDraftAvailable = $copilotConfiguration->isReady()
+        if ($copilotSummary !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotSummary->connection_revision)) {
+            $copilotSummary = null;
+        }
+        $copilotReplyDraftAvailable = $copilotConnection !== null
             && $canReply
             && $latestSummarizableMessageId !== null;
         $copilotReplyDraft = $copilotReplyDraftAvailable
             ? $conversation->copilotReplyDraft()->first()
             : null;
+        if ($copilotReplyDraft !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotReplyDraft->connection_revision)) {
+            $copilotReplyDraft = null;
+        }
         $tickets = $canManageTickets
             ? $conversation->tickets()
                 ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
@@ -119,26 +126,32 @@ class AgentConversationController extends Controller
                 ->get()
             : collect();
         $account = $agent->account()->firstOrFail();
-        $copilotKnowledgeSuggestionAvailable = $copilotConfiguration->isReady()
+        $copilotKnowledgeSuggestionAvailable = $copilotConnection !== null
             && $canReply
             && $latestSummarizableMessageId !== null
             && $account->articles()->published()->exists();
         $copilotKnowledgeSuggestion = $copilotKnowledgeSuggestionAvailable
             ? $conversation->copilotKnowledgeSuggestion()->first()
             : null;
+        if ($copilotKnowledgeSuggestion !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotKnowledgeSuggestion->connection_revision)) {
+            $copilotKnowledgeSuggestion = null;
+        }
         $suggestedKnowledgeArticles = $copilotKnowledgeSuggestion?->displayStatus() === ConversationCopilotKnowledgeSuggestion::STATUS_READY
             ? $knowledgeArticleMatcher->present($account, $copilotKnowledgeSuggestion->suggestedArticleIds())
             : collect();
         $ticketLabelOptions = $canManageTickets
             ? $account->ticketLabels()->orderBy('name')->get()
             : collect();
-        $copilotTicketSuggestionAvailable = $copilotConfiguration->isReady()
+        $copilotTicketSuggestionAvailable = $copilotConnection !== null
             && $canManageTickets
             && $tickets->isEmpty()
             && $latestSummarizableMessageId !== null;
         $copilotTicketSuggestion = $copilotTicketSuggestionAvailable
             ? $conversation->copilotTicketSuggestion()->first()
             : null;
+        if ($copilotTicketSuggestion !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotTicketSuggestion->connection_revision)) {
+            $copilotTicketSuggestion = null;
+        }
         $suggestedTicketLabels = $copilotTicketSuggestion?->displayStatus() === ConversationCopilotTicketSuggestion::STATUS_READY
             ? $ticketLabelOptions->whereIn('id', $copilotTicketSuggestion->suggestedLabelIds())->values()
             : collect();

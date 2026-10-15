@@ -14,7 +14,10 @@ final class CopilotAgent implements Agent, HasProviderOptions
 {
     use Promptable;
 
-    public function __construct(private readonly string $systemInstructions) {}
+    public function __construct(
+        private readonly string $systemInstructions,
+        private readonly string $openRouterProvider = '',
+    ) {}
 
     public function instructions(): string
     {
@@ -35,7 +38,7 @@ final class CopilotAgent implements Agent, HasProviderOptions
             return [];
         }
 
-        $upstreamProvider = strtolower(trim((string) config('ai.providers.wayfindr.openrouter.provider')));
+        $upstreamProvider = strtolower(trim($this->openRouterProvider));
 
         if ($upstreamProvider === '') {
             return [];

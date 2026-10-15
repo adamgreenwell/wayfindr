@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateConversationCopilotTicketSuggestion;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\User;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,17 +27,23 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
     public function store(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): RedirectResponse {
-        abort_unless($configuration->isReady(), 404);
-
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_if($conversation->tickets()->exists(), 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
 
-        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation): array {
+        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation, $connections): array {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $connection = $connections->forAccount($accountId);
+            abort_unless($connection !== null, 404);
+
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
 
             if ($conversation->tickets()->exists()) {
@@ -48,7 +55,16 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
                 ->lockForUpdate()
                 ->first();
 
-            if ($suggestion?->hasFreshPendingRequest()) {
+            // A running row is also the erasure-visible external-call claim.
+            // Keep it intact until that attempt finishes rather than replacing
+            // its start marker when a connection changes mid-call.
+            if ($suggestion?->hasFreshPendingRequest()
+                && $suggestion->status === ConversationCopilotTicketSuggestion::STATUS_RUNNING
+                && $suggestion->connection_revision !== $connection->revision) {
+                abort(409, __('conversations.flash.ai_ticket_suggestion_pending'));
+            }
+
+            if ($suggestion?->hasFreshPendingRequest() && $suggestion->connection_revision === $connection->revision) {
                 return [$suggestion, false];
             }
 
@@ -56,6 +72,7 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
             $values = [
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
+                'connection_revision' => $connection->revision,
                 'status' => ConversationCopilotTicketSuggestion::STATUS_PENDING,
                 'title' => null,
                 'priority' => null,
@@ -92,6 +109,7 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
                 'metadata' => [
                     'suggestion_id' => $suggestion->id,
                     'generation' => $suggestion->generation,
+                    'connection_revision' => $suggestion->connection_revision,
                 ],
                 'occurred_at' => now(),
             ]);
@@ -154,12 +172,11 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
     public function show(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): Response {
-        abort_unless($configuration->isReady(), 404);
-
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
 
         if ($conversation->tickets()->exists()) {
             return response('', 204)->header('Cache-Control', 'no-store, private');
@@ -176,6 +193,9 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
 
         $latestConversationMessageId = $conversation->messages()->max('id');
         $suggestion = $conversation->copilotTicketSuggestion()->first();
+        if ($suggestion !== null && ! $connections->isCurrent((int) $conversation->site->account_id, $suggestion->connection_revision)) {
+            $suggestion = null;
+        }
         $suggestedLabels = collect();
 
         if ($suggestion?->status === ConversationCopilotTicketSuggestion::STATUS_READY) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Jobs\GenerateConversationCopilotSummary;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotSummary;
@@ -12,6 +13,7 @@ use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
@@ -175,6 +177,7 @@ test('requesting a summary queues one id-only job and records safe audit metadat
         ->and($event->metadata)->toBe([
             'summary_id' => $summary->id,
             'generation' => $summary->generation,
+            'connection_revision' => $summary->connection_revision,
         ])
         ->and(json_encode($event->metadata))->not->toContain('checkout button');
 
@@ -364,6 +367,7 @@ test('worker failures become generic retryable audited state', function (): void
     expect($failed->metadata)->toBe([
         'summary_id' => $summary->id,
         'generation' => $summary->generation,
+        'connection_revision' => $summary->connection_revision,
         'failure_code' => 'job',
     ]);
 
@@ -521,6 +525,7 @@ test('an expired pending marker can be replaced instead of trapping the panel fo
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotSummary::STATUS_PENDING,
         'requested_at' => now()->subMinutes(6),
     ]);
@@ -548,6 +553,7 @@ test('a delayed request cannot be replaced after its worker claims it', function
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotSummary::STATUS_RUNNING,
         'requested_at' => now()->subMinutes(10),
         'started_at' => now(),
@@ -567,4 +573,184 @@ test('a delayed request cannot be replaced after its worker claims it', function
     } finally {
         Carbon::setTestNow();
     }
+});
+
+/** Provider callback runs inside the external wait boundary without making a network call. */
+function conversationCopilotSummaryRevisionProvider(Closure $callback): AgentCopilotProvider
+{
+    return new class($callback) implements AgentCopilotProvider
+    {
+        public int $calls = 0;
+
+        public ?AgentCopilotPrompt $prompt = null;
+
+        public function __construct(private readonly Closure $callback) {}
+
+        public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
+        {
+            $this->calls++;
+            $this->prompt = $prompt;
+            ($this->callback)();
+
+            return new AgentCopilotResult('A generated summary.', 'fake', 'fake');
+        }
+
+        public function probe(): AgentCopilotResult
+        {
+            throw new LogicException('A generation must not run a connection probe.');
+        }
+    };
+}
+
+test('summary generations reject connection changes before and during provider work', function (bool $duringCall, bool $disable, bool $accountDisabled = false): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotSummary();
+    $job = queueConversationCopilotSummary($world);
+    $requestedRevision = ConversationCopilotSummary::query()->sole()->connection_revision;
+    $change = static function () use ($disable, $accountDisabled, $world): void {
+        if ($accountDisabled) {
+            AccountAiConnection::query()->forceCreate(['account_id' => $world['account']->id, 'enabled' => false]);
+
+            return;
+        }
+        app(OperatorSettings::class)->set($disable ? 'ai.provider' : 'ai.model', $disable ? '' : 'replacement-model');
+    };
+    if (! $duringCall) {
+        $change();
+    }
+    $fake = conversationCopilotSummaryRevisionProvider(function () use ($duringCall, $change): void {
+        if ($duringCall) {
+            $change();
+        }
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    $artifact = ConversationCopilotSummary::query()->sole();
+    expect($fake->calls)->toBe($duringCall ? 1 : 0)
+        ->and($artifact->status)->toBe(ConversationCopilotSummary::STATUS_FAILED)
+        ->and($artifact->failure_code)->toBe('connection_changed');
+    if ($duringCall) {
+        expect($fake->prompt?->connection?->accountId)->toBe((int) $world['account']->id)
+            ->and($fake->prompt?->connection?->revision)->toBe($requestedRevision);
+    }
+})->with([
+    'rotated while queued' => [false, false],
+    'disabled while queued' => [false, true],
+    'rotated during provider' => [true, false],
+    'disabled during provider' => [true, true],
+    'account disabled while queued' => [false, false, true],
+    'account disabled during provider' => [true, false, true],
+]);
+
+test('summary pending work coalesces only within the requested connection revision', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotSummary();
+    $oldJob = queueConversationCopilotSummary($world);
+    $old = ConversationCopilotSummary::query()->sole();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-summary.store', $world['conversation']->support_code))
+        ->assertRedirect();
+
+    $replacement = $old->fresh();
+    expect($replacement->generation)->not->toBe($old->generation)
+        ->and($replacement->connection_revision)->not->toBe($old->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotSummary::class, 2);
+    $fake = conversationCopilotSummaryRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+    app()->call([$oldJob, 'handle']);
+    expect($fake->calls)->toBe(0)
+        ->and($replacement->fresh()->status)->toBe(ConversationCopilotSummary::STATUS_PENDING);
+});
+
+test('summary legacy queued work cannot adopt the current installation connection', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotSummary();
+    $job = queueConversationCopilotSummary($world);
+    ConversationCopilotSummary::query()->sole()->forceFill(['connection_revision' => null])->save();
+    $fake = conversationCopilotSummaryRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(0)
+        ->and(ConversationCopilotSummary::query()->sole()->failure_code)->toBe('connection_changed');
+});
+
+test('summary output is withheld after connection changes and for unversioned legacy rows', function (bool $legacy): void {
+    $world = conversationCopilotSummaryWorld();
+    $message = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotSummary();
+    $revision = app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision;
+    ConversationCopilotSummary::query()->create([
+        'conversation_id' => $world['conversation']->id,
+        'requested_by_id' => $world['agent']->id,
+        'generation' => (string) Str::uuid(),
+        'connection_revision' => $legacy ? null : $revision,
+        'status' => ConversationCopilotSummary::STATUS_READY,
+        'summary' => 'A private obsolete summary.',
+        'source_last_message_id' => $message->id,
+        'source_message_count' => 1,
+        'requested_at' => now(),
+        'completed_at' => now(),
+    ]);
+    if (! $legacy) {
+        app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+    }
+
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.copilot-summary.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete summary.');
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete summary.');
+})->with(['superseded revision' => false, 'legacy revision' => true]);
+
+test('summary completion rechecks requester authority after the provider wait', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotSummary();
+    $job = queueConversationCopilotSummary($world);
+    $fake = conversationCopilotSummaryRevisionProvider(function () use ($world): void {
+        $world['agent']->forceFill(['deactivated_at' => now()])->save();
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(1)
+        ->and(ConversationCopilotSummary::query()->sole()->status)->toBe(ConversationCopilotSummary::STATUS_FAILED)
+        ->and(ConversationCopilotSummary::query()->sole()->failure_code)->toBe('access_revoked');
+});
+
+test('summary rotation cannot replace an in-flight claim used by visitor erasure', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help.']);
+    configureConversationCopilotSummary();
+    queueConversationCopilotSummary($world);
+    $artifact = ConversationCopilotSummary::query()->sole();
+    $artifact->forceFill([
+        'status' => ConversationCopilotSummary::STATUS_RUNNING,
+        'started_at' => now(),
+    ])->save();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-summary.store', $world['conversation']->support_code))
+        ->assertStatus(409);
+
+    $retained = $artifact->fresh();
+    expect($retained->status)->toBe(ConversationCopilotSummary::STATUS_RUNNING)
+        ->and($retained->generation)->toBe($artifact->generation)
+        ->and($retained->started_at->equalTo($artifact->started_at))->toBeTrue()
+        ->and($retained->connection_revision)->toBe($artifact->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotSummary::class, 1);
 });

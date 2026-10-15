@@ -38,6 +38,7 @@ return [
         'handle_data_requests' => ['label' => 'Gestisci richieste sui dati', 'detail' => 'Esportazione o cancellazione di tutti i dati conservati su un contatto nei siti assegnati. La cancellazione non è reversibile.'],
         'manage_privacy_settings' => ['label' => 'Gestisci impostazioni privacy', 'detail' => 'Gestione dei controlli sui dati dei visitatori e sulla privacy.'],
         'manage_integrations' => ['label' => 'Gestisci integrazioni', 'detail' => 'Configurazione di provider, token API, webhook e instradamento.'],
+        'manage_ai_connections' => ['label' => 'Gestisci connessioni IA', 'detail' => 'Configurazione delle connessioni IA di questo account, senza concedere accesso ai dati di assistenza o privilegi di gestore della piattaforma.'],
         'manage_knowledge' => ['label' => 'Gestisci conoscenza', 'detail' => 'Creazione e pubblicazione di articoli, risposte ed etichette dei ticket.'],
         'manage_security' => ['label' => 'Gestisci sicurezza', 'detail' => 'Gestione delle impostazioni di autenticazione e sicurezza.'],
         'manage_operator_access' => ['label' => 'Gestisci accesso operatori', 'detail' => 'Esame e gestione delle richieste di accesso degli operatori della piattaforma.'],

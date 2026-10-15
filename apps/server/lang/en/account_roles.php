@@ -51,6 +51,7 @@ return [
         'handle_data_requests' => ['label' => 'Handle data requests', 'detail' => 'Export or erase everything held about a contact on assigned sites. Erasing cannot be undone.'],
         'manage_privacy_settings' => ['label' => 'Manage privacy settings', 'detail' => 'Change visitor-data and privacy controls.'],
         'manage_integrations' => ['label' => 'Manage integrations', 'detail' => 'Configure providers, API tokens, webhooks, and routing.'],
+        'manage_ai_connections' => ['label' => 'Manage AI connections', 'detail' => 'Configure this account’s AI connections without granting support or platform-operator access.'],
         'manage_knowledge' => ['label' => 'Manage knowledge', 'detail' => 'Create and publish articles, replies, and ticket labels.'],
         'manage_security' => ['label' => 'Manage security', 'detail' => 'Change account authentication and security settings.'],
         'manage_operator_access' => ['label' => 'Manage operator access', 'detail' => 'Review and act on platform-operator access requests.'],
