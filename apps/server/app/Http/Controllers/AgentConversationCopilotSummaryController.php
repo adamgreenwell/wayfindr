@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateConversationCopilotSummary;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotSummary;
 use App\Models\User;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,16 +27,22 @@ final class AgentConversationCopilotSummaryController extends Controller
     public function store(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): RedirectResponse {
-        abort_unless($configuration->isReady(), 404);
-
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
 
-        [$summary, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation): array {
+        [$summary, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation, $connections): array {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $connection = $connections->forAccount($accountId);
+            abort_unless($connection !== null, 404);
+
             // Serialize the first request too. Locking only a summary row that
             // does not exist lets two clicks race into the unique constraint.
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
@@ -45,7 +52,16 @@ final class AgentConversationCopilotSummaryController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if ($summary?->hasFreshPendingRequest()) {
+            // A running row is also the erasure-visible external-call claim.
+            // Keep it intact until that attempt finishes rather than replacing
+            // its start marker when a connection changes mid-call.
+            if ($summary?->hasFreshPendingRequest()
+                && $summary->status === ConversationCopilotSummary::STATUS_RUNNING
+                && $summary->connection_revision !== $connection->revision) {
+                abort(409, __('conversations.flash.ai_summary_pending'));
+            }
+
+            if ($summary?->hasFreshPendingRequest() && $summary->connection_revision === $connection->revision) {
                 return [$summary, false];
             }
 
@@ -53,6 +69,7 @@ final class AgentConversationCopilotSummaryController extends Controller
             $values = [
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
+                'connection_revision' => $connection->revision,
                 'status' => ConversationCopilotSummary::STATUS_PENDING,
                 'summary' => null,
                 'source_last_message_id' => null,
@@ -87,6 +104,7 @@ final class AgentConversationCopilotSummaryController extends Controller
                 'metadata' => [
                     'summary_id' => $summary->id,
                     'generation' => $summary->generation,
+                    'connection_revision' => $summary->connection_revision,
                 ],
                 'occurred_at' => now(),
             ]);
@@ -149,12 +167,11 @@ final class AgentConversationCopilotSummaryController extends Controller
     public function show(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): Response {
-        abort_unless($configuration->isReady(), 404);
-
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         $latestMessageId = $conversation->messages()
             ->whereNotNull('body')
             ->whereRaw("TRIM(body) <> ''")
@@ -164,10 +181,15 @@ final class AgentConversationCopilotSummaryController extends Controller
             return response('', 204)->header('Cache-Control', 'no-store, private');
         }
 
+        $summary = $conversation->copilotSummary()->first();
+        if ($summary !== null && ! $connections->isCurrent((int) $conversation->site->account_id, $summary->connection_revision)) {
+            $summary = null;
+        }
+
         return response()->view('agent.conversations.partials.copilot-summary', [
             'conversation' => $conversation,
             'conversationReturnQuery' => $returnPath->query($request),
-            'copilotSummary' => $conversation->copilotSummary()->first(),
+            'copilotSummary' => $summary,
             'latestSummarizableMessageId' => (int) $latestMessageId,
         ])->header('Cache-Control', 'no-store, private');
     }

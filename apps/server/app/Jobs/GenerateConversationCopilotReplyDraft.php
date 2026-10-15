@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\ConversationCopilotReplyDraft;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use Illuminate\Bus\Queueable;
@@ -44,6 +46,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
     public function handle(
         AgentCopilotProvider $provider,
+        AgentCopilotConnectionResolver $connections,
         ConversationReplyDraftPromptBuilder $promptBuilder,
     ): void {
         $draft = ConversationCopilotReplyDraft::query()
@@ -108,7 +111,14 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
-            $result = $provider->generate($context->prompt);
+            $connection = $connections->forAccount((int) $conversation->site->account_id);
+            if ($connection === null || $draft->connection_revision !== $connection->revision) {
+                $this->recordFailure($draft, 'connection_changed');
+
+                return;
+            }
+
+            $result = $provider->generate($context->prompt->withConnection($connection));
             $output = mb_substr(trim($result->text), 0, 6_000);
 
             if ($output === '') {
@@ -117,7 +127,38 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
-            DB::transaction(function () use ($context, $draft, $output, $result): void {
+            DB::transaction(function () use ($context, $draft, $output, $result, $connections): void {
+                $accountId = (int) $draft->conversation->site->account_id;
+                if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                    return;
+                }
+
+                $draft = ConversationCopilotReplyDraft::query()
+                    ->with(['conversation.site.account', 'requestedBy'])
+                    ->whereKey($draft->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotReplyDraft::STATUS_RUNNING)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($draft === null) {
+                    return;
+                }
+
+                $conversation = $draft->conversation;
+                $requester = $draft->requestedBy;
+                if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+                    $this->recordFailure($draft, 'access_revoked');
+
+                    return;
+                }
+
+                if (! $connections->isCurrent($accountId, $draft->connection_revision)) {
+                    $this->recordFailure($draft, 'connection_changed');
+
+                    return;
+                }
+
                 $updated = ConversationCopilotReplyDraft::query()
                     ->whereKey($draft->id)
                     ->where('generation', $this->generation)
@@ -224,6 +265,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             'metadata' => [
                 'draft_id' => $draft->id,
                 'generation' => $this->generation,
+                'connection_revision' => $draft->connection_revision,
                 ...$metadata,
             ],
             'occurred_at' => now(),

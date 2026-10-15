@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
@@ -16,6 +17,7 @@ use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
@@ -180,6 +182,7 @@ test('requesting knowledge suggestions queues an id-only job and safe audit meta
     expect($event->metadata)->toBe([
         'suggestion_id' => $suggestion->id,
         'generation' => $suggestion->generation,
+        'connection_revision' => $suggestion->connection_revision,
     ])->and(json_encode($event->metadata))->not->toContain('Checkout renewals');
 
     $this->actingAs($world['agent'])
@@ -465,6 +468,7 @@ test('a new attachment-only message stales knowledge suggestions and blocks inse
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
         'article_ids' => [$article->id],
         'source_last_message_id' => $source->id,
@@ -503,6 +507,7 @@ test('unpublished or deleted suggestions disappear at display time', function ()
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
         'article_ids' => [$withdrawn->id, $remaining->id],
         'source_last_message_id' => $message->id,
@@ -518,4 +523,190 @@ test('unpublished or deleted suggestions disappear at display time', function ()
         ->assertSee('Remaining article')
         ->assertDontSee('Withdrawn article')
         ->assertDontSee('No longer public.');
+});
+
+/** Provider callback runs inside the external wait boundary without making a network call. */
+function conversationCopilotKnowledgeRevisionProvider(Closure $callback): AgentCopilotProvider
+{
+    return new class($callback) implements AgentCopilotProvider
+    {
+        public int $calls = 0;
+
+        public ?AgentCopilotPrompt $prompt = null;
+
+        public function __construct(private readonly Closure $callback) {}
+
+        public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
+        {
+            $this->calls++;
+            $this->prompt = $prompt;
+            ($this->callback)();
+
+            return new AgentCopilotResult('{"queries":["renewal"]}', 'fake', 'fake');
+        }
+
+        public function probe(): AgentCopilotResult
+        {
+            throw new LogicException('A generation must not run a connection probe.');
+        }
+    };
+}
+
+test('knowledge-suggestion generations reject connection changes before and during provider work', function (bool $duringCall, bool $disable, bool $accountDisabled = false): void {
+    $world = conversationCopilotKnowledgeWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    Article::factory()->for($world['account'])->published()->create(['title' => 'Renewal help', 'body' => 'Renewal guidance.']);
+    configureConversationCopilotKnowledge();
+    $job = queueConversationCopilotKnowledge($world);
+    $requestedRevision = ConversationCopilotKnowledgeSuggestion::query()->sole()->connection_revision;
+    $change = static function () use ($disable, $accountDisabled, $world): void {
+        if ($accountDisabled) {
+            AccountAiConnection::query()->forceCreate(['account_id' => $world['account']->id, 'enabled' => false]);
+
+            return;
+        }
+        app(OperatorSettings::class)->set($disable ? 'ai.provider' : 'ai.model', $disable ? '' : 'replacement-model');
+    };
+    if (! $duringCall) {
+        $change();
+    }
+    $fake = conversationCopilotKnowledgeRevisionProvider(function () use ($duringCall, $change): void {
+        if ($duringCall) {
+            $change();
+        }
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    $artifact = ConversationCopilotKnowledgeSuggestion::query()->sole();
+    expect($fake->calls)->toBe($duringCall ? 1 : 0)
+        ->and($artifact->status)->toBe(ConversationCopilotKnowledgeSuggestion::STATUS_FAILED)
+        ->and($artifact->failure_code)->toBe('connection_changed');
+    if ($duringCall) {
+        expect($fake->prompt?->connection?->accountId)->toBe((int) $world['account']->id)
+            ->and($fake->prompt?->connection?->revision)->toBe($requestedRevision);
+    }
+})->with([
+    'rotated while queued' => [false, false],
+    'disabled while queued' => [false, true],
+    'rotated during provider' => [true, false],
+    'disabled during provider' => [true, true],
+    'account disabled while queued' => [false, false, true],
+    'account disabled during provider' => [true, false, true],
+]);
+
+test('knowledge-suggestion pending work coalesces only within the requested connection revision', function (): void {
+    $world = conversationCopilotKnowledgeWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    Article::factory()->for($world['account'])->published()->create(['title' => 'Renewal help', 'body' => 'Renewal guidance.']);
+    configureConversationCopilotKnowledge();
+    $oldJob = queueConversationCopilotKnowledge($world);
+    $old = ConversationCopilotKnowledgeSuggestion::query()->sole();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))
+        ->assertRedirect();
+
+    $replacement = $old->fresh();
+    expect($replacement->generation)->not->toBe($old->generation)
+        ->and($replacement->connection_revision)->not->toBe($old->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotKnowledgeSuggestion::class, 2);
+    $fake = conversationCopilotKnowledgeRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+    app()->call([$oldJob, 'handle']);
+    expect($fake->calls)->toBe(0)
+        ->and($replacement->fresh()->status)->toBe(ConversationCopilotKnowledgeSuggestion::STATUS_PENDING);
+});
+
+test('knowledge-suggestion legacy queued work cannot adopt the current installation connection', function (): void {
+    $world = conversationCopilotKnowledgeWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    Article::factory()->for($world['account'])->published()->create(['title' => 'Renewal help', 'body' => 'Renewal guidance.']);
+    configureConversationCopilotKnowledge();
+    $job = queueConversationCopilotKnowledge($world);
+    ConversationCopilotKnowledgeSuggestion::query()->sole()->forceFill(['connection_revision' => null])->save();
+    $fake = conversationCopilotKnowledgeRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(0)
+        ->and(ConversationCopilotKnowledgeSuggestion::query()->sole()->failure_code)->toBe('connection_changed');
+});
+
+test('knowledge-suggestion output is withheld after connection changes and for unversioned legacy rows', function (bool $legacy): void {
+    $world = conversationCopilotKnowledgeWorld();
+    $message = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    $article = Article::factory()->for($world['account'])->published()->create(['title' => 'Previously selected source', 'body' => 'A private obsolete knowledge excerpt.']);
+    configureConversationCopilotKnowledge();
+    $revision = app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision;
+    ConversationCopilotKnowledgeSuggestion::query()->create([
+        'conversation_id' => $world['conversation']->id,
+        'requested_by_id' => $world['agent']->id,
+        'generation' => (string) Str::uuid(),
+        'connection_revision' => $legacy ? null : $revision,
+        'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
+        'article_ids' => [$article->id],
+        'source_last_message_id' => $message->id,
+        'source_message_count' => 1,
+        'requested_at' => now(),
+        'completed_at' => now(),
+    ]);
+    if (! $legacy) {
+        app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+    }
+
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.copilot-knowledge-suggestion.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete knowledge excerpt.');
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete knowledge excerpt.');
+})->with(['superseded revision' => false, 'legacy revision' => true]);
+
+test('knowledge-suggestion completion rechecks requester authority after the provider wait', function (): void {
+    $world = conversationCopilotKnowledgeWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    Article::factory()->for($world['account'])->published()->create(['title' => 'Renewal help', 'body' => 'Renewal guidance.']);
+    configureConversationCopilotKnowledge();
+    $job = queueConversationCopilotKnowledge($world);
+    $fake = conversationCopilotKnowledgeRevisionProvider(function () use ($world): void {
+        $world['agent']->forceFill(['deactivated_at' => now()])->save();
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(1)
+        ->and(ConversationCopilotKnowledgeSuggestion::query()->sole()->status)->toBe(ConversationCopilotKnowledgeSuggestion::STATUS_FAILED)
+        ->and(ConversationCopilotKnowledgeSuggestion::query()->sole()->failure_code)->toBe('access_revoked');
+});
+
+test('knowledge-suggestion rotation cannot replace an in-flight claim used by visitor erasure', function (): void {
+    $world = conversationCopilotKnowledgeWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help.']);
+    Article::factory()->for($world['account'])->published()->create();
+    configureConversationCopilotKnowledge();
+    queueConversationCopilotKnowledge($world);
+    $artifact = ConversationCopilotKnowledgeSuggestion::query()->sole();
+    $artifact->forceFill([
+        'status' => ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING,
+        'started_at' => now(),
+    ])->save();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))
+        ->assertStatus(409);
+
+    $retained = $artifact->fresh();
+    expect($retained->status)->toBe(ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
+        ->and($retained->generation)->toBe($artifact->generation)
+        ->and($retained->started_at->equalTo($artifact->started_at))->toBeTrue()
+        ->and($retained->connection_revision)->toBe($artifact->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotKnowledgeSuggestion::class, 1);
 });

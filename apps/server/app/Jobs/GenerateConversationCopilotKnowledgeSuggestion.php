@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\ConversationCopilotKnowledgeSuggestion;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationKnowledgeSuggestionOutputParser;
 use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
@@ -46,6 +48,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
 
     public function handle(
         AgentCopilotProvider $provider,
+        AgentCopilotConnectionResolver $connections,
         ConversationKnowledgeSuggestionPromptBuilder $promptBuilder,
         ConversationKnowledgeSuggestionOutputParser $outputParser,
         KnowledgeArticleSuggestionMatcher $articleMatcher,
@@ -118,7 +121,14 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 return;
             }
 
-            $result = $provider->generate($context->prompt);
+            $connection = $connections->forAccount((int) $conversation->site->account_id);
+            if ($connection === null || $suggestion->connection_revision !== $connection->revision) {
+                $this->recordFailure($suggestion, 'connection_changed');
+
+                return;
+            }
+
+            $result = $provider->generate($context->prompt->withConnection($connection));
             $output = $outputParser->parse($result->text);
 
             if ($output === null) {
@@ -153,7 +163,44 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
 
             $articleIds = $articleMatcher->match($account, $output->queries);
 
-            DB::transaction(function () use ($articleIds, $context, $result, $suggestion): void {
+            DB::transaction(function () use ($articleIds, $context, $result, $suggestion, $connections): void {
+                $accountId = (int) $suggestion->conversation->site->account_id;
+                if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                    return;
+                }
+
+                $suggestion = ConversationCopilotKnowledgeSuggestion::query()
+                    ->with(['conversation.site.account', 'requestedBy'])
+                    ->whereKey($suggestion->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($suggestion === null) {
+                    return;
+                }
+
+                $conversation = $suggestion->conversation;
+                $requester = $suggestion->requestedBy;
+                if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+                    $this->recordFailure($suggestion, 'access_revoked');
+
+                    return;
+                }
+
+                if (! $connections->isCurrent($accountId, $suggestion->connection_revision)) {
+                    $this->recordFailure($suggestion, 'connection_changed');
+
+                    return;
+                }
+
+                if (! $conversation->site->account->articles()->published()->exists()) {
+                    $this->recordFailure($suggestion, 'no_articles');
+
+                    return;
+                }
+
                 $updated = ConversationCopilotKnowledgeSuggestion::query()
                     ->whereKey($suggestion->id)
                     ->where('generation', $this->generation)
@@ -271,6 +318,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             'metadata' => [
                 'suggestion_id' => $suggestion->id,
                 'generation' => $this->generation,
+                'connection_revision' => $suggestion->connection_revision,
                 ...$metadata,
             ],
             'occurred_at' => now(),

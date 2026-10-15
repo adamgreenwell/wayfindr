@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotKnowledgeSuggestion;
 use App\Models\User;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
@@ -27,17 +28,23 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
     public function store(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): RedirectResponse {
-        abort_unless($configuration->isReady(), 404);
-
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_unless($conversation->site->account->articles()->published()->exists(), 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
 
-        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation): array {
+        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation, $connections): array {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $connection = $connections->forAccount($accountId);
+            abort_unless($connection !== null, 404);
+
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
 
             if (! $conversation->site->account->articles()->published()->exists()) {
@@ -49,7 +56,16 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
                 ->lockForUpdate()
                 ->first();
 
-            if ($suggestion?->hasFreshPendingRequest()) {
+            // A running row is also the erasure-visible external-call claim.
+            // Keep it intact until that attempt finishes rather than replacing
+            // its start marker when a connection changes mid-call.
+            if ($suggestion?->hasFreshPendingRequest()
+                && $suggestion->status === ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING
+                && $suggestion->connection_revision !== $connection->revision) {
+                abort(409, __('conversations.flash.ai_knowledge_suggestion_pending'));
+            }
+
+            if ($suggestion?->hasFreshPendingRequest() && $suggestion->connection_revision === $connection->revision) {
                 return [$suggestion, false];
             }
 
@@ -57,6 +73,7 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
             $values = [
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
+                'connection_revision' => $connection->revision,
                 'status' => ConversationCopilotKnowledgeSuggestion::STATUS_PENDING,
                 'article_ids' => null,
                 'source_last_message_id' => null,
@@ -91,6 +108,7 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
                 'metadata' => [
                     'suggestion_id' => $suggestion->id,
                     'generation' => $suggestion->generation,
+                    'connection_revision' => $suggestion->connection_revision,
                 ],
                 'occurred_at' => now(),
             ]);
@@ -153,13 +171,12 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
     public function show(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
         KnowledgeArticleSuggestionMatcher $articleMatcher,
     ): Response {
-        abort_unless($configuration->isReady(), 404);
-
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         $account = $conversation->site->account;
 
         if (! $account->articles()->published()->exists()) {
@@ -177,6 +194,9 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
 
         $latestConversationMessageId = $conversation->messages()->max('id');
         $suggestion = $conversation->copilotKnowledgeSuggestion()->first();
+        if ($suggestion !== null && ! $connections->isCurrent((int) $conversation->site->account_id, $suggestion->connection_revision)) {
+            $suggestion = null;
+        }
         $suggestedKnowledgeArticles = $suggestion?->status === ConversationCopilotKnowledgeSuggestion::STATUS_READY
             ? $articleMatcher->present($account, $suggestion->suggestedArticleIds())
             : collect();

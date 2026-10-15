@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\ConversationCopilotSummary;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use Illuminate\Bus\Queueable;
@@ -46,6 +48,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
     public function handle(
         AgentCopilotProvider $provider,
+        AgentCopilotConnectionResolver $connections,
         ConversationSummaryPromptBuilder $promptBuilder,
     ): void {
         $summary = ConversationCopilotSummary::query()
@@ -115,9 +118,47 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 return;
             }
 
-            $result = $provider->generate($context->prompt);
+            $connection = $connections->forAccount((int) $conversation->site->account_id);
+            if ($connection === null || $summary->connection_revision !== $connection->revision) {
+                $this->recordFailure($summary, 'connection_changed');
+
+                return;
+            }
+
+            $result = $provider->generate($context->prompt->withConnection($connection));
             $maximum = 4_000;
-            DB::transaction(function () use ($context, $maximum, $result, $summary): void {
+            DB::transaction(function () use ($context, $maximum, $result, $summary, $connections): void {
+                $accountId = (int) $summary->conversation->site->account_id;
+                if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                    return;
+                }
+
+                $summary = ConversationCopilotSummary::query()
+                    ->with(['conversation.site.account', 'requestedBy'])
+                    ->whereKey($summary->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotSummary::STATUS_RUNNING)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($summary === null) {
+                    return;
+                }
+
+                $conversation = $summary->conversation;
+                $requester = $summary->requestedBy;
+                if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('view', $conversation)) {
+                    $this->recordFailure($summary, 'access_revoked');
+
+                    return;
+                }
+
+                if (! $connections->isCurrent($accountId, $summary->connection_revision)) {
+                    $this->recordFailure($summary, 'connection_changed');
+
+                    return;
+                }
+
                 $updated = ConversationCopilotSummary::query()
                     ->whereKey($summary->id)
                     ->where('generation', $this->generation)
@@ -226,6 +267,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
             'metadata' => [
                 'summary_id' => $summary->id,
                 'generation' => $this->generation,
+                'connection_revision' => $summary->connection_revision,
                 ...$metadata,
             ],
             'occurred_at' => now(),

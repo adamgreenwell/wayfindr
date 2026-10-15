@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Ai;
 
+use Laravel\Ai\Ai;
+use Laravel\Ai\Prompts\AgentPrompt;
 use UnexpectedValueException;
 
 /** Laravel AI SDK adapter kept behind Wayfindr's deliberately tiny contract. */
@@ -12,11 +14,28 @@ final readonly class LaravelAgentCopilotProvider implements AgentCopilotProvider
     public function __construct(
         private AgentCopilotConfiguration $configuration,
         private AiContextSanitizer $sanitizer,
+        private AgentCopilotSdkFactory $sdkFactory,
     ) {}
 
     public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
     {
-        $assessment = $this->configuration->assessment();
+        $connection = $prompt->connection;
+
+        // Account credentials remain inert until #1168 supplies the endpoint
+        // policy and probe boundary. A test fake is not outbound authority.
+        if ($connection !== null && $connection->source !== 'installation') {
+            throw AgentCopilotUnavailable::forConfigurationStatus('account_endpoint_policy_pending');
+        }
+
+        $assessment = $connection === null
+            ? $this->configuration->assessment()
+            : $this->configuration->assessValues(
+                $connection->provider,
+                $connection->model,
+                $connection->endpoint,
+                trim($connection->apiKey()) !== '',
+                $connection->openRouterProvider,
+            );
 
         if ($assessment['status'] !== 'ready') {
             throw AgentCopilotUnavailable::forConfigurationStatus($assessment['status']);
@@ -24,12 +43,27 @@ final readonly class LaravelAgentCopilotProvider implements AgentCopilotProvider
 
         $maximum = max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000));
         $input = mb_substr($this->sanitizer->sanitize($prompt->input), 0, $maximum);
-        $response = (new CopilotAgent($prompt->instructions))->prompt(
-            $input,
-            provider: 'wayfindr',
-            model: $assessment['model'],
-            timeout: $prompt->timeoutSeconds,
+        $sdk = $this->sdkFactory->make(
+            $assessment['provider'],
+            $assessment['model'],
+            $assessment['endpoint'],
+            $connection?->apiKey() ?? (string) config('ai.providers.wayfindr.key'),
         );
+        $agent = new CopilotAgent($prompt->instructions, $assessment['openrouter_provider']);
+
+        if (Ai::hasFakeGatewayFor($agent)) {
+            $sdk->useTextGateway(Ai::fakeGatewayFor($agent));
+        }
+
+        $response = $sdk->prompt(new AgentPrompt(
+            $agent,
+            $input,
+            [],
+            $sdk,
+            $assessment['model'],
+            $prompt->timeoutSeconds,
+            tools: [],
+        ));
         $text = trim($response->text);
 
         if ($text === '') {
