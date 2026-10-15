@@ -6,6 +6,12 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 
 - `accounts`: tenant boundary for a support team.
 - `users`: Laravel users attached to one account with a starter `account_role` of `owner`, `admin`, or `agent`, optional `platform_role` instance authority, and an explicit online/away routing status for new automatic assignments.
+- `owner_bootstrap_requests`: the locked singleton for headless fresh-instance
+  owner bootstrap, holding the stable request hash, original completed receipt,
+  resource IDs and protected claim-file hash. It stores no reset token, URL or
+  private file path. Resource IDs deliberately have no cascading foreign keys,
+  so later owner/site changes retain the initial receipt; original claim issuance
+  and expiry do not prove consumption or grant management authority.
 - `custom_roles`: account-owned, deny-by-default permission sets for
   responsibilities the fixed Owner/Admin/Agent hierarchy cannot express. Checks
   read the currently assigned role rather than a copy on the user, so editing a
