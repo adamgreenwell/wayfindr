@@ -9,12 +9,16 @@ reply draft, suggested knowledge snippets, and suggested ticket details during
 conversation-to-ticket conversion. It does not add autonomous replies or
 customer-facing AI.
 
-## Planned Option 1 Assist — not yet implemented
+## Option 1 Assist — backend foundation
 
 The selected [AI Support Assist contract](../product/ai-support-assist-contract.md)
-defines downstream account connections and automatic preparation. The remaining
-sections describe the current installation-wide, operator-configured, on-demand
-copilot; the planned account screen is not available through these instructions.
+defines the account connection and automatic-preparation requirements. The
+[account-connection backend foundation](../product/ai-support-assist-account-connections.md)
+adds encrypted proposed/active storage, permission checks and per-call connection
+resolution to the source. Account-owned outbound calls remain unavailable until
+endpoint policy/probes are implemented; the account screen and automatic
+preparation are still pending. The remaining sections describe the existing
+operator-configured, on-demand copilot and its explicit installation-default path.
 
 Option 1 uses a collapsible right Assist rail with stacked summary, suggested
 reply, and sources beside the ordinary transcript/composer. Its account screen
@@ -23,8 +27,8 @@ write-only credentials, and separate behavior/task/site/usage controls below.
 Off belongs to behavior/site policy, not a third connection-source tab. No saved
 operator key is copied into an account or revealed in the browser.
 
-The future connection lifecycle must keep proposed, tested, and active revisions
-separate. A synthetic probe tests the exact proposed revision; changing its
+The backend lifecycle keeps proposed, tested, and active revisions separate.
+The default account probe is unavailable until endpoint policy is implemented. A synthetic probe tests the exact proposed revision; changing its
 provider, model, endpoint, or key invalidates that test. Saving activates the
 reviewed tested revision, while automatic preparation requires separate explicit
 account/site enablement. Pending tests cannot duplicate probes, and upgrades
