@@ -34,6 +34,13 @@ WAYFINDR_AI_PRIVATE_DESTINATIONS='[{"account_id":42,"source":"account","origin":
 
 Loopback refers to the application's own network namespace, including inside a
 container. A real deployment must approve the actual model route/addresses.
+The guarded resolver maps exact `localhost` to both `127.0.0.1` and `::1` without
+a DNS lookup, so its grant must list both loopbacks. Use the corresponding IP
+literal for a single-stack route. Other names use DNS; hosts-only aliases are
+unsupported.
+DNS subprocesses select a PHP CLI executable independently of the web SAPI and
+fail closed if none is available. The self-hosting image carries the same PHP
+CLI runtime used by its queue, scheduler and Reverb processes.
 These environment settings require the normal config/worker restart lifecycle;
 this slice provides no account-editable private-network switch.
 

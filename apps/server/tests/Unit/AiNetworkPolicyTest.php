@@ -176,6 +176,41 @@ test('AI private grants permit only exact RFC1918 loopback or ULA addresses', fu
         ->and($result['curl'][CURLOPT_RESOLVE])->toBe(['models.internal:11434:'.(str_contains($ip, ':') ? '['.$ip.']' : $ip)]);
 })->with(['10.0.0.7', '172.16.0.7', '192.168.0.7', '127.0.0.1', '::1', 'fd12::7']);
 
+test('AI default localhost Ollama requires and pins an exact loopback route grant', function (): void {
+    $called = false;
+    $dns = new BoundedAiDnsResolver(function () use (&$called): array {
+        $called = true;
+
+        return [];
+    });
+    $connection = new ResolvedAgentCopilotConnection(7, 'account', str_repeat('a', 64), 'ollama', 'support-model', '', '', '');
+    $wireUrl = 'http://localhost:11434/api/chat';
+    $grant = aiNetworkPolicyGrant('http://localhost:11434', ['127.0.0.1', '::1']);
+
+    foreach ([
+        ['mode' => 'public-only', 'private_grants' => [$grant]],
+        ['mode' => 'operator-private', 'private_grants' => []],
+        ['mode' => 'operator-private', 'private_grants' => [[...$grant, 'account_id' => 8]]],
+        ['mode' => 'operator-private', 'private_grants' => [[...$grant, 'source' => 'installation']]],
+        ['mode' => 'operator-private', 'private_grants' => [[...$grant, 'origin' => 'http://localhost:11435']]],
+        ['mode' => 'operator-private', 'private_grants' => [[...$grant, 'ips' => ['127.0.0.1']]]],
+    ] as $configuration) {
+        $policy = new AiNetworkPolicy($dns, $configuration, 'revision-key');
+        expect(aiNetworkPolicyReason(fn () => $policy->inspect($connection, $wireUrl, aiNetworkPolicyDeadline())))
+            ->toBe('destination_denied', 'Resolving localhost must not widen private-grant authority or skip either loopback address.');
+    }
+
+    $policy = new AiNetworkPolicy($dns, ['mode' => 'operator-private', 'private_grants' => [$grant]], 'revision-key');
+    $result = null;
+    $reason = aiNetworkPolicyReason(function () use ($policy, $connection, $wireUrl, &$result): void {
+        $result = $policy->inspect($connection, $wireUrl, aiNetworkPolicyDeadline());
+    });
+    expect($reason)->toBeNull('The documented exact localhost grant must permit the default Ollama route without DNS.')
+        ->and($result['ips'])->toBe(['127.0.0.1', '::1'])
+        ->and($result['curl'][CURLOPT_RESOLVE])->toBe(['localhost:11434:127.0.0.1,[::1]'])
+        ->and($called)->toBeFalse();
+});
+
 test('AI private grants cannot authorize metadata link local mapped or reserved ranges', function (string $ip): void {
     expect(aiNetworkPolicyReason(fn () => new AiNetworkPolicy(new BoundedAiDnsResolver(fn (): array => [$ip]), [
         'mode' => 'operator-private', 'private_grants' => [aiNetworkPolicyGrant(ips: [$ip])],

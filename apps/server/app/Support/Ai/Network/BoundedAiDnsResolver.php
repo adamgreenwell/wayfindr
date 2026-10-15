@@ -6,6 +6,7 @@ namespace App\Support\Ai\Network;
 
 use Closure;
 use SensitiveParameter;
+use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 use Throwable;
 
@@ -18,18 +19,21 @@ final readonly class BoundedAiDnsResolver implements AiDnsResolver
 
     private const MAXIMUM_ADDRESSES = 64;
 
-    /** @var Closure(string, float): (Process|array) */
+    /** @var Closure(string, float, string): (Process|array) */
     private Closure $runner;
+
+    private PhpExecutableFinder $php;
 
     /**
      * The injected runner permits deterministic DNS and subprocess tests. The
      * production runner creates an argv-only process, never a shell command.
      *
-     * @param  (Closure(string, float): (Process|array))|null  $runner
+     * @param  (Closure(string, float, string): (Process|array))|null  $runner
      */
-    public function __construct(?Closure $runner = null)
+    public function __construct(?Closure $runner = null, ?PhpExecutableFinder $php = null)
     {
-        $this->runner = $runner ?? static function (string $host): Process {
+        $this->php = $php ?? new PhpExecutableFinder;
+        $this->runner = $runner ?? static function (string $host, float $deadline, string $phpCli): Process {
             $script = <<<'PHP'
             $answers = @dns_get_record($argv[1], DNS_A | DNS_AAAA);
             if (!is_array($answers)) { exit(1); }
@@ -42,7 +46,7 @@ final readonly class BoundedAiDnsResolver implements AiDnsResolver
             echo json_encode(array_values(array_unique($ips)), JSON_THROW_ON_ERROR);
             PHP;
 
-            return new Process([PHP_BINARY, '-n', '-r', $script, $host]);
+            return new Process([$phpCli, '-n', '-r', $script, $host]);
         };
     }
 
@@ -57,12 +61,28 @@ final readonly class BoundedAiDnsResolver implements AiDnsResolver
         if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
             return [inet_ntop(inet_pton($host))];
         }
+        // localhost commonly exists only in hosts/NSS, which dns_get_record
+        // bypasses. Resolve this exact name locally; policy must still grant
+        // both addresses and pin them before a request can reach either one.
+        if (strcasecmp($host, 'localhost') === 0) {
+            $this->beforeDeadline($deadline);
+
+            return ['127.0.0.1', '::1'];
+        }
         if ($host === '' || strlen($host) > 253 || preg_match('/\A[a-zA-Z0-9.-]+\z/', $host) !== 1) {
             throw new AiNetworkException('dns_unavailable');
         }
 
         try {
-            $result = ($this->runner)($host, $deadline);
+            // PHP_BINARY is the current SAPI executable, which can be FPM or
+            // FrankenPHP during a web request. The finder selects PHP CLI;
+            // false suppresses any shell-style argument suffix.
+            $phpCli = $this->php->find(false);
+            if ($phpCli === false) {
+                throw new AiNetworkException('dns_unavailable');
+            }
+            $this->beforeDeadline($deadline);
+            $result = ($this->runner)($host, $deadline, $phpCli);
             $answers = $result instanceof Process ? $this->execute($result, $deadline) : $result;
             $this->beforeDeadline($deadline);
 
