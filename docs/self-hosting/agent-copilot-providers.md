@@ -16,8 +16,10 @@ defines the account connection and automatic-preparation requirements. The
 [account-connection backend foundation](../product/ai-support-assist-account-connections.md)
 adds encrypted proposed/active storage, permission checks and per-call connection
 resolution to the source. Account-owned outbound calls remain unavailable until
-endpoint policy/probes are implemented; the account screen and automatic
-preparation are still pending. The remaining sections describe the existing
+guarded SDK/probe integration and usage admission are implemented. The
+[provider policy/transport foundation](../product/ai-support-assist-provider-policy.md)
+defines the new destination boundary; it activates no account calls. The account
+screen and automatic preparation are still pending. The remaining sections describe the existing
 operator-configured, on-demand copilot and its explicit installation-default path.
 
 Option 1 uses a collapsible right Assist rail with stacked summary, suggested
