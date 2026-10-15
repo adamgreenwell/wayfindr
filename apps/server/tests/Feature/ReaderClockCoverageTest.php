@@ -38,6 +38,12 @@ const READER_CLOCK_EXEMPT = [
     // Values being WRITTEN, not read. Storage is UTC and must stay UTC.
     'app/Http/Controllers/Widget/ConversationRatingController.php' => 'columns, not copy',
 
+    // Database UTC allowance-day keys and storage wire timestamps. These are
+    // machine identities/validation, never reader-facing timestamp labels;
+    // a reader timezone would move the budget boundary or stored instant.
+    'app/Support/Ai/Usage/AiUsageLedger.php' => 'database UTC allowance keys and storage wire timestamps, never reader-facing',
+    'app/Support/Ai/Usage/DatabaseAiUsageClock.php' => 'database UTC timestamp validation, never reader-facing',
+
     // Filenames. A downloaded artifact outlives the session that made it and
     // may be read by a team spread across zones, so its stamp stays
     // unambiguous. The BackupService stamp is also parsed back out of the

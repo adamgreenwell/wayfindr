@@ -3,7 +3,8 @@
 Date: 2026-10-15
 
 Status: Option 1 selected on 2026-10-15; the account-connection foundation is
-merged and provider policy/transport work has started. The Assist surface and
+merged, the first provider policy/transport slice is merged, and #1174 usage
+admission is In Progress. The Assist surface and
 automatic preparation remain pending. The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The
@@ -11,6 +12,8 @@ plan maps that contract and the selected screens to the delivery backlog. The
 the implemented backend lifecycle and the remaining endpoint/UI gates. The
 [provider policy foundation](ai-support-assist-provider-policy.md) records the
 first #1168 slice and the remaining guarded SDK/probe/discovery/usage integration.
+The [usage admission foundation](ai-support-assist-usage-admission.md) records
+the ledger, transport receipt and expiry seams required by that integration.
 
 ## Product outcome
 
@@ -274,7 +277,7 @@ for the contract, both UI slices, and full-flow qualification.
 | [6. Conversation Assist panel](https://github.com/adamgreenwell/wayfindr/issues/1171) | P2 | 5; Option 1 selected | Persistent collapsible right rail with stacked Catch up, Suggested reply and Sources; insertion/refresh beside the suggestion, separate composer send, and all six contract states. Manual mode provides initial preparation actions; Off never generates. Ticket conversion prepares eligible enabled details but applies only to an untouched form before separate creation. Preserve edits; qualify keyboard, small viewport, themes and locales. |
 | [7. Published knowledge grounded drafts](https://github.com/adamgreenwell/wayfindr/issues/1172) | P1 | 5, 6 | Relevant passage retrieval and validated citations with access/publication rechecks. Synthetic cases cover conflicting/deleted sources, injection, fabricated citations, unsupported claims and cross-account sources. |
 | [8. Refine the agent draft](https://github.com/adamgreenwell/wayfindr/issues/1173) | P2 | 6, 7 | Clarify/shorten/tone/translate with preview, cancel, original preservation and draft-revision checks. No shared-output overwrite, hidden insertion or send. |
-| [9. Budgets concurrency and failures](https://github.com/adamgreenwell/wayfindr/issues/1174) | P1 | 2 | Atomic request/token reservations and fixed UTC daily periods using database time; consistent scope/period locking, queued rollover and original-period reconciliation. Concurrency spans midnight; rotation never resets allowance. Concurrent requests cannot overspend; timeout/unknown usage cannot create free retries or unbounded reservations. |
+| [9. Budgets concurrency and failures](https://github.com/adamgreenwell/wayfindr/issues/1174) | P1 | 2 | [Backend foundation](ai-support-assist-usage-admission.md) is In Progress: atomic request/token reservations and fixed UTC daily periods using database time; consistent scope/period locking, queued rollover and original-period reconciliation. Concurrency spans midnight; rotation never resets allowance. Concurrent requests cannot overspend; timeout/unknown usage cannot create free retries or unbounded reservations. Remaining integration/UI qualification stays open. |
 | [10. Audits feedback and retention](https://github.com/adamgreenwell/wayfindr/issues/1175) | P1 | 4–9 | Account-visible content-free audit, adoption/rejection events, bounded usage reporting and export/deletion/retention integration. Verify visibility, secret exclusion, duplicate feedback and deletion races. |
 | [11. Full flow qualification rollout and documentation](https://github.com/adamgreenwell/wayfindr/issues/1176) | P1 | 1–10 | Qualify both Option 1 screens, all six Assist states (Preparing, Ready, Stale, Unavailable, Disabled and Insufficient context), and all admin connection states. The mock illustrates four states without limiting qualification. Cover fake-provider journeys, tenant isolation, grounding/refinement evaluation, accessible responsive UAT, automatic/manual/off and upgrade behavior, pilot criteria and rollback. Runtime/provider quality and deployment are separate evidence boundaries. |
 

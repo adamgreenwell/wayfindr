@@ -25,6 +25,8 @@ use App\Support\Ai\Network\BoundedAiDnsResolver;
 use App\Support\Ai\Network\UnavailableAiModelDiscovery;
 use App\Support\Ai\Network\UnavailableAiOutboundAdmission;
 use App\Support\Ai\UnavailableAccountAiConnectionProbe;
+use App\Support\Ai\Usage\AiUsageClock;
+use App\Support\Ai\Usage\DatabaseAiUsageClock;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
@@ -95,6 +97,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AccountAiConnectionProbe::class, UnavailableAccountAiConnectionProbe::class);
         $this->app->bind(AiDnsResolver::class, BoundedAiDnsResolver::class);
         $this->app->bind(AiOutboundAdmission::class, UnavailableAiOutboundAdmission::class);
+        $this->app->bind(AiUsageClock::class, DatabaseAiUsageClock::class);
         $this->app->bind(AiModelDiscovery::class, UnavailableAiModelDiscovery::class);
         $this->app->bind(AiNetworkPolicy::class, fn (): AiNetworkPolicy => new AiNetworkPolicy(
             $this->app->make(AiDnsResolver::class),

@@ -67,12 +67,18 @@ encoded responses, avoiding decompression expansion. Errors contain stable reaso
 codes without request bodies, credentials, raw provider responses or exception
 chains.
 
-The transport first calls `AiOutboundAdmission` for the exact server-owned
-attempt. Its default implementation refuses before DNS or network activity.
-[#1174](https://github.com/adamgreenwell/wayfindr/issues/1174) must provide atomic
-usage/concurrency reservations and reconciliation before new probes, discovery
-or account support calls can execute. Endpoint safety alone grants no execution
-authority. SDK/HTTP test fakes do not lift the production gate.
+The transport first claims the exact server-owned reserved attempt through
+`AiOutboundAdmission`, then consumes that claim immediately before HTTP. Its
+default implementation still refuses before DNS or network activity. The
+[#1174 usage foundation](ai-support-assist-usage-admission.md) supplies the atomic
+ledger and an unbound `LedgerAiOutboundAdmission` bridge. A server-only
+`AiHttpResult` returns the bounded response and exact dispatch receipt for
+reported-usage reconciliation; it cannot be serialized into UI, queue or audit
+payloads. Missing usage retains its conservative debit and bounded concurrency
+lease. #1168 must enforce actual input/output bounds and current authority before
+binding that bridge or activating new probes, discovery or account support calls.
+Endpoint safety alone grants no execution authority. SDK/HTTP test fakes do not
+lift the production gate.
 
 Remaining #1168 work must bind guarded gateways to each fresh SDK driver, connect
 synthetic proposed-revision probes to current management authority and usage

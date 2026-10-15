@@ -36,18 +36,26 @@ final readonly class AiHttpTransport
     /** @param array<string, string|list<string>> $headers */
     public function send(
         #[SensitiveParameter] ResolvedAgentCopilotConnection $connection,
-        string $purpose,
-        string $attemptId,
-        string $method,
+        #[SensitiveParameter] string $purpose,
+        #[SensitiveParameter] string $attemptId,
+        #[SensitiveParameter] string $method,
         #[SensitiveParameter] string $url,
         #[SensitiveParameter] array $headers = [],
         #[SensitiveParameter] string $body = '',
-    ): ResponseInterface {
+    ): AiHttpResult {
         $deadline = $this->now() + self::TOTAL_SECONDS;
+        $claim = null;
+        $dispatch = null;
+        $settlementAttempted = false;
+        $settlementCompleted = false;
 
         try {
-            // Budget/authority admission must happen before DNS or any I/O.
-            $this->admission->assertAllowed($connection, $purpose, $attemptId);
+            // Claim before DNS, then consume that claim at the wire boundary.
+            $claimNonce = $this->admission->assertAllowed($connection, $purpose, $attemptId);
+            if ($claimNonce === '') {
+                throw new AiNetworkException('usage_admission_unavailable');
+            }
+            $claim = $claimNonce;
             $this->remaining($deadline);
 
             $method = strtoupper($method);
@@ -99,6 +107,16 @@ final readonly class AiHttpTransport
             $handler = $this->terminalHandler ?? new CurlHandler([
                 'handle_factory' => new BoundedAiCurlFactory(fn (): float => $this->remaining($deadline)),
             ]);
+            $dispatchNonce = $this->admission->beginDispatch($connection, $purpose, $attemptId, $claim);
+            if ($dispatchNonce === '') {
+                throw new AiNetworkException('usage_admission_unavailable');
+            }
+            $dispatch = $dispatchNonce;
+            // Database admission may wait for a lock. It cannot extend the
+            // absolute request deadline or leave an earlier cURL timeout stale.
+            $remaining = $this->remaining($deadline);
+            $options['timeout'] = $remaining;
+            $options['connect_timeout'] = min(5.0, $remaining);
             $response = $handler($request, $options)->wait();
             $this->checkResponse($response, $deadline);
 
@@ -125,10 +143,18 @@ final readonly class AiHttpTransport
             $this->remaining($deadline);
             $bounded->rewind();
 
-            return new Response(
+            $response = new Response(
                 $response->getStatusCode(), $response->getHeaders(), $bounded,
                 $response->getProtocolVersion(),
             );
+            // Only the provider adapter can parse explicit reported usage.
+            // Until then, keep the conservative debit and bounded lease.
+            $settlementAttempted = true;
+            $this->admission->markUnknown($attemptId, $dispatch, 'usage_unavailable');
+            $settlementCompleted = true;
+            $this->remaining($deadline);
+
+            return new AiHttpResult($response, $attemptId, $dispatch);
         } catch (Throwable $exception) {
             // Guzzle wraps header/sink failures with the request and previous
             // exception. Retain only our stable reason, never that object chain.
@@ -137,6 +163,22 @@ final readonly class AiHttpTransport
                 if ($current instanceof AiNetworkException) {
                     $reason = $current->reason;
                     break;
+                }
+            }
+            if ($settlementAttempted && ! $settlementCompleted) {
+                $reason = 'usage_reconciliation_unavailable';
+            }
+
+            if (! $settlementAttempted) {
+                try {
+                    if ($dispatch !== null) {
+                        $this->admission->markUnknown($attemptId, $dispatch,
+                            in_array($reason, ['deadline_exceeded', 'dns_deadline'], true) ? 'timeout' : 'transport_failed');
+                    } elseif ($claim !== null) {
+                        $this->admission->cancelUnsent($attemptId, $claim, 'known_unsent');
+                    }
+                } catch (Throwable) {
+                    $reason = 'usage_reconciliation_unavailable';
                 }
             }
 

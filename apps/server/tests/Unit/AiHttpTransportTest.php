@@ -50,12 +50,23 @@ function aiTransportAdmission(?Closure $allow = null): AiOutboundAdmission
     {
         public function __construct(private ?Closure $allow) {}
 
-        public function assertAllowed(ResolvedAgentCopilotConnection $connection, string $purpose, string $attemptId): void
+        public function assertAllowed(ResolvedAgentCopilotConnection $connection, string $purpose, string $attemptId): string
         {
             if ($this->allow !== null) {
                 ($this->allow)($connection, $purpose, $attemptId);
             }
+
+            return 'synthetic-claim';
         }
+
+        public function beginDispatch(ResolvedAgentCopilotConnection $connection, string $purpose, string $attemptId, string $claimNonce): string
+        {
+            return 'synthetic-dispatch';
+        }
+
+        public function cancelUnsent(string $attemptId, string $claimNonce, string $reason = 'known_unsent'): void {}
+
+        public function markUnknown(string $attemptId, string $dispatchNonce, string $reason = 'usage_unavailable'): void {}
     };
 }
 
@@ -178,9 +189,10 @@ test('AI transport pins an admitted request and owns every transport option', fu
         },
     );
 
-    $response = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'POST', 'https://models.example.test/v1/chat/completions', [
+    $result = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'POST', 'https://models.example.test/v1/chat/completions', [
         'Authorization' => 'Bearer private-key-a', 'Content-Type' => 'application/json', 'Accept-Encoding' => 'gzip',
     ], '{}');
+    $response = $result->response;
 
     expect($events)->toBe(['admission', 'dns', 'send'])
         ->and((string) $response->getBody())->toBe('{}')
@@ -215,7 +227,8 @@ test('AI transport accepts informational headers before a final successful respo
     });
 
     try {
-        $response = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models');
+        $result = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models');
+        $response = $result->response;
         $reason = null;
     } catch (AiNetworkException $exception) {
         $reason = $exception->reason;
@@ -270,7 +283,8 @@ test('production AI cURL accepts bounded interim blocks and a final response', f
     $wire = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 102 Processing\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: </synthetic>; rel=preload\r\n\r\n"
         ."HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
     aiTransportLoopback($wire, function (AiHttpTransport $transport, ResolvedAgentCopilotConnection $connection, string $url): void {
-        $response = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        $result = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        $response = $result->response;
         expect($response->getStatusCode())->toBe(200)->and((string) $response->getBody())->toBe('{}');
     });
 });
@@ -288,7 +302,8 @@ test('production AI cURL caps cumulative header bytes and lines before the body'
 
 test('production AI cURL accepts the exact cumulative header ceilings', function (string $headers): void {
     aiTransportLoopback($headers.'{}', function (AiHttpTransport $transport, ResolvedAgentCopilotConnection $connection, string $url): void {
-        $response = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        $result = $transport->send($connection, 'probe', 'local-attempt', 'GET', $url);
+        $response = $result->response;
         expect($response->getStatusCode())->toBe(200)->and((string) $response->getBody())->toBe('{}');
     });
 })->with([
@@ -479,7 +494,8 @@ test('AI transport accepts the exact request and response byte ceilings', functi
         return Create::promiseFor(new Response(200, ['Content-Encoding' => 'identity', 'Content-Length' => '262144'], str_repeat('x', 262_144)));
     });
 
-    $response = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'POST', 'https://models.example.test/v1/chat/completions', [], str_repeat('x', 65_536));
+    $result = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'POST', 'https://models.example.test/v1/chat/completions', [], str_repeat('x', 65_536));
+    $response = $result->response;
     expect($response->getBody()->getSize())->toBe(262_144);
 });
 

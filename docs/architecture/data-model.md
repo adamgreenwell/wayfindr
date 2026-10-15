@@ -140,6 +140,28 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   the processor; draft edits leave active processing intact. `enabled` pauses
   processing, while `uses_installation_default` preserves the existing manual
   path only until deliberate selection or disconnect retires that eligibility.
+- `account_ai_usage_limits`: one account's nullable request/token, concurrency
+  and output ceilings, deleted with the account. Null inherits installation
+  policy; zero denies new attempts; positive values can only narrow it. These
+  settings are independent of connection revisions, keys and enablement.
+- `ai_usage_scopes`: stable installation/account mutex rows and cross-period
+  concurrency counters. The installation singleton is created atomically on
+  first ledger use, keeping fresh migrations empty for restore safety;
+  account scope identities do not rotate with the connection. Plain internal
+  account identifiers deliberately survive account deletion so in-flight leases
+  can still reconcile without refunding installation usage.
+- `ai_usage_periods`: unique scope/UTC-day records with held and charged request
+  and token counters. Daily identity comes from database wall time under locks;
+  late receipts adjust only their original dispatch period. Old periods are
+  retained for reconciliation rather than zeroed into today's allowance.
+- `ai_usage_attempts`: content-free reservation/claim/dispatch receipts, ordered
+  by sequence and identified by unique UUID. Account/source/revision/purpose/work
+  fingerprints bind deduplication and explicit replacement. Conservative bounds,
+  nullable reported usage, original period, opaque nonces, deadlines, sanitized
+  outcome/cooldown and an explicit concurrency fence prevent duplicate dispatch
+  or double release. Internal account/requester IDs have no cascading foreign
+  keys, preserving active accounting across deletion. No prompt, output,
+  credential, model endpoint or visitor-record copy is stored here.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
   conversation, one row per conversation, overwritten by each refresh instead
   of kept as history. Every worker write is guarded on `generation`, so a
