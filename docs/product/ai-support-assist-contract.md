@@ -83,7 +83,7 @@ Saved-key masking is status only, with no retrieval or reveal of the saved key.
 2. Opening **Create ticket** invokes the same ensure semantics for ticket
    details only. It does not prepare ticket details on every conversation open.
 3. Ensure returns matching current output, an existing pending/running generation,
-   or a cached insufficient-context outcome. Otherwise it atomically reserves
+   or a cached insufficient-context or terminal failure outcome. Otherwise it atomically reserves
    usage and one generation before enqueueing. Equivalent concurrent opens share
    work. Reopening unchanged input creates no new provider charge.
 4. The worker rechecks authority, enabled policy, connection revision, sources,
