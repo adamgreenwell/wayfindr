@@ -79,7 +79,7 @@ final readonly class AiHttpTransport
                 'timeout' => $remaining,
                 'sink' => $sink,
                 'on_headers' => function (ResponseInterface $response) use ($deadline): void {
-                    $this->checkResponse($response, $deadline);
+                    $this->checkResponse($response, $deadline, allowInterim: true);
                 },
                 'curl' => array_replace($destination['curl'], [
                     CURLOPT_PROTOCOLS => $scheme === 'https' ? CURLPROTO_HTTPS : CURLPROTO_HTTP,
@@ -176,9 +176,15 @@ final readonly class AiHttpTransport
         return $request->withHeader('Host', $authority)->withHeader('Accept-Encoding', 'identity');
     }
 
-    private function checkResponse(#[SensitiveParameter] ResponseInterface $response, float $deadline): void
+    private function checkResponse(#[SensitiveParameter] ResponseInterface $response, float $deadline, bool $allowInterim = false): void
     {
         $this->remaining($deadline);
+        // cURL reports informational header blocks before the final response.
+        // These do not authorize a body or relax the final 2xx requirement.
+        // Protocol switching (101) remains unavailable to this HTTP transport.
+        if ($allowInterim && in_array($response->getStatusCode(), [100, 102, 103], true)) {
+            return;
+        }
         if ($response->getStatusCode() >= 300 && $response->getStatusCode() < 400) {
             throw new AiNetworkException('redirect_denied');
         }

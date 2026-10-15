@@ -149,6 +149,67 @@ test('AI transport pins an admitted request and owns every transport option', fu
         ->and($options['curl'][CURLOPT_FORBID_REUSE])->toBeTrue();
 });
 
+test('AI transport accepts informational headers before a final successful response', function (int $status): void {
+    $transport = new AiHttpTransport(aiTransportPolicy(), aiTransportAdmission(), function (RequestInterface $request, array $options) use ($status) {
+        ($options['on_headers'])(new Response($status));
+        ($options['on_headers'])(new Response(200, ['Content-Length' => '2']));
+        $options['sink']->write('{}');
+
+        return Create::promiseFor(new Response(200, [], $options['sink']));
+    });
+
+    try {
+        $response = $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models');
+        $reason = null;
+    } catch (AiNetworkException $exception) {
+        $reason = $exception->reason;
+    }
+
+    expect($reason)->toBeNull('Standard informational headers must not reject the following final HTTP 200 response.')
+        ->and($response->getStatusCode())->toBe(200)
+        ->and((string) $response->getBody())->toBe('{}');
+})->with([100, 102, 103]);
+
+test('AI informational header handling retains the total deadline', function (): void {
+    $clock = hrtime(true) / 1e9;
+    $accepted = false;
+    $transport = new AiHttpTransport(
+        aiTransportPolicy(), aiTransportAdmission(),
+        function (RequestInterface $request, array $options) use (&$clock, &$accepted) {
+            $clock += 21;
+            ($options['on_headers'])(new Response(103));
+            $accepted = true;
+
+            return Create::promiseFor(new Response(200, [], '{}'));
+        },
+        function () use (&$clock): float {
+            return $clock;
+        },
+    );
+
+    aiTransportFailure(fn () => $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models'), 'deadline_exceeded');
+    expect($accepted)->toBeFalse('Expired interim headers must be refused before accepting another response block.');
+});
+
+test('AI transport never treats a final informational response as success', function (int $status): void {
+    $transport = new AiHttpTransport(aiTransportPolicy(), aiTransportAdmission(), fn () => Create::promiseFor(new Response($status)));
+
+    aiTransportFailure(fn () => $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models'), 'http_error');
+})->with([100, 101, 102, 103]);
+
+test('AI transport refuses protocol switching at the header boundary', function (): void {
+    $accepted = false;
+    $transport = new AiHttpTransport(aiTransportPolicy(), aiTransportAdmission(), function (RequestInterface $request, array $options) use (&$accepted) {
+        ($options['on_headers'])(new Response(101, ['Upgrade' => 'websocket']));
+        $accepted = true;
+
+        return Create::promiseFor(new Response(200));
+    });
+
+    aiTransportFailure(fn () => $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models'), 'http_error');
+    expect($accepted)->toBeFalse('A protocol upgrade must be refused before any upgraded body is accepted.');
+});
+
 test('AI transport rejects foreign Host before forwarding a key', function (array $headers): void {
     $calls = 0;
     $transport = new AiHttpTransport(aiTransportPolicy(), aiTransportAdmission(), function () use (&$calls) {
