@@ -10,6 +10,13 @@ return [
         // Applied after deterministic secret/identifier scrubbing. Features
         // should still select the narrowest useful context before this guard.
         'max_context_characters' => (int) env('WAYFINDR_AI_MAX_CONTEXT_CHARACTERS', 30000),
+
+        // Operator-owned policy for the guarded account transport foundation.
+        // Usage admission remains unavailable; these values activate no calls.
+        'network' => [
+            'mode' => env('WAYFINDR_AI_NETWORK_MODE', 'public-only'),
+            'private_grants' => env('WAYFINDR_AI_PRIVATE_DESTINATIONS', '[]'),
+        ],
     ],
 
     'mail' => [
