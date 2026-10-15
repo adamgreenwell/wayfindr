@@ -204,6 +204,16 @@ sending the article catalogue/content. Account task/context enablement must disc
 the expansion. Site enablement does not create site-owned articles or knowledge
 isolation; this contract makes no same-site knowledge claim.
 
+The **Relevant articles** control governs both the knowledge task and article
+context for every other task. Off forbids article retrieval and article-passage
+transmission for reply drafts, ticket suggestions and refinements as well as the
+knowledge task; transcript-only assistance remains available. On permits only
+the bounded accessible published passages described above. Disclose this shared
+scope beside the control before enablement. Turning it off changes the effective
+policy revision: cancel queued article work, withhold obsolete article-derived
+results, and reject late completion or insertion under the previous policy. It
+cannot recall passages already dispatched to a provider.
+
 Treat transcript, articles and provider output as untrusted data. Grounding
 output identifies only supplied local source IDs/revisions. Validate these
 against selected passages and resolve accessible local links; a model-generated
