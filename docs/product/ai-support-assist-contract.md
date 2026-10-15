@@ -3,7 +3,7 @@
 Date: 2026-10-15
 
 This is the implementation contract for [issue 1166](https://github.com/adamgreenwell/wayfindr/issues/1166)
-and the selected [Option 1 mock](../design/ai-support-assist/2026-10-15/conversation-rail.png).
+and the selected [Option 1 mock](../design/ai-support-assist/2026-10-15/conversation-rail-v2.png).
 It defines required behavior for the downstream Assist layer. This documentation
 does not activate that behavior: the [current copilot](../self-hosting/agent-copilot-providers.md)
 remains on demand and uses an installation-owned connection. The
@@ -26,6 +26,12 @@ installation authority or broader support visibility. Using any support capabili
 requires current account membership, site access and the permission for the
 underlying operation: reply authority for reply/knowledge/refinement, ticket
 authority for ticket details, and conversation visibility for a summary.
+
+Changing a site's behavior, tasks, permitted context or enablement also requires
+current access to that specific site, in addition to the account management
+permission. Recheck every referenced site when accepting a policy change and
+when executing delayed policy work; bulk changes cannot include inaccessible or
+foreign-account sites. Account connection management does not grant site access.
 
 Account and site policy may disable capabilities or narrow permitted context.
 The effective policy is the intersection of installation, account, site and

@@ -98,6 +98,10 @@ support-record changes automatically. This contract preserves ADR 0004's
 autonomous-reply deferral; documenting it does not run provider tests or activate
 the planned runtime.
 
+Changing site-level Assist policy also requires current access to every affected
+site in addition to the account management permission, including bulk and delayed
+changes. Account connection management never grants site access.
+
 ## Evaluation Gate
 
 The first provider-free evaluation layer is documented in

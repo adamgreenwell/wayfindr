@@ -46,6 +46,11 @@ agent edits, and never send or submit support-record changes. These planned
 requirements preserve ADR 0004's autonomous-reply deferral. Recording them does
 not run provider tests or activate the planned runtime.
 
+Changing site-level behavior, tasks, context or enablement requires current
+access to each affected site as well as account connection-management authority.
+This applies to bulk changes and delayed work; account management does not
+grant access to other sites.
+
 ## Configure it in the operator console
 
 A platform operator can open **Operator → Agent copilot** and choose:

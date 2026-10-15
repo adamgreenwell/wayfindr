@@ -21,7 +21,7 @@
   ],
   "selection": {
     "number": 1,
-    "asset": "conversation-rail.png",
+    "asset": "conversation-rail-v2.png",
     "selected_on": "2026-10-15",
     "direction": "Conversation rail",
     "surfaces": [
@@ -34,5 +34,15 @@
       "stale",
       "unavailable"
     ]
-  }
+  },
+  "revisions": [
+    {
+      "date": "2026-10-15",
+      "mode": "built-in image_gen edit",
+      "asset": "conversation-rail-v2.png",
+      "original_asset": "conversation-rail.png",
+      "reason": "Remove the saved API-key eye/reveal affordance to match the write-only credential contract after PR #1179 review.",
+      "prompt": "Use case: precise-object-edit.\nAsset type: selected Wayfindr UI mock board repair.\nInput image 1 is the edit target, not a style reference.\nPrimary request: make exactly one tiny correction to the existing image. In the TOP RIGHT account-admin AI connection screen, locate the API key field containing masked dots, with the adjacent text 'Saved · replace to rotate'. REMOVE the small eye/reveal icon at the far right INSIDE that masked API key field. Fill the icon's pixels with the same plain white input background so it reads as a saved-credential status field with NO reveal control. Keep the masked dots, field border, API key label, adjacent saved/replace text, helper text, and all other elements exactly unchanged.\nConstraints: preserve the entire original board and its original landscape dimensions/aspect ratio; both full screens; conversation rail layout; account form layout; every text string; typography; colors; spacing; every Preparing, Ready, Stale and Unavailable specimen in both state rows; all buttons and source links. Do not crop, redraw, redesign, relocate or change any other content. No eye icon or reveal affordance may remain anywhere in the saved-credential field. This is a precise removal of one small UI icon, with no other changes."
+    }
+  ]
 }

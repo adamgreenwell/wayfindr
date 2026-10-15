@@ -71,7 +71,7 @@ does not grant autonomous customer replies or external business actions.
 
 ### Selected visual direction
 
-[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail.png)
+[Option 1 — Conversation rail](../design/ai-support-assist/2026-10-15/conversation-rail-v2.png)
 is the selected visual reference for both screens and their Preparing, Ready,
 Stale, and Unavailable states. The selection prerequisite is satisfied.
 
@@ -144,6 +144,10 @@ The heading **AI connection — for this account** establishes ownership. A new
 dedicated account permission controls management; owners and admins receive the
 default permission, with deliberate delegation through custom roles. Using
 Assist also requires the relevant site and support-operation authority.
+Changing a site's behavior, tasks, context or enablement requires current access
+to each affected site as well as the management permission. Enforce this for
+individual and bulk changes and recheck delayed policy work; an account manager
+cannot configure an inaccessible or foreign-account site.
 
 | Setting | Contract |
 | --- | --- |
