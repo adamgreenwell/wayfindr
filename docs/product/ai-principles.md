@@ -68,6 +68,36 @@ deterministically inside the install without exposing the account label
 catalogue. Applying ticket details only fills an untouched form; the agent
 reviews and submits ticket creation separately.
 
+## Planned Option 1 Assist Contract
+
+The selected [AI Support Assist contract](ai-support-assist-contract.md) records
+the next assistive layer. This is a documentation contract, not shipped runtime:
+the operator-scoped, on-demand behavior above remains current. Account-owned
+connections, automatic preparation, grounded drafts, and the selected UI require
+their downstream implementation and qualification.
+
+Option 1 keeps the transcript and composer dominant beside a collapsible right
+Assist rail stacking **Catch up**, **Suggested reply**, and **Sources**. Insert
+and Refresh sit beneath the draft; freshness sits at the rail foot. The ordinary
+composer owns Send. Account administration uses one grouped connection form,
+with separate behavior, task, site, and usage controls below it.
+
+"Private" means hidden from the visitor, not local processing. Planned grounded
+drafts may send bounded relevant passages from allowed published same-account
+articles through the scrubber. Today's knowledge flow instead sends bounded
+transcript context and receives search phrases for local article matching.
+Automatic support calls require explicit account/site enablement and
+must never activate silently on upgrade. Proposed, tested, and active connection
+revisions stay separate, with automatic preparation enabled separately.
+
+The future worker, display, and insertion paths must recheck account/site and
+support-operation authority. Changed, unpublished, deleted, or inaccessible
+sources must withhold affected output from use until current authorized context
+is established. Suggestions cannot overwrite agent edits, send replies, or apply
+support-record changes automatically. This contract preserves ADR 0004's
+autonomous-reply deferral; documenting it does not run provider tests or activate
+the planned runtime.
+
 ## Evaluation Gate
 
 The first provider-free evaluation layer is documented in

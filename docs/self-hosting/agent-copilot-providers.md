@@ -9,6 +9,43 @@ reply draft, suggested knowledge snippets, and suggested ticket details during
 conversation-to-ticket conversion. It does not add autonomous replies or
 customer-facing AI.
 
+## Planned Option 1 Assist — not yet implemented
+
+The selected [AI Support Assist contract](../product/ai-support-assist-contract.md)
+defines downstream account connections and automatic preparation. The remaining
+sections describe the current installation-wide, operator-configured, on-demand
+copilot; the planned account screen is not available through these instructions.
+
+Option 1 uses a collapsible right Assist rail with stacked summary, suggested
+reply, and sources beside the ordinary transcript/composer. Its account screen
+uses one grouped connection form with installation/own connection radio choices,
+write-only credentials, and separate behavior/task/site/usage controls below.
+Off belongs to behavior/site policy, not a third connection-source tab. No saved
+operator key is copied into an account or revealed in the browser.
+
+The future connection lifecycle must keep proposed, tested, and active revisions
+separate. A synthetic probe tests the exact proposed revision; changing its
+provider, model, endpoint, or key invalidates that test. Saving activates the
+reviewed tested revision, while automatic preparation requires separate explicit
+account/site enablement. Pending tests cannot duplicate probes, and upgrades
+must preserve existing manual behavior without silently starting provider calls.
+Account destinations remain subject to operator network policy.
+
+"Private" means hidden from the visitor, not local processing. Grounded drafts
+introduce a new data-boundary change: only bounded relevant passages from allowed
+published same-account articles, plus minimum transcript context, may reach the
+configured processor through the scrubber. Today's knowledge suggestions send
+bounded transcript context, receive validated search phrases, and rank articles
+locally, as documented below; attachments and cobrowse snapshots remain excluded.
+
+Future execution, read/display, and insertion paths must recheck the requesting
+agent's account/site and support-operation authority. Changed, unpublished,
+deleted, or inaccessible sources must withhold affected output from use until
+current authorized context is established. Insertions remain explicit, preserve
+agent edits, and never send or submit support-record changes. These planned
+requirements preserve ADR 0004's autonomous-reply deferral. Recording them does
+not run provider tests or activate the planned runtime.
+
 ## Configure it in the operator console
 
 A platform operator can open **Operator → Agent copilot** and choose:
