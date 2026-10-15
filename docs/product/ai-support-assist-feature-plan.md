@@ -2,12 +2,15 @@
 
 Date: 2026-10-15
 
-Status: Option 1 selected on 2026-10-15; account-connection foundation work has
-started. The remaining Assist surface and automatic preparation are pending. The [behavior and data contract](ai-support-assist-contract.md) defines
+Status: Option 1 selected on 2026-10-15; the account-connection foundation is
+merged and provider policy/transport work has started. The Assist surface and
+automatic preparation remain pending. The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The
 [account-connection foundation](ai-support-assist-account-connections.md) records
-the implemented backend lifecycle and the remaining endpoint/UI gates.
+the implemented backend lifecycle and the remaining endpoint/UI gates. The
+[provider policy foundation](ai-support-assist-provider-policy.md) records the
+first #1168 slice and the remaining guarded SDK/probe/discovery/usage integration.
 
 ## Product outcome
 
@@ -265,7 +268,7 @@ for the contract, both UI slices, and full-flow qualification.
 | --- | --- | --- | --- |
 | [1. Behavior and data contract](https://github.com/adamgreenwell/wayfindr/issues/1166) | P1 | None; Option 1 selected | [Contract](ai-support-assist-contract.md) records the selected surfaces, trigger, states, human control, context, authority, revision/usage and retention requirements. Principles/provider docs distinguish current runtime from this downstream contract and preserve autonomous deferral. |
 | [2. Account connections and permissions](https://github.com/adamgreenwell/wayfindr/issues/1167) | P1 | 1 | [Backend foundation](ai-support-assist-account-connections.md): explicit account connection resolution, encrypted proposed/active credentials, trusted test receipts and dedicated delegation. Existing manual work uses fresh revision/authority fences; account destinations remain blocked until slice 3. Prove account A then B cannot leak configuration or keys; reject cross-account references and revoked authority. |
-| [3. Provider adapters endpoint policy and probes](https://github.com/adamgreenwell/wayfindr/issues/1168) | P1 | 2 | Reuse current adapters, document extensions and enforce deployment-aware destinations through redirects. Synthetic probes test the proposed revision and never send customer text; errors exclude secrets. |
+| [3. Provider adapters endpoint policy and probes](https://github.com/adamgreenwell/wayfindr/issues/1168) | P1 | 2; 9 before new outbound integration | Reuse current adapters, document extensions and enforce deployment-aware destinations through redirects. Synthetic probes test the proposed revision and never send customer text; errors exclude secrets. |
 | [4. Account and site administration](https://github.com/adamgreenwell/wayfindr/issues/1169) | P2 | 2, 3, 9 | Option 1's single grouped account connection form with two-column desktop rows and behavior/task/site/usage controls below. Cover all connection states; separate draft/test/save/enable; preserve active config during edits and existing manual behavior on upgrade. |
 | [5. Automatic preparation lifecycle](https://github.com/adamgreenwell/wayfindr/issues/1170) | P1 | 2, 3, 9 | Idempotent ensure on conversation open plus ticket-details ensure on conversion open, equivalent-viewer deduplication, revision-aware cache, worker fencing and retry cooldown. Prove concurrent opens create one generation; changed messages/configuration invalidate results; GET/prefetch never generate. |
 | [6. Conversation Assist panel](https://github.com/adamgreenwell/wayfindr/issues/1171) | P2 | 5; Option 1 selected | Persistent collapsible right rail with stacked Catch up, Suggested reply and Sources; insertion/refresh beside the suggestion, separate composer send, and all six contract states. Manual mode provides initial preparation actions; Off never generates. Ticket conversion prepares eligible enabled details but applies only to an untouched form before separate creation. Preserve edits; qualify keyboard, small viewport, themes and locales. |
@@ -275,7 +278,9 @@ for the contract, both UI slices, and full-flow qualification.
 | [10. Audits feedback and retention](https://github.com/adamgreenwell/wayfindr/issues/1175) | P1 | 4–9 | Account-visible content-free audit, adoption/rejection events, bounded usage reporting and export/deletion/retention integration. Verify visibility, secret exclusion, duplicate feedback and deletion races. |
 | [11. Full flow qualification rollout and documentation](https://github.com/adamgreenwell/wayfindr/issues/1176) | P1 | 1–10 | Qualify both Option 1 screens, all six Assist states (Preparing, Ready, Stale, Unavailable, Disabled and Insufficient context), and all admin connection states. The mock illustrates four states without limiting qualification. Cover fake-provider journeys, tenant isolation, grounding/refinement evaluation, accessible responsive UAT, automatic/manual/off and upgrade behavior, pilot criteria and rollback. Runtime/provider quality and deployment are separate evidence boundaries. |
 
-The dependency order is 1 → 2 → 3 and 9 → 4 and 5 → 6 → 7 → 8 → 10 → 11.
+Build 1 then 2. Provider-policy foundation (3) and budgets (9) may proceed in
+parallel; new probes, discovery and account dispatch require both. Then build
+4 and 5 → 6 → 7 → 8 → 10 → 11.
 UI work can use fixtures while its backend dependencies are implemented; that
 does not establish integrated runtime behavior.
 
@@ -294,7 +299,7 @@ older suite identities do not establish current quality.
 
 [Epic 1165](https://github.com/adamgreenwell/wayfindr/issues/1165) and child issues
 1166–1176 are tracked on Project 14 with the priorities and phases above. The
-eleven native parent relationships and thirty blocked-by dependencies express
+native parent relationships and blocked-by dependencies express
 the delivery order. Each issue contains standalone acceptance criteria and
 concrete dependency links. Option 1 is selected and the visual prerequisite is
 satisfied. Issue 1166 owns this documentation contract; downstream issues own
