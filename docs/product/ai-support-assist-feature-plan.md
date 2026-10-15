@@ -155,6 +155,10 @@ Changing a site's behavior, tasks, context or enablement requires current access
 to each affected site as well as the management permission. Enforce this for
 individual and bulk changes and recheck delayed policy work; an account manager
 cannot configure an inaccessible or foreign-account site.
+Activation/replacement/re-enabling of the shared account connection requires
+current access to every affected enabled site. Check the current site set under
+the account lock at activation; a scoped manager may propose/test settings but
+cannot reroute an inaccessible site's data. Disable/disconnect remains available.
 
 | Setting | Contract |
 | --- | --- |

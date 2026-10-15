@@ -101,6 +101,9 @@ the planned runtime.
 Changing site-level Assist policy also requires current access to every affected
 site in addition to the account management permission, including bulk and delayed
 changes. Account connection management never grants site access.
+Activating, replacing or re-enabling a shared account connection requires access
+to every affected enabled site, rechecked against the current site set under the
+account lock. A synthetic probe never approves another site's processor change.
 
 ## Evaluation Gate
 

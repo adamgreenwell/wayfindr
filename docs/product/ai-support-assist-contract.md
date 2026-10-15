@@ -33,6 +33,14 @@ permission. Recheck every referenced site when accepting a policy change and
 when executing delayed policy work; bulk changes cannot include inaccessible or
 foreign-account sites. Account connection management does not grant site access.
 
+Activating, replacing or re-enabling a shared account connection also requires
+current access to every enabled site affected by that processing revision.
+Reject the change if any affected site is inaccessible; proposing edits and
+synthetic testing may proceed without changing the active processor. Recheck
+the affected-site set and access under the account lock at activation, including
+sites enabled since the test. A successful probe does not approve rerouting
+another site's support data. Disabling/disconnecting remains available.
+
 Account and site policy may disable capabilities or narrow permitted context.
 The effective policy is the intersection of installation, account, site and
 viewer authority. A configured provider alone never grants permission to call

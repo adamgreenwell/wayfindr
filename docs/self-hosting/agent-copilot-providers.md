@@ -50,6 +50,10 @@ Changing site-level behavior, tasks, context or enablement requires current
 access to each affected site as well as account connection-management authority.
 This applies to bulk changes and delayed work; account management does not
 grant access to other sites.
+Activating, replacing or re-enabling the shared account connection also requires
+access to every affected enabled site. Recheck the current site set under the
+account lock at activation; proposed edits/probes cannot reroute inaccessible
+sites. Disabling or disconnecting remains available.
 
 ## Configure it in the operator console
 
