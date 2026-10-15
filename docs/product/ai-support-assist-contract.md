@@ -254,6 +254,15 @@ upgrade without silently starting automatic calls. New enabled sites default to
 **Prepare when opened**, with **Manual** and **Off** available. Disable/disconnect
 always remains available regardless of probe state.
 
+For **Our connection**, **Clear key** edits only the proposed credential; the
+active saved connection remains in use until a valid tested proposal is saved.
+A required-key provider cannot activate a keyless proposal. **Disable** stops
+support processing while retaining configuration for deliberate re-enablement.
+**Disconnect** immediately disables support processing and removes both proposed
+and active credentials/revisions; it never selects the installation connection
+as a fallback. Reconnection requires an explicit source choice, successful test
+and activation. Account controls cannot clear an installation operator's key.
+
 Account-owned credentials are encrypted, write-only and inaccessible to other
 accounts or ordinary agents. Using an allowed installation connection references
 its revision without copying its secret. Resolve the account connection
@@ -295,11 +304,11 @@ audit, shared cache or durable browser storage. Preview candidates expire on
 apply, cancel, workspace end or the same 15-minute maximum. Dispatch, read and
 Apply recheck ownership, parent authority, current policy and draft revision;
 expired work cannot call or apply. These input and preview stores join the
-export/erasure/retention inventory below and must not become a draft history. Cached insufficient-context and
-failure receipts hold reason/revision metadata, not rejected provider text.
+export/erasure/retention inventory below and must not become a draft history.
+Cached insufficient-context and failure receipts hold reason/revision metadata, not rejected provider text.
 
-Suggestion, refinement-input and preview stores participate in conversation/site/account deletion
-and applicable visitor export/erasure and retention inventories. Preserve
+Suggestion, refinement-input and preview stores participate in conversation, site
+and account deletion and applicable visitor export/erasure and retention inventories. Preserve
 [ADR 0026](../decisions/0026-erasing-and-exporting-a-visitor.md) in-flight erasure
 admission and fencing. Every external attempt carrying visitor-derived text,
 including grounded generation and agent-owned refinement, must register an
