@@ -299,6 +299,24 @@ documented budget-window reset, so the reservation cannot remain unbounded or
 become a free retry. Expose request/token usage; money is an estimate unless
 actual provider billing is available.
 
+Daily request/token allowances use fixed UTC calendar days, from 00:00 UTC
+inclusive to the next 00:00 UTC exclusive, determined by database time. Browser,
+agent/account/installation timezones and daylight-saving changes cannot move the
+boundary. Installation and account counters use explicit period keys; connection
+rotation never resets them. Atomically reserve all applicable counters in one
+transaction with a consistent lock order and unique scope/period identities.
+Concurrent workers must not independently zero or recreate the same allowance.
+
+Queued work crossing midnight must atomically release its known-unsent old hold
+and reserve in the current period before transmission, or stop without a call.
+An already-dispatched attempt stays charged to its dispatch period; late or
+duplicate reconciliation may adjust only that period, never credit a newer one.
+Unknown usage remains conservatively debited through that period's close. Keep
+prior-period receipts for reconciliation without carrying their allowance into
+the new day. Concurrency counts span periods and include still-running attempts.
+An unset account limit inherits installation policy; zero permits no external
+attempt, and a positive limit may only narrow the effective installation ceiling.
+
 Failures use stable sanitized reason codes and task states. No raw provider
 response, credential, customer text or private endpoint detail leaks into an
 agent error. Probe success, validated task readiness, useful assistance and
