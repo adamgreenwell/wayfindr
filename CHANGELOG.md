@@ -30,6 +30,38 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-15
+
+**No operator action required.** Existing installations retain their normal
+bootstrap and password-recovery behavior; the new bootstrap request table is
+additive. Headless owner provisioning is an optional path for a fresh, private
+installation. Host helper `0.11.0` remains a separate administrator upgrade.
+Managed application upgrades and protective-archive recovery remain unqualified,
+with **0/100** managed scenarios qualified.
+
+### Added
+
+- `wayfindr:bootstrap-owner` creates a fresh account, ordinary Owner and first
+  site without granting platform operator access. It delivers an expiring,
+  single-use password-setting claim exclusively into a protected file, using the
+  existing Laravel recovery flow without printing or mailing a password or link.
+- A stable request UUID and locked singleton bootstrap record serialize initial
+  requests. Exact committed retries return the original receipt without rotating
+  credentials; partial or uncertain outcomes preserve private evidence and hold
+  for operator reconciliation.
+- Read-only bootstrap status distinguishes the original completed receipt from
+  current owner/site bindings. The strict first-activation check remains separate
+  from `--status --completion-only`, which lets later restarts recognize a valid
+  completed bootstrap after a legitimate ownership transfer. Neither status
+  claims a completed password handoff or grants management authority.
+
+### Fixed
+
+- The VM qualification observer recognizes the already-published Helper `0.11.0`
+  through its exact approved source map and retained upgrade receipt. Existing
+  provenance, pending-transaction, retained-byte and live-generation checks remain
+  required; recognizing the helper does not qualify managed update scenarios.
+
 ## [1.4.5] - 2026-10-14
 
 **No operator action required.** The application adds no release requirements.
