@@ -23,7 +23,7 @@ function page(t, options = {}) {
     <form data-ai-form><input name="_token" value="synthetic-csrf"><button data-ai-prepare type="submit">Prepare</button></form></section>`;
   const dom = new JSDOM(`<button data-ai-prepare-all>Prepare suggestions</button><div data-tab-panel="conversation" ${options.ticket ? 'hidden' : ''}><div data-reply-shell>
     <textarea data-reply-body></textarea><select data-template-picker><option value="">None</option></select>
-    ${panel('summary')}${panel('reply')}${panel('knowledge')}</div></div>
+    ${panel('summary')}${options.legacyReply ? '<section data-copilot-reply-draft></section>' : panel('reply')}${panel('knowledge')}</div></div>
     <div data-tab-panel="ticket" ${options.ticket ? '' : 'hidden'}>${panel('ticket')}
       <form data-ticket-creation-form data-ticket-suggestion-dirty="false"><input name="title" data-ticket-subject value="Default title">
         <select name="priority" data-ticket-priority><option value="normal">Normal</option><option value="high">High</option></select>
@@ -37,7 +37,7 @@ function page(t, options = {}) {
   window.fetch = (url, options) => new Promise(resolve => requests.push({url:String(url),options,resolve}));
   const source = fs.readFileSync(process.env.ASSIST_PREPARATION_SCRIPT_COPY || path.join(root,'apps/server/resources/views/agent/conversations/partials/ai-assist-script.blade.php'),'utf8').replace(/<\/?script>/g,'');
   window.eval(source);
-  return {window,requests,timers,
+  return {window,requests,timers,markup:panel,
     panel:task => window.document.querySelector(`[data-ai-assist][data-task="${task}"]`),
     body:window.document.querySelector('[data-reply-body]'), form:window.document.querySelector('[data-ticket-creation-form]'),
     activate(task) {window.document.querySelectorAll('[data-tab-panel]').forEach(p => {p.hidden = p.dataset.tabPanel !== task;});window.dispatchEvent(new window.CustomEvent('wayfindr:tab-shown'));},
@@ -276,3 +276,51 @@ test('a fresh Ready task disables Refresh synchronously during its status read',
   assert.equal(JSON.parse(posts(f).at(-1).options.body).action,'refresh');
   assert.equal(button.disabled,true);
 });
+
+
+function replaceLegacyReply(f, mode) {
+  const template=f.window.document.createElement('template');
+  template.innerHTML=f.markup('reply');
+  const replacement=template.content.firstElementChild;replacement.dataset.mode=mode;
+  f.window.document.querySelector('[data-copilot-reply-draft]').replaceWith(replacement);
+  return replacement;
+}
+
+test('legacy polling replacements initialize Prepare without a tab or visibility event', async t => {
+  const f=page(t,{mode:'manual',legacyReply:true});
+  f.requests.forEach(r=>respond(r,empty));await flush();
+  const replacement=replaceLegacyReply(f,'prepare');
+  f.timers.forEach(fn=>fn());
+  const opens=posts(f);
+  assert.equal(opens.length,1,'A panel introduced by legacy polling must initialize and ensure its visible Prepare workspace');
+  assert.equal(opens[0].url,'/assist/reply');
+  respond(opens[0],ready('reply'));await flush();
+  const use=replacement.querySelector('[data-ai-use]');
+  assert.ok(use && !use.disabled,'A freshly initialized replacement must make current Ready output usable');
+  f.timers.forEach(fn=>fn());
+  assert.equal(posts(f).length,1,'Discovering an initialized replacement again must not create another open');
+});
+
+test('legacy polling replacements initialize Manual Ready insertion without generating', async t => {
+  const f=page(t,{mode:'manual',ready:'reply',legacyReply:true});
+  f.requests.forEach(r=>respond(r,empty));await flush();
+  const replacement=replaceLegacyReply(f,'manual');
+  f.timers.forEach(fn=>fn());
+  const use=replacement.querySelector('[data-ai-use]');
+  assert.ok(use && !use.disabled,'A Manual Ready panel introduced by legacy polling must initialize its insertion control');
+  assert.equal(posts(f).length,0,'Discovering a Manual replacement must remain read-only');
+  use.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
+  const fresh=uses(f).at(-1);assert.ok(fresh,'Replacement insertion must still perform a fresh authorized Use read');
+  respond(fresh,ready('reply'));await flush();
+  assert.equal(f.body.value,'Fresh approved reply');
+});
+
+for (const deferred of ['hidden','prerender']) {
+  test(`legacy Prepare replacements remain inert while ${deferred}`, t => {
+    const f=page(t,{mode:'manual',legacyReply:true,[deferred]:true});
+    replaceLegacyReply(f,'prepare');f.timers.forEach(fn=>fn());
+    assert.equal(f.requests.length,0,'Discovering a replacement must not process a hidden or prerendered workspace');
+    if(deferred==='hidden')f.visibility('visible');else f.activatePrerender();
+    assert.equal(posts(f).length,1,'Activation should prepare only the newly enabled Prepare task');
+  });
+}

@@ -211,8 +211,12 @@
     document.addEventListener('visibilitychange', checkOpens);
     document.addEventListener('prerenderingchange', checkOpens);
     checkOpens();
-    window.setInterval(() => panels().forEach(panel => {
-        if (data(panel) && visible(panel)) { render(panel); void read(panel); }
-    }), 2000);
+    window.setInterval(() => {
+        // Legacy polling can replace a card without a workspace event.
+        checkOpens();
+        panels().forEach(panel => {
+            if (data(panel) && visible(panel)) { render(panel); void read(panel); }
+        });
+    }, 2000);
 })();
 </script>
