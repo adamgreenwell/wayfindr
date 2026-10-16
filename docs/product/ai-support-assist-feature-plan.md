@@ -4,9 +4,11 @@ Date: 2026-10-15
 
 Status: Option 1 selected on 2026-10-15; the account-connection foundation is
 merged, provider policy/transport and #1174 usage foundations are merged, and
-the remaining #1168 guarded integration is implemented on its feature branch
-for review. The Assist surface and
-automatic preparation remain pending. The [behavior and data contract](ai-support-assist-contract.md) defines
+the #1168 guarded integration is complete. The first #1169 administration
+slice implements the grouped connection lifecycle form and account usage controls;
+[its delivery boundary](ai-support-assist-admin.md) records the remaining account/site
+behavior, task and article-context policy work. The Assist surface and automatic
+preparation remain pending. The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The
 [account-connection foundation](ai-support-assist-account-connections.md) records
