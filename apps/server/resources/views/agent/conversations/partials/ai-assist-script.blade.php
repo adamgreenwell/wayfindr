@@ -117,6 +117,7 @@
     const accept = (panel, value) => {
         const entry = data(panel);
         if (value.generation !== entry.value.generation) entry.polls = 0;
+        if (['prepare', 'manual', 'off'].includes(value.mode)) panel.dataset.mode = value.mode;
         entry.value = value;
         entry.retryUntil = Date.now() + (value.retry_after || 0) * 1000;
         entry.nextRead = Date.now() + (value.state === 'preparing' ? 2000 : 10000);

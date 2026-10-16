@@ -192,3 +192,28 @@ test('each replacement generation gets a fresh bounded polling allowance', async
   assert.equal(f.panel('reply').dataset.state,'ready');
   assert.equal(posts(f).length,1,'Only the deliberate retry may admit replacement work');
 });
+
+test('fresh Manual to Prepare status changes how the next visible open prepares', async t => {
+  const f=page(t,{mode:'manual'});
+  f.requests.forEach(r=>respond(r,{...empty,mode:'prepare'}));await flush();
+  assert.equal(posts(f).length,0,'A mode status read must never prepare by itself');
+  f.visibility('hidden');f.visibility('visible');
+  assert.equal(posts(f).length,3,'The next visible open must use the freshly accepted Prepare mode');
+});
+
+test('fresh Prepare to Manual status preserves deliberate initial controls on later opens', async t => {
+  const f=page(t);
+  f.requests.forEach(r=>respond(r,{...empty,mode:'prepare'}));await flush();
+  let before=f.requests.length;
+  f.window.dispatchEvent(new f.window.CustomEvent('wayfindr:assist-source-changed'));
+  f.requests.slice(before).forEach(r=>respond(r,{...empty,mode:'manual'}));await flush();
+  before=f.requests.length;
+  f.visibility('hidden');f.visibility('visible');
+  assert.equal(posts(f).length,3,'A freshly accepted Manual mode must never send an automatic open');
+  f.requests.slice(before).forEach(r=>respond(r,{...empty,mode:'manual'}));await flush();
+  const button=f.panel('reply').querySelector('[data-ai-prepare]');
+  assert.equal(button.hidden,false,'Fresh Manual mode must preserve its initial action');
+  f.panel('reply').querySelector('[data-ai-form]').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(posts(f).length,4);
+  assert.equal(JSON.parse(posts(f).at(-1).options.body).action,'initial');
+});
