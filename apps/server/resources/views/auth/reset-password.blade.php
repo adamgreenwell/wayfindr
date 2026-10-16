@@ -4,9 +4,18 @@
             <h1 id="reset-heading">Choose a new password</h1>
             <p class="lede">This also signs you out everywhere else.</p>
 
-            <form class="auth-form" method="POST" action="{{ route('password.update') }}" aria-labelledby="reset-heading">
+            @if($fragment ?? false)
+                <p id="reset-status" role="status" aria-live="polite">Checking your reset link…</p>
+                <noscript><p>JavaScript is required to use this private reset link. The password has not been changed.</p></noscript>
+            @endif
+
+            <form class="auth-form" method="POST" action="{{ route('password.update') }}" aria-labelledby="reset-heading"
+                @if($fragment ?? false) data-password-reset-fragment @endif
+                @if($alreadyAuthenticated ?? false) data-reset-authenticated @endif>
                 @csrf
-                <input type="hidden" name="token" value="{{ $token }}">
+                @unless($fragment ?? false)
+                    <input type="hidden" name="token" value="{{ $token }}">
+                @endunless
 
                 <div class="field">
                     <label for="email">Email</label>
@@ -15,7 +24,8 @@
                         name="email"
                         type="email"
                         autocomplete="email"
-                        value="{{ old('email', $email) }}"
+                        value="{{ ($fragment ?? false) ? '' : old('email', $email) }}"
+                        @disabled($fragment ?? false)
                         @error('email') aria-describedby="email-error" aria-invalid="true" @enderror
                         required
                     >
@@ -35,6 +45,7 @@
                         autofocus
                         aria-describedby="password-help @error('password') password-error @enderror"
                         @error('password') aria-invalid="true" @enderror
+                        @disabled($fragment ?? false)
                     >
                     {{-- The rule, stated before you can fail it. Neither password
                          screen said what was wanted until it rejected you. --}}
@@ -52,11 +63,17 @@
                         type="password"
                         autocomplete="new-password"
                         required
+                        @disabled($fragment ?? false)
                     >
                 </div>
 
-                <button class="button full" type="submit">Set new password</button>
+                <button class="button full" type="submit" @disabled($fragment ?? false)>Set new password</button>
             </form>
+
+            @if($fragment ?? false)
+                <p><a class="text-link" href="{{ route('login') }}" data-reset-sign-in hidden>Sign in with your new password</a></p>
+                <script src="/js/password-reset-fragment.js" defer></script>
+            @endif
 
             {{-- The same footer anchor forgot-password and the two-factor
                  challenge already carry. This page rendered ZERO links, and its

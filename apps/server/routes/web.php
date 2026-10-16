@@ -88,6 +88,10 @@ Route::get('/', function () {
 Route::get('/setup', [FirstRunSetupController::class, 'create'])->name('setup.create');
 Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.store');
 
+// Render even for an authenticated visitor so its fragment is cleared before
+// any navigation. Reset submission remains guest-only below.
+Route::get('/reset-password', [PasswordResetController::class, 'fragment'])->name('password.reset.fragment');
+
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
     Route::post('/login', [SessionController::class, 'store'])->name('login.store');
