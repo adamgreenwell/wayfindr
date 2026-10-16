@@ -11,6 +11,7 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationKnowledgeSuggestionOutputParser;
 use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -61,17 +62,22 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             return;
         }
 
+        $usageArtifact = $suggestion;
+        $result = null;
+
         $conversation = $suggestion->conversation;
         $requester = $suggestion->requestedBy;
         $account = $conversation?->site?->account;
 
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+            $this->cancelBeforeProvider($suggestion);
             $this->recordFailure($suggestion, 'access_revoked');
 
             return;
         }
 
         if ($account === null || ! $account->articles()->published()->exists()) {
+            $this->cancelBeforeProvider($suggestion);
             $this->recordFailure($suggestion, 'no_articles');
 
             return;
@@ -81,6 +87,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             $context = $promptBuilder->build($conversation);
 
             if ($context === null) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'no_messages');
 
                 return;
@@ -104,10 +111,13 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             $requester = $suggestion?->requestedBy;
 
             if ($suggestion === null || $conversation === null || $requester === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+
                 return;
             }
 
             if (! Gate::forUser($requester)->allows('reply', $conversation)) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'access_revoked');
 
                 return;
@@ -116,6 +126,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             $account = $conversation->site?->account;
 
             if ($account === null || ! $account->articles()->published()->exists()) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'no_articles');
 
                 return;
@@ -123,113 +134,125 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
 
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $suggestion->connection_revision !== $connection->revision) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'connection_changed');
 
                 return;
             }
 
-            $result = $provider->generate($context->prompt->withConnection($connection));
+            $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($suggestion)));
             $output = $outputParser->parse($result->text);
 
             if ($output === null) {
+                $result->settle('invalid_output');
                 $this->recordFailure($suggestion, 'invalid_output');
 
                 return;
             }
 
-            // Re-read authority and publication state after the provider call.
-            // The external wait must never become an authorization cache.
-            $suggestion = $this->runningSuggestion();
-            $conversation = $suggestion?->conversation;
-            $requester = $suggestion?->requestedBy;
+            app(AiSupportUsage::class)->publish($usageArtifact, $result, function () use ($articleMatcher, $connections, $context, $output, $result): void {
+                // Re-read authority and publication state after the provider call.
+                // The external wait must never become an authorization cache.
+                $suggestion = $this->runningSuggestion();
+                $conversation = $suggestion?->conversation;
+                $requester = $suggestion?->requestedBy;
 
-            if ($suggestion === null || $conversation === null || $requester === null) {
-                return;
-            }
-
-            if (! Gate::forUser($requester)->allows('reply', $conversation)) {
-                $this->recordFailure($suggestion, 'access_revoked');
-
-                return;
-            }
-
-            $account = $conversation->site?->account;
-
-            if ($account === null || ! $account->articles()->published()->exists()) {
-                $this->recordFailure($suggestion, 'no_articles');
-
-                return;
-            }
-
-            $articleIds = $articleMatcher->match($account, $output->queries);
-
-            DB::transaction(function () use ($articleIds, $context, $result, $suggestion, $connections): void {
-                $accountId = (int) $suggestion->conversation->site->account_id;
-                if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                if ($suggestion === null || $conversation === null || $requester === null) {
                     return;
                 }
 
-                $suggestion = ConversationCopilotKnowledgeSuggestion::query()
-                    ->with(['conversation.site.account', 'requestedBy'])
-                    ->whereKey($suggestion->id)
-                    ->where('generation', $this->generation)
-                    ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($suggestion === null) {
-                    return;
-                }
-
-                $conversation = $suggestion->conversation;
-                $requester = $suggestion->requestedBy;
-                if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+                if (! Gate::forUser($requester)->allows('reply', $conversation)) {
                     $this->recordFailure($suggestion, 'access_revoked');
 
                     return;
                 }
 
-                if (! $connections->isCurrent($accountId, $suggestion->connection_revision)) {
-                    $this->recordFailure($suggestion, 'connection_changed');
+                $account = $conversation->site?->account;
 
-                    return;
-                }
-
-                if (! $conversation->site->account->articles()->published()->exists()) {
+                if ($account === null || ! $account->articles()->published()->exists()) {
                     $this->recordFailure($suggestion, 'no_articles');
 
                     return;
                 }
 
-                $updated = ConversationCopilotKnowledgeSuggestion::query()
-                    ->whereKey($suggestion->id)
-                    ->where('generation', $this->generation)
-                    ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
-                    ->update([
-                        'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
-                        'article_ids' => $articleIds,
-                        'source_last_message_id' => $context->lastMessageId,
-                        'source_message_count' => $context->messageCount,
-                        'provider' => mb_substr($result->provider, 0, 64),
-                        'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
-                        'failure_code' => null,
-                        'completed_at' => now(),
-                    ]);
+                $articleIds = $articleMatcher->match($account, $output->queries);
 
-                if ($updated === 1) {
-                    $this->audit($suggestion, 'conversation.ai_knowledge_suggestion.generated', [
-                        'source_message_count' => $context->messageCount,
-                        'suggested_article_count' => count($articleIds),
-                        'provider' => mb_substr($result->provider, 0, 64),
-                        'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
-                    ]);
-                }
+                DB::transaction(function () use ($articleIds, $context, $result, $suggestion, $connections): void {
+                    $accountId = (int) $suggestion->conversation->site->account_id;
+                    if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
+                        return;
+                    }
+
+                    $suggestion = ConversationCopilotKnowledgeSuggestion::query()
+                        ->with(['conversation.site.account', 'requestedBy'])
+                        ->whereKey($suggestion->id)
+                        ->where('generation', $this->generation)
+                        ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($suggestion === null) {
+                        return;
+                    }
+
+                    $conversation = $suggestion->conversation;
+                    $requester = $suggestion->requestedBy;
+                    if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+                        $this->recordFailure($suggestion, 'access_revoked');
+
+                        return;
+                    }
+
+                    if (! $connections->isCurrent($accountId, $suggestion->connection_revision)) {
+                        $this->recordFailure($suggestion, 'connection_changed');
+
+                        return;
+                    }
+
+                    if (! $conversation->site->account->articles()->published()->exists()) {
+                        $this->recordFailure($suggestion, 'no_articles');
+
+                        return;
+                    }
+
+                    $updated = ConversationCopilotKnowledgeSuggestion::query()
+                        ->whereKey($suggestion->id)
+                        ->where('generation', $this->generation)
+                        ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)
+                        ->update([
+                            'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
+                            'article_ids' => $articleIds,
+                            'source_last_message_id' => $context->lastMessageId,
+                            'source_message_count' => $context->messageCount,
+                            'provider' => mb_substr($result->provider, 0, 64),
+                            'model' => mb_substr($result->model, 0, 255),
+                            'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                            'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
+                            'failure_code' => null,
+                            'completed_at' => now(),
+                        ]);
+
+                    if ($updated === 1) {
+                        $this->audit($suggestion, 'conversation.ai_knowledge_suggestion.generated', [
+                            'source_message_count' => $context->messageCount,
+                            'suggested_article_count' => count($articleIds),
+                            'provider' => mb_substr($result->provider, 0, 64),
+                            'model' => mb_substr($result->model, 0, 255),
+                            'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                            'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
+                        ]);
+                    }
+                });
             });
         } catch (Throwable $exception) {
+            try {
+                $result?->settle('invalid_output');
+            } catch (Throwable) {
+                // Withhold output even when final usage persistence is unavailable.
+            }
+            if ($result === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+            }
             Log::warning('Conversation copilot knowledge suggestion generation failed.', [
                 'exception_type' => $exception::class,
                 'suggestion_id' => $suggestion->id,
@@ -274,6 +297,15 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             && $suggestion->status === ConversationCopilotKnowledgeSuggestion::STATUS_PENDING;
     }
 
+    private function cancelBeforeProvider(ConversationCopilotKnowledgeSuggestion $suggestion): void
+    {
+        try {
+            app(AiSupportUsage::class)->cancelFor($suggestion, 'known_unsent');
+        } catch (Throwable) {
+            // Bounded expiry recovers an uncertain reservation release.
+        }
+    }
+
     private function recordFailure(ConversationCopilotKnowledgeSuggestion $suggestion, string $code): void
     {
         DB::transaction(function () use ($code, $suggestion): void {
@@ -298,7 +330,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
         });
     }
 
-    /** @param array<string, int|string> $metadata */
+    /** @param array<string, int|string|null> $metadata */
     private function audit(ConversationCopilotKnowledgeSuggestion $suggestion, string $action, array $metadata): void
     {
         $conversation = $suggestion->conversation;

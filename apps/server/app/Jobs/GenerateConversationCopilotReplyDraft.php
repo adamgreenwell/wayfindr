@@ -10,6 +10,7 @@ use App\Models\ConversationCopilotReplyDraft;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
+use App\Support\Ai\Execution\AiSupportUsage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -57,12 +58,16 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             return;
         }
 
+        $usageArtifact = $draft;
+        $result = null;
+
         $conversation = $draft->conversation;
         $requester = $draft->requestedBy;
 
         // Reply permission, not merely transcript visibility, is required at
         // execution time because the output is intended for the composer.
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
+            $this->cancelBeforeProvider($draft);
             $this->recordFailure($draft, 'access_revoked');
 
             return;
@@ -72,6 +77,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             $context = $promptBuilder->build($conversation);
 
             if ($context === null) {
+                $this->cancelBeforeProvider($draft);
                 $this->recordFailure($draft, 'no_messages');
 
                 return;
@@ -102,10 +108,13 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             $requester = $draft?->requestedBy;
 
             if ($draft === null || $conversation === null || $requester === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+
                 return;
             }
 
             if (! Gate::forUser($requester)->allows('reply', $conversation)) {
+                $this->cancelBeforeProvider($draft);
                 $this->recordFailure($draft, 'access_revoked');
 
                 return;
@@ -113,21 +122,23 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $draft->connection_revision !== $connection->revision) {
+                $this->cancelBeforeProvider($draft);
                 $this->recordFailure($draft, 'connection_changed');
 
                 return;
             }
 
-            $result = $provider->generate($context->prompt->withConnection($connection));
+            $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($draft)));
             $output = mb_substr(trim($result->text), 0, 6_000);
 
             if ($output === '') {
+                $result->settle('invalid_output');
                 $this->recordFailure($draft, 'empty_output');
 
                 return;
             }
 
-            DB::transaction(function () use ($context, $draft, $output, $result, $connections): void {
+            app(AiSupportUsage::class)->publish($draft, $result, fn () => DB::transaction(function () use ($context, $draft, $output, $result, $connections): void {
                 $accountId = (int) $draft->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -170,8 +181,8 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
                         'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
+                        'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                        'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                         'failure_code' => null,
                         'completed_at' => now(),
                     ]);
@@ -181,12 +192,20 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
                         'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
+                        'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                        'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                     ]);
                 }
-            });
+            }));
         } catch (Throwable $exception) {
+            try {
+                $result?->settle('invalid_output');
+            } catch (Throwable) {
+                // Withhold output even when final usage persistence is unavailable.
+            }
+            if ($result === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+            }
             Log::warning('Conversation copilot reply draft generation failed.', [
                 'exception_type' => $exception::class,
                 'draft_id' => $draft->id,
@@ -221,6 +240,15 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             && $draft->status === ConversationCopilotReplyDraft::STATUS_PENDING;
     }
 
+    private function cancelBeforeProvider(ConversationCopilotReplyDraft $draft): void
+    {
+        try {
+            app(AiSupportUsage::class)->cancelFor($draft, 'known_unsent');
+        } catch (Throwable) {
+            // Bounded expiry recovers an uncertain reservation release.
+        }
+    }
+
     private function recordFailure(ConversationCopilotReplyDraft $draft, string $code): void
     {
         DB::transaction(function () use ($code, $draft): void {
@@ -245,7 +273,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
         });
     }
 
-    /** @param  array<string, int|string>  $metadata */
+    /** @param  array<string, int|string|null>  $metadata */
     private function audit(ConversationCopilotReplyDraft $draft, string $action, array $metadata): void
     {
         $conversation = $draft->conversation;

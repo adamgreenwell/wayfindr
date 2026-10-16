@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -114,8 +115,14 @@ final class AgentConversationCopilotReplyDraftController extends Controller
 
         if ($shouldDispatch) {
             try {
+                app(AiSupportUsage::class)->reserveFor($draft);
                 GenerateConversationCopilotReplyDraft::dispatch($draft->id, $draft->generation);
             } catch (Throwable $exception) {
+                try {
+                    app(AiSupportUsage::class)->cancelFor($draft);
+                } catch (Throwable) {
+                    // Bounded expiry recovers an uncertain reservation release.
+                }
                 Log::warning('Conversation copilot reply draft could not be queued.', [
                     'exception_type' => $exception::class,
                     'draft_id' => $draft->id,
