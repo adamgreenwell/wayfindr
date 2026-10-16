@@ -30,6 +30,55 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-16
+
+**No operator action required.** Existing installation-level manual copilot
+settings and ordinary support workflows remain available. Account-owned AI
+connections and policies are optional; the seven additive migrations run through
+the normal migration path. New private password-reset links require JavaScript;
+previous links and custom notification URL callbacks remain supported. Host
+helper `0.11.0` remains a separate administrator upgrade. Managed application
+upgrades and protective-archive recovery remain unqualified, with **0/100**
+managed scenarios qualified.
+
+### Added
+
+- Account administrators can manage an installation connection selection or an
+  account-owned AI connection, test a proposed configuration before activation,
+  discover supported models, and inspect bounded usage. Credentials stay
+  encrypted and write-only; activation and delayed work recheck the current
+  account and site authority.
+- Account and site AI controls cover availability, enabled tasks, permitted
+  context, connection revision and usage ceilings. Existing manual tools obey
+  those controls without sending a visitor reply or applying support changes
+  automatically.
+- Account-owned and explicitly selected installation connections use the guarded
+  request, probe and discovery path. Endpoint policy, bounded transport and
+  atomic usage reservations bind outbound work to its approved processor and
+  current authority; dispatched or uncertain work retains conservative usage
+  accounting.
+- Shared AI work identities and cache classifications track bounded conversation
+  sources, policy and connection revisions, and local catalogue changes. This
+  foundation does not add generation on workspace open. Automatic preparation,
+  the unified Assist rail, grounded answer generation and draft refinement remain
+  future work.
+
+### Security
+
+- New recovery notifications carry reset credentials in a browser fragment on
+  the fixed `/reset-password` landing, keeping them out of HTTP request URLs.
+  The first-party script clears the fragment and submits through the existing
+  CSRF-protected reset POST. Uncertain outcomes disable resubmission; normal
+  expiry, single use and session revocation remain in force. The protected
+  owner-bootstrap v1 claim is unchanged, so integrations must validate it before
+  deriving a fragment link for a compatible destination.
+
+### Fixed
+
+- AI catalogue invalidation covers bulk SQL, account moves and rollback without
+  scanning catalogue content. PostgreSQL catalogue function definitions can be
+  safely recreated when a fresh migration or restore retains the owned functions.
+
 ## [1.5.0] - 2026-10-15
 
 **No operator action required.** Existing installations retain their normal
