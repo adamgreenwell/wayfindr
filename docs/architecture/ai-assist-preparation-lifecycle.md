@@ -65,6 +65,13 @@ opens. It recomputes identity under installation → Account → requesting User
 Conversation → artifact locks. Equivalent authorized viewers admit one generation,
 one usage reservation and one ID-only queued job. The reservation and artifact
 commit together; enqueue failure cancels only the captured unsent generation.
+Admitted generations retain the existing per-task request/generated/failed audit
+names. Reservation and queue failures record only IDs, generation, processor
+revision and a fixed failure category, never exception bodies, prompts or output.
+Reused terminal receipts create no duplicate attempt events. Queue failure locks
+Account before artifacts/audits and compares the captured generation, so late
+acknowledgements cannot fail a successor or recreate erased audit references.
+
 GET rendering, status and Use never reserve or enqueue. Status reads allow
 60 requests per viewer/task per minute and 180 across the viewer's tasks, leaving
 room for three tasks polling at two seconds. Use has a separate 60/minute bucket,

@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Models\AiAssistPreparationReceipt;
 use App\Support\Ai\Usage\AiUsageLedger;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
@@ -147,4 +149,28 @@ test('contending duplicate deliveries claim one generation and charge one synthe
         ->and(DB::table('ai_usage_attempts')->count())->toBe(1)
         ->and(DB::table('ai_usage_attempts')->sole()->state)->toBe('completed')
         ->and((int) DB::table('ai_usage_periods')->where('scope_key', 'installation')->value('charged_requests'))->toBe(1);
+})->with(['conversation_summary', 'conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion']);
+
+test('queue failure owns the erasure Account mutex before artifact and audit updates', function (string $purpose): void {
+    $world = assistPreparationWorld($purpose);
+    $connection = DB::connection()->getConfig();
+    $probe = new PDO('pgsql:host=127.0.0.1;connect_timeout=2;port='.$connection['port'].';dbname='.$connection['database'], $connection['username'], $connection['password']);
+    $statement = $probe->prepare('SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT');
+    $table = (new $world['class'])->getTable();
+    $observed = [];
+    DB::listen(function (QueryExecuted $query) use ($statement, $table, $world, &$observed): void {
+        if (str_starts_with(strtolower($query->sql), 'update') && str_contains($query->sql, $table)
+            && in_array('queue', $query->bindings, true)) {
+            try {
+                $statement->execute([$world['account']->id]);
+                $observed[] = false;
+            } catch (PDOException $failure) {
+                $observed[] = $failure->getCode() === '55P03';
+            }
+        }
+    });
+    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('Synthetic queue acknowledgement failure.'));
+    assistPreparationEnsure($world);
+    expect($observed)->toBe([true], 'Queue failure must own Account before changing artifacts or creating audits, so erasure cannot deadlock or be bypassed.');
+    expect($world['class']::query()->sole()->status)->toBe('failed');
 })->with(['conversation_summary', 'conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion']);

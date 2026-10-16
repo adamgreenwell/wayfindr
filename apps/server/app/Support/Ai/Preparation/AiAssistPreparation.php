@@ -60,7 +60,7 @@ final readonly class AiAssistPreparation
             throw new AiNetworkException('access_revoked');
         }
         // No lower-order Account lock may be held before entering this boundary.
-        [$artifact, $dispatch] = $this->ledger->withAccountUsageLock($identity->accountId,
+        $admission = $this->ledger->withAccountUsageLock($identity->accountId,
             function () use ($actor, $conversation, $purpose, $action, $identity): array {
                 $actor = User::query()->whereKey($actor->id)->where('account_id', $identity->accountId)->lockForUpdate()->first();
                 $conversation = Conversation::query()->whereKey($conversation->id)->lockForUpdate()->first();
@@ -153,41 +153,52 @@ final readonly class AiAssistPreparation
                 if ($identity->state !== 'eligible') {
                     return [$artifact, false];
                 }
-                try {
-                    // The artifact and usage hold commit together, before enqueue.
-                    $this->usage->reserveFor($artifact);
-                } catch (Throwable) {
-                    $artifact->forceFill(['status' => 'failed', 'failure_code' => 'usage', 'completed_at' => $now])->save();
-                    $this->syncTerminal($artifact);
-
-                    return [$artifact, false];
-                }
                 [$event, $artifactKey] = match ($purpose) {
                     'conversation_summary' => ['ai_summary', 'summary_id'],
                     'conversation_reply_draft' => ['ai_reply_draft', 'draft_id'],
                     'conversation_knowledge_suggestion' => ['ai_knowledge_suggestion', 'suggestion_id'],
                     'conversation_ticket_suggestion' => ['ai_ticket_suggestion', 'suggestion_id'],
                 };
-                AuditEvent::query()->create(['account_id' => $identity->accountId, 'site_id' => $identity->siteId,
+                $requestedAudit = AuditEvent::query()->create(['account_id' => $identity->accountId, 'site_id' => $identity->siteId,
                     'actor_type' => $actor->getMorphClass(), 'actor_id' => $actor->id,
                     'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id,
                     'action' => 'conversation.'.$event.'.requested',
                     'metadata' => [$artifactKey => $artifact->id, 'generation' => $artifact->generation, 'connection_revision' => $artifact->connection_revision], 'occurred_at' => $now]);
 
-                return [$artifact, true];
+                try {
+                    // The artifact and usage hold commit together, before enqueue.
+                    $this->usage->reserveFor($artifact);
+                } catch (Throwable) {
+                    $artifact->forceFill(['status' => 'failed', 'failure_code' => 'usage', 'completed_at' => $now])->save();
+                    $this->syncTerminal($artifact);
+                    $this->auditFailure($requestedAudit, 'usage');
+
+                    return [$artifact, false];
+                }
+
+                return [$artifact, true, $requestedAudit];
             });
+        [$artifact, $dispatch] = $admission;
         if ($dispatch) {
             try {
                 $job = self::JOBS[$purpose];
                 $job::dispatch($artifact->id, $artifact->generation);
             } catch (Throwable) {
                 $this->usage->cancelFor($artifact);
-                $changed = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
-                    ->where('status', 'pending')->update(['status' => 'failed', 'failure_code' => 'queue',
-                        'completed_at' => $this->clock->now()]);
-                if ($changed === 1) {
-                    $this->syncTerminal($artifact);
-                }
+                DB::transaction(function () use ($artifact, $admission): void {
+                    // Erasure also locks Account before artifacts/audits. Keep
+                    // the captured failure atomic and never recreate erased work.
+                    if (Account::query()->whereKey($admission[2]->account_id)->lockForUpdate()->first() === null) {
+                        return;
+                    }
+                    $changed = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
+                        ->where('status', 'pending')->update(['status' => 'failed', 'failure_code' => 'queue',
+                            'completed_at' => $this->clock->now()]);
+                    if ($changed === 1) {
+                        $this->syncTerminal($artifact);
+                        $this->auditFailure($admission[2], 'queue');
+                    }
+                });
                 $dispatch = false;
             }
         }
@@ -294,6 +305,18 @@ final readonly class AiAssistPreparation
         if ($changed === 1) {
             $this->syncTerminal($artifact);
         }
+    }
+
+    /** Keep legacy event names and only the admitted generation's sanitized metadata. */
+    private function auditFailure(AuditEvent $requested, string $code): void
+    {
+        $requested = $requested->fresh() ?? $requested;
+        AuditEvent::query()->create([
+            ...$requested->only(['account_id', 'site_id', 'actor_type', 'actor_id', 'subject_type', 'subject_id']),
+            'action' => Str::beforeLast($requested->action, '.').'.failed',
+            'metadata' => [...$requested->metadata, 'failure_code' => $code],
+            'occurred_at' => $this->clock->now(),
+        ]);
     }
 
     private function receipt(AiAssistPreparationIdentity $identity): Builder
