@@ -261,7 +261,10 @@ a usable saved tested connection. A separate policy revision invalidates work
 without invalidating the connection's successful synthetic test. Prepare now uses the shared
 [preparation lifecycle](../architecture/ai-assist-preparation-lifecycle.md): actual
 visible opens admit shared work, while GET/prefetch remain read-only and Manual
-requires deliberate initial actions. Cached terminal results require explicit
+requires deliberate initial actions. Prepare choices saved under the earlier
+manual-only disclosure are held at effective Manual until fresh account and
+selected-site reviews approve their exact current policy revisions. Old forms
+cannot grant that approval. Cached terminal results require explicit
 retry after database-clock cooldown. Ticket details always require deliberate
 Apply; agents still send replies and create tickets separately.
 

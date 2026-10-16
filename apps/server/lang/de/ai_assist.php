@@ -95,7 +95,7 @@ return [
     ],
     'behavior' => [
         'heading' => 'Support-Verhalten',
-        'help' => 'KI liefert manuell angeforderte Support-Vorschläge. Anfragen können begrenzte, bereinigte Gesprächstexte und ausgewählte veröffentlichte Artikelpassagen dieses Kontos enthalten. Anhänge und Cobrowsing-Inhalte sind ausgeschlossen. Ein Agent prüft Vorschläge und entscheidet, was gesendet wird.',
+        'help' => 'KI bereitet private Support-Vorschläge beim Öffnen automatisch oder im Modus Manuell auf Anforderung eines Agenten vor. Anfragen können begrenzte, bereinigte Gesprächstexte und ausgewählte veröffentlichte Artikelpassagen dieses Kontos enthalten. Anhänge und Cobrowsing-Inhalte sind ausgeschlossen. Agenten wählen Vorschläge aus und senden Antworten oder erstellen Tickets separat.',
     ],
     'policy' => [
         'error_heading' => 'Richtlinieneinstellungen prüfen',
@@ -107,7 +107,7 @@ return [
             'manual' => 'Manuell',
             'prepare' => 'Beim Öffnen vorbereiten',
         ],
-        'mode_help' => 'Aus blockiert KI-Support-Arbeit. Manuell erlaubt von Agenten angeforderte Vorschläge. Beim Öffnen vorbereiten speichert Ihre Wahl für den kommenden Vorbereitungsablauf; aktuelle Assistenzaktionen bleiben manuell.',
+        'mode_help' => 'Aus blockiert KI-Support-Arbeit. Manuell wartet auf eine Anforderung des Agenten. Beim Öffnen vorbereiten sendet beim Öffnen einer aktivierten Unterhaltung oder Ticketumwandlung automatisch erlaubte, bereinigte Gesprächstexte an den gespeicherten Anbieter.',
         'tasks_heading' => 'Erlaubte Aufgaben',
         'tasks' => [
             'conversation_summary' => 'Zusammenfassung',
@@ -124,7 +124,7 @@ return [
         'article_consent_help' => 'Erforderlich, sobald Relevante Artikel aktiviert ist. Dies gilt für Artikelkontext in jeder aktivierten Aufgabe.',
         'context_label' => 'Maximale Kontextzeichen je Anfrage',
         'context_help' => 'Leer lassen, um die Obergrenze von :limit Zeichen zu übernehmen. Ein eigenes Limit muss zwischen 1.000 und dieser Grenze liegen. Es gilt für die gesamte erlaubte, bereinigte Eingabe.',
-        'prepare_notice' => 'Beim Öffnen vorbereiten ist eine gespeicherte Einstellung für den kommenden Vorbereitungsablauf. Diese Seite startet keine automatischen Aufrufe; aktuelle Assistenzaktionen bleiben manuell.',
+        'prepare_notice' => 'Das Speichern von Beim Öffnen vorbereiten erlaubt die automatische Verarbeitung begrenzter, bereinigter Gesprächstexte beim Öffnen des Arbeitsbereichs. Frühere Einstellungen werden bei diesem Upgrade auf „Manuell“ gesetzt, bis Konto und ausgewählte Websites erneut geprüft und gespeichert werden. Vorschläge senden keine Antworten und erstellen keine Tickets.',
         'data_help' => 'Anfragen verwenden begrenzte, bereinigte Gesprächstexte. Anhänge, Cobrowsing-Inhalte, Profile, Identitätsfelder und private Kontaktnotizen sind ausgeschlossen.',
         'processor' => 'Gespeicherter Anbieter:',
         'legacy_help' => 'Bis eine Richtlinie ausdrücklich gespeichert wird, bleiben bestehende manuelle Einstellungen und die lokale Artikelsuche erhalten. Speichern legt Aufgaben und Kontext ausdrücklich fest; Support-Anfragen verwenden den gespeicherten Anbieter und die Nutzungslimits.',
@@ -150,7 +150,7 @@ return [
     ],
     'validation' => [
         'limits_conflict' => 'Diese Nutzungslimits wurden in einer anderen Sitzung geändert. Laden Sie die Seite vor einem neuen Versuch neu.',
-        'policy_conflict' => 'Die Richtlinie wurde geändert oder das geprüfte Formular ist ungültig. Laden Sie vor dem Speichern die aktuellen Einstellungen neu.',
+        'policy_conflict' => 'Die Richtlinie, der Verarbeitungshinweis oder der gespeicherte Anbieter wurde geändert. Laden Sie die Seite neu und prüfen Sie die Einstellungen vor dem Speichern.',
         'site_scope' => 'Wählen Sie nur Websites, auf die Sie aktuell zugreifen können.',
         'bulk_incomplete' => 'Nicht alle ausgewählten Websites wurden an den Server übermittelt. Wählen Sie weniger Websites aus, prüfen Sie die Einstellungen und versuchen Sie es erneut.',
         'context_limit' => 'Übernehmen Sie das Limit oder wählen Sie einen Wert zwischen 1.000 und der geltenden Obergrenze.',

@@ -69,8 +69,10 @@ function assistPreparationWorld(string $purpose = 'conversation_summary', string
             'processing_policy_revision' => app(AccountAiConnectionProbe::class)->policyRevision()]]);
     $values = ['mode' => $mode, 'summary' => true, 'reply_draft' => true, 'relevant_articles' => true,
         'ticket_details' => true, 'article_context_consent' => true, 'max_context_characters' => null];
-    $policy = AccountAiAssistPolicy::query()->forceCreate(['account_id' => $account->id, 'revision' => (string) Str::uuid(), ...$values]);
-    SiteAiAssistPolicy::query()->forceCreate(['site_id' => $site->id, 'account_id' => $account->id, 'revision' => (string) Str::uuid(), ...$values]);
+    $accountRevision = (string) Str::uuid();
+    $siteRevision = (string) Str::uuid();
+    $policy = AccountAiAssistPolicy::query()->forceCreate(['account_id' => $account->id, 'revision' => $accountRevision, 'preparation_consent_revision' => $mode === 'prepare' ? $accountRevision : null, ...$values]);
+    SiteAiAssistPolicy::query()->forceCreate(['site_id' => $site->id, 'account_id' => $account->id, 'revision' => $siteRevision, 'preparation_consent_revision' => $mode === 'prepare' ? $siteRevision : null, ...$values]);
     $class = AiSupportUsage::ARTIFACTS[$purpose];
     $workspace = $purpose === 'conversation_ticket_suggestion' ? 'conversion' : 'conversation';
     $job = match ($purpose) {

@@ -5,6 +5,25 @@ implements shared admission, durable receipts, worker fencing and visible-open
 preparation. It builds on merged [#1186](https://github.com/adamgreenwell/wayfindr/pull/1186) and the
 [behavior contract](../product/ai-support-assist-contract.md).
 
+## Automatic-processing approval on upgrade
+
+Earlier administration described Prepare as future configuration with manual
+execution. Those saved choices remain configured but resolve to **Manual** after
+this upgrade. Each account and site policy has a nullable
+`preparation_consent_revision`; only a Prepare policy whose approval equals its
+current UUID revision permits automatic opens. The migration adds NULL columns
+without scanning content, creating policies or backfilling approval. Manual, Off,
+legacy installation behavior and existing business output are preserved.
+
+Fresh account and selected-site saves under the current disclosure stamp their
+new policy revisions, including an otherwise unchanged Prepare choice. Both
+scopes must be approved. The editor token namespace changes so an old form cannot
+authorize new automatic behavior, even when no prior policy row existed. Old
+writers that rotate revisions cannot carry approval forward during an upgrade.
+Rollback drops the stamps, so re-upgrade requires review again. Saving alone
+never queues work. Admin copy in English, German and Italian explains permitted,
+scrubbed transcript transmission on visible opens and the upgrade hold.
+
 ## Implemented identity boundary
 
 `AiAssistPreparationIdentityResolver::forTask` reloads the actor and conversation,

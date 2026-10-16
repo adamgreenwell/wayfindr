@@ -95,7 +95,7 @@ return [
     ],
     'behavior' => [
         'heading' => 'Support behavior',
-        'help' => 'AI provides manually requested support suggestions. Requests may include bounded, scrubbed conversation text and selected published article passages from this account. Attachments and cobrowsing content are excluded. An agent reviews suggestions and chooses what to send.',
+        'help' => 'AI prepares private support suggestions automatically in Prepare when opened, or after an agent’s action in Manual. Requests may include bounded, scrubbed conversation text and selected published article passages from this account. Attachments and cobrowsing content are excluded. Agents choose what to insert or apply and separately send replies or create tickets.',
     ],
     'policy' => [
         'error_heading' => 'Check the policy settings',
@@ -107,7 +107,7 @@ return [
             'manual' => 'Manual',
             'prepare' => 'Prepare when opened',
         ],
-        'mode_help' => 'Off blocks AI support work. Manual allows agent-requested suggestions. Prepare when opened stores your choice for the upcoming preparation workflow; current Assist actions remain manual.',
+        'mode_help' => 'Off blocks AI support work. Manual waits for an agent’s Prepare action. Prepare when opened automatically sends permitted, scrubbed conversation text to the saved processor when an agent opens an enabled conversation or ticket conversion.',
         'tasks_heading' => 'Permitted tasks',
         'tasks' => [
             'conversation_summary' => 'Summary',
@@ -124,7 +124,7 @@ return [
         'article_consent_help' => 'Required whenever Relevant articles is on. This applies to article context in every enabled task.',
         'context_label' => 'Maximum context characters per request',
         'context_help' => 'Leave blank to inherit the ceiling of :limit characters. An explicit limit must be between 1,000 and that ceiling. It applies to the entire permitted, scrubbed input.',
-        'prepare_notice' => 'Prepare when opened is saved configuration for the upcoming preparation workflow. This page does not start automatic calls; current Assist actions remain manual.',
+        'prepare_notice' => 'Saving Prepare when opened authorizes automatic processing of permitted, scrubbed conversation text on workspace opens. Earlier Prepare choices are kept in Manual until the account and selected sites are reviewed and saved again. Suggestions never send replies or create tickets.',
         'data_help' => 'Requests use bounded, scrubbed conversation text. Attachments, cobrowsing content, profiles, identity fields, and private contact notes are excluded.',
         'processor' => 'Saved processor:',
         'legacy_help' => 'Until a policy is explicitly saved, existing manual settings and local article lookup are preserved. Saving makes the task and context choices explicit; support requests use the saved processor and usage limits.',
@@ -150,7 +150,7 @@ return [
     ],
     'validation' => [
         'limits_conflict' => 'These usage limits changed in another session. Reload the page before trying again.',
-        'policy_conflict' => 'Policy settings changed or the reviewed form is invalid. Reload current settings before saving.',
+        'policy_conflict' => 'The policy, processing disclosure, or saved processor changed. Reload this page and review before saving.',
         'site_scope' => 'Choose only sites you currently have access to.',
         'bulk_incomplete' => 'Not all site selections reached the server. Choose fewer sites, review the settings, and try again.',
         'context_limit' => 'Choose an inherited limit or a value between 1,000 and the applicable ceiling.',

@@ -159,7 +159,13 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   after explicit opt-in have no row and resolve Off until deliberately enabled.
   Site consent gates future same-account published context, without claiming
   article ownership or site isolation. UUID revisions prevent policy ABA reuse.
-  Neither policy table stores visitor links, prompts, output or credentials.
+  Both tables carry nullable UUID `preparation_consent_revision`. Prepare is
+  effective only when this approval matches the current policy revision at both
+  scopes. Existing Prepare rows remain configured but resolve Manual; the shared
+  preparation migration adds NULL columns without approval backfill. Fresh saves
+  under the new disclosure stamp new revisions, and old forms/writers cannot
+  inherit that consent. Neither policy table stores visitor links, prompts,
+  output or credentials.
 - `account_ai_usage_limits`: one account's nullable request/token, concurrency
   and output ceilings, deleted with the account. Null inherits installation
   policy; zero denies new attempts; positive values can only narrow it. These

@@ -13,6 +13,11 @@ return new class extends Migration
 
     public function up(): void
     {
+        // Earlier Prepare choices promised manual-only behavior. NULL holds
+        // them at effective Manual until a newly reviewed revision is saved.
+        foreach (['account_ai_assist_policies', 'site_ai_assist_policies'] as $name) {
+            Schema::table($name, fn (Blueprint $table) => $table->uuid('preparation_consent_revision')->nullable());
+        }
         foreach (self::TABLES as $name) {
             Schema::table($name, function (Blueprint $table): void {
                 $table->string('preparation_fingerprint', 64)->nullable();
@@ -43,6 +48,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('ai_assist_preparation_receipts');
+        foreach (['account_ai_assist_policies', 'site_ai_assist_policies'] as $name) {
+            Schema::table($name, fn (Blueprint $table) => $table->dropColumn('preparation_consent_revision'));
+        }
         foreach (self::TABLES as $name) {
             Schema::table($name, fn (Blueprint $table) => $table->dropColumn([
                 'preparation_fingerprint', 'preparation_source_snapshot', 'previous_output', 'retry_not_before',

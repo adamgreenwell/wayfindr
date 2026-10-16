@@ -72,9 +72,17 @@ final class AiAssistPolicyResolver
         $explicit = $account !== null;
         $legacy = ! $explicit && $exists;
         $valid = $legacy || $this->valid($account) && ($site === null || $this->valid($site));
+        $accountMode = $account?->mode;
+        $siteMode = $site?->mode;
+        if ($accountMode === 'prepare' && $account->getRawOriginal('preparation_consent_revision') !== $account->revision) {
+            $accountMode = 'manual';
+        }
+        if ($siteMode === 'prepare' && $site->getRawOriginal('preparation_consent_revision') !== $site->revision) {
+            $siteMode = 'manual';
+        }
         $mode = $legacy ? 'manual' : ($valid && $site !== null
-            ? (in_array('off', [$account->mode, $site->mode], true) ? 'off'
-                : ($account->mode === 'manual' || $site->mode === 'manual' ? 'manual' : 'prepare')) : 'off');
+            ? (in_array('off', [$accountMode, $siteMode], true) ? 'off'
+                : ($accountMode === 'manual' || $siteMode === 'manual' ? 'manual' : 'prepare')) : 'off');
         $tasks = [];
         foreach (self::TASKS as $task) {
             $tasks[$task] = $legacy || $valid && $site !== null && $account->{$task} && $site->{$task};
