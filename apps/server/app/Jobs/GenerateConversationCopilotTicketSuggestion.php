@@ -13,7 +13,9 @@ use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationTicketSuggestionOutputParser;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Preparation\AiAssistPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -101,14 +103,16 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 return;
             }
 
-            $claimed = ConversationCopilotTicketSuggestion::query()
-                ->whereKey($suggestion->id)
-                ->where('generation', $this->generation)
-                ->where('status', ConversationCopilotTicketSuggestion::STATUS_PENDING)
-                ->update([
-                    'status' => ConversationCopilotTicketSuggestion::STATUS_RUNNING,
-                    'started_at' => now(),
-                ]);
+            $claimed = is_string($suggestion->preparation_fingerprint)
+                ? app(AiSupportUsage::class)->claimPrepared($suggestion)
+                : ConversationCopilotTicketSuggestion::query()
+                    ->whereKey($suggestion->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotTicketSuggestion::STATUS_PENDING)
+                    ->update([
+                        'status' => ConversationCopilotTicketSuggestion::STATUS_RUNNING,
+                        'started_at' => AiSupportUsage::lifecycleNow($suggestion),
+                    ]);
 
             if ($claimed !== 1) {
                 return;
@@ -241,7 +245,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                         'failure_code' => null,
-                        'completed_at' => now(),
+                        'completed_at' => AiSupportUsage::lifecycleNow($suggestion),
                     ]);
 
                 if ($updated === 1) {
@@ -269,7 +273,10 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 'suggestion_id' => $suggestion->id,
                 'conversation_id' => $conversation->id,
             ]);
-            $this->recordFailure($suggestion, 'provider');
+            $code = is_string($suggestion->preparation_fingerprint) && $exception instanceof AiNetworkException
+                && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
+                ? $exception->reason : 'provider';
+            $this->recordFailure($suggestion, $code);
         }
     }
 
@@ -329,10 +336,11 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 ->update([
                     'status' => ConversationCopilotTicketSuggestion::STATUS_FAILED,
                     'failure_code' => $code,
-                    'completed_at' => now(),
+                    'completed_at' => AiSupportUsage::lifecycleNow($suggestion),
                 ]);
 
             if ($updated === 1) {
+                app(AiAssistPreparation::class)->syncTerminal($suggestion);
                 $this->audit($suggestion, 'conversation.ai_ticket_suggestion.failed', [
                     'failure_code' => $code,
                 ]);
@@ -363,7 +371,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 'connection_revision' => $suggestion->connection_revision,
                 ...$metadata,
             ],
-            'occurred_at' => now(),
+            'occurred_at' => AiSupportUsage::lifecycleNow($suggestion),
         ]);
     }
 }

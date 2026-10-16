@@ -35,6 +35,7 @@ final readonly class ConversationSummaryPromptBuilder
             ),
             messageCount: $context->messageCount,
             sourceRevision: $context->sourceRevision,
+            sourceSnapshot: $context->sourceSnapshot,
             lastMessageId: $context->lastMessageId,
         );
     }

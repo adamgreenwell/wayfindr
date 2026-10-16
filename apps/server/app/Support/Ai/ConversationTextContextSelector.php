@@ -46,6 +46,7 @@ final readonly class ConversationTextContextSelector
         $subject = $this->fitSubject($subject, $limit);
         $selected = [];
         $selectedRevisions = [];
+        $selectedSources = [];
         $lastMessageId = null;
         $truncated = false;
 
@@ -71,15 +72,15 @@ final readonly class ConversationTextContextSelector
             ];
             // Server-only source identity also detects changes hidden by redaction.
             // It never joins the provider input or retains a message body.
-            $revision = hash_hmac('sha256', json_encode([
-                (int) $message->id, $entry['role'], hash_hmac('sha256', $rawBody, (string) config('app.key')),
-            ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+            $revision = $this->sourceProof($message);
+            $source = ['id' => (int) $message->id, 'proof' => $revision];
             $candidate = [$entry, ...$selected];
             $candidateWasTruncated = $truncated || $entryWasTruncated;
 
             if (mb_strlen($this->encode($subject, $candidate, $candidateWasTruncated)) <= $limit) {
                 $selected = $candidate;
                 $selectedRevisions = [$revision, ...$selectedRevisions];
+                $selectedSources = [$source, ...$selectedSources];
                 $truncated = $candidateWasTruncated;
 
                 continue;
@@ -91,6 +92,7 @@ final readonly class ConversationTextContextSelector
                 $entry['body'] = $this->fitNewestBody($subject, $entry, $limit);
                 $selected = [$entry];
                 $selectedRevisions = [$revision];
+                $selectedSources = [$source];
             }
 
             break;
@@ -104,11 +106,50 @@ final readonly class ConversationTextContextSelector
             input: $this->encode($subject, $selected, $truncated),
             messageCount: count($selected),
             lastMessageId: $lastMessageId,
+            sourceSnapshot: ['conversation_id' => (int) $conversation->id,
+                'subject' => hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')),
+                'messages' => $selectedSources],
             sourceRevision: hash_hmac('sha256', json_encode([
                 'conversation-text-v1', (int) $conversation->id,
                 hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')), $selectedRevisions,
             ], JSON_THROW_ON_ERROR), (string) config('app.key')),
         );
+    }
+
+    /** Re-authorize exactly the old selected sources; append-only activity may remain readable as stale. */
+    public function sourceStillCurrent(Conversation $conversation, array $snapshot): bool
+    {
+        $sources = $snapshot['messages'] ?? null;
+        if (($snapshot['conversation_id'] ?? null) !== (int) $conversation->id
+            || ! is_string($snapshot['subject'] ?? null)
+            || ! hash_equals($snapshot['subject'], hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')))
+            || ! is_array($sources) || $sources === [] || count($sources) > 1000) {
+            return false;
+        }
+        foreach ($sources as $source) {
+            if (! is_array($source) || ! is_int($source['id'] ?? null) || ! is_string($source['proof'] ?? null)) {
+                return false;
+            }
+        }
+        $messages = $conversation->messages()->whereIn('id', array_column($sources, 'id'))
+            ->select(['id', 'sender_type'])->selectRaw('SUBSTR(body, 1, ?) AS body', [self::MAX_RAW_MESSAGE_CHARACTERS])
+            ->get()->keyBy('id');
+        foreach ($sources as $source) {
+            $message = $messages->get($source['id']);
+            if ($message === null || ! hash_equals($source['proof'], $this->sourceProof($message))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function sourceProof(ConversationMessage $message): string
+    {
+        return hash_hmac('sha256', json_encode([
+            (int) $message->id, $this->role($message),
+            hash_hmac('sha256', trim((string) $message->body), (string) config('app.key')),
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     /**

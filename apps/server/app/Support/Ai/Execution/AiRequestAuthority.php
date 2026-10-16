@@ -62,6 +62,7 @@ final readonly class AiRequestAuthority
             if (! $this->connections->isCurrentConnection($connection)) {
                 throw new AiNetworkException('connection_changed');
             }
+            AiSupportUsage::assertPreparationCurrent($artifact);
             $attempt = DB::table('ai_usage_attempts')->where('attempt_id', $context->attemptId)->first();
             if (! $beforeQueue && ($attempt === null || ! hash_equals($attempt->work_fingerprint, AiSupportUsage::workFingerprint($artifact, $connection)))) {
                 throw new AiNetworkException('context_changed');

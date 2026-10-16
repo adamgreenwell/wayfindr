@@ -189,6 +189,7 @@ class AppServiceProvider extends ServiceProvider
      * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
      * Laravel's database notification, whose key is a UUID column. `operation`
      * is a canonical host-journal UUID constrained by the operator update group.
+     * `task` is the Assist capability enum, bounded explicitly on its routes.
      *
      * Registered here rather than beside the routes because the router applies
      * a global pattern when a route is created, and this provider boots before

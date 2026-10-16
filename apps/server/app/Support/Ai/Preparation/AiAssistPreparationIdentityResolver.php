@@ -92,7 +92,7 @@ final readonly class AiAssistPreparationIdentityResolver
         return new AiAssistPreparationIdentity($accountId, (int) $conversation->site_id, (int) $conversation->id,
             $purpose, $policy->mode, $state, $policyRevision, $connection->revision, $sourceRevision,
             $catalogueRevision, $lastMessageId === null ? null : (int) $lastMessageId,
-            $policy->maxContextCharacters, $fingerprint);
+            $policy->maxContextCharacters, $fingerprint, ($context?->sourceSnapshot ?? []) + ['catalogue_revision' => $catalogueRevision]);
     }
 
     /** Constant-size metadata reads; never scan article bodies or label rows here. */

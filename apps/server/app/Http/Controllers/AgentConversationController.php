@@ -112,16 +112,16 @@ class AgentConversationController extends Controller
         $policyAllows = fn (string $purpose): bool => $copilotPolicy?->allows($purpose) === true;
         $policyCurrent = fn (string $purpose, ?string $revision): bool => $policyAllows($purpose)
             && ($revision === null ? ! $copilotPolicy->explicit : hash_equals($copilotPolicy->revisionFor($purpose), $revision));
-        $copilotSummaryAvailable = $copilotConnection !== null && $policyAllows('conversation_summary') && $latestSummarizableMessageId !== null;
+        $explicitAssist = $copilotPolicy?->explicit === true;
+        $copilotSummaryAvailable = $policyAllows('conversation_summary') && ($explicitAssist || $copilotConnection !== null);
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
             : null;
         if ($copilotSummary !== null && (! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotSummary->connection_revision) || ! $policyCurrent('conversation_summary', $copilotSummary->policy_revision))) {
             $copilotSummary = null;
         }
-        $copilotReplyDraftAvailable = $copilotConnection !== null && $policyAllows('conversation_reply_draft')
-            && $canReply
-            && $latestSummarizableMessageId !== null;
+        $copilotReplyDraftAvailable = ($explicitAssist || $copilotConnection !== null) && $policyAllows('conversation_reply_draft')
+            && $canReply;
         $copilotReplyDraft = $copilotReplyDraftAvailable
             ? $conversation->copilotReplyDraft()->first()
             : null;
@@ -135,10 +135,8 @@ class AgentConversationController extends Controller
                 ->get()
             : collect();
         $account = $agent->account()->firstOrFail();
-        $copilotKnowledgeSuggestionAvailable = $copilotConnection !== null && $policyAllows('conversation_knowledge_suggestion')
-            && $canReply
-            && $latestSummarizableMessageId !== null
-            && $account->articles()->published()->exists();
+        $copilotKnowledgeSuggestionAvailable = ($explicitAssist || $copilotConnection !== null) && $policyAllows('conversation_knowledge_suggestion')
+            && $canReply;
         $copilotKnowledgeSuggestion = $copilotKnowledgeSuggestionAvailable
             ? $conversation->copilotKnowledgeSuggestion()->first()
             : null;
@@ -151,10 +149,9 @@ class AgentConversationController extends Controller
         $ticketLabelOptions = $canManageTickets
             ? $account->ticketLabels()->orderBy('name')->get()
             : collect();
-        $copilotTicketSuggestionAvailable = $copilotConnection !== null && $policyAllows('conversation_ticket_suggestion')
+        $copilotTicketSuggestionAvailable = ($explicitAssist || $copilotConnection !== null) && $policyAllows('conversation_ticket_suggestion')
             && $canManageTickets
-            && $tickets->isEmpty()
-            && $latestSummarizableMessageId !== null;
+            && $tickets->isEmpty();
         $copilotTicketSuggestion = $copilotTicketSuggestionAvailable
             ? $conversation->copilotTicketSuggestion()->first()
             : null;
@@ -303,6 +300,7 @@ class AgentConversationController extends Controller
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
             'conversationSiblings' => $conversationSiblings,
+            'copilotPolicy' => $copilotPolicy,
             'copilotReplyDraft' => $copilotReplyDraft,
             'copilotReplyDraftAvailable' => $copilotReplyDraftAvailable,
             'copilotKnowledgeSuggestion' => $copilotKnowledgeSuggestion,

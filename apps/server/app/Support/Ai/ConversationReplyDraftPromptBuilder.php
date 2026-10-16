@@ -40,6 +40,7 @@ final readonly class ConversationReplyDraftPromptBuilder
             ),
             messageCount: $context->messageCount,
             sourceRevision: $context->sourceRevision,
+            sourceSnapshot: $context->sourceSnapshot,
             lastMessageId: (int) $latestMessageId,
         );
     }

@@ -26,6 +26,7 @@ use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
 use App\Http\Controllers\AgentAutomationRuleController;
+use App\Http\Controllers\AgentConversationAiPreparationController;
 use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationBulkActionController;
 use App\Http\Controllers\AgentConversationController;
@@ -442,6 +443,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.attachments.destroy');
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
+    Route::get('/dashboard/conversations/{supportCode}/assist/{task}/use', [AgentConversationAiPreparationController::class, 'use'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->name('dashboard.conversations.assist.use');
+    Route::get('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'show'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->name('dashboard.conversations.assist.show');
+    Route::post('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'store'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1')->name('dashboard.conversations.assist.store');
+
     Route::get('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'show'])
         ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-summary.show');
