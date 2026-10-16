@@ -11,6 +11,7 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,6 +27,8 @@ use Throwable;
 final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    private const PURPOSE = 'conversation_reply_draft';
 
     public int $tries = 1;
 
@@ -60,6 +63,13 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
         $usageArtifact = $draft;
         $result = null;
+
+        if (! $this->policyIsCurrent($draft)) {
+            $this->cancelBeforeProvider($draft);
+            $this->recordFailure($draft, 'policy_changed');
+
+            return;
+        }
 
         $conversation = $draft->conversation;
         $requester = $draft->requestedBy;
@@ -128,6 +138,13 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
+            if (! $this->policyIsCurrent($draft)) {
+                $this->cancelBeforeProvider($draft);
+                $this->recordFailure($draft, 'policy_changed');
+
+                return;
+            }
+            $sourceFingerprint = AiSupportUsage::sourceFingerprint($draft, $context->prompt);
             $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($draft)));
             $output = mb_substr(trim($result->text), 0, 6_000);
 
@@ -138,7 +155,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
-            app(AiSupportUsage::class)->publish($draft, $result, fn () => DB::transaction(function () use ($context, $draft, $output, $result, $connections): void {
+            app(AiSupportUsage::class)->publish($draft, $result, fn () => DB::transaction(function () use ($context, $draft, $output, $result, $connections, $sourceFingerprint): void {
                 $accountId = (int) $draft->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -153,6 +170,12 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                     ->first();
 
                 if ($draft === null) {
+                    return;
+                }
+
+                if (! $this->policyIsCurrent($draft)) {
+                    $this->recordFailure($draft, 'policy_changed');
+
                     return;
                 }
 
@@ -177,6 +200,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                     ->update([
                         'status' => ConversationCopilotReplyDraft::STATUS_READY,
                         'draft' => $output,
+                        'source_context_fingerprint' => $sourceFingerprint,
                         'source_last_message_id' => $context->lastMessageId,
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
@@ -238,6 +262,15 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
         return $draft !== null
             && $draft->generation === $this->generation
             && $draft->status === ConversationCopilotReplyDraft::STATUS_PENDING;
+    }
+
+    private function policyIsCurrent(ConversationCopilotReplyDraft $draft): bool
+    {
+        try {
+            return $draft->conversation !== null && app(AiAssistPolicyResolver::class)->isCurrent((int) $draft->conversation->site_id, self::PURPOSE, $draft->policy_revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function cancelBeforeProvider(ConversationCopilotReplyDraft $draft): void

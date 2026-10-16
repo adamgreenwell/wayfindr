@@ -141,6 +141,17 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   `test_failure_code` records actionable unavailable causes without provider text. `enabled` pauses
   processing, while `uses_installation_default` preserves the existing manual
   path only until deliberate selection or disconnect retires that eligibility.
+- `account_ai_assist_policies`: one explicit account policy, deleted with its
+  account. Off/Manual/Prepare, four task flags, published-context consent and an
+  optional narrower context ceiling are independent of connection test evidence.
+  An opaque UUID changes with processing choices; no row preserves legacy Manual
+  upgrade behavior. First opt-in initializes existing site policies as Manual.
+- `site_ai_assist_policies`: one site policy with an account link, deleted with
+  its site/account. Modes/tasks/context intersect the account policy; sites added
+  after explicit opt-in have no row and resolve Off until deliberately enabled.
+  Site consent gates future same-account published context, without claiming
+  article ownership or site isolation. UUID revisions prevent policy ABA reuse.
+  Neither policy table stores visitor links, prompts, output or credentials.
 - `account_ai_usage_limits`: one account's nullable request/token, concurrency
   and output ceilings, deleted with the account. Null inherits installation
   policy; zero denies new attempts; positive values can only narrow it. These
@@ -174,6 +185,12 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   requests stamp the resolved processor identity, workers recheck it before
   dispatch/publication, and readers withhold unversioned or superseded output.
   Existing queued work without a stamp cannot run; a fresh manual request can.
+  All four stores additionally carry nullable `policy_revision` and
+  `source_context_fingerprint` HMACs. Policy changes fence queued/late/visible
+  output independently of connection tests; source proofs bind insertion to the
+  bounded scrubbed context actually used. Old unstamped output cannot be inserted.
+  Opaque internal proofs are excluded from visitor-export payloads.
+
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly

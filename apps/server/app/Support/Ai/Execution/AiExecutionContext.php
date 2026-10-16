@@ -20,6 +20,8 @@ final readonly class AiExecutionContext
         #[SensitiveParameter] public ?string $generation = null,
         #[SensitiveParameter] public ?string $proposedRevision = null,
         #[SensitiveParameter] public ?string $testGeneration = null,
+        #[SensitiveParameter] public ?string $policyRevision = null,
+        public ?int $maxContextCharacters = null,
     ) {
         if (! in_array($kind, ['support', 'probe', 'discovery'], true) || $accountId <= 0 || $actorId <= 0
             || ($kind === 'probe' && $purpose !== 'configuration_probe')

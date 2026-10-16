@@ -8,6 +8,9 @@
     class="reply-template-preview"
     data-copilot-knowledge-suggestion
     data-state="{{ $copilotKnowledgeState ?? 'empty' }}"
+    data-generation="{{ $copilotKnowledgeSuggestion?->generation }}"
+    data-policy-revision="{{ $copilotKnowledgeSuggestion?->policy_revision }}"
+    data-use-url="{{ route('dashboard.conversations.copilot-knowledge-suggestion.use', ['supportCode' => $conversation->support_code]) }}"
     data-status-url="{{ route('dashboard.conversations.copilot-knowledge-suggestion.show', $copilotKnowledgeRoute) }}"
 >
     <div class="reply-copilot-heading">
@@ -32,7 +35,7 @@
         </div>
 
         @forelse ($suggestedKnowledgeArticles as $suggestedArticle)
-            <article class="notice-copy notice-copy-bordered" data-copilot-knowledge-article>
+            <article class="notice-copy notice-copy-bordered" data-copilot-knowledge-article data-article-id="{{ $suggestedArticle['article']->id }}" data-article-revision="{{ \App\Support\Ai\KnowledgeArticleSuggestionMatcher::revision($suggestedArticle['article'], $suggestedArticle['snippet']) }}">
                 <strong lang="">{{ $suggestedArticle['article']->title }}</strong>
                 <p data-copilot-knowledge-snippet lang="">{{ $suggestedArticle['snippet'] }}</p>
                 <button

@@ -25,6 +25,8 @@ use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiDnsResolver;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Network\AiNetworkPolicy;
+use App\Support\Ai\Policy\AiAssistPolicies;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Ai\Usage\AiUsageLedger;
 use Carbon\CarbonImmutable;
@@ -117,16 +119,23 @@ function executionBoundaryWorld(bool $activate = true): array
     return compact('owner', 'service', 'proposal', 'dns', 'wire', 'clock');
 }
 
-function executionBoundarySupport(array $world, string $purpose = 'conversation_summary'): array
+function executionBoundarySupport(array $world, string $purpose = 'conversation_summary', bool $explicitPolicy = false): array
 {
     $site = Site::factory()->for($world['owner']->account)->create();
     $conversation = Conversation::factory()->for($site)->create();
     $message = ConversationMessage::factory()->for($conversation)->create(['body' => 'Synthetic customer question B.']);
     Article::factory()->for($world['owner']->account)->published()->create();
+    if ($explicitPolicy) {
+        $policies = app(AiAssistPolicies::class);
+        $policies->saveAccount($world['owner'], $world['owner']->account_id, executionPolicyInput(),
+            $policies->accountToken($world['owner']->account_id));
+    }
     $connection = app(AgentCopilotConnectionResolver::class)->forAccount($world['owner']->account_id);
     $class = AiSupportUsage::ARTIFACTS[$purpose];
     $artifact = $class::query()->forceCreate(['conversation_id' => $conversation->id, 'requested_by_id' => $world['owner']->id,
-        'generation' => (string) Str::uuid(), 'connection_revision' => $connection->revision, 'status' => 'pending', 'requested_at' => now()]);
+        'generation' => (string) Str::uuid(), 'connection_revision' => $connection->revision,
+        'policy_revision' => $explicitPolicy ? app(AiAssistPolicyResolver::class)->forSite($site->id)->revisionFor($purpose) : null,
+        'status' => 'pending', 'requested_at' => now()]);
     app(AiSupportUsage::class)->reserveFor($artifact);
     $artifact->forceFill(['status' => 'running', 'started_at' => now()])->save();
     $artifact->load('conversation.site');
@@ -271,4 +280,82 @@ test('proposal execution identities cannot turn connection tests into support da
     $prompt = (new AgentCopilotPrompt('configuration_probe', 'Different instructions.', 'Synthetic support text that does not belong in a probe.'))->withExecution($connection, $context);
     executionBoundaryReason(fn () => app(AgentCopilotProvider::class)->generate($prompt), 'probe_context_required');
     expect($world['dns']->calls)->toBe(0)->and($world['wire']->requests)->toHaveCount(0);
+});
+
+function executionPolicyInput(array $changes = []): array
+{
+    return [
+        'mode' => 'manual', 'summary' => true, 'reply_draft' => true,
+        'relevant_articles' => true, 'ticket_details' => true,
+        'article_context_consent' => true, 'max_context_characters' => null,
+        ...$changes,
+    ];
+}
+
+test('policy revocation during DNS prevents every support capability from transmitting', function (string $purpose): void {
+    $world = executionBoundaryWorld();
+    $support = executionBoundarySupport($world, $purpose, true);
+    $world['dns']->during = function () use ($world): void {
+        $policies = app(AiAssistPolicies::class);
+        $policies->saveAccount($world['owner'], $world['owner']->account_id, executionPolicyInput(['mode' => 'off']),
+            $policies->accountToken($world['owner']->account_id));
+    };
+    executionBoundaryReason(fn () => app(AgentCopilotProvider::class)->generate($support['prompt']), 'access_revoked');
+    expect($world['dns']->calls)->toBe(1, 'The revocation must occur between DNS and wire admission.')
+        ->and($world['wire']->requests)->toHaveCount(0, 'A committed Off policy must prevent transmission.')
+        ->and(DB::table('ai_usage_attempts')->where('attempt_id', $support['artifact']->generation)->value('state'))->toBe('cancelled');
+})->with(array_keys(AiSupportUsage::ARTIFACTS));
+
+test('an Off On policy cycle cannot revive an in-flight support identity', function (): void {
+    $world = executionBoundaryWorld();
+    $support = executionBoundarySupport($world, 'conversation_summary', true);
+    $world['dns']->during = function () use ($world): void {
+        $policies = app(AiAssistPolicies::class);
+        foreach (['off', 'manual'] as $mode) {
+            $policies->saveAccount($world['owner'], $world['owner']->account_id, executionPolicyInput(['mode' => $mode]),
+                $policies->accountToken($world['owner']->account_id));
+        }
+    };
+    executionBoundaryReason(fn () => app(AgentCopilotProvider::class)->generate($support['prompt']), 'access_revoked');
+    expect(app(AiAssistPolicyResolver::class)->forSite($support['site']->id)->allows('conversation_summary'))->toBeTrue()
+        ->and($world['wire']->requests)->toHaveCount(0, 'Equivalent flags after an Off On cycle are a new authority revision.');
+});
+
+test('Relevant articles revocation short circuits article queries at wire admission', function (): void {
+    $world = executionBoundaryWorld();
+    $support = executionBoundarySupport($world, 'conversation_knowledge_suggestion', true);
+    $articleQueries = [];
+    $world['dns']->during = function () use ($world, &$articleQueries): void {
+        $policies = app(AiAssistPolicies::class);
+        $policies->saveAccount($world['owner'], $world['owner']->account_id, executionPolicyInput(['relevant_articles' => false]),
+            $policies->accountToken($world['owner']->account_id));
+        DB::listen(function ($query) use (&$articleQueries): void {
+            if (preg_match('/\barticles\b/i', $query->sql)) {
+                $articleQueries[] = $query->sql;
+            }
+        });
+    };
+    executionBoundaryReason(fn () => app(AgentCopilotProvider::class)->generate($support['prompt']), 'access_revoked');
+    expect($articleQueries)->toBe([], 'Off must precede even AI article existence checks.')
+        ->and($world['wire']->requests)->toHaveCount(0);
+});
+
+test('account context ceilings bind selected prompt source and actual execution', function (): void {
+    $world = executionBoundaryWorld();
+    $support = executionBoundarySupport($world, 'conversation_summary', true);
+    $policies = app(AiAssistPolicies::class);
+    $policies->saveAccount($world['owner'], $world['owner']->account_id, executionPolicyInput(['max_context_characters' => 1000]),
+        $policies->accountToken($world['owner']->account_id));
+    $support['message']->update(['body' => str_repeat('Bounded synthetic text. ', 500)]);
+    $artifact = $support['artifact']->fresh()->load('conversation.site');
+    $policy = app(AiAssistPolicyResolver::class)->forSite($support['site']->id);
+    $artifact->forceFill(['generation' => (string) Str::uuid(), 'policy_revision' => $policy->revisionFor('conversation_summary'), 'status' => 'pending'])->save();
+    app(AiSupportUsage::class)->reserveFor($artifact);
+    $artifact->update(['status' => 'running']);
+    $prompt = AiSupportUsage::promptFor($artifact)->withExecution($support['connection'], app(AiSupportUsage::class)->contextFor($artifact));
+    expect(mb_strlen($prompt->input))->toBeLessThanOrEqual(1000)
+        ->and($prompt->execution->maxContextCharacters)->toBe(1000)
+        ->and(AiSupportUsage::sourceFingerprint($artifact, $prompt))->toBe(AiSupportUsage::sourceFingerprint($artifact));
+    app(AgentCopilotProvider::class)->generate($prompt)->settle();
+    expect($world['wire']->requests)->toHaveCount(1);
 });

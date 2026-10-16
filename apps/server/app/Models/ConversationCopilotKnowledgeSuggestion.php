@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasCopilotSourceFreshness;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'requested_by_id',
     'generation',
     'connection_revision',
+    'policy_revision',
+    'source_context_fingerprint',
     'status',
     'article_ids',
     'source_last_message_id',
@@ -28,6 +31,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 final class ConversationCopilotKnowledgeSuggestion extends Model
 {
+    use HasCopilotSourceFreshness;
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_RUNNING = 'running';
@@ -84,13 +89,6 @@ final class ConversationCopilotKnowledgeSuggestion extends Model
         return in_array($this->status, [self::STATUS_PENDING, self::STATUS_READY, self::STATUS_FAILED], true)
             ? $this->status
             : self::STATUS_FAILED;
-    }
-
-    public function isStaleComparedTo(?int $latestMessageId): bool
-    {
-        return $this->status === self::STATUS_READY
-            && $latestMessageId !== null
-            && $this->source_last_message_id !== $latestMessageId;
     }
 
     /** @return list<int> */

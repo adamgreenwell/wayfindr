@@ -11,7 +11,7 @@
             const panel = document.querySelector('[data-copilot-ticket-suggestion]');
             const pending = panel?.dataset.state === 'pending';
 
-            if (!panel || (!pending && !force) || (pending && attempts >= maximumAttempts)) {
+            if (!panel || (pending && attempts >= maximumAttempts)) {
                 return;
             }
 
@@ -36,7 +36,7 @@
                     },
                 });
 
-                if (response.status === 204 || response.status === 404) {
+                if ([204, 403, 404, 410].includes(response.status)) {
                     panel.remove();
 
                     return;
@@ -46,7 +46,11 @@
                     throw new Error('Ticket suggestion refresh failed.');
                 }
 
-                panel.outerHTML = await response.text();
+                const markup = await response.text();
+
+                if (panel.isConnected) {
+                    panel.outerHTML = markup;
+                }
             } catch (error) {
                 // Leave the current state in place. A page refresh remains a
                 // safe recovery path for transient polling failures.
@@ -62,8 +66,9 @@
 
                 const currentPanel = document.querySelector('[data-copilot-ticket-suggestion]');
 
-                if (currentPanel?.dataset.state === 'pending') {
-                    window.setTimeout(() => refresh(), 2000);
+                if (currentPanel) {
+                    // Ready output is re-authorized too, so policy edits withdraw it.
+                    window.setTimeout(() => refresh(), currentPanel.dataset.state === 'pending' ? 2000 : 10000);
                 }
             }
         };
@@ -90,64 +95,73 @@
             }
         });
 
-        document.addEventListener('click', (event) => {
+        document.addEventListener('click', async (event) => {
             const target = event.target instanceof Element ? event.target : null;
             const useButton = target?.closest('[data-copilot-ticket-suggestion-use]');
-
-            if (!useButton) {
-                return;
-            }
-
+            if (!useButton || useButton.disabled) return;
             const panel = useButton.closest('[data-copilot-ticket-suggestion]');
             const form = document.querySelector('[data-ticket-creation-form]');
             const status = panel?.querySelector('[data-copilot-ticket-suggestion-status]');
             const staleNotice = panel?.querySelector('[data-copilot-ticket-suggestion-stale]');
             const subject = form?.querySelector('[data-ticket-subject]');
             const priority = form?.querySelector('[data-ticket-priority]');
-            const title = panel?.querySelector('[data-copilot-ticket-title]')?.textContent?.trim() ?? '';
-            const priorityValue = panel?.querySelector('[data-copilot-ticket-priority]')?.dataset.value ?? '';
-
-            if (!form || !subject || !priority || !title || !priorityValue) {
-                return;
-            }
-
+            if (!form || !subject || !priority || !panel?.dataset.useUrl || !panel.dataset.generation) return;
             if (staleNotice && !staleNotice.hidden) {
-                if (status) {
-                    status.textContent = @json(__('conversations.detail.ticket_copilot.use_stale'));
-                }
-
+                if (status) status.textContent = @json(__('conversations.detail.ticket_copilot.use_stale'));
                 return;
             }
-
             if (form.dataset.ticketSuggestionDirty === 'true') {
-                if (status) {
-                    status.textContent = @json(__('conversations.detail.ticket_copilot.use_blocked'));
-                }
+                if (status) status.textContent = @json(__('conversations.detail.ticket_copilot.use_blocked'));
                 subject.focus();
-
                 return;
             }
-
-            const suggestedLabelIds = new Set(
-                Array.from(panel.querySelectorAll('[data-copilot-ticket-label-id]'))
-                    .map((label) => label.dataset.copilotTicketLabelId)
-            );
-
-            subject.value = title;
-            subject.setAttribute('lang', '');
-            priority.value = priorityValue;
-
-            form.querySelectorAll('[data-ticket-label-id]').forEach((checkbox) => {
-                checkbox.checked = suggestedLabelIds.has(checkbox.value);
-            });
-
-            form.dataset.ticketSuggestionDirty = 'true';
-            subject.dispatchEvent(new Event('input', { bubbles: true }));
-            priority.dispatchEvent(new Event('change', { bubbles: true }));
-            subject.focus();
-
-            if (status) {
-                status.textContent = @json(__('conversations.detail.ticket_copilot.used'));
+            const snapshot = () => JSON.stringify([subject.value, priority.value,
+                Array.from(form.querySelectorAll('[data-ticket-label-id]')).map((item) => [item.value, item.checked])]);
+            const initialValues = snapshot();
+            const generation = panel.dataset.generation;
+            const policyRevision = panel.dataset.policyRevision;
+            useButton.disabled = true;
+            try {
+                const query = new URLSearchParams({ generation });
+                const response = await fetch(`${panel.dataset.useUrl}?${query}`, {
+                    credentials: 'same-origin', cache: 'no-store',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!response.ok) {
+                    if ([403, 404, 410].includes(response.status)) panel.remove();
+                    throw new Error('Suggestion is no longer available.');
+                }
+                const payload = await response.json();
+                if (!panel.isConnected || document.querySelector('[data-copilot-ticket-suggestion]') !== panel
+                    || panel.dataset.generation !== generation || panel.dataset.policyRevision !== policyRevision
+                    || payload.generation !== generation || (payload.policy_revision ?? '') !== policyRevision
+                    || (staleNotice && !staleNotice.hidden)) return;
+                if (form.dataset.ticketSuggestionDirty === 'true' || snapshot() !== initialValues) {
+                    if (status) status.textContent = @json(__('conversations.detail.ticket_copilot.use_blocked'));
+                    subject.focus();
+                    return;
+                }
+                if (typeof payload.title !== 'string' || !payload.title.trim()
+                    || typeof payload.priority !== 'string' || !Array.isArray(payload.label_ids)) {
+                    throw new Error('Suggestion is no longer available.');
+                }
+                const suggestedLabelIds = new Set(payload.label_ids.map(String));
+                subject.value = payload.title;
+                subject.setAttribute('lang', '');
+                priority.value = payload.priority;
+                form.querySelectorAll('[data-ticket-label-id]').forEach((checkbox) => {
+                    checkbox.checked = suggestedLabelIds.has(checkbox.value);
+                });
+                form.dataset.ticketSuggestionDirty = 'true';
+                subject.dispatchEvent(new Event('input', { bubbles: true }));
+                priority.dispatchEvent(new Event('change', { bubbles: true }));
+                subject.focus();
+                if (status) status.textContent = @json(__('conversations.detail.ticket_copilot.used'));
+            } catch (error) {
+                if (staleNotice) staleNotice.hidden = false;
+                if (status) status.textContent = @json(__('conversations.detail.ticket_copilot.use_stale'));
+            } finally {
+                if (panel.isConnected && (!staleNotice || staleNotice.hidden)) useButton.disabled = false;
             }
         });
 

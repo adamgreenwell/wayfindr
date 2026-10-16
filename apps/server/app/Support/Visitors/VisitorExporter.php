@@ -128,6 +128,8 @@ final class VisitorExporter
     private const COPILOT = [
         'id' => true, 'conversation_id' => true, 'requested_by_id' => self::ROLE, 'generation' => true, 'status' => true,
         'connection_revision' => true,
+        'policy_revision' => 'server-only support policy fence',
+        'source_context_fingerprint' => 'keyed source freshness proof, not visitor content',
         'source_last_message_id' => true, 'source_message_count' => true, 'provider' => true, 'model' => true,
         'prompt_tokens' => true, 'completion_tokens' => true, 'failure_code' => true, 'requested_at' => true,
         'started_at' => true, 'completed_at' => true, 'created_at' => true, 'updated_at' => true,

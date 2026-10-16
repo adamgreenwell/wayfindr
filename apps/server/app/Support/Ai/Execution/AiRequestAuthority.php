@@ -9,6 +9,7 @@ use App\Models\AccountAiConnection;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -45,6 +46,13 @@ final readonly class AiRequestAuthority
                 || $artifact->connection_revision !== $connection->revision
                 || (int) $artifact->conversation?->site?->account_id !== $context->accountId
                 || ! Gate::forUser($actor)->allows($ability, $artifact->conversation)) {
+                throw new AiNetworkException('access_revoked');
+            }
+            $policy = app(AiAssistPolicyResolver::class)->forConversation($artifact->conversation);
+            if (! app(AiAssistPolicyResolver::class)->isCurrent((int) $artifact->conversation->site_id,
+                $context->purpose, $artifact->policy_revision)
+                || $context->policyRevision !== $artifact->policy_revision
+                || ($context->maxContextCharacters !== null && $context->maxContextCharacters !== $policy->maxContextCharacters)) {
                 throw new AiNetworkException('access_revoked');
             }
             if (($context->purpose === 'conversation_knowledge_suggestion' && ! $artifact->conversation->site->account->articles()->published()->exists())

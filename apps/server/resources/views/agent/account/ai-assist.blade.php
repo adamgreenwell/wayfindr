@@ -43,7 +43,7 @@
     @endif
     @if ($errors->any())
         <div class="ai-assist-errors" role="alert" tabindex="-1" data-ai-errors>
-            <strong>{{ __('ai_assist.validation.heading') }}</strong>
+            <strong>{{ in_array(old('_policy_form'), ['account', 'sites'], true) ? __('ai_assist.policy.error_heading') : __('ai_assist.validation.heading') }}</strong>
             <ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
             <p class="field-help"><a href="{{ route('dashboard.account.ai-assist.show') }}">{{ __('ai_assist.actions.reload') }}</a> · {{ __('ai_assist.validation.reload_help') }}</p>
         </div>
@@ -206,6 +206,8 @@
             </div>
         </section>
 
+        @include('agent.account.partials.ai-assist-policies')
+
         <section class="section" aria-labelledby="ai-usage-heading">
             <div class="section-header">
                 <h2 id="ai-usage-heading">{{ __('ai_assist.usage.heading') }}</h2>
@@ -249,10 +251,6 @@
             @endif
         </section>
 
-        <section class="section" aria-labelledby="ai-support-behavior-heading">
-            <div class="section-header"><h2 id="ai-support-behavior-heading">{{ __('ai_assist.behavior.heading') }}</h2></div>
-            <div class="notice-copy"><p>{{ __('ai_assist.behavior.help') }}</p></div>
-        </section>
     </div>
 
     <style>

@@ -6,6 +6,7 @@ namespace App\Support\Ai;
 
 use App\Models\Account;
 use App\Models\AccountAiConnection;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Settings\OperatorSettings;
 use SensitiveParameter;
 use Throwable;
@@ -68,7 +69,8 @@ final readonly class AgentCopilotConnectionResolver
     /** Only the pre-existing unselected operator path retains legacy SDK I/O. */
     public function isLegacyInstallationDefault(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection): bool
     {
-        if ($connection->source !== AccountAiConnection::INSTALLATION || ! Account::query()->whereKey($connection->accountId)->exists()) {
+        if ($connection->source !== AccountAiConnection::INSTALLATION || ! Account::query()->whereKey($connection->accountId)->exists()
+            || app(AiAssistPolicyResolver::class)->hasExplicitAccountPolicy($connection->accountId)) {
             return false;
         }
         $record = AccountAiConnection::query()->where('account_id', $connection->accountId)->first();

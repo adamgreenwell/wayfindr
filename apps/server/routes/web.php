@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
 use App\Http\Controllers\AgentAccountAiAssistController;
+use App\Http\Controllers\AgentAccountAiAssistPolicyController;
 use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
@@ -171,6 +172,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     }
     Route::put('/dashboard/account/ai-assist/limits', [AgentAccountAiAssistController::class, 'limits'])
         ->name('dashboard.account.ai-assist.limits');
+    Route::post('/dashboard/account/ai-assist/policy/account', [AgentAccountAiAssistPolicyController::class, 'account'])
+        ->name('dashboard.account.ai-assist.policy.account');
+    Route::post('/dashboard/account/ai-assist/policy/sites', [AgentAccountAiAssistPolicyController::class, 'sites'])
+        ->name('dashboard.account.ai-assist.policy.sites');
     Route::get('/dashboard/account/team', AgentAccountTeamController::class)
         ->name('dashboard.account.team.show');
     Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])
@@ -438,28 +443,37 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
     Route::get('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-summary.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-summary.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-reply-draft/use', [AgentConversationCopilotReplyDraftController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-reply-draft.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-reply-draft', [AgentConversationCopilotReplyDraftController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-reply-draft.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-reply-draft', [AgentConversationCopilotReplyDraftController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-reply-draft.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion/use', [AgentConversationCopilotTicketSuggestionController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-ticket-suggestion.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-ticket-suggestion.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-ticket-suggestion.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion/use', [AgentConversationCopilotKnowledgeSuggestionController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-knowledge-suggestion.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion', [AgentConversationCopilotKnowledgeSuggestionController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-knowledge-suggestion.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion', [AgentConversationCopilotKnowledgeSuggestionController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-knowledge-suggestion.store');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])
         ->name('dashboard.conversations.messages.store');

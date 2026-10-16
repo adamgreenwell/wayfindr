@@ -12,7 +12,9 @@ use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Conversations\ConversationReturnPath;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -25,6 +27,8 @@ use Throwable;
 /** Queue and render title, priority, and local-label suggestions for ticket creation. */
 final class AgentConversationCopilotTicketSuggestionController extends Controller
 {
+    private const PURPOSE = 'conversation_ticket_suggestion';
+
     public function store(
         Request $request,
         string $supportCode,
@@ -33,6 +37,7 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
     ): RedirectResponse {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
         abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_if($conversation->tickets()->exists(), 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
@@ -42,6 +47,8 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
             $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $policy = app(AiAssistPolicyResolver::class)->forConversation($conversation);
+            abort_unless($policy->allows(self::PURPOSE), 404);
             $connection = $connections->forAccount($accountId);
             abort_unless($connection !== null, 404);
 
@@ -61,11 +68,11 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
             // its start marker when a connection changes mid-call.
             if ($suggestion?->hasFreshPendingRequest()
                 && $suggestion->status === ConversationCopilotTicketSuggestion::STATUS_RUNNING
-                && $suggestion->connection_revision !== $connection->revision) {
+                && ($suggestion->connection_revision !== $connection->revision || ! $this->policyIsCurrent($conversation, $suggestion->policy_revision))) {
                 abort(409, __('conversations.flash.ai_ticket_suggestion_pending'));
             }
 
-            if ($suggestion?->hasFreshPendingRequest() && $suggestion->connection_revision === $connection->revision) {
+            if ($suggestion?->hasFreshPendingRequest() && $suggestion->connection_revision === $connection->revision && $this->policyIsCurrent($conversation, $suggestion->policy_revision)) {
                 return [$suggestion, false];
             }
 
@@ -74,6 +81,8 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
                 'connection_revision' => $connection->revision,
+                'policy_revision' => $policy->revisionFor(self::PURPOSE),
+                'source_context_fingerprint' => null,
                 'status' => ConversationCopilotTicketSuggestion::STATUS_PENDING,
                 'title' => null,
                 'priority' => null,
@@ -183,6 +192,7 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
         ConversationReturnPath $returnPath,
     ): Response {
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
         abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
 
         if ($conversation->tickets()->exists()) {
@@ -200,7 +210,7 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
 
         $latestConversationMessageId = $conversation->messages()->max('id');
         $suggestion = $conversation->copilotTicketSuggestion()->first();
-        if ($suggestion !== null && ! $connections->isCurrent((int) $conversation->site->account_id, $suggestion->connection_revision)) {
+        if ($suggestion !== null && (! $connections->isCurrent((int) $conversation->site->account_id, $suggestion->connection_revision) || ! $this->policyIsCurrent($conversation, $suggestion->policy_revision))) {
             $suggestion = null;
         }
         $suggestedLabels = collect();
@@ -219,6 +229,44 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
             'latestConversationMessageId' => (int) $latestConversationMessageId,
             'suggestedTicketLabels' => $suggestedLabels,
         ])->header('Cache-Control', 'no-store, private');
+    }
+
+    /** Return freshly authorized data; this never inserts or sends support text. */
+    public function use(Request $request, string $supportCode, AgentCopilotConnectionResolver $connections): JsonResponse
+    {
+        abort_unless($request->expectsJson(), 406);
+        $input = $request->validate(['generation' => ['required', 'uuid']]);
+        $conversation = $this->conversationForAgent($request->user(), $supportCode);
+
+        return DB::transaction(function () use ($request, $supportCode, $conversation, $input, $connections): JsonResponse {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($request->user()->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $supportCode);
+            Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
+            abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
+            $suggestion = $conversation->copilotTicketSuggestion()->where('generation', $input['generation'])
+                ->where('status', ConversationCopilotTicketSuggestion::STATUS_READY)->lockForUpdate()->first();
+            abort_unless($suggestion !== null && $this->policyIsCurrent($conversation, $suggestion->policy_revision)
+                && $connections->isCurrent($accountId, $suggestion->connection_revision), 409);
+            abort_unless(is_string($suggestion->source_context_fingerprint) && $suggestion->source_context_fingerprint !== ''
+                && ! $suggestion->isStaleComparedTo($conversation->messages()->max('id')), 409);
+            abort_if($conversation->tickets()->exists(), 409);
+            $labels = $conversation->site->account->ticketLabels()->whereKey($suggestion->suggestedLabelIds())
+                ->orderBy('id')->pluck('id')->map(fn (int|string $id): int => (int) $id)->all();
+
+            return response()->json(['generation' => $suggestion->generation, 'policy_revision' => $suggestion->policy_revision, 'title' => $suggestion->title, 'priority' => $suggestion->priority, 'label_ids' => $labels])
+                ->header('Cache-Control', 'no-store, private');
+        });
+    }
+
+    private function policyIsCurrent(Conversation $conversation, ?string $revision): bool
+    {
+        try {
+            return app(AiAssistPolicyResolver::class)->isCurrent((int) $conversation->site_id, self::PURPOSE, $revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function conversationForAgent(User $agent, string $supportCode): Conversation
