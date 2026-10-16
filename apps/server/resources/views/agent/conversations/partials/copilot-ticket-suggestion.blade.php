@@ -8,6 +8,9 @@
     class="reply-template-preview"
     data-copilot-ticket-suggestion
     data-state="{{ $copilotTicketSuggestionState ?? 'empty' }}"
+    data-generation="{{ $copilotTicketSuggestion?->generation }}"
+    data-policy-revision="{{ $copilotTicketSuggestion?->policy_revision }}"
+    data-use-url="{{ route('dashboard.conversations.copilot-ticket-suggestion.use', ['supportCode' => $conversation->support_code]) }}"
     data-status-url="{{ route('dashboard.conversations.copilot-ticket-suggestion.show', $copilotTicketSuggestionRoute) }}"
 >
     <div class="reply-copilot-heading">

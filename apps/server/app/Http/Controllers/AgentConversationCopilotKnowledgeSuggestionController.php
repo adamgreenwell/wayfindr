@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateConversationCopilotKnowledgeSuggestion;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotKnowledgeSuggestion;
 use App\Models\User;
-use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Conversations\ConversationReturnPath;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -24,20 +28,31 @@ use Throwable;
 /** Queue and render agent-reviewed published-article suggestions. */
 final class AgentConversationCopilotKnowledgeSuggestionController extends Controller
 {
+    private const PURPOSE = 'conversation_knowledge_suggestion';
+
     public function store(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
     ): RedirectResponse {
-        abort_unless($configuration->isReady(), 404);
-
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode);
+        abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         abort_unless($conversation->site->account->articles()->published()->exists(), 404);
         abort_unless($conversation->messages()->whereNotNull('body')->whereRaw("TRIM(body) <> ''")->exists(), 404);
 
-        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation): array {
+        [$suggestion, $shouldDispatch] = DB::transaction(function () use ($agent, $conversation, $connections): array {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($agent->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $conversation->support_code);
+            $policy = app(AiAssistPolicyResolver::class)->forConversation($conversation);
+            abort_unless($policy->allows(self::PURPOSE), 404);
+            $connection = $connections->forAccount($accountId);
+            abort_unless($connection !== null, 404);
+
             Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
 
             if (! $conversation->site->account->articles()->published()->exists()) {
@@ -49,7 +64,16 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
                 ->lockForUpdate()
                 ->first();
 
-            if ($suggestion?->hasFreshPendingRequest()) {
+            // A running row is also the erasure-visible external-call claim.
+            // Keep it intact until that attempt finishes rather than replacing
+            // its start marker when a connection changes mid-call.
+            if ($suggestion?->hasFreshPendingRequest()
+                && $suggestion->status === ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING
+                && ($suggestion->connection_revision !== $connection->revision || ! $this->policyIsCurrent($conversation, $suggestion->policy_revision))) {
+                abort(409, __('conversations.flash.ai_knowledge_suggestion_pending'));
+            }
+
+            if ($suggestion?->hasFreshPendingRequest() && $suggestion->connection_revision === $connection->revision && $this->policyIsCurrent($conversation, $suggestion->policy_revision)) {
                 return [$suggestion, false];
             }
 
@@ -57,6 +81,9 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
             $values = [
                 'requested_by_id' => $agent->id,
                 'generation' => $generation,
+                'connection_revision' => $connection->revision,
+                'policy_revision' => $policy->revisionFor(self::PURPOSE),
+                'source_context_fingerprint' => null,
                 'status' => ConversationCopilotKnowledgeSuggestion::STATUS_PENDING,
                 'article_ids' => null,
                 'source_last_message_id' => null,
@@ -91,6 +118,7 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
                 'metadata' => [
                     'suggestion_id' => $suggestion->id,
                     'generation' => $suggestion->generation,
+                    'connection_revision' => $suggestion->connection_revision,
                 ],
                 'occurred_at' => now(),
             ]);
@@ -100,8 +128,14 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
 
         if ($shouldDispatch) {
             try {
+                app(AiSupportUsage::class)->reserveFor($suggestion);
                 GenerateConversationCopilotKnowledgeSuggestion::dispatch($suggestion->id, $suggestion->generation);
             } catch (Throwable $exception) {
+                try {
+                    app(AiSupportUsage::class)->cancelFor($suggestion);
+                } catch (Throwable) {
+                    // Bounded expiry recovers an uncertain reservation release.
+                }
                 Log::warning('Conversation copilot knowledge suggestion could not be queued.', [
                     'exception_type' => $exception::class,
                     'suggestion_id' => $suggestion->id,
@@ -153,13 +187,13 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
     public function show(
         Request $request,
         string $supportCode,
-        AgentCopilotConfiguration $configuration,
+        AgentCopilotConnectionResolver $connections,
         ConversationReturnPath $returnPath,
         KnowledgeArticleSuggestionMatcher $articleMatcher,
     ): Response {
-        abort_unless($configuration->isReady(), 404);
-
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
+        abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
+        abort_unless($connections->forAccount((int) $conversation->site->account_id) !== null, 404);
         $account = $conversation->site->account;
 
         if (! $account->articles()->published()->exists()) {
@@ -177,6 +211,9 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
 
         $latestConversationMessageId = $conversation->messages()->max('id');
         $suggestion = $conversation->copilotKnowledgeSuggestion()->first();
+        if ($suggestion !== null && (! $connections->isCurrent((int) $conversation->site->account_id, $suggestion->connection_revision) || ! $this->policyIsCurrent($conversation, $suggestion->policy_revision))) {
+            $suggestion = null;
+        }
         $suggestedKnowledgeArticles = $suggestion?->status === ConversationCopilotKnowledgeSuggestion::STATUS_READY
             ? $articleMatcher->present($account, $suggestion->suggestedArticleIds())
             : collect();
@@ -188,6 +225,45 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
             'latestConversationMessageId' => (int) $latestConversationMessageId,
             'suggestedKnowledgeArticles' => $suggestedKnowledgeArticles,
         ])->header('Cache-Control', 'no-store, private');
+    }
+
+    /** Return freshly authorized data; this never inserts or sends support text. */
+    public function use(Request $request, string $supportCode, AgentCopilotConnectionResolver $connections, KnowledgeArticleSuggestionMatcher $articleMatcher): JsonResponse
+    {
+        abort_unless($request->expectsJson(), 406);
+        $input = $request->validate(['generation' => ['required', 'uuid'], 'article_id' => ['required', 'integer', 'min:1'], 'article_revision' => ['required', 'regex:/\A[a-f0-9]{64}\z/']]);
+        $conversation = $this->conversationForAgent($request->user(), $supportCode);
+
+        return DB::transaction(function () use ($request, $supportCode, $conversation, $input, $connections, $articleMatcher): JsonResponse {
+            $accountId = (int) $conversation->site->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()->whereKey($request->user()->id)->where('account_id', $accountId)->lockForUpdate()->firstOrFail();
+            $conversation = $this->conversationForAgent($agent, $supportCode);
+            Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
+            abort_unless(app(AiAssistPolicyResolver::class)->forConversation($conversation)->allows(self::PURPOSE), 404);
+            $suggestion = $conversation->copilotKnowledgeSuggestion()->where('generation', $input['generation'])
+                ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_READY)->lockForUpdate()->first();
+            abort_unless($suggestion !== null && $this->policyIsCurrent($conversation, $suggestion->policy_revision)
+                && $connections->isCurrent($accountId, $suggestion->connection_revision), 409);
+            abort_unless(is_string($suggestion->source_context_fingerprint) && $suggestion->source_context_fingerprint !== ''
+                && ! $suggestion->isStaleComparedTo($conversation->messages()->max('id')), 409);
+            $articleId = (int) $input['article_id'];
+            abort_unless(in_array($articleId, $suggestion->suggestedArticleIds(), true), 404);
+            $selected = $articleMatcher->present($conversation->site->account, [$articleId])->first();
+            abort_unless($selected !== null && hash_equals(KnowledgeArticleSuggestionMatcher::revision($selected['article'], $selected['snippet']), $input['article_revision']), 409);
+
+            return response()->json(['generation' => $suggestion->generation, 'policy_revision' => $suggestion->policy_revision, 'article_id' => $articleId, 'text' => $selected['snippet']])
+                ->header('Cache-Control', 'no-store, private');
+        });
+    }
+
+    private function policyIsCurrent(Conversation $conversation, ?string $revision): bool
+    {
+        try {
+            return app(AiAssistPolicyResolver::class)->isCurrent((int) $conversation->site_id, self::PURPOSE, $revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function conversationForAgent(User $agent, string $supportCode): Conversation

@@ -14,8 +14,19 @@ use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
 use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushFactory;
+use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\GuardedAccountAiConnectionProbe;
 use App\Support\Ai\LaravelAgentCopilotProvider;
+use App\Support\Ai\Network\AiDnsResolver;
+use App\Support\Ai\Network\AiModelDiscovery;
+use App\Support\Ai\Network\AiNetworkPolicy;
+use App\Support\Ai\Network\AiOutboundAdmission;
+use App\Support\Ai\Network\BoundedAiDnsResolver;
+use App\Support\Ai\Network\GuardedAiModelDiscovery;
+use App\Support\Ai\Network\UnavailableAiOutboundAdmission;
+use App\Support\Ai\Usage\AiUsageClock;
+use App\Support\Ai\Usage\DatabaseAiUsageClock;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
@@ -83,6 +94,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(DatabaseRestorer::class, PostgresDatabaseRestorer::class);
         $this->app->bind(OidcClient::class, SocialiteOidcClient::class);
         $this->app->bind(AgentCopilotProvider::class, LaravelAgentCopilotProvider::class);
+        $this->app->bind(AccountAiConnectionProbe::class, GuardedAccountAiConnectionProbe::class);
+        $this->app->bind(AiDnsResolver::class, BoundedAiDnsResolver::class);
+        $this->app->bind(AiOutboundAdmission::class, UnavailableAiOutboundAdmission::class);
+        $this->app->bind(AiUsageClock::class, DatabaseAiUsageClock::class);
+        $this->app->bind(AiModelDiscovery::class, GuardedAiModelDiscovery::class);
+        $this->app->bind(AiNetworkPolicy::class, fn (): AiNetworkPolicy => new AiNetworkPolicy(
+            $this->app->make(AiDnsResolver::class),
+            (array) config('wayfindr.ai.network', []),
+            (string) config('app.key'),
+        ));
 
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload

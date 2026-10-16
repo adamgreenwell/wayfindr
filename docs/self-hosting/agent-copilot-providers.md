@@ -9,6 +9,61 @@ reply draft, suggested knowledge snippets, and suggested ticket details during
 conversation-to-ticket conversion. It does not add autonomous replies or
 customer-facing AI.
 
+## Option 1 Assist — backend foundation
+
+The selected [AI Support Assist contract](../product/ai-support-assist-contract.md)
+defines the account connection and automatic-preparation requirements. The
+[account-connection backend foundation](../product/ai-support-assist-account-connections.md)
+adds encrypted proposed/active storage, permission checks and per-call connection
+resolution to the source. Account-owned outbound calls remain unavailable until
+guarded SDK/probe integration and usage admission are implemented. The
+[provider policy/transport foundation](../product/ai-support-assist-provider-policy.md)
+defines the new destination boundary; it activates no account calls. The account
+screen and automatic preparation are still pending. The remaining sections describe the existing
+operator-configured, on-demand copilot and its explicit installation-default path.
+
+Option 1 uses a collapsible right Assist rail with stacked summary, suggested
+reply, and sources beside the ordinary transcript/composer. Its account screen
+uses one grouped connection form with installation/own connection radio choices,
+write-only credentials, and separate behavior/task/site/usage controls below.
+Off belongs to behavior/site policy, not a third connection-source tab. No saved
+operator key is copied into an account or revealed in the browser.
+
+The backend lifecycle keeps proposed, tested, and active revisions separate.
+The default account probe is unavailable until endpoint policy is implemented. A synthetic probe tests the exact proposed revision; changing its
+provider, model, endpoint, or key invalidates that test. Saving activates the
+reviewed tested revision, while automatic preparation requires separate explicit
+account/site enablement. Pending tests cannot duplicate probes, and upgrades
+must preserve existing manual behavior without silently starting provider calls.
+Account destinations remain subject to operator network policy.
+
+"Private" means hidden from the visitor, not local processing. Grounded drafts
+introduce a new data-boundary change: only bounded relevant passages from allowed
+published same-account articles, plus minimum transcript context, may reach the
+configured processor through the scrubber. Explicit draft refinement may also
+send the current bounded, scrubbed unsent composer text and validated refinement
+options; automatic preparation never sends that draft. The agent data-use
+disclosure must state this before refinement. Today's knowledge suggestions send
+bounded transcript context, receive validated search phrases, and rank articles
+locally, as documented below; attachments and cobrowse snapshots remain excluded.
+
+Future execution, read/display, and insertion paths must recheck the requesting
+agent's account/site and support-operation authority. Changed, unpublished,
+deleted, or inaccessible sources must withhold affected output from use until
+current authorized context is established. Insertions remain explicit, preserve
+agent edits, and never send or submit support-record changes. These planned
+requirements preserve ADR 0004's autonomous-reply deferral. Recording them does
+not run provider tests or activate the planned runtime.
+
+Changing site-level behavior, tasks, context or enablement requires current
+access to each affected site as well as account connection-management authority.
+This applies to bulk changes and delayed work; account management does not
+grant access to other sites.
+Activating, replacing or re-enabling the shared account connection also requires
+access to every affected enabled site. Recheck the current site set under the
+account lock at activation; proposed edits/probes cannot reroute inaccessible
+sites. Disabling or disconnecting remains available.
+
 ## Configure it in the operator console
 
 A platform operator can open **Operator → Agent copilot** and choose:

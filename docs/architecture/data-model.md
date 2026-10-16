@@ -131,13 +131,66 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   coexist mid-deployment, so no process may delete another's rows. Those hidden
   rows are never collected. The subscribable side is polymorphic because the
   package is; only agents are ever attached.
+- `account_ai_connections`: at most one row per account, deleted with that
+  account. Proposed and active configurations are encrypted separately; an
+  installation selection references its revision without copying the operator
+  key. Opaque proposal/test/active revisions, fingerprint and policy identity
+  bind a successful synthetic test to the exact configuration, and a test
+  generation fences duplicate or superseded probes. Explicit activation changes
+  the processor; draft edits leave active processing intact. A nullable, sanitized
+  `test_failure_code` records actionable unavailable causes without provider text. `enabled` pauses
+  processing, while `uses_installation_default` preserves the existing manual
+  path only until deliberate selection or disconnect retires that eligibility.
+- `account_ai_assist_policies`: one explicit account policy, deleted with its
+  account. Off/Manual/Prepare, four task flags, published-context consent and an
+  optional narrower context ceiling are independent of connection test evidence.
+  An opaque UUID changes with processing choices; no row preserves legacy Manual
+  upgrade behavior. First opt-in initializes existing site policies as Manual.
+- `site_ai_assist_policies`: one site policy with an account link, deleted with
+  its site/account. Modes/tasks/context intersect the account policy; sites added
+  after explicit opt-in have no row and resolve Off until deliberately enabled.
+  Site consent gates future same-account published context, without claiming
+  article ownership or site isolation. UUID revisions prevent policy ABA reuse.
+  Neither policy table stores visitor links, prompts, output or credentials.
+- `account_ai_usage_limits`: one account's nullable request/token, concurrency
+  and output ceilings, deleted with the account. Null inherits installation
+  policy; zero denies new attempts; positive values can only narrow it. These
+  settings are independent of connection revisions, keys and enablement.
+- `ai_usage_scopes`: stable installation/account mutex rows and cross-period
+  concurrency counters. The installation singleton is created atomically on
+  first ledger use, keeping fresh migrations empty for restore safety;
+  account scope identities do not rotate with the connection. Plain internal
+  account identifiers deliberately survive account deletion so in-flight leases
+  can still reconcile without refunding installation usage.
+- `ai_usage_periods`: unique scope/UTC-day records with held and charged request
+  and token counters. Daily identity comes from database wall time under locks;
+  late receipts adjust only their original dispatch period. Old periods are
+  retained for reconciliation rather than zeroed into today's allowance.
+- `ai_usage_attempts`: content-free reservation/claim/dispatch receipts, ordered
+  by sequence and identified by unique UUID. Account/source/revision/purpose/work
+  fingerprints bind deduplication and explicit replacement. Conservative bounds,
+  nullable reported usage, original period, opaque nonces, deadlines, sanitized
+  outcome/cooldown and an explicit concurrency fence prevent duplicate dispatch
+  or double release. Internal account/requester IDs have no cascading foreign
+  keys, preserving active accounting across deletion. No prompt, output,
+  credential, model endpoint or visitor-record copy is stored here.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
   conversation, one row per conversation, overwritten by each refresh instead
   of kept as history. Every worker write is guarded on `generation`, so a
   superseded job cannot publish its answer, and `source_last_message_id` is
   what lets a ready summary be marked stale once the conversation moves on. No
   prompt text is stored; `requested_by_id` is kept so the worker can re-derive
-  that agent's access immediately before any text reaches the provider.
+  that agent's access immediately before any text reaches the provider. All
+  four copilot stores also carry a nullable 64-character `connection_revision`:
+  requests stamp the resolved processor identity, workers recheck it before
+  dispatch/publication, and readers withhold unversioned or superseded output.
+  Existing queued work without a stamp cannot run; a fresh manual request can.
+  All four stores additionally carry nullable `policy_revision` and
+  `source_context_fingerprint` HMACs. Policy changes fence queued/late/visible
+  output independently of connection tests; source proofs bind insertion to the
+  bounded scrubbed context actually used. Old unstamped output cannot be inserted.
+  Opaque internal proofs are excluded from visitor-export payloads.
+
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly

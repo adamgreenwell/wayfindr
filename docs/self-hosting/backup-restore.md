@@ -48,8 +48,9 @@ archive brings back, so an archive must not be able to roll it back. See
 
 Several columns are encrypted at rest with `APP_KEY` — single sign-on client
 secrets, outbound webhook URLs and secrets, external-issue provider
-credentials, reply-delivery recipients, and ticket comment bodies. The key is
-deliberately **not** in the archive, because an archive carrying the key that
+credentials, account AI connection snapshots, reply-delivery recipients, and
+ticket comment bodies. The key is deliberately **not** in the archive, because
+an archive carrying the key that
 decrypts its own secrets is not a protected archive.
 
 The consequence is the one to plan for. **Restore your `APP_KEY` — and any
@@ -60,9 +61,9 @@ leaves the older rows unreadable. The manifest records a fingerprint per
 decryption key for exactly this reason, and a restore warns unless this install
 holds every key the archive needs. Restoring onto a freshly installed stack — which is the ordinary
 disaster-recovery path — mints a new key, and a restore under a different key
-succeeds: the database loads, the install starts, and then the first read of
-any encrypted column throws. Those values are not recoverable; they have to be
-re-entered.
+succeeds: the database loads and the install starts, but encrypted values are
+unreadable. Reads can throw or report an unavailable credential. Those values
+are not recoverable; they have to be re-entered.
 
 A restore compares the manifest's fingerprint against the running key and warns
 before doing anything destructive. An archive taken before this field existed
@@ -103,7 +104,7 @@ screens, those are authenticated HTTP routes, maintenance mode blocks them — a
 lifting maintenance first leaves agents unable to sign in at all, because
 reading their encrypted two-factor secret throws.
 
-**Clearing is not one operation.** Ten columns across eight tables use
+**Clearing is not one operation.** Twelve columns across nine tables use
 Laravel's `encrypted` cast, and they do not all clear the same way, because five
 of them are `NOT NULL`. Setting those to `''` does not help either — the cast
 still tries to decrypt an empty string and still throws `DecryptException`. For
@@ -122,12 +123,36 @@ those, the row itself goes.
    UPDATE sites SET identity_secret = NULL,
                     identity_secret_last_four = NULL,
                     identity_verification = 'off';
+   UPDATE account_ai_connections SET proposed_configuration = NULL,
+                                    active_configuration = NULL,
+                                    proposed_revision = NULL,
+                                    active_revision = NULL,
+                                    tested_revision = NULL,
+                                    tested_fingerprint = NULL,
+                                    tested_policy_revision = NULL,
+                                    tested_at = NULL,
+                                    test_generation = NULL,
+                                    test_started_at = NULL,
+                                    test_status = 'untested',
+                                    enabled = FALSE,
+                                    uses_installation_default = FALSE;
    ```
 
-   Plus any operator settings row holding a secret. Only
-   `users.two_factor_secret` and `credentials` are encrypted here; the two
-   two-factor companions go with the secret because they describe an enrolment
-   that no longer exists, not because they throw.
+   Plus any operator settings row holding a secret. The two-factor companions
+   go with the encrypted secret because they describe an enrolment that no
+   longer exists, not because they throw. The identity and AI connection flags,
+   revisions and test receipts likewise reset alongside their ciphertext.
+
+   Keep the `account_ai_connections` rows disabled with
+   `uses_installation_default = FALSE`. Deleting them would restore eligibility
+   for the installation connection, silently changing the processor an account
+   had chosen. Clearing the old proposal, active revision and test receipts also
+   prevents them from authorizing a later save. Do not flip `enabled` back on or
+   set installation-default eligibility directly: choose a connection source,
+   replace or explicitly clear its credential, test that exact new revision,
+   save it and separately enable support processing through the supported
+   account workflow. If that workflow is unavailable, leave account AI disabled;
+   ordinary support still works. See the [account connection foundation](../product/ai-support-assist-account-connections.md).
 
    `sites.identity_verification` goes back to `'off'` in the same statement,
    and that part is not tidying. Visitor identity verification fails CLOSED: a
@@ -158,7 +183,8 @@ those, the row itself goes.
 2. `php artisan up`.
 3. Sign in, re-enrol two-factor, re-enter the integration credentials, and
    re-create the single sign-on connection and the webhook endpoints that step 1
-   deleted.
+   deleted. Account AI connections stay disabled until their new source and
+   credential have completed the connection workflow above.
 
 An account that requires two-factor will ask each agent to enrol again on their
 next sign-in, which is the intended outcome — not a second failure.

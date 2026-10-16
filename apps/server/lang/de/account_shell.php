@@ -30,6 +30,7 @@ return [
         'visitor_attributes' => 'Besucherattribute',
         'automations' => 'Automatisierungen',
         'sla_policies' => 'SLA-Richtlinien',
+        'ai_assist' => 'KI-Assistenz',
         'integrations' => 'Integrationen',
         'api' => 'API und Webhooks',
         'audit' => 'Audit-Protokoll',

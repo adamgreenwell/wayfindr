@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ProactiveMessageRule;
 use App\Models\User;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use JsonException;
 
 /** Select the shared minimum, text-only conversation context for copilot features. */
@@ -37,7 +38,7 @@ final readonly class ConversationTextContextSelector
 
         $limit = min(
             self::PREFERRED_CONTEXT_CHARACTERS,
-            max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000)),
+            app(AiAssistPolicyResolver::class)->forConversation($conversation)->maxContextCharacters,
         );
         $subject = filled($conversation->subject)
             ? mb_substr($this->sanitizer->sanitize(trim((string) $conversation->subject)), 0, self::MAX_SUBJECT_CHARACTERS)

@@ -7,18 +7,26 @@
 // integrity check are the point. Attachment ROWS are seeded directly to stand
 // in for what the dump would restore, since the fake restorer is a no-op.
 
+use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\ConversationMessageAttachment;
+use App\Models\User;
+use App\Support\Ai\AccountAiConnections;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\RestoreService;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -594,10 +602,13 @@ test('the command separates a partial key overlap from total loss', function ():
         'app_key_fingerprints' => [hash('sha256', 'an-entirely-unrelated-key')],
     ]);
 
-    $this->artisan('wayfindr:restore', ['archive' => $total, '--force' => true])
-        ->expectsOutputToContain('EVERY encrypted value in the archive becomes unreadable')
-        ->doesntExpectOutputToContain('do NOT clear the encrypted columns')
-        ->assertSuccessful();
+    $this->withoutMockingConsoleOutput();
+    expect($this->artisan('wayfindr:restore', ['archive' => $total, '--force' => true]))->toBe(0);
+    expect(Artisan::output())
+        ->toContain('EVERY encrypted value in the archive becomes unreadable')
+        ->toContain('some encrypted columns are NOT NULL')
+        ->not->toContain('five of the nine')
+        ->not->toContain('do NOT clear the encrypted columns');
 });
 
 test('a target carrying extra keys is not skew', function (): void {
@@ -932,7 +943,7 @@ test('the key-loss runbook still matches the schema it tells operators to edit',
     // an install whose sign-in was already broken.
     //
     // So the runbook is checked against the models and the live schema rather
-    // than against a copy of itself. Adding a tenth encrypted column, or making
+    // than against a copy of itself. Adding another encrypted column, or making
     // an existing one nullable, now fails here instead of in production.
     $runbook = file_get_contents(base_path('../../docs/self-hosting/backup-restore.md'));
 
@@ -966,8 +977,9 @@ test('the key-loss runbook still matches the schema it tells operators to edit',
 
     // The count is asserted so that a model added without a thought here fails
     // loudly rather than slipping past a per-column loop that never ran for it.
-    expect(array_sum(array_map('count', $encrypted)))->toBe(10)
-        ->and($encrypted)->toHaveCount(8);
+    expect(array_sum(array_map('count', $encrypted)))->toBe(12)
+        ->and($encrypted)->toHaveCount(9)
+        ->and($encrypted['account_ai_connections'])->toBe(['proposed_configuration', 'active_configuration']);
 
     $nullableBlock = str($section)->between('Nullable — clear the column', '`NOT NULL` — delete the rows')->toString();
     $deleteBlock = str($section)->after('`NOT NULL` — delete the rows')->toString();
@@ -995,4 +1007,56 @@ test('the key-loss runbook still matches the schema it tells operators to edit',
     }
 
     expect($misplaced)->toBe([], 'The runbook does not give a working reset for: '.implode(', ', $misplaced));
+});
+
+test('the key-loss runbook clears account AI secrets and prevents implicit processor fallback', function (): void {
+    $runbook = file_get_contents(base_path('../../docs/self-hosting/backup-restore.md'));
+    $section = str($runbook)->after('#### If the keys are genuinely gone')->before('###')->toString();
+    $nullableBlock = str($section)->between('Nullable — clear the column', '`NOT NULL` — delete the rows')->toString();
+    expect(preg_match('/UPDATE account_ai_connections\s+SET\s+.*?;/s', $nullableBlock, $statement))
+        ->toBe(1, 'The key-loss runbook must include an executable reset for account AI connections.');
+
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    DB::table('account_ai_connections')->insert([
+        'account_id' => $account->id,
+        'name' => 'Lost-key connection',
+        'enabled' => true,
+        'uses_installation_default' => true,
+        'proposed_revision' => (string) Str::uuid(),
+        'proposed_configuration' => 'unreadable-proposed-snapshot',
+        'active_revision' => (string) Str::uuid(),
+        'active_configuration' => 'unreadable-active-snapshot',
+        'tested_revision' => (string) Str::uuid(),
+        'tested_fingerprint' => str_repeat('a', 64),
+        'tested_policy_revision' => 'lost-key-policy',
+        'tested_at' => now(),
+        'test_generation' => (string) Str::uuid(),
+        'test_status' => 'ready',
+        'test_started_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Execute the operator's actual SQL, rather than a duplicate implementation.
+    DB::unprepared($statement[0]);
+
+    $reset = AccountAiConnection::query()->where('account_id', $account->id)->first();
+    expect($reset)->not->toBeNull('Deleting the account row would restore its installation-default path.')
+        ->and($reset->enabled)->toBeFalse('Key-loss recovery must leave account AI disabled.')
+        ->and($reset->uses_installation_default)->toBeFalse('Key-loss recovery must remove installation-default eligibility.')
+        ->and($reset->test_status)->toBe('untested');
+    foreach (['proposed_revision', 'proposed_configuration', 'active_revision', 'active_configuration', 'tested_revision', 'tested_fingerprint', 'tested_policy_revision', 'tested_at', 'test_generation', 'test_started_at'] as $column) {
+        expect($reset->getAttribute($column))->toBeNull('The runbook must clear account_ai_connections.'.$column.'.');
+    }
+
+    $settings = app(OperatorSettings::class);
+    $settings->set('ai.provider', 'ollama');
+    $settings->set('ai.model', 'synthetic-restore-model');
+    $settings->set('ai.endpoint', 'http://localhost:11434');
+    $resolver = app(AgentCopilotConnectionResolver::class);
+    expect($resolver->installation((int) $account->id))->not->toBeNull()
+        ->and($resolver->forAccount((int) $account->id))->toBeNull();
+    expect(fn () => app(AccountAiConnections::class)->setEnabled($owner, (int) $account->id, true))
+        ->toThrow(ValidationException::class, 'Choose and test a connection before re-enabling.');
 });
