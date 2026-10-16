@@ -139,6 +139,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 $response->headers->set('Cache-Control', 'no-store');
             }
 
+            if ($request->is('reset-password', 'reset-password/*')) {
+                $response->headers->set('Cache-Control', 'no-store, private');
+                $response->headers->set('Pragma', 'no-cache');
+                $response->headers->set('Referrer-Policy', 'no-referrer');
+            }
+
             return $response;
         });
 
@@ -150,5 +156,5 @@ return Application::configure(basePath: dirname(__DIR__))
         // `credential_token` and `webhook_secret` are the provider connection
         // form's: a typo in its base URL used to flash both. Every password
         // field in a view is held to this list by SecretInputFlashTest.
-        $exceptions->dontFlash(['s3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key', 'credential_token', 'webhook_secret']);
+        $exceptions->dontFlash(['token', 's3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key', 'credential_token', 'webhook_secret']);
     })->create();

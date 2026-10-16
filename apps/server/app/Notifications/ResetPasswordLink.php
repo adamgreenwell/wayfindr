@@ -20,4 +20,17 @@ use Illuminate\Queue\InteractsWithQueue;
 class ResetPasswordLink extends ResetPassword implements ShouldQueue
 {
     use InteractsWithQueue;
+
+    /** Keep normal queued recovery credentials out of HTTP request URLs too. */
+    protected function resetUrl($notifiable)
+    {
+        // Preserve the supported application-level customization hook.
+        if (static::$createUrlCallback) {
+            return parent::resetUrl($notifiable);
+        }
+
+        return route('password.reset.fragment').'#'.http_build_query([
+            'v' => '1', 'token' => $this->token, 'email' => $notifiable->getEmailForPasswordReset(),
+        ], '', '&', PHP_QUERY_RFC3986);
+    }
 }
