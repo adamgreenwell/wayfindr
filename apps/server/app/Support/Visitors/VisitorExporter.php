@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Visitors;
 
 use App\Enums\PlatformRole;
+use App\Models\AiAssistPreparationReceipt;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\AutomationRuleExecution;
@@ -130,6 +131,9 @@ final class VisitorExporter
         'connection_revision' => true,
         'policy_revision' => 'server-only support policy fence',
         'source_context_fingerprint' => 'keyed source freshness proof, not visitor content',
+        'preparation_fingerprint' => 'server-only preparation equivalence key',
+        'preparation_source_snapshot' => 'keyed source continuity proofs, not visitor content',
+        'previous_output' => true, 'retry_not_before' => 'retry scheduling bookkeeping',
         'source_last_message_id' => true, 'source_message_count' => true, 'provider' => true, 'model' => true,
         'prompt_tokens' => true, 'completion_tokens' => true, 'failure_code' => true, 'requested_at' => true,
         'started_at' => true, 'completed_at' => true, 'created_at' => true, 'updated_at' => true,
@@ -198,6 +202,12 @@ final class VisitorExporter
             'id' => true, 'conversation_id' => true, 'site_id' => true, 'visitor_id' => true, 'requested_by_id' => self::ROLE,
             'status' => true, 'metadata' => true, 'consented_at' => true, 'ended_at' => true, 'created_at' => true,
             'updated_at' => true,
+        ],
+        'ai_assist_preparation_receipts' => [
+            'id' => true, 'account_id' => 'tenant boundary bookkeeping', 'conversation_id' => true,
+            'purpose' => true, 'fingerprint' => 'server-only preparation equivalence key', 'generation' => true,
+            'requested_by_id' => self::ROLE, 'status' => true, 'requested_at' => true, 'completed_at' => true,
+            'retry_not_before' => true, 'created_at' => true, 'updated_at' => true,
         ],
         'conversation_copilot_summaries' => self::COPILOT + ['summary' => true],
         'conversation_copilot_reply_drafts' => self::COPILOT + ['draft' => true],
@@ -290,6 +300,7 @@ final class VisitorExporter
         'conversation_messages' => ['sender'],
         'conversation_message_attachments' => ['uploaded_by', 'file'],
         'cobrowse_sessions' => ['requested_by'],
+        'ai_assist_preparation_receipts' => ['requested_by'],
         'conversation_copilot_summaries' => ['requested_by'],
         'conversation_copilot_reply_drafts' => ['requested_by'],
         'conversation_copilot_ticket_suggestions' => ['requested_by'],
@@ -568,6 +579,7 @@ final class VisitorExporter
                     ),
                     'ratings' => $this->rows(ConversationRating::query()->where('conversation_id', $id), 'conversation_ratings'),
                     'cobrowse_sessions' => $this->rows(CobrowseSession::query()->where('conversation_id', $id), 'cobrowse_sessions', $this->requestedBy(...)),
+                    'ai_preparation_receipts' => $this->rows(AiAssistPreparationReceipt::query()->where('conversation_id', $id), 'ai_assist_preparation_receipts', $this->requestedBy(...)),
                     'copilot_summaries' => $this->rows(ConversationCopilotSummary::query()->where('conversation_id', $id), 'conversation_copilot_summaries', $this->requestedBy(...)),
                     'copilot_reply_drafts' => $this->rows(ConversationCopilotReplyDraft::query()->where('conversation_id', $id), 'conversation_copilot_reply_drafts', $this->requestedBy(...)),
                     'copilot_ticket_suggestions' => $this->rows(ConversationCopilotTicketSuggestion::query()->where('conversation_id', $id), 'conversation_copilot_ticket_suggestions', $this->requestedBy(...)),
@@ -998,6 +1010,15 @@ final class VisitorExporter
             }
 
             $value = $this->value($model, $column);
+
+            if ($column === 'previous_output' && is_array($value) && str_starts_with($table, 'conversation_copilot_')) {
+                // Apply the same export decisions to the bounded previous slot,
+                // including staff roles and omission of server-only proofs.
+                unset($value['previous_output']);
+                $prior = $model->newFromBuilder($value);
+                $value = $this->requestedBy($prior, $this->row($table, $prior));
+                unset($value['previous_output']);
+            }
 
             if (in_array($column, self::IDENTITY_COLUMNS[$table] ?? [], true)) {
                 $value = self::withoutIdentities($value);
