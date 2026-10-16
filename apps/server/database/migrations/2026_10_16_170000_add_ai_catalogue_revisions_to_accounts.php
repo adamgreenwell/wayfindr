@@ -39,7 +39,7 @@ return new class extends Migration
         $old = $table === 'articles' ? 'OLD.published_at IS NOT NULL' : 'TRUE';
         $new = $table === 'articles' ? 'NEW.published_at IS NOT NULL' : 'TRUE';
         DB::unprepared(<<<SQL
-            CREATE FUNCTION wf_ai_{$table}_revision() RETURNS trigger LANGUAGE plpgsql AS \$\$
+            CREATE OR REPLACE FUNCTION wf_ai_{$table}_revision() RETURNS trigger LANGUAGE plpgsql AS \$\$
             BEGIN
                 IF TG_OP = 'INSERT' THEN
                     UPDATE accounts SET $column = gen_random_uuid() WHERE id = NEW.account_id AND ($new);

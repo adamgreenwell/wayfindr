@@ -41,7 +41,9 @@ Knowledge also reads the latest eligible `published_at` using the existing
 `(account_id, published_at)` index and `LIMIT 1`. This watermark advances when a
 scheduled article becomes eligible without a database write. No eligible article
 means insufficient context. Existing installations begin with NULL revision zero;
-the migration does no content scan or backfill. Ticket identity skips local label
+the migration does no content scan or backfill. PostgreSQL function definitions
+are replaced on migration, including functions retained after `migrate:fresh`
+drops tables; rollback removes the owned functions and triggers. Ticket identity skips local label
 matching, while ordinary generation still matches labels by default. Summary and
 reply identities remain transcript-only. No catalogue content leaves the install.
 A future grounded recipe must add its actual dependencies before admission; bump

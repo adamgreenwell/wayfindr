@@ -369,7 +369,21 @@ test('catalogue revision migration round trips without seeding or changing conte
     $migration = require database_path('migrations/2026_10_16_170000_add_ai_catalogue_revisions_to_accounts.php');
     $migration->down();
     expect(Schema::hasColumn('accounts', 'ai_article_catalogue_revision'))->toBeFalse();
-    $migration->up();
+    if (DB::connection()->getDriverName() === 'pgsql') {
+        // migrate:fresh drops tables/triggers but leaves PostgreSQL functions.
+        // Recreate that residue with stale bodies; up must replace it, not fail
+        // or silently retain a no-op invalidation function.
+        foreach (['articles', 'ticket_labels'] as $table) {
+            DB::unprepared("CREATE FUNCTION wf_ai_{$table}_revision() RETURNS trigger LANGUAGE plpgsql AS \$\$ BEGIN RETURN NULL; END; \$\$");
+        }
+    }
+    $failure = null;
+    try {
+        DB::transaction(fn () => $migration->up());
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+    expect($failure)->toBeNull('Fresh migration must replace retained PostgreSQL catalogue functions.');
     expect(DB::table('articles')->where('id', $world['article']->id)->first())->toEqual($article)
         ->and(DB::table('ticket_labels')->where('id', $world['label']->id)->first())->toEqual($label)
         ->and(DB::table('accounts')->where('id', $world['account']->id)->value('ai_article_catalogue_revision'))->toBeNull()
