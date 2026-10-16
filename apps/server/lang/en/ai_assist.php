@@ -152,6 +152,7 @@ return [
         'limits_conflict' => 'These usage limits changed in another session. Reload the page before trying again.',
         'policy_conflict' => 'Policy settings changed or the reviewed form is invalid. Reload current settings before saving.',
         'site_scope' => 'Choose only sites you currently have access to.',
+        'bulk_incomplete' => 'Not all site selections reached the server. Choose fewer sites, review the settings, and try again.',
         'context_limit' => 'Choose an inherited limit or a value between 1,000 and the applicable ceiling.',
         'article_consent' => 'Acknowledge published passage sharing before enabling Relevant articles.',
         'connection_required' => 'Save and enable a tested connection before enabling support work.',

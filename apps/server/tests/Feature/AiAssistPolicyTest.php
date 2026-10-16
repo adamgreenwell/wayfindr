@@ -417,8 +417,8 @@ test('failed selected site tokens retain failed authority instead of falling bac
     @$document->loadHTML($response->getContent());
     $xpath = new DOMXPath($document);
     expect($xpath->query('//input[@name="account_policy_token"]')->item(0)->getAttribute('value'))->toBe($old['account_policy_token'])
-        ->and($xpath->query('//input[@name="site_tokens['.$site->id.']"]')->item(0)->getAttribute('value'))
-        ->toBe($old['site_tokens'][$site->id], 'Failed selected-site tokens must remain exact in the rendered native form.');
+        ->and($xpath->query('//input[@data-ai-policy-site and starts-with(@value, "'.$site->id.':")]')->item(0)->getAttribute('value'))
+        ->toBe($site->id.':'.$old['site_tokens'][$site->id], 'Failed selected-site tokens must remain exact in the rendered compact native form.');
     $this->postJson(route('dashboard.account.ai-assist.policy.sites'), [...assistPolicyValues(['mode' => 'off']),
         'account_policy_token' => $old['account_policy_token'], 'site_ids' => [$site->id], 'site_tokens' => $old['site_tokens']])
         ->assertUnprocessable();

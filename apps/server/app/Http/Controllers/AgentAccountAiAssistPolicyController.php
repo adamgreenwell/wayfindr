@@ -38,6 +38,15 @@ final readonly class AgentAccountAiAssistPolicyController
         abort_unless($actor !== null && $actor->account_id && ! $actor->isDeactivated()
             && $actor->hasAccountPermission(AccountPermission::ManageAiConnections), 403);
         try {
+            $siteInput = $sites ? $this->siteScopeInput($request) : null;
+            if ($siteInput !== null && $siteInput['native']) {
+                if (! $siteInput['complete'] || $siteInput['overflow']) {
+                    throw ValidationException::withMessages(['site_selections_complete' => 'Choose fewer sites and review the settings.']);
+                }
+                if (! $siteInput['valid']) {
+                    throw ValidationException::withMessages(['site_scope' => 'The selected site authority is invalid.']);
+                }
+            }
             $rules = ['mode' => ['required', Rule::in(['off', 'manual', 'prepare'])],
                 'max_context_characters' => ['nullable', 'integer', 'min:1000', 'max:1000000']];
             foreach ([...AiAssistPolicyResolver::TASKS, 'article_context_consent'] as $task) {
@@ -55,12 +64,13 @@ final readonly class AgentAccountAiAssistPolicyController
             $fields = array_filter(array_keys($rules), fn (string $field): bool => ! str_contains($field, '.'));
             $input = $request->only($fields);
             if ($sites) {
-                // Native forms carry every rendered hidden token. Validate the
+                $input['site_ids'] = $siteInput['site_ids'];
+                // Legacy/API arrays may carry unselected tokens. Validate the
                 // bounded mutation scope first, then require only its tokens.
-                $scope = Validator::make($request->only('site_ids'), [
+                $scope = Validator::make(['site_ids' => $input['site_ids']], [
                     'site_ids' => $rules['site_ids'], 'site_ids.*' => $rules['site_ids.*'],
                 ])->validate();
-                $tokens = $request->input('site_tokens');
+                $tokens = $siteInput['site_tokens'];
                 $input['site_tokens'] = [];
                 foreach ($scope['site_ids'] as $id) {
                     $input['site_tokens'][(int) $id] = is_array($tokens) ? ($tokens[(int) $id] ?? null) : null;
@@ -86,6 +96,7 @@ final readonly class AgentAccountAiAssistPolicyController
             foreach (array_keys($exception->errors()) as $field) {
                 $key = match (explode('.', $field)[0]) {
                     'policy_token', 'account_policy_token', 'site_tokens' => 'policy_conflict',
+                    'site_selections_complete' => 'bulk_incomplete',
                     'site_ids', 'site_scope' => 'site_scope', 'max_context_characters' => 'context_limit',
                     'article_context_consent' => 'article_consent', 'connection_required' => 'connection_required',
                     default => 'invalid_fields',
@@ -99,6 +110,38 @@ final readonly class AgentAccountAiAssistPolicyController
         } catch (Throwable) {
             return $this->failure($request, $sites, ['policy' => [__('ai_assist.validation.invalid_fields')]]);
         }
+    }
+
+    /** Normalize compact native pairs without changing the original failure input. */
+    private function siteScopeInput(Request $request): array
+    {
+        if (! $request->exists('site_selections')) {
+            return ['native' => false, 'complete' => true, 'valid' => true, 'overflow' => false,
+                'site_ids' => $request->input('site_ids'), 'site_tokens' => $request->input('site_tokens')];
+        }
+        $pairs = $request->input('site_selections');
+        $result = ['native' => true, 'complete' => in_array($request->input('site_selections_complete'), [1, '1'], true),
+            'valid' => is_array($pairs), 'overflow' => is_array($pairs) && count($pairs) > 1001,
+            'site_ids' => [], 'site_tokens' => []];
+        if (! is_array($pairs)) {
+            return $result;
+        }
+        foreach (array_values(array_slice($pairs, 0, 1001)) as $index => $pair) {
+            // The always-submitted first empty value identifies an empty native selection.
+            if ($index === 0 && ($pair === null || $pair === '')) {
+                continue;
+            }
+            if (! is_string($pair) || preg_match('/\A([1-9][0-9]{0,18}):(.*)\z/s', $pair, $parts) !== 1
+                || array_key_exists($parts[1], $result['site_tokens'])) {
+                $result['valid'] = false;
+
+                continue;
+            }
+            $result['site_ids'][] = $parts[1];
+            $result['site_tokens'][$parts[1]] = $parts[2];
+        }
+
+        return $result;
     }
 
     private function failure(Request $request, bool $sites, array $errors): RedirectResponse|JsonResponse
@@ -129,8 +172,9 @@ final readonly class AgentAccountAiAssistPolicyController
                 ? $request->input($requiredToken) : '';
         // Preserve original reviewed tokens, never stale values with fresh IDs.
         if ($sites) {
-            $ids = $request->input('site_ids');
-            $tokens = $request->input('site_tokens');
+            $siteInput = $this->siteScopeInput($request);
+            $ids = $siteInput['site_ids'];
+            $tokens = $siteInput['site_tokens'];
             if (is_array($ids)) {
                 $old['site_ids'] = array_slice(array_values(array_filter($ids,
                     fn (mixed $id): bool => (is_int($id) || is_string($id) && ctype_digit($id)) && (int) $id > 0)), 0, 1000);

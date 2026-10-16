@@ -152,6 +152,7 @@ return [
         'limits_conflict' => 'Diese Nutzungslimits wurden in einer anderen Sitzung geändert. Laden Sie die Seite vor einem neuen Versuch neu.',
         'policy_conflict' => 'Die Richtlinie wurde geändert oder das geprüfte Formular ist ungültig. Laden Sie vor dem Speichern die aktuellen Einstellungen neu.',
         'site_scope' => 'Wählen Sie nur Websites, auf die Sie aktuell zugreifen können.',
+        'bulk_incomplete' => 'Nicht alle ausgewählten Websites wurden an den Server übermittelt. Wählen Sie weniger Websites aus, prüfen Sie die Einstellungen und versuchen Sie es erneut.',
         'context_limit' => 'Übernehmen Sie das Limit oder wählen Sie einen Wert zwischen 1.000 und der geltenden Obergrenze.',
         'article_consent' => 'Bestätigen Sie die Weitergabe veröffentlichter Passagen, bevor Sie Relevante Artikel aktivieren.',
         'connection_required' => 'Speichern und aktivieren Sie eine getestete Verbindung, bevor Sie Support-Arbeit aktivieren.',

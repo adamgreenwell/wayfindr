@@ -59,6 +59,7 @@
                 <input type="hidden" name="account_policy_token" value="{{ $oldPolicyForm === 'sites' ? old('account_policy_token', '') : $policy['account_token'] }}">
                 <fieldset class="ai-assist-policy-controls" @disabled(! $policy['explicit'])>
                     <legend class="sr-only">{{ __('ai_assist.policy.sites_heading') }}</legend>
+                    <input type="hidden" name="site_selections[]" value="">
                     <fieldset class="field ai-assist-policy-site-picker">
                         <legend>{{ __('ai_assist.policy.select_sites') }}</legend>
                         <div class="ai-assist-policy-select-actions" hidden data-ai-policy-select-actions>
@@ -68,9 +69,8 @@
                         </div>
                         @foreach ($policy['sites'] as $sitePolicy)
                             <div class="ai-assist-policy-site-row">
-                                <input type="hidden" name="site_tokens[{{ $sitePolicy['site_id'] }}]" value="{{ $siteTokens[$sitePolicy['site_id']] ?? '' }}">
                                 <label class="check-row" for="ai-policy-site-{{ $sitePolicy['site_id'] }}">
-                                    <input id="ai-policy-site-{{ $sitePolicy['site_id'] }}" name="site_ids[]" type="checkbox" value="{{ $sitePolicy['site_id'] }}" @checked(in_array((string) $sitePolicy['site_id'], $selectedSiteIds, true)) data-ai-policy-site aria-describedby="ai-policy-site-{{ $sitePolicy['site_id'] }}-state">
+                                    <input id="ai-policy-site-{{ $sitePolicy['site_id'] }}" name="site_selections[]" type="checkbox" value="{{ $sitePolicy['site_id'] }}:{{ $siteTokens[$sitePolicy['site_id']] ?? '' }}" @checked(in_array((string) $sitePolicy['site_id'], $selectedSiteIds, true)) data-ai-policy-site aria-describedby="ai-policy-site-{{ $sitePolicy['site_id'] }}-state">
                                     <span lang="">{{ $sitePolicy['name'] }}</span>
                                 </label>
                                 <p class="field-help" id="ai-policy-site-{{ $sitePolicy['site_id'] }}-state">
@@ -88,6 +88,8 @@
                 @if ($sitePolicyConflict)
                     <p class="field-error">{{ __('ai_assist.validation.policy_conflict') }} <a href="{{ route('dashboard.account.ai-assist.show') }}">{{ __('ai_assist.actions.reload') }}</a></p>
                 @endif
+                {{-- Last successful control: PHP input truncation must never apply a partial batch. --}}
+                <input type="hidden" name="site_selections_complete" value="1">
             </form>
         </x-details-disclosure>
     @endif

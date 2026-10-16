@@ -152,6 +152,7 @@ return [
         'limits_conflict' => 'Questi limiti di utilizzo sono cambiati in un’altra sessione. Ricarichi la pagina prima di riprovare.',
         'policy_conflict' => 'I criteri sono cambiati o il modulo esaminato non è valido. Ricarichi le impostazioni attuali prima di salvare.',
         'site_scope' => 'Scelga solo siti a cui ha attualmente accesso.',
+        'bulk_incomplete' => 'Non tutte le selezioni dei siti sono arrivate al server. Scelga meno siti, riveda le impostazioni e riprovi.',
         'context_limit' => 'Erediti il limite oppure scelga un valore tra 1.000 e il massimo applicabile.',
         'article_consent' => 'Confermi la condivisione di passaggi pubblicati prima di abilitare Articoli pertinenti.',
         'connection_required' => 'Salvi e attivi una connessione verificata prima di abilitare il lavoro di assistenza.',

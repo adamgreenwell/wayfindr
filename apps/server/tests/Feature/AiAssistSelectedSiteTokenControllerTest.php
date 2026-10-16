@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Support\Ai\Policy\AiAssistPolicies;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\Process\Process;
 
 uses(RefreshDatabase::class);
 
@@ -31,7 +32,7 @@ function selectedSitePolicyWorld(): array
     return compact('account', 'owner', 'first', 'second', 'service', 'input');
 }
 
-test('a native subset policy form can correct an unrelated field without acquiring unselected tokens', function (string $unselected): void {
+test('a legacy array subset policy form can correct an unrelated field without acquiring unselected tokens', function (string $unselected): void {
     $world = selectedSitePolicyWorld();
     $this->actingAs($world['owner'])->post(route('dashboard.account.ai-assist.policy.sites'), [
         ...$world['input'], 'max_context_characters' => 999,
@@ -43,9 +44,9 @@ test('a native subset policy form can correct an unrelated field without acquiri
     $document = new DOMDocument;
     @$document->loadHTML($page->getContent());
     $tokens = [];
-    foreach ((new DOMXPath($document))->query('//input[starts-with(@name, "site_tokens[")]') as $control) {
-        preg_match('/\Asite_tokens\[([0-9]+)\]\z/', $control->getAttribute('name'), $match);
-        $tokens[(int) $match[1]] = $control->getAttribute('value');
+    foreach ((new DOMXPath($document))->query('//input[@data-ai-policy-site]') as $control) {
+        [$id, $token] = explode(':', $control->getAttribute('value'), 2);
+        $tokens[(int) $id] = $token;
     }
     expect($tokens[$world['first']->id])->toBe($world['input']['site_tokens'][$world['first']->id])
         ->and($tokens[$world['second']->id])->toBe('');
@@ -120,3 +121,109 @@ test('more than a thousand selected sites are rejected before any subset changes
     expect(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->mode)->toBe('manual')
         ->and(SiteAiAssistPolicy::query()->findOrFail($world['second']->id)->mode)->toBe('manual');
 });
+
+/** Serialize actual successful rendered controls in their DOM order, as a native browser does. */
+function selectedSiteNativeBody(string $html, array $selectedIds, string $mode = 'off', string $context = '1000'): string
+{
+    $document = new DOMDocument;
+    @$document->loadHTML($html);
+    $xpath = new DOMXPath($document);
+    $form = $xpath->query('//form[contains(@action, "/policy/sites")]')->item(0);
+    expect($form)->not->toBeNull();
+    $pairs = [];
+    foreach ($xpath->query('.//input', $form) as $control) {
+        $name = $control->getAttribute('name');
+        if ($name === '' || $control->hasAttribute('disabled')) {
+            continue;
+        }
+        $type = $control->getAttribute('type');
+        $value = $control->getAttribute('value');
+        if ($type === 'radio' && $value !== $mode) {
+            continue;
+        }
+        if ($type === 'checkbox') {
+            if ($control->hasAttribute('data-ai-policy-site')) {
+                $id = (int) explode(':', $value, 2)[0];
+                if (! in_array($id, $selectedIds, true)) {
+                    continue;
+                }
+            } elseif (! $control->hasAttribute('checked')) {
+                continue;
+            }
+        }
+        if ($name === 'max_context_characters') {
+            $value = $context;
+        }
+        $pairs[] = rawurlencode($name).'='.rawurlencode($value);
+    }
+    expect(rawurldecode($pairs[count($pairs) - 1]))->toBe('site_selections_complete=1', 'The completion marker must be the last successful native control.');
+
+    return implode('&', $pairs);
+}
+
+/** Exercise PHP's actual default parser cap, rather than Laravel's pre-parsed test arrays. */
+function selectedSiteParseNative(string $body): array
+{
+    $process = new Process([PHP_BINARY, '-n', '-d', 'display_errors=0', '-d', 'log_errors=1', '-r',
+        'parse_str(stream_get_contents(STDIN), $input); echo json_encode(["limit" => (int) ini_get("max_input_vars"), "input" => $input], JSON_THROW_ON_ERROR);']);
+    $process->setInput($body)->setTimeout(10)->mustRun();
+    $parsed = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    expect($parsed['limit'])->toBe(1000, 'The child runs without php.ini overrides, using PHP default max_input_vars.');
+
+    return $parsed['input'];
+}
+
+test('the rendered compact native form saves one of more than a thousand accessible sites through the default PHP parser', function (): void {
+    $world = selectedSitePolicyWorld();
+    Site::factory()->count(1002)->for($world['account'])->create();
+    $html = $this->actingAs($world['owner'])->get(route('dashboard.account.ai-assist.show'))->assertOk()->getContent();
+    $this->withCookie(config('session.cookie'), session()->getId());
+    expect(substr_count($html, 'data-ai-policy-site aria-describedby'))->toBe(1004)
+        ->and($html)->not->toContain('name="site_tokens[')->not->toContain('name="site_ids[]"');
+    $body = selectedSiteNativeBody($html, [$world['first']->id]);
+    expect(substr_count($body, '&'))->toBeLessThan(30, 'Unselected site count must not increase successful form controls.');
+    $input = selectedSiteParseNative($body);
+    expect($input['site_selections_complete'])->toBe('1')->and($input['mode'])->toBe('off')
+        ->and($input['max_context_characters'])->toBe('1000')->and($input['site_selections'])->toHaveCount(2);
+    $this->post(route('dashboard.account.ai-assist.policy.sites'), $input)->assertRedirect()->assertSessionHasNoErrors();
+    expect(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->mode)->toBe('off')
+        ->and(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->max_context_characters)->toBe(1000)
+        ->and(SiteAiAssistPolicy::query()->findOrFail($world['second']->id)->mode)->toBe('manual');
+});
+
+test('PHP-truncated native batches fail closed and can recover by choosing fewer reviewed sites', function (string $batch): void {
+    $world = selectedSitePolicyWorld();
+    Site::factory()->count(1002)->for($world['account'])->create();
+    $html = $this->actingAs($world['owner'])->get(route('dashboard.account.ai-assist.show'))->assertOk()->getContent();
+    $this->withCookie(config('session.cookie'), session()->getId());
+    $ids = Site::query()->where('account_id', $world['account']->id)->orderBy('id')->pluck('id')->all();
+    if ($batch === 'marker-only') {
+        $baseCount = substr_count(selectedSiteNativeBody($html, []), '&') + 1;
+        $ids = array_slice($ids, 0, 1001 - $baseCount);
+    }
+    $input = selectedSiteParseNative(selectedSiteNativeBody($html, $ids));
+    expect($input)->not->toHaveKey('site_selections_complete');
+    if ($batch === 'marker-only') {
+        expect($input['mode'])->toBe('off')->and($input['max_context_characters'])->toBe('1000');
+    }
+    $this->post(route('dashboard.account.ai-assist.policy.sites'), $input)->assertRedirect()
+        ->assertSessionHasErrors('site_selections_complete');
+    expect(SiteAiAssistPolicy::query()->count())->toBe(2, 'A truncated batch must not create any partial site policy rows.')
+        ->and(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->mode)->toBe('manual');
+    $old = session()->getOldInput();
+    expect($old['site_tokens'][$world['first']->id])->toBe($world['input']['site_tokens'][$world['first']->id]);
+    $retryHtml = $this->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertSee('Choose fewer sites')->getContent();
+    $retry = selectedSiteParseNative(selectedSiteNativeBody($retryHtml, [$world['first']->id]));
+    expect($retry['site_selections'][1])->toBe($world['first']->id.':'.$old['site_tokens'][$world['first']->id]);
+    $this->post(route('dashboard.account.ai-assist.policy.sites'), $retry)->assertRedirect()->assertSessionHasNoErrors();
+    expect(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->mode)->toBe('off')
+        ->and(SiteAiAssistPolicy::query()->findOrFail($world['second']->id)->mode)->toBe('manual');
+})->with(['all-sites', 'marker-only']);
+
+test('compact native pairs reject malformed missing or duplicate selected authority', function (array $pairs): void {
+    $world = selectedSitePolicyWorld();
+    $this->actingAs($world['owner'])->postJson(route('dashboard.account.ai-assist.policy.sites'), [
+        ...$world['input'], 'site_selections' => ['', ...$pairs], 'site_selections_complete' => '1',
+    ])->assertUnprocessable();
+    expect(SiteAiAssistPolicy::query()->findOrFail($world['first']->id)->mode)->toBe('manual');
+})->with([[['bad-pair']], [['1:']], [['1:bad-token']], [['1:'.str_repeat('a', 64), '1:'.str_repeat('a', 64)]], [[[1]]]]);
