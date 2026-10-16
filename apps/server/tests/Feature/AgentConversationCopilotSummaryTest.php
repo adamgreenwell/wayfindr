@@ -18,6 +18,7 @@ use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -26,6 +27,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../Fixtures/copilot-test-clock.php';
 
 uses(RefreshDatabase::class);
 
@@ -51,6 +54,7 @@ function conversationCopilotSummaryWorld(): array
 
 function configureConversationCopilotSummary(): void
 {
+    app()->instance(AiUsageClock::class, new CopilotTestUsageClock);
     $settings = app(OperatorSettings::class);
     $settings->set('ai.provider', 'ollama');
     $settings->set('ai.model', 'qwen3.5:4b');
@@ -91,7 +95,7 @@ test('the summary affordance and endpoints disappear when the provider is unconf
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertDontSee('Conversation summary')
-        ->assertDontSee('data-copilot-summary', false);
+        ->assertDontSee('data-task="summary"', false);
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-summary.store', $world['conversation']->support_code))
@@ -117,11 +121,11 @@ test('a configured provider exposes an explicitly suggested on-demand summary', 
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('Conversation summary')
+        ->assertSee('Catch up')
         ->assertSee('Suggested')
-        ->assertSee('Summarize conversation')
+        ->assertSee('Prepare suggestion')
         ->assertSee('Agent and visitor profile fields, metadata, attachments, and cobrowse data are omitted')
-        ->assertSee('data-copilot-summary', false);
+        ->assertSee('data-task="summary"', false);
 });
 
 test('requesting a summary queues one id-only job and records safe audit metadata', function (): void {
@@ -280,7 +284,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
         ->assertSee($summary->summary)
         ->assertSee('Suggested')
         ->assertSee('Based on 2 text messages.')
-        ->assertSee('Refresh summary')
+        ->assertSee('Refresh')
         ->assertSee('data-copilot-summary-stale', false)
         ->assertSee('window.wayfindrConversationSummaryTranscriptUpdated', false)
         ->assertSee("if (hasNewMessages && typeof window.wayfindrConversationSummaryTranscriptUpdated === 'function')", false);
@@ -294,7 +298,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('New messages arrived after this summary.');
+        ->assertSee('Earlier suggestion — review the updated conversation before refreshing.');
 });
 
 test('provider failures are generic in storage logs and the agent surface', function (): void {
@@ -339,8 +343,8 @@ test('provider failures are generic in storage logs and the agent surface', func
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('The summary could not be generated.')
-        ->assertSee('Try summary again')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
+        ->assertSee('Try again')
         ->assertDontSee('provider-secret')
         ->assertDontSee('private-provider.example.test');
 });
@@ -382,8 +386,8 @@ test('worker failures become generic retryable audited state', function (): void
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('The summary could not be generated.')
-        ->assertSee('Try summary again')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
+        ->assertSee('Try again')
         ->assertDontSee('worker-secret')
         ->assertDontSee('private-worker.example.test');
 });
@@ -745,7 +749,7 @@ test('summary rotation cannot replace an in-flight claim used by visitor erasure
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-summary.store', $world['conversation']->support_code))
-        ->assertStatus(409);
+        ->assertRedirect();
 
     $retained = $artifact->fresh();
     expect($retained->status)->toBe(ConversationCopilotSummary::STATUS_RUNNING)

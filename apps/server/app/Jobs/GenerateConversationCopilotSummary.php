@@ -11,7 +11,9 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Preparation\AiAssistPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -96,14 +98,16 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 return;
             }
 
-            $claimed = ConversationCopilotSummary::query()
-                ->whereKey($summary->id)
-                ->where('generation', $this->generation)
-                ->where('status', ConversationCopilotSummary::STATUS_PENDING)
-                ->update([
-                    'status' => ConversationCopilotSummary::STATUS_RUNNING,
-                    'started_at' => now(),
-                ]);
+            $claimed = is_string($summary->preparation_fingerprint)
+                ? app(AiSupportUsage::class)->claimPrepared($summary)
+                : ConversationCopilotSummary::query()
+                    ->whereKey($summary->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotSummary::STATUS_PENDING)
+                    ->update([
+                        'status' => ConversationCopilotSummary::STATUS_RUNNING,
+                        'started_at' => AiSupportUsage::lifecycleNow($summary),
+                    ]);
 
             // A replacement generation won while this job was waiting or
             // selecting context. Its transcript must not be sent by stale work.
@@ -215,7 +219,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                         'failure_code' => null,
-                        'completed_at' => now(),
+                        'completed_at' => AiSupportUsage::lifecycleNow($summary),
                     ]);
 
                 if ($updated === 1) {
@@ -244,7 +248,10 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 'summary_id' => $summary->id,
                 'conversation_id' => $conversation->id,
             ]);
-            $this->recordFailure($summary, 'provider');
+            $code = is_string($summary->preparation_fingerprint) && $exception instanceof AiNetworkException
+                && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
+                ? $exception->reason : 'provider';
+            $this->recordFailure($summary, $code);
         }
     }
 
@@ -304,10 +311,11 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 ->update([
                     'status' => ConversationCopilotSummary::STATUS_FAILED,
                     'failure_code' => $code,
-                    'completed_at' => now(),
+                    'completed_at' => AiSupportUsage::lifecycleNow($summary),
                 ]);
 
             if ($updated === 1) {
+                app(AiAssistPreparation::class)->syncTerminal($summary);
                 $this->audit($summary, 'conversation.ai_summary.failed', [
                     'failure_code' => $code,
                 ]);
@@ -338,7 +346,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 'connection_revision' => $summary->connection_revision,
                 ...$metadata,
             ],
-            'occurred_at' => now(),
+            'occurred_at' => AiSupportUsage::lifecycleNow($summary),
         ]);
     }
 }

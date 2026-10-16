@@ -44,6 +44,7 @@ final readonly class ConversationTicketSuggestionPromptBuilder
             ),
             messageCount: $context->messageCount,
             sourceRevision: $context->sourceRevision,
+            sourceSnapshot: $context->sourceSnapshot,
             lastMessageId: (int) $latestMessageId,
             labelIds: $matchLabels ? $this->labelMatcher->match($account, $context->input) : [],
         );

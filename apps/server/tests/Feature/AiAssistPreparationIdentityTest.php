@@ -56,8 +56,10 @@ function preparationIdentityWorld(): array
     ]);
     $values = ['mode' => 'prepare', 'summary' => true, 'reply_draft' => true, 'relevant_articles' => true,
         'ticket_details' => true, 'article_context_consent' => true, 'max_context_characters' => null];
-    $policy = AccountAiAssistPolicy::query()->forceCreate(['account_id' => $account->id, 'revision' => (string) Str::uuid(), ...$values]);
-    SiteAiAssistPolicy::query()->forceCreate(['site_id' => $site->id, 'account_id' => $account->id, 'revision' => (string) Str::uuid(), ...$values]);
+    $accountRevision = (string) Str::uuid();
+    $siteRevision = (string) Str::uuid();
+    $policy = AccountAiAssistPolicy::query()->forceCreate(['account_id' => $account->id, 'revision' => $accountRevision, 'preparation_consent_revision' => $accountRevision, ...$values]);
+    SiteAiAssistPolicy::query()->forceCreate(['site_id' => $site->id, 'account_id' => $account->id, 'revision' => $siteRevision, 'preparation_consent_revision' => $siteRevision, ...$values]);
 
     return compact('account', 'owner', 'agent', 'site', 'conversation', 'message', 'article', 'label', 'connection', 'policy');
 }

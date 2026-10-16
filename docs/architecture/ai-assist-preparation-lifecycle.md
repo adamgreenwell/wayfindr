@@ -1,9 +1,28 @@
 # AI Assist preparation lifecycle
 
-The first implementation slice of [#1170](https://github.com/adamgreenwell/wayfindr/issues/1170)
-defines internal work identities and cache classification. It builds on merged
-[#1185](https://github.com/adamgreenwell/wayfindr/pull/1185) and the
+The shared lifecycle for [#1170](https://github.com/adamgreenwell/wayfindr/issues/1170)
+implements shared admission, durable receipts, worker fencing and visible-open
+preparation. It builds on merged [#1186](https://github.com/adamgreenwell/wayfindr/pull/1186) and the
 [behavior contract](../product/ai-support-assist-contract.md).
+
+## Automatic-processing approval on upgrade
+
+Earlier administration described Prepare as future configuration with manual
+execution. Those saved choices remain configured but resolve to **Manual** after
+this upgrade. Each account and site policy has a nullable
+`preparation_consent_revision`; only a Prepare policy whose approval equals its
+current UUID revision permits automatic opens. The migration adds NULL columns
+without scanning content, creating policies or backfilling approval. Manual, Off,
+legacy installation behavior and existing business output are preserved.
+
+Fresh account and selected-site saves under the current disclosure stamp their
+new policy revisions, including an otherwise unchanged Prepare choice. Both
+scopes must be approved. The editor token namespace changes so an old form cannot
+authorize new automatic behavior, even when no prior policy row existed. Old
+writers that rotate revisions cannot carry approval forward during an upgrade.
+Rollback drops the stamps, so re-upgrade requires review again. Saving alone
+never queues work. Admin copy in English, German and Italian explains permitted,
+scrubbed transcript transmission on visible opens and the upgrade hold.
 
 ## Implemented identity boundary
 
@@ -58,36 +77,89 @@ terminal for that fingerprint too. Reopening unchanged input cannot turn those
 outcomes into an automatic retry. A different fingerprint is a cache miss, which
 still needs fresh admission and safe supersession of any existing work.
 
-`canPrepareOnOpen` distinguishes conversation tasks (summary/reply/knowledge) from
-conversion-only ticket details. Manual never enables automatic preparation.
-Neither helper proves an actual open, reserves usage, authorizes provider I/O,
-validates output, or replaces fresh read/Use authority. This slice adds no endpoint,
-queue work, persistent receipt store, automatic trigger or provider call. Its
-only schema change is two nullable account catalogue UUIDs and their source-write
-triggers. These configuration tokens contain no visitor links or source content;
-see the [data inventory](../privacy/data-inventory.md).
-Existing context DTO constructors remain compatible.
+## Admission and retained data
 
-## Remaining execution order
+`AiAssistPreparation::ensure` serves both explicit Manual actions and Prepare
+opens. It recomputes identity under installation → Account → requesting User →
+Conversation → artifact locks. Equivalent authorized viewers admit one generation,
+one usage reservation and one ID-only queued job. The reservation and artifact
+commit together; enqueue failure cancels only the captured unsent generation.
+Admitted generations retain the existing per-task request/generated/failed audit
+names. Reservation and queue failures record only IDs, generation, processor
+revision and a fixed failure category, never exception bodies, prompts or output.
+Reused terminal receipts create no duplicate attempt events. Queue failure locks
+Account before artifacts/audits and compares the captured generation, so late
+acknowledgements cannot fail a successor or recreate erased audit references.
 
-1. Add durable generation/fingerprint receipts and atomic ensure admission using
-   the ledger's installation → Account lock order. Recompute this identity under
-   admission; reserve usage before enqueueing, and prove real concurrent-open
-   coalescing. Metadata and output stores must join export/erasure inventories.
-2. Recheck requesting actor, scope, target eligibility, source, policy, processor
-   and work identity before dispatch and publication. Preserve the erasure-visible
-   running claim and conservative dispatched accounting during supersession.
-3. Retain at most one preceding authorized output during refresh. Withdraw revoked
-   sources, keep insertion disabled for stale output and fence old completions.
-4. Add explicit Refresh/Try again with database-clock cooldown of at least 60
-   seconds (or longer provider advice). Initial ensure/open never retries a cached
-   failure or insufficient result; queue/timeout/usage failures remain bounded.
-5. Wire authenticated POST ensure to actual visible workspace/conversion opens,
-   with Manual initial actions using the same coordinator. GET, rendering,
-   prefetch and background tabs remain read-only. Preserve composer/form edits.
-6. Qualify all four tasks, concurrent opens/workers, deletion/configuration races,
-   budgets, stale reads/Use, failure recovery and real browser open behavior before
-   treating #1170 as complete. The unified rail remains #1171.
+GET rendering, status and Use never reserve or enqueue. Status reads allow
+60 requests per viewer/task per minute and 180 across the viewer's tasks, leaving
+room for three tasks polling at two seconds. Use has a separate 60/minute bucket,
+shared with native Use routes. Ensure has its own 60/minute bucket, isolated from
+ordinary support/export throttles; native Manual generation retains its existing
+6/minute bucket. HTTP query limits are separate from provider usage reservations.
 
-Synthetic identity/cache tests establish this first slice only. They do not prove
-concurrent reservation, provider behavior, automatic preparation, or deployment.
+`ai_assist_preparation_receipts` keeps one mutable metadata row per account,
+conversation, task and fingerprint until conversation erasure. It contains no
+prompt or output. Returning from failed input A through B to A still reuses A's
+terminal receipt; reopening cannot obtain a free automatic retry. Explicit Refresh
+can replace that receipt only after database-clock cooldown of at least 60 seconds
+and any longer ledger/provider advice. Insufficient context is terminal until
+inputs change. Missing stores, connection, queue or budget fail closed.
+
+Each existing artifact retains its current generation and at most one preceding
+Ready snapshot while refresh is pending/running. Terminal success or failure
+clears that snapshot. Append-only activity permits authorized previous text to be
+read as Stale, with Use disabled. Selected-source edits/deletion, policy,
+connection or applicable catalogue changes withdraw derived output. Snapshots
+contain opaque source HMACs, not prompts. Export includes permitted business output
+and staff roles while omitting internal proofs; conversation erasure cascades to
+both artifact slots and receipts. See the [data inventory](../privacy/data-inventory.md).
+
+Fresh pending work coalesces even explicit Refresh. A live running claim cannot
+be overwritten, including after policy or processor changes: erasure must still
+see it. Expired dispatch recovery releases only that attempt's concurrency lease;
+it preserves charged usage and longer retry advice. An obsolete completion cannot
+refund or replace its successor's hold.
+
+## Dispatch, publication and Use
+
+Prepared workers claim under the same lock order and database clock. Requesting
+actor, scope, eligibility, policy, processor and selected source identity are
+rechecked before claim, at actual dispatch, and before and after validated output
+publication. Generation comparisons fence duplicate delivery and late completion.
+Dispatched uncertainty remains conservatively charged through reconciliation.
+All new Manual requests use these protections too; pre-existing unprepared output
+keeps its compatibility read path until deliberately refreshed. Upgrade does not
+silently enable automatic calls.
+
+Status and Use freshly resolve the viewing actor's access. Use requires the exact
+current Ready generation and policy; stale or withdrawn suggestions cannot be
+inserted/applied. Reply and article insertion requires an empty composer and
+rechecks edits after its response. Ticket details always require deliberate
+**Apply** into an untouched form. Neither action sends a reply or creates a ticket.
+
+## Visible workspace opens
+
+Authenticated, CSRF-protected POST commands accept only task, action and workspace
+identity, never an unsent draft or client prompt. Prepare opens summary, reply and
+knowledge tasks only when the conversation workspace is visible. Ticket details
+wait for the visible conversion workspace. Manual offers **Prepare suggestions**
+and **Suggest ticket details**; Off exposes no processing controls. Native Manual
+forms use the same coordinator.
+
+Document visibility, prerender state and active tabs gate opens. Prefetch headers
+are refused. Repeated opens share receipts. Source-change events and bounded
+status polling perform reads only; they never continuously regenerate. Refresh
+preserves composer and conversion edits. Unchanged polling preserves focused
+buttons and avoids repeated live-region announcements. Ready, Preparing, Stale,
+Unavailable and insufficient-context states remain readable without JavaScript.
+
+## Qualification boundary
+
+Synthetic guarded provider fixtures exercise admission, budgets, failure recovery,
+source/configuration/deletion races, export and erasure without external I/O.
+PostgreSQL tests use independent contending processes to prove one reservation/job
+and one charged provider dispatch. Browser acceptance uses isolated synthetic
+accounts and a disposable database. These checks establish application behavior;
+they do not activate a production connection or prove a real provider's service.
+The unified Assist rail remains [#1171](https://github.com/adamgreenwell/wayfindr/issues/1171).

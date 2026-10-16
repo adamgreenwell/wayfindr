@@ -115,6 +115,10 @@ final class VisitorEraser
             'erasure' => 'deleted by cascade from the conversation',
             'export' => 'not exported: which agent last read a thread is bookkeeping (§7)',
         ],
+        'ai_assist_preparation_receipts' => [
+            'erasure' => 'deleted by cascade from the conversation',
+            'export' => 'conversations/*.json#ai_preparation_receipts',
+        ],
         'conversation_copilot_summaries' => [
             'erasure' => 'deleted by cascade from the conversation',
             'export' => 'conversations/*.json#copilot_summaries',

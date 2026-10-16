@@ -13,7 +13,9 @@ use App\Support\Ai\ConversationKnowledgeSuggestionOutputParser;
 use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
+use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Preparation\AiAssistPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -103,14 +105,16 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 return;
             }
 
-            $claimed = ConversationCopilotKnowledgeSuggestion::query()
-                ->whereKey($suggestion->id)
-                ->where('generation', $this->generation)
-                ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_PENDING)
-                ->update([
-                    'status' => ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING,
-                    'started_at' => now(),
-                ]);
+            $claimed = is_string($suggestion->preparation_fingerprint)
+                ? app(AiSupportUsage::class)->claimPrepared($suggestion)
+                : ConversationCopilotKnowledgeSuggestion::query()
+                    ->whereKey($suggestion->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotKnowledgeSuggestion::STATUS_PENDING)
+                    ->update([
+                        'status' => ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING,
+                        'started_at' => AiSupportUsage::lifecycleNow($suggestion),
+                    ]);
 
             if ($claimed !== 1) {
                 return;
@@ -266,7 +270,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                             'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                             'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                             'failure_code' => null,
-                            'completed_at' => now(),
+                            'completed_at' => AiSupportUsage::lifecycleNow($suggestion),
                         ]);
 
                     if ($updated === 1) {
@@ -295,7 +299,10 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 'suggestion_id' => $suggestion->id,
                 'conversation_id' => $conversation->id,
             ]);
-            $this->recordFailure($suggestion, 'provider');
+            $code = is_string($suggestion->preparation_fingerprint) && $exception instanceof AiNetworkException
+                && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
+                ? $exception->reason : 'provider';
+            $this->recordFailure($suggestion, $code);
         }
     }
 
@@ -365,10 +372,11 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 ->update([
                     'status' => ConversationCopilotKnowledgeSuggestion::STATUS_FAILED,
                     'failure_code' => $code,
-                    'completed_at' => now(),
+                    'completed_at' => AiSupportUsage::lifecycleNow($suggestion),
                 ]);
 
             if ($updated === 1) {
+                app(AiAssistPreparation::class)->syncTerminal($suggestion);
                 $this->audit($suggestion, 'conversation.ai_knowledge_suggestion.failed', [
                     'failure_code' => $code,
                 ]);
@@ -399,7 +407,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 'connection_revision' => $suggestion->connection_revision,
                 ...$metadata,
             ],
-            'occurred_at' => now(),
+            'occurred_at' => AiSupportUsage::lifecycleNow($suggestion),
         ]);
     }
 }

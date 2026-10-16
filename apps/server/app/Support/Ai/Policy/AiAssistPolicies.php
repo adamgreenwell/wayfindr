@@ -49,7 +49,7 @@ final readonly class AiAssistPolicies
             $current = AccountAiAssistPolicy::query()->find($accountId);
             $values = $this->values($input, $this->resolver->installationContextLimit());
             $candidate = new AccountAiAssistPolicy;
-            $candidate->forceFill(['account_id' => $accountId, 'revision' => (string) Str::uuid(), ...$values]);
+            $candidate->forceFill(['account_id' => $accountId, ...$this->revisioned($values)]);
             $candidate->syncOriginal();
             $sites = Site::query()->where('account_id', $accountId)->orderBy('id')->lockForUpdate()->get();
             $enabled = false;
@@ -77,7 +77,7 @@ final readonly class AiAssistPolicies
                 }
             }
             $record = $current ?? new AccountAiAssistPolicy;
-            $record->forceFill(['account_id' => $accountId, 'revision' => (string) Str::uuid(), ...$values])->save();
+            $record->forceFill(['account_id' => $accountId, ...$this->revisioned($values)])->save();
             $this->changed($fresh, $accountId, 'account', [$record->revision]);
 
             return $record;
@@ -117,7 +117,7 @@ final readonly class AiAssistPolicies
                 $this->requireToken($this->siteToken((int) $site->id), $siteTokens[$site->id] ?? null, 'site_tokens');
                 $current = SiteAiAssistPolicy::query()->where('account_id', $accountId)->find($site->id);
                 $candidate = new SiteAiAssistPolicy;
-                $candidate->forceFill(['site_id' => $site->id, 'account_id' => $accountId, 'revision' => (string) Str::uuid(), ...$values]);
+                $candidate->forceFill(['site_id' => $site->id, 'account_id' => $accountId, ...$this->revisioned($values)]);
                 $candidate->syncOriginal();
                 if ($this->resolver->resolve($accountId, (int) $site->id, $account, $candidate)->isEnabled()) {
                     $this->requireConnection($accountId);
@@ -129,7 +129,7 @@ final readonly class AiAssistPolicies
             // Validation and authority for every selected site precede every write.
             $revisions = [];
             foreach ($changes as [$record, $siteId]) {
-                $record->forceFill(['site_id' => $siteId, 'account_id' => $accountId, 'revision' => (string) Str::uuid(), ...$values])->save();
+                $record->forceFill(['site_id' => $siteId, 'account_id' => $accountId, ...$this->revisioned($values)])->save();
                 $revisions[] = $record->revision;
             }
             if ($revisions !== []) {
@@ -251,6 +251,15 @@ final readonly class AiAssistPolicies
         return $record;
     }
 
+    /** Approval belongs to this exact revision; older writers cannot reuse it. */
+    private function revisioned(array $values): array
+    {
+        $revision = (string) Str::uuid();
+
+        return ['revision' => $revision,
+            'preparation_consent_revision' => $values['mode'] === 'prepare' ? $revision : null, ...$values];
+    }
+
     private function values(array $input, int $ceiling): array
     {
         if (! in_array($input['mode'] ?? null, ['off', 'manual', 'prepare'], true)) {
@@ -284,6 +293,9 @@ final readonly class AiAssistPolicies
 
     private function same(AccountAiAssistPolicy|SiteAiAssistPolicy $record, array $values): bool
     {
+        if ($record->getRawOriginal('preparation_consent_revision') !== ($values['mode'] === 'prepare' ? $record->revision : null)) {
+            return false;
+        }
         foreach ($values as $key => $value) {
             if ($record->{$key} !== $value) {
                 return false;
@@ -309,7 +321,7 @@ final readonly class AiAssistPolicies
 
     private function token(array $values): string
     {
-        return hash_hmac('sha256', json_encode(['assist-policy-editor-v1', ...$values], JSON_THROW_ON_ERROR), (string) config('app.key'));
+        return hash_hmac('sha256', json_encode(['assist-policy-editor-v2-visible-open', ...$values], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     private function requireActor(?User $actor, int $accountId): void

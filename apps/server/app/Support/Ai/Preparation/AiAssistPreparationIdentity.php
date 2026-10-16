@@ -21,6 +21,7 @@ final readonly class AiAssistPreparationIdentity
         public ?int $lastMessageId,
         public int $maxContextCharacters,
         public string $fingerprint,
+        public array $sourceSnapshot = [],
     ) {}
 
     public function matches(self $other): bool

@@ -39,6 +39,7 @@ final readonly class ConversationKnowledgeSuggestionPromptBuilder
             ),
             messageCount: $context->messageCount,
             sourceRevision: $context->sourceRevision,
+            sourceSnapshot: $context->sourceSnapshot,
             lastMessageId: (int) $latestMessageId,
         );
     }

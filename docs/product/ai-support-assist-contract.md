@@ -258,11 +258,15 @@ The implemented administration policy keeps untouched accounts at legacy Manual.
 The first explicit policy save initializes existing sites as Manual; sites added
 later start Off until deliberately enabled. An explicit enabled policy requires
 a usable saved tested connection. A separate policy revision invalidates work
-without invalidating the connection's successful synthetic test. Prepare remains
-configuration until the conversation ensure integration in #1170. The first
-[preparation foundation](../architecture/ai-assist-preparation-lifecycle.md) defines
-read-only work identities and terminal-cache classification; it adds no automatic
-trigger, reservation or provider call.
+without invalidating the connection's successful synthetic test. Prepare now uses the shared
+[preparation lifecycle](../architecture/ai-assist-preparation-lifecycle.md): actual
+visible opens admit shared work, while GET/prefetch remain read-only and Manual
+requires deliberate initial actions. Prepare choices saved under the earlier
+manual-only disclosure are held at effective Manual until fresh account and
+selected-site reviews approve their exact current policy revisions. Old forms
+cannot grant that approval. Cached terminal results require explicit
+retry after database-clock cooldown. Ticket details always require deliberate
+Apply; agents still send replies and create tickets separately.
 
 Native account/site policy forms bind both the reviewed policy revisions and the
 active processor snapshot. Changing the saved processor requires a fresh review;

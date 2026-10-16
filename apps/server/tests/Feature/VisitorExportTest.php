@@ -9,6 +9,7 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Models\AiAssistPreparationReceipt;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\AutomationMacro;
@@ -71,7 +72,7 @@ function exportFixture(): array
         [ConversationCopilotTicketSuggestion::class, ['title' => "Title {$m}", 'priority' => 'high', 'label_ids' => []]],
         [ConversationCopilotKnowledgeSuggestion::class, ['article_ids' => []]],
     ] as [$model, $content]) {
-        $model::query()->forceCreate([
+        $artifact = $model::query()->forceCreate([
             'conversation_id' => $f['conversation']->id,
             'requested_by_id' => $agent->id,
             'generation' => (string) Str::uuid(),
@@ -80,6 +81,20 @@ function exportFixture(): array
             ...$content,
         ]);
     }
+
+    $summary = ConversationCopilotSummary::query()->where('conversation_id', $f['conversation']->id)->sole();
+    $prior = $summary->getRawOriginal();
+    unset($prior['previous_output']);
+    $prior['summary'] = "Prior summary {$m}";
+    $prior['preparation_fingerprint'] = str_repeat('a', 64);
+    $prior['preparation_source_snapshot'] = json_encode(['server_only' => true]);
+    $summary->forceFill(['previous_output' => $prior])->save();
+    AiAssistPreparationReceipt::query()->forceCreate([
+        'account_id' => $f['account']->id, 'conversation_id' => $f['conversation']->id,
+        'purpose' => 'conversation_summary', 'fingerprint' => str_repeat('b', 64),
+        'generation' => $summary->generation, 'requested_by_id' => $agent->id,
+        'status' => 'failed', 'requested_at' => now(), 'completed_at' => now(),
+    ]);
 
     // Agent identities, written the ways the code writes them.
     CobrowseSession::query()->where('conversation_id', $f['conversation']->id)->update(['requested_by_id' => $agent->id, 'metadata' => json_encode([
@@ -671,4 +686,15 @@ test('the export reads under a shared lock on the site, taken before anything el
 
     expect($lock)->not->toBeFalse('the export never took a shared lock on the site')
         ->and($lock)->toBeLessThan($firstRead, 'the export read the person before it held the site lock');
+});
+
+test('preparation receipts and retained output export content with staff roles and omit server proofs', function (): void {
+    $f = exportFixture();
+    $conversation = json_decode(exportArchive($f['admin'], $f['visitor'])["conversations/{$f['conversation']->support_code}.json"], true);
+    $previous = $conversation['copilot_summaries'][0]['previous_output'];
+    expect($previous['summary'])->toContain('Prior summary')->and($previous['requested_by'])->toBe('agent')
+        ->and($previous)->not->toHaveKeys(['requested_by_id', 'preparation_fingerprint', 'preparation_source_snapshot', 'policy_revision', 'source_context_fingerprint']);
+    expect($conversation['ai_preparation_receipts'])->toHaveCount(1)
+        ->and($conversation['ai_preparation_receipts'][0]['requested_by'])->toBe('agent')
+        ->and($conversation['ai_preparation_receipts'][0])->not->toHaveKeys(['requested_by_id', 'fingerprint']);
 });

@@ -19,6 +19,7 @@ use App\Jobs\GenerateConversationCopilotTicketSuggestion;
 use App\Jobs\SendConversationReplyDelivery;
 use App\Listeners\MarkSlaMailTransportStarted;
 use App\Models\Account;
+use App\Models\AiAssistPreparationReceipt;
 use App\Models\AuditEvent;
 use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
@@ -26,6 +27,7 @@ use App\Models\AutomationRuleExecution;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\ConversationCopilotSummary;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\ConversationReplyDelivery;
@@ -1106,4 +1108,22 @@ test('a custom role can hold the permission only alongside managing contacts', f
 
     expect(AccountRole::Admin->permissions())->toContain(AccountPermission::HandleDataRequests)
         ->and(AccountRole::Agent->permissions())->not->toContain(AccountPermission::HandleDataRequests);
+});
+
+test('visitor erasure removes preparation receipts and the bounded previous output slot', function (): void {
+    $f = VisitorHistory::create();
+    $generation = (string) Str::uuid();
+    AiAssistPreparationReceipt::query()->forceCreate([
+        'account_id' => $f['account']->id, 'conversation_id' => $f['conversation']->id,
+        'purpose' => 'conversation_summary', 'fingerprint' => str_repeat('c', 64),
+        'generation' => $generation, 'requested_by_id' => $f['admin']->id, 'status' => 'ready', 'requested_at' => now(),
+    ]);
+    ConversationCopilotSummary::query()->forceCreate([
+        'conversation_id' => $f['conversation']->id, 'requested_by_id' => $f['admin']->id,
+        'generation' => $generation, 'status' => 'ready', 'requested_at' => now(),
+        'summary' => VisitorHistory::MARKER, 'previous_output' => ['summary' => VisitorHistory::MARKER],
+    ]);
+    eraseThroughTheDashboard($f['admin'], $f['visitor'])->assertRedirect();
+    expect(DB::table('ai_assist_preparation_receipts')->count())->toBe(0)
+        ->and(DB::table('conversation_copilot_summaries')->count())->toBe(0);
 });

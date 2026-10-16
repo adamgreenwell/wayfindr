@@ -21,11 +21,14 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../Fixtures/copilot-test-clock.php';
 
 uses(RefreshDatabase::class);
 
@@ -51,6 +54,7 @@ function conversationCopilotKnowledgeWorld(): array
 
 function configureConversationCopilotKnowledge(): void
 {
+    app()->instance(AiUsageClock::class, new CopilotTestUsageClock);
     $settings = app(OperatorSettings::class);
     $settings->set('ai.provider', 'ollama');
     $settings->set('ai.model', 'qwen3.5:4b');
@@ -78,7 +82,7 @@ function queueConversationCopilotKnowledge(array $world): GenerateConversationCo
     return $queued;
 }
 
-test('knowledge suggestions are absent without a provider or a published article', function (): void {
+test('knowledge is absent without a provider and insufficient without a published article', function (): void {
     $world = conversationCopilotKnowledgeWorld();
     ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'How do renewals work?']);
     Queue::fake();
@@ -86,7 +90,7 @@ test('knowledge suggestions are absent without a provider or a published article
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-knowledge-suggestion', false);
+        ->assertDontSee('data-task="knowledge"', false);
 
     configureConversationCopilotKnowledge();
     Article::factory()->for($world['account'])->create(['title' => 'Private draft']);
@@ -94,14 +98,15 @@ test('knowledge suggestions are absent without a provider or a published article
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-knowledge-suggestion', false);
+        ->assertSee('data-task="knowledge"', false)
+        ->assertSee('There is not enough eligible context to prepare a suggestion.');
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))
-        ->assertNotFound();
+        ->assertRedirect();
 
     Queue::assertNothingPushed();
-    expect(ConversationCopilotKnowledgeSuggestion::query()->count())->toBe(0);
+    expect(ConversationCopilotKnowledgeSuggestion::query()->sole()->status)->toBe('insufficient_context');
 });
 
 test('knowledge suggestions require current reply permission', function (): void {
@@ -122,7 +127,7 @@ test('knowledge suggestions require current reply permission', function (): void
     $this->actingAs($viewer)
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-knowledge-suggestion', false);
+        ->assertDontSee('data-task="knowledge"', false);
 
     $this->actingAs($viewer)
         ->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))
@@ -144,10 +149,10 @@ test('a published article exposes an explicit suggested knowledge action', funct
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('Suggested knowledge')
-        ->assertSee('Suggest knowledge')
+        ->assertSee('Relevant articles')
+        ->assertSee('Prepare suggestion')
         ->assertSee('article titles, content, and the catalogue stay inside Wayfindr')
-        ->assertSee('data-copilot-knowledge-suggestion', false)
+        ->assertSee('data-task="knowledge"', false)
         ->assertSee('window.wayfindrConversationKnowledgeSuggestionTranscriptUpdated', false);
 });
 
@@ -292,7 +297,7 @@ test('the worker sends scrubbed transcript text and matches only published accou
         ->assertSee($payment->title)
         ->assertDontSee('Shipping policy')
         ->assertDontSee('Tenant-private catalogue content')
-        ->assertSee('Insert snippet')
+        ->assertSee('Insert excerpt')
         ->assertSee('data-copilot-knowledge-use', false)
         ->assertSee("body.value.trim() !== ''", false)
         ->assertSee("body.dispatchEvent(new Event('input'", false)
@@ -410,7 +415,7 @@ test('provider failures stay generic in storage logs and the agent surface', fun
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('Knowledge suggestions could not be generated.')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
         ->assertDontSee('provider-secret');
 });
 
@@ -701,7 +706,7 @@ test('knowledge-suggestion rotation cannot replace an in-flight claim used by vi
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))
-        ->assertStatus(409);
+        ->assertRedirect();
 
     $retained = $artifact->fresh();
     expect($retained->status)->toBe(ConversationCopilotKnowledgeSuggestion::STATUS_RUNNING)

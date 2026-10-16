@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Support\Ai\Execution;
 
+use App\Models\AiAssistPreparationReceipt;
+use App\Models\Conversation;
 use App\Models\ConversationCopilotKnowledgeSuggestion;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Models\ConversationCopilotSummary;
 use App\Models\ConversationCopilotTicketSuggestion;
+use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotResult;
@@ -18,9 +21,13 @@ use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Preparation\AiAssistPreparation;
+use App\Support\Ai\Preparation\AiAssistPreparationIdentityResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Ai\Usage\AiUsagePolicy;
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +46,30 @@ final readonly class AiSupportUsage
 
     public function __construct(private AgentCopilotConnectionResolver $connections, private AiUsageLedger $ledger,
         private AiUsagePolicy $policy, private AiRequestAuthority $authority) {}
+
+    /** Claim a prepared artifact in the same lock order as its admission. */
+    public function claimPrepared(Model $artifact): int
+    {
+        return $this->ledger->withAccountUsageLock((int) $artifact->conversation?->site?->account_id,
+            function () use ($artifact): int {
+                User::query()->whereKey($artifact->requested_by_id)->lockForUpdate()->first();
+                Conversation::query()->whereKey($artifact->conversation_id)->lockForUpdate()->first();
+                $fresh = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
+                    ->where('status', 'pending')->lockForUpdate()->first();
+                if ($fresh === null) {
+                    return 0;
+                }
+                self::assertPreparationCurrent($fresh);
+
+                return $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
+                    ->where('status', 'pending')->update(['status' => 'running', 'started_at' => app(AiUsageClock::class)->now()]);
+            });
+    }
+
+    public static function lifecycleNow(Model $artifact): CarbonInterface
+    {
+        return is_string($artifact->preparation_fingerprint) ? app(AiUsageClock::class)->now() : now();
+    }
 
     public function reserveFor(#[SensitiveParameter] Model $artifact): void
     {
@@ -89,6 +120,43 @@ final readonly class AiSupportUsage
     /** Publish and settle atomically in installation -> Account order. */
     public function publish(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] AgentCopilotResult $result, #[SensitiveParameter] Closure $publication): void
     {
+        if (is_string($artifact->preparation_fingerprint)) {
+            if ($result->isGuarded() && ! DB::table('ai_usage_attempts')->where('attempt_id', $artifact->generation)->exists()) {
+                throw new AiNetworkException('usage_reservation_missing');
+            }
+            $this->ledger->withAccountUsageLock((int) $artifact->conversation?->site?->account_id,
+                function () use ($artifact, $result, $publication): void {
+                    $fresh = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
+                        ->where('status', 'running')->lockForUpdate()->first();
+                    if ($fresh === null) {
+                        $result->settle('invalid_output');
+
+                        return;
+                    }
+                    try {
+                        self::assertPreparationCurrent($fresh);
+                    } catch (Throwable $failure) {
+                        app(AiAssistPreparation::class)->withdrawPublication($fresh, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked');
+                        $result->settle('invalid_output');
+
+                        return;
+                    }
+                    $publication();
+                    $current = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)->first();
+                    if ($current?->status === 'ready') {
+                        try {
+                            self::assertPreparationCurrent($current);
+                        } catch (Throwable $failure) {
+                            app(AiAssistPreparation::class)->withdrawPublication($current, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked');
+                        }
+                    }
+                    app(AiAssistPreparation::class)->syncTerminal($artifact);
+                    $ready = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)->where('status', 'ready')->exists();
+                    $result->settle($ready ? 'completed' : 'invalid_output');
+                });
+
+            return;
+        }
         if (! $result->isGuarded()) {
             $publication();
             $result->settle('completed');
@@ -209,9 +277,42 @@ final readonly class AiSupportUsage
     private static function fingerprintForPrompt(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] AgentCopilotPrompt $prompt): string
     {
         return hash_hmac('sha256', json_encode([
-            'manual-v2', $artifact::class, $artifact->conversation_id, $artifact->policy_revision,
+            $artifact->preparation_fingerprint === null ? 'manual-v2' : 'prepared-v1',
+            ...($artifact->preparation_fingerprint === null ? [] : [$artifact->preparation_fingerprint]),
+            $artifact::class, $artifact->conversation_id, $artifact->policy_revision,
             $connection->revision, self::sourceFingerprint($artifact, $prompt),
         ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+    }
+
+    /** Fail closed at admission, actual dispatch and both sides of publication. */
+    public static function assertPreparationCurrent(Model $artifact): void
+    {
+        if (! is_string($artifact->preparation_fingerprint)) {
+            return;
+        }
+        $purpose = array_search($artifact::class, self::ARTIFACTS, true);
+        $fresh = $artifact::query()->with(['conversation.site.account', 'requestedBy'])
+            ->whereKey($artifact->id)->where('generation', $artifact->generation)->first();
+        if ($purpose === false || $fresh?->conversation === null || $fresh->requestedBy === null) {
+            throw new AiNetworkException('context_changed');
+        }
+        if (! app(AiAssistPolicyResolver::class)->isCurrent((int) $fresh->conversation->site_id, $purpose, $fresh->policy_revision)) {
+            throw new AiNetworkException('policy_changed');
+        }
+        if (! app(AgentCopilotConnectionResolver::class)->isCurrent((int) $fresh->conversation->site->account_id, $fresh->connection_revision)) {
+            throw new AiNetworkException('connection_changed');
+        }
+        if ($purpose === 'conversation_ticket_suggestion' && $fresh->conversation->tickets()->exists()) {
+            throw new AiNetworkException('ticket_exists');
+        }
+        $identity = app(AiAssistPreparationIdentityResolver::class)->forTask($fresh->requestedBy, $fresh->conversation, $purpose);
+        if (! hash_equals($identity->fingerprint, $fresh->preparation_fingerprint)
+            || ! AiAssistPreparationReceipt::query()->where('account_id', $identity->accountId)
+                ->where('conversation_id', $identity->conversationId)->where('purpose', $purpose)
+                ->where('fingerprint', $identity->fingerprint)->where('generation', $fresh->generation)
+                ->whereIn('status', $fresh->status === 'ready' ? ['pending', 'ready'] : ['pending'])->exists()) {
+            throw new AiNetworkException('context_changed');
+        }
     }
 
     private function assertPolicy(#[SensitiveParameter] Model $artifact): void
@@ -229,6 +330,8 @@ final readonly class AiSupportUsage
         if ($fresh === null) {
             throw new AiNetworkException('execution_superseded');
         }
+
+        self::assertPreparationCurrent($fresh);
 
         return $fresh;
     }

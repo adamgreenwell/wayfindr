@@ -22,11 +22,14 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../Fixtures/copilot-test-clock.php';
 
 uses(RefreshDatabase::class);
 
@@ -52,6 +55,7 @@ function conversationCopilotTicketSuggestionWorld(): array
 
 function configureConversationCopilotTicketSuggestion(): void
 {
+    app()->instance(AiUsageClock::class, new CopilotTestUsageClock);
     $settings = app(OperatorSettings::class);
     $settings->set('ai.provider', 'ollama');
     $settings->set('ai.model', 'qwen3.5:4b');
@@ -88,7 +92,7 @@ test('the ticket suggestion affordance and endpoints disappear when the provider
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertDontSee('Suggested ticket details')
-        ->assertDontSee('data-copilot-ticket-suggestion', false);
+        ->assertDontSee('data-task="ticket"', false);
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-ticket-suggestion.store', $world['conversation']->support_code))
@@ -119,7 +123,7 @@ test('ticket suggestions require current ticket-management permission', function
     $this->actingAs($viewer)
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-ticket-suggestion', false);
+        ->assertDontSee('data-task="ticket"', false);
 
     $this->actingAs($viewer)
         ->post(route('dashboard.conversations.copilot-ticket-suggestion.store', $world['conversation']->support_code))
@@ -144,7 +148,7 @@ test('a configured provider exposes an explicitly suggested ticket helper beside
         ->assertSee('Suggested ticket details')
         ->assertSee('Suggest ticket details')
         ->assertSee('Nothing changes until you review and create the ticket.')
-        ->assertSee('data-copilot-ticket-suggestion', false)
+        ->assertSee('data-task="ticket"', false)
         ->assertSee('data-ticket-creation-form', false)
         ->assertSee('name="subject"', false)
         ->assertSee('name="label_ids[]"', false)
@@ -293,8 +297,8 @@ test('the queued job stores constrained output and matches existing labels local
         ->assertSee('High')
         ->assertSee('Billing')
         ->assertSee('Needs dev')
-        ->assertSee('Use suggested details')
-        ->assertSee('data-copilot-ticket-suggestion-use', false)
+        ->assertSee('Apply ticket details')
+        ->assertSee('data-ai-use', false)
         ->assertSee("form.dataset.ticketSuggestionDirty === 'true'", false)
         ->assertSee('const maximumAttempts = 210;', false);
 });
@@ -371,7 +375,7 @@ test('provider failures stay generic in storage logs and the agent surface', fun
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('The ticket details could not be suggested.')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
         ->assertDontSee('provider-secret');
 });
 
@@ -717,7 +721,7 @@ test('ticket-suggestion rotation cannot replace an in-flight claim used by visit
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-ticket-suggestion.store', $world['conversation']->support_code))
-        ->assertStatus(409);
+        ->assertRedirect();
 
     $retained = $artifact->fresh();
     expect($retained->status)->toBe(ConversationCopilotTicketSuggestion::STATUS_RUNNING)

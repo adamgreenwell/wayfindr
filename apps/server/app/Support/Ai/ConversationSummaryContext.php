@@ -11,5 +11,6 @@ final readonly class ConversationSummaryContext
         public int $messageCount,
         public int $lastMessageId,
         public ?string $sourceRevision = null,
+        public array $sourceSnapshot = [],
     ) {}
 }

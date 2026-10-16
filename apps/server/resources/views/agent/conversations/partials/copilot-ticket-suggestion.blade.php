@@ -1,3 +1,6 @@
+@if (isset($copilotPolicy) && ($copilotPolicy->explicit || $copilotTicketSuggestion === null || $copilotTicketSuggestion->preparation_fingerprint !== null))
+    @include('agent.conversations.partials.ai-assist-task', ['assistPurpose' => 'conversation_ticket_suggestion'])
+@else
 @php
     $copilotTicketSuggestionState = $copilotTicketSuggestion?->displayStatus();
     $copilotTicketSuggestionIsStale = $copilotTicketSuggestion?->isStaleComparedTo($latestConversationMessageId) ?? false;
@@ -91,3 +94,5 @@
     <p class="field-help">{{ __('conversations.detail.ticket_copilot.privacy') }}</p>
     <p class="sr-only" role="status" aria-live="polite" data-copilot-ticket-suggestion-status></p>
 </div>
+
+@endif

@@ -189,6 +189,7 @@ class AppServiceProvider extends ServiceProvider
      * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
      * Laravel's database notification, whose key is a UUID column. `operation`
      * is a canonical host-journal UUID constrained by the operator update group.
+     * `task` is the Assist capability enum, bounded explicitly on its routes.
      *
      * Registered here rather than beside the routes because the router applies
      * a global pattern when a route is created, and this provider boots before
@@ -229,6 +230,17 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureRateLimiters(): void
     {
+        // Three visible tasks poll at two seconds while preparing. Bound each
+        // task and the whole viewer separately without starving normal polling.
+        RateLimiter::for('ai-assist-status', function (Request $request): array {
+            $viewer = $request->user()?->getAuthIdentifier() ?? $request->ip();
+
+            return [
+                Limit::perMinute(60)->by('viewer:'.$viewer.':task:'.$request->route('task')),
+                Limit::perMinute(180)->by('viewer:'.$viewer),
+            ];
+        });
+
         // Asking for a reset link is unauthenticated and sends mail, so it is
         // throttled on both the address and the source. Keying on the address
         // alone would let one attacker deny an agent their own recovery;

@@ -295,6 +295,21 @@ final readonly class AiUsageLedger
         });
     }
 
+    /** Scoped recovery only: release an expired lease without refunding its charge or shortening retry advice. */
+    public function releaseExpiredDispatch(string $attemptId): void
+    {
+        $this->attempt($attemptId, function (stdClass $attempt, ?Account $account, CarbonImmutable $now): void {
+            if (! $attempt->concurrency_held || $attempt->dispatch_expires_at === null
+                || $this->time($attempt->dispatch_expires_at)->isAfter($now)) {
+                return;
+            }
+            $this->releaseConcurrency($attempt);
+            if ($attempt->state === 'dispatched') {
+                $this->terminal($attempt, $now, 'unknown', 'dispatch_expired');
+            }
+        });
+    }
+
     public function cancelUnsent(#[SensitiveParameter] string $attemptId, #[SensitiveParameter] string $claimNonce, #[SensitiveParameter] string $reason = 'known_unsent'): void
     {
         $this->reason($reason);

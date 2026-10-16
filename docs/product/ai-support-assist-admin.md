@@ -41,7 +41,12 @@ when opened, plus Summary, Reply draft, Relevant articles and Ticket details.
 Account permissions cap site choices: either Off disables assistance, account
 Manual caps a site's Prepare choice to Manual, and task permissions intersect.
 Ticket details applies only while conversion is open and no linked ticket exists.
-Prepare is saved configuration for #1170; this change starts no automatic calls.
+The #1170 lifecycle now prepares permitted tasks on actual visible workspace
+opens. Prepare automatically sends permitted, scrubbed conversation text to the
+selected processor; Manual requires deliberate actions. Earlier Prepare choices
+remain configured but behave as Manual until an admin reviews and saves both
+the account policy and selected site policies under this disclosure. Old forms
+are rejected, and saving alone never queues processing.
 
 An untouched upgrade keeps existing Manual support and local article lookup.
 The first explicit policy save initializes existing sites as Manual; later new

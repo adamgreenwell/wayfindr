@@ -122,6 +122,11 @@ test('every route parameter that names an integer key carries the bounded patter
 
     foreach (Route::getRoutes() as $route) {
         foreach ($route->parameterNames() as $name) {
+            if ($name === 'task') {
+                expect($route->wheres[$name] ?? null)->toBe('summary|reply|knowledge|ticket', 'Assist task routes must constrain their non-database enum.');
+
+                continue;
+            }
             if (in_array($name, $notIntegerKeys, true)) {
                 continue;
             }

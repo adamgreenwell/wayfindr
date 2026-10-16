@@ -11,7 +11,9 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Preparation\AiAssistPreparation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -93,14 +95,16 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
-            $claimed = ConversationCopilotReplyDraft::query()
-                ->whereKey($draft->id)
-                ->where('generation', $this->generation)
-                ->where('status', ConversationCopilotReplyDraft::STATUS_PENDING)
-                ->update([
-                    'status' => ConversationCopilotReplyDraft::STATUS_RUNNING,
-                    'started_at' => now(),
-                ]);
+            $claimed = is_string($draft->preparation_fingerprint)
+                ? app(AiSupportUsage::class)->claimPrepared($draft)
+                : ConversationCopilotReplyDraft::query()
+                    ->whereKey($draft->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotReplyDraft::STATUS_PENDING)
+                    ->update([
+                        'status' => ConversationCopilotReplyDraft::STATUS_RUNNING,
+                        'started_at' => AiSupportUsage::lifecycleNow($draft),
+                    ]);
 
             if ($claimed !== 1) {
                 return;
@@ -208,7 +212,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                         'failure_code' => null,
-                        'completed_at' => now(),
+                        'completed_at' => AiSupportUsage::lifecycleNow($draft),
                     ]);
 
                 if ($updated === 1) {
@@ -235,7 +239,10 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 'draft_id' => $draft->id,
                 'conversation_id' => $conversation->id,
             ]);
-            $this->recordFailure($draft, 'provider');
+            $code = is_string($draft->preparation_fingerprint) && $exception instanceof AiNetworkException
+                && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
+                ? $exception->reason : 'provider';
+            $this->recordFailure($draft, $code);
         }
     }
 
@@ -295,10 +302,11 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 ->update([
                     'status' => ConversationCopilotReplyDraft::STATUS_FAILED,
                     'failure_code' => $code,
-                    'completed_at' => now(),
+                    'completed_at' => AiSupportUsage::lifecycleNow($draft),
                 ]);
 
             if ($updated === 1) {
+                app(AiAssistPreparation::class)->syncTerminal($draft);
                 $this->audit($draft, 'conversation.ai_reply_draft.failed', [
                     'failure_code' => $code,
                 ]);
@@ -329,7 +337,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 'connection_revision' => $draft->connection_revision,
                 ...$metadata,
             ],
-            'occurred_at' => now(),
+            'occurred_at' => AiSupportUsage::lifecycleNow($draft),
         ]);
     }
 }

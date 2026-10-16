@@ -10,8 +10,8 @@ with policy fences across manual requests, queued/transmitted/late results and
 fresh Use actions. The #1169 administration implementation is merged in #1185;
 [its delivery boundary](ai-support-assist-admin.md)
 describes upgrade defaults, explicit consent and scoped management. The unified
-Assist surface, grounding/refinement and automatic preparation remain pending.
-The first #1170 slice defines account catalogue revision metadata and [preparation identities and cache classification](../architecture/ai-assist-preparation-lifecycle.md); atomic ensure and actual-open integration remain next.
+Assist surface and grounding/refinement remain pending.
+The #1170 implementation adds [shared preparation admission, terminal receipts, worker fencing and visible-open integration](../architecture/ai-assist-preparation-lifecycle.md), including Manual compatibility, deliberate ticket Apply, and renewed account/site approval before earlier Prepare choices can process automatically. The unified Assist rail remains #1171.
 The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The
