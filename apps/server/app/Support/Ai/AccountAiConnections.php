@@ -17,6 +17,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use SensitiveParameter;
 use Throwable;
 
 /** Account-scoped, locked proposed → tested → active lifecycle. */
@@ -29,9 +30,23 @@ final readonly class AccountAiConnections
         private AiModelDiscovery $discovery,
     ) {}
 
-    public function propose(User $actor, int $accountId, array $input): AccountAiConnection
+    public function propose(User $actor, int $accountId, #[SensitiveParameter] array $input): AccountAiConnection
     {
-        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($input): AccountAiConnection {
+        return $this->storeProposal($actor, $accountId, $input);
+    }
+
+    /** Browser editors must name the draft they actually reviewed. */
+    public function proposeForRevision(User $actor, int $accountId, #[SensitiveParameter] array $input, ?string $expectedRevision, ?string $editorToken = null): AccountAiConnection
+    {
+        return $this->storeProposal($actor, $accountId, $input, $expectedRevision, true, $editorToken);
+    }
+
+    private function storeProposal(User $actor, int $accountId, #[SensitiveParameter] array $input, ?string $expectedRevision = null, bool $checkRevision = false, ?string $editorToken = null): AccountAiConnection
+    {
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($input, $expectedRevision, $checkRevision, $editorToken): AccountAiConnection {
+            if ($checkRevision) {
+                $this->requireExpectedRevision($record, $expectedRevision, $editorToken);
+            }
             $source = $input['source'] ?? '';
 
             if (! in_array($source, [AccountAiConnection::INSTALLATION, AccountAiConnection::ACCOUNT], true)) {
@@ -212,8 +227,21 @@ final readonly class AccountAiConnections
 
     public function setEnabled(User $actor, int $accountId, bool $enabled): AccountAiConnection
     {
-        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($enabled): AccountAiConnection {
+        return $this->updateEnabled($actor, $accountId, $enabled);
+    }
+
+    public function setEnabledForToken(User $actor, int $accountId, bool $enabled, ?string $editorToken): AccountAiConnection
+    {
+        return $this->updateEnabled($actor, $accountId, $enabled, $editorToken, true);
+    }
+
+    private function updateEnabled(User $actor, int $accountId, bool $enabled, ?string $editorToken = null, bool $checkToken = false): AccountAiConnection
+    {
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($enabled, $editorToken, $checkToken): AccountAiConnection {
             if ($enabled) {
+                if ($checkToken) {
+                    $this->requireEditorToken($record, $editorToken);
+                }
                 $this->requireAffectedSiteAccess($record, $freshActor);
                 if ($record->active_revision === null && ! $record->uses_installation_default) {
                     throw ValidationException::withMessages(['connection' => 'Choose and test a connection before re-enabling.']);
@@ -228,7 +256,20 @@ final readonly class AccountAiConnections
 
     public function disconnect(User $actor, int $accountId): AccountAiConnection
     {
-        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor): AccountAiConnection {
+        return $this->removeConnection($actor, $accountId);
+    }
+
+    public function disconnectForRevision(User $actor, int $accountId, ?string $expectedRevision, ?string $editorToken = null): AccountAiConnection
+    {
+        return $this->removeConnection($actor, $accountId, $expectedRevision, true, $editorToken);
+    }
+
+    private function removeConnection(User $actor, int $accountId, ?string $expectedRevision = null, bool $checkRevision = false, ?string $editorToken = null): AccountAiConnection
+    {
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($expectedRevision, $checkRevision, $editorToken): AccountAiConnection {
+            if ($checkRevision) {
+                $this->requireExpectedRevision($record, $expectedRevision, $editorToken);
+            }
             $record->forceFill([
                 'enabled' => false, 'active_revision' => null, 'active_configuration' => null,
                 'uses_installation_default' => false,
@@ -239,6 +280,45 @@ final readonly class AccountAiConnections
 
             return $record;
         });
+    }
+
+    /** Erase the pending draft, retaining the active processor and credential. */
+    public function discard(User $actor, int $accountId, ?string $expectedRevision, ?string $editorToken = null): AccountAiConnection
+    {
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($expectedRevision, $editorToken): AccountAiConnection {
+            $this->requireExpectedRevision($record, $expectedRevision, $editorToken);
+            $record->forceFill([
+                'proposed_revision' => null, 'proposed_configuration' => null,
+                ...$this->clearTest(),
+            ])->save();
+            $this->audit($record, $freshActor, 'draft_discarded');
+
+            return $record;
+        });
+    }
+
+    private function requireExpectedRevision(AccountAiConnection $record, ?string $expectedRevision, ?string $editorToken): void
+    {
+        if ($record->proposed_revision !== $expectedRevision) {
+            throw ValidationException::withMessages(['expected_revision' => 'The proposed connection has changed. Reload before editing it.']);
+        }
+        $this->requireEditorToken($record, $editorToken);
+    }
+
+    /** A null draft can recur after discard; the active source must still match. */
+    public static function editorToken(int $accountId, ?AccountAiConnection $record): string
+    {
+        return hash_hmac('sha256', json_encode([
+            'account-ai-editor-v1', $accountId, $record?->proposed_revision, $record?->active_revision,
+            $record?->enabled ?? true, $record?->uses_installation_default ?? true,
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+    }
+
+    private function requireEditorToken(AccountAiConnection $record, ?string $editorToken): void
+    {
+        if ($editorToken === null || ! hash_equals(self::editorToken((int) $record->account_id, $record), $editorToken)) {
+            throw ValidationException::withMessages(['editor_token' => 'The saved connection has changed. Reload before editing it.']);
+        }
     }
 
     private function locked(User $actor, int $accountId, Closure $operation): mixed

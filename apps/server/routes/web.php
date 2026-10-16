@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
+use App\Http\Controllers\AgentAccountAiAssistController;
 use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
@@ -162,6 +163,14 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/ai-assist', [AgentAccountAiAssistController::class, 'show'])
+        ->name('dashboard.account.ai-assist.show');
+    foreach (['propose', 'test', 'discover', 'activate', 'enabled', 'disconnect', 'discard'] as $action) {
+        Route::post('/dashboard/account/ai-assist/'.$action, [AgentAccountAiAssistController::class, $action])
+            ->name('dashboard.account.ai-assist.'.$action);
+    }
+    Route::put('/dashboard/account/ai-assist/limits', [AgentAccountAiAssistController::class, 'limits'])
+        ->name('dashboard.account.ai-assist.limits');
     Route::get('/dashboard/account/team', AgentAccountTeamController::class)
         ->name('dashboard.account.team.show');
     Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])

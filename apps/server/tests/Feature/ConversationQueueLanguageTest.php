@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\ApiToken;
 use App\Models\Article;
 use App\Models\AuditEvent;
@@ -30,6 +31,8 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentReplyTemplate;
+use App\Support\Ai\AccountAiConnectionProbe;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseReplayPreview;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -47,6 +50,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -1565,6 +1569,48 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
     return array_values(array_unique($leaks));
 }
 
+test('account AI connection states render German without exposing the saved credential', function (string $state, string $status, string $label): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Support']);
+    $german = User::factory()->for($account)->create(['account_role' => AccountRole::Admin, 'locale' => 'de']);
+    $english = User::factory()->for($account)->create(['account_role' => AccountRole::Admin, 'locale' => 'en']);
+    $revision = (string) Str::uuid();
+    $policy = app(AccountAiConnectionProbe::class)->policyRevision();
+    $values = [
+        'source' => 'account', 'provider' => 'openai-compatible', 'model' => 'datenpunkt-model:exact',
+        'endpoint' => 'https://datenpunkt.example/v1', 'api_key' => 'saved-datenpunkt-key-never-rendered',
+        'openrouter_provider' => '',
+    ];
+    $candidate = app(AgentCopilotConnectionResolver::class)->candidate((int) $account->id, $revision, $values);
+    expect($candidate)->not->toBeNull();
+    AccountAiConnection::query()->forceCreate([
+        'account_id' => $account->id, 'name' => 'Datenpunkt support model', 'enabled' => true,
+        'uses_installation_default' => false, 'proposed_revision' => $revision, 'proposed_configuration' => $values,
+        'active_revision' => $state === 'stale' ? (string) Str::uuid() : null,
+        'active_configuration' => $state === 'stale' ? [...$values, 'processing_policy_revision' => $policy] : null,
+        'test_status' => $status, 'test_started_at' => $state === 'preparing' ? now() : null,
+        'tested_revision' => $state === 'ready' ? $revision : null,
+        'tested_fingerprint' => $state === 'ready' ? $candidate->revision : null,
+        'tested_policy_revision' => $state === 'ready' ? $policy : null,
+        'tested_at' => $state === 'ready' ? now() : null,
+        'test_failure_code' => $state === 'unavailable' ? 'key_rejected' : null,
+    ]);
+    // Stored synthetic fixtures exercise conditional presentation only. A GET
+    // never calls the provider, even when it displays a successful test receipt.
+    $germanHtml = (string) $this->actingAs($german)->get(route('dashboard.account.ai-assist.show'))
+        ->assertOk()->assertSee('<html lang="de">', false)->assertSee($label)
+        ->assertDontSee('saved-datenpunkt-key-never-rendered')
+        ->assertViewHas('assist', fn (array $assist): bool => $assist['state'] === $state)->getContent();
+    $englishHtml = (string) $this->actingAs($english)->get(route('dashboard.account.ai-assist.show'))->assertOk()->getContent();
+    expect(conversationQueueLanguageEnglishLeaks($germanHtml, $englishHtml))
+        ->toBe([], "AI connection {$state} copy is announced as German but left in English.");
+})->with([
+    'preparing' => ['preparing', 'running', 'Verbindung wird geprüft…'],
+    'ready' => ['ready', 'ready', 'Bereit zum Speichern'],
+    'stale' => ['stale', 'untested', 'Einstellungen geändert'],
+    'unavailable' => ['unavailable', 'unavailable', 'Verbindung nicht verfügbar'],
+    'configured but untested' => ['untested', 'untested', 'Nicht getestet'],
+]);
+
 test('no English is rendered as German on any extracted surface', function (): void {
     // The guard the last several review rounds were doing by hand. Every one of
     // them was the same shape -- copy reaching an extracted page from somewhere
@@ -1738,6 +1784,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.account.ai-assist.show'),
         route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('dashboard.account.team.show'),

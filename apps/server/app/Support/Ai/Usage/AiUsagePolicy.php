@@ -46,15 +46,19 @@ final readonly class AiUsagePolicy
      * Partial account-owned patch; explicit null restores inheritance. This
      * never takes the usage mutex or changes connection/source/enablement.
      */
-    public function setAccountLimits(User $actor, int $accountId, array $overrides): AiUsageLimits
+    public function setAccountLimits(User $actor, int $accountId, array $overrides, ?string $expectedToken = null): AiUsageLimits
     {
         try {
-            return DB::transaction(function () use ($actor, $accountId, $overrides): AiUsageLimits {
+            return DB::transaction(function () use ($actor, $accountId, $overrides, $expectedToken): AiUsageLimits {
                 $account = Account::query()->whereKey($accountId)->lockForUpdate()->first();
                 $freshActor = User::query()->whereKey($actor->id)->lockForUpdate()->first();
                 if ($account === null || $freshActor === null || (int) $freshActor->account_id !== $accountId
                     || ! $freshActor->hasAccountPermission(AccountPermission::ManageAiConnections)) {
                     throw new AuthorizationException;
+                }
+                $stored = DB::table('account_ai_usage_limits')->where('account_id', $accountId)->first();
+                if ($expectedToken !== null && ! hash_equals($this->limitsToken($accountId, $this->storedOverrides($stored)), $expectedToken)) {
+                    throw ValidationException::withMessages(['limits_token' => 'The usage limits changed. Reload before editing.']);
                 }
                 if (array_diff(array_keys($overrides), array_keys(self::CAPS)) !== []) {
                     throw ValidationException::withMessages(['limits' => 'Choose supported usage-limit fields.']);
@@ -69,7 +73,6 @@ final readonly class AiUsagePolicy
                     $changes[$field] = $normalized;
                 }
 
-                $stored = DB::table('account_ai_usage_limits')->where('account_id', $accountId)->first();
                 if ($stored === null) {
                     DB::table('account_ai_usage_limits')->insert([
                         'account_id' => $accountId,
@@ -99,7 +102,52 @@ final readonly class AiUsagePolicy
         }
     }
 
-    private function forAccount(int $accountId): AiUsageLimits
+    /** Numeric account settings, usable before a connection is configured. */
+    public function accountSettings(int $accountId): array
+    {
+        $limits = $this->forAccount($accountId);
+        $installation = $this->installation();
+        $stored = DB::table('account_ai_usage_limits')->where('account_id', $accountId)->first();
+        $overrides = $this->storedOverrides($stored);
+
+        return [
+            'unavailable' => false,
+            'limits_token' => $this->limitsToken($accountId, $overrides),
+            'overrides' => $overrides,
+            'installation' => array_intersect_key($installation, self::CAPS),
+            'effective' => [
+                'daily_requests' => $limits->account['requests'], 'daily_tokens' => $limits->account['tokens'],
+                'concurrency' => $limits->account['concurrency'], 'max_output_tokens' => $limits->maxOutputTokens,
+            ],
+        ];
+    }
+
+    /** Canonical numeric fields only: absent and all-null rows mean inheritance. */
+    private function storedOverrides(?object $stored): array
+    {
+        $overrides = [];
+        foreach (self::CAPS as $field => $maximum) {
+            $value = $stored?->{$field};
+            $overrides[$field] = $value === null ? null : $this->integer($value, 0, $maximum);
+            if ($value !== null && $overrides[$field] === null) {
+                throw new AiNetworkException('usage_policy_unavailable');
+            }
+        }
+
+        return $overrides;
+    }
+
+    private function limitsToken(int $accountId, array $overrides): string
+    {
+        $key = $this->config->get('app.key');
+        if (! is_string($key) || $key === '') {
+            throw new AiNetworkException('usage_policy_unavailable');
+        }
+
+        return hash_hmac('sha256', json_encode(['account-ai-usage-limits-v1', $accountId, $overrides], JSON_THROW_ON_ERROR), $key);
+    }
+
+    public function forAccount(int $accountId): AiUsageLimits
     {
         try {
             if ($accountId <= 0 || ! Account::query()->whereKey($accountId)->exists()) {
