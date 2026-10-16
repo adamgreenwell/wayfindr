@@ -353,31 +353,29 @@ test('Use requires freshly granted insertion authority and the current processor
     $this->actingAs($world['agent'])->getJson(route('dashboard.conversations.'.$world['spec'][2].'.use', $query))->assertStatus($change === 'permission' ? 404 : 409);
 })->with(['reply', 'knowledge', 'ticket'])->with(['permission', 'connection']);
 
-function policyManualAssertVisibleStale(string $html, string $kind): void
+function policyManualAssertWithdrawn(string $html, string $kind): void
 {
+    $task = match ($kind) {
+        'copilot-summary' => 'summary', 'copilot-reply-draft' => 'reply',
+        'copilot-knowledge-suggestion' => 'knowledge', 'copilot-ticket-suggestion' => 'ticket',
+    };
     $document = new DOMDocument;
     $previous = libxml_use_internal_errors(true);
     try {
         $document->loadHTML($html);
         $xpath = new DOMXPath($document);
-        $notice = $xpath->query('//*[@data-'.$kind.'-stale]')->item(0);
-        expect($notice)->not->toBeNull('The visible panel must explain stale source context.')
-            ->and($notice->hasAttribute('hidden'))->toBeFalse('A same-ID source edit must reveal the stale notice.');
-        if ($kind !== 'copilot-summary') {
-            $selector = $kind === 'copilot-knowledge-suggestion' ? 'copilot-knowledge-use' : $kind.'-use';
-            $buttons = $xpath->query('//*[@data-'.$selector.']');
-            expect($buttons->length)->toBeGreaterThan(0);
-            foreach ($buttons as $button) {
-                expect($button->hasAttribute('disabled'))->toBeTrue('Stale visible output cannot offer insertion.');
-            }
-        }
+        $panel = $xpath->query('//*[@data-ai-assist and @data-task="'.$task.'"]')->item(0);
+        expect($panel)->not->toBeNull('The visible task must explain withdrawn source context.')
+            ->and($panel->getAttribute('data-state'))->toBe('unavailable');
+        $output = $xpath->query('.//*[@data-ai-output]', $panel)->item(0);
+        expect(trim($output->textContent))->toBe('', 'Edited or deleted selected sources must withdraw readable output.');
     } finally {
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
     }
 }
 
-test('included source edits are visibly stale even with the same latest message ID', function (string $kind, string $change): void {
+test('included source edits withdraw output even with the same latest message ID', function (string $kind, string $change): void {
     $world = policyManualWorld($kind);
     $latest = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Retained current checkout context.']);
     [$job, $artifact] = policyManualQueue($world);
@@ -390,14 +388,18 @@ test('included source edits are visibly stale even with the same latest message 
         $world['message']->delete();
     }
     $artifact->refresh();
-    expect($artifact->status)->toBe('ready')
-        ->and($world['conversation']->messages()->max('id'))->toBe($latest->id)
-        ->and($artifact->source_last_message_id)->toBe($latest->id)
-        ->and($artifact->isStaleComparedTo($latest->id))->toBeTrue('A same-ID edit/deletion must be caught by the source fingerprint.');
+    expect($world['conversation']->messages()->max('id'))->toBe($latest->id);
+    if ($change === 'during-provider') {
+        expect($artifact->status)->toBe('failed', 'A changed source must fence publication, not publish already obsolete output.')
+            ->and($artifact->source_context_fingerprint)->toBeNull();
+    } else {
+        expect($artifact->status)->toBe('ready')->and($artifact->source_last_message_id)->toBe($latest->id)
+            ->and($artifact->isStaleComparedTo($latest->id))->toBeTrue('A same-ID edit/deletion must be caught by the source fingerprint.');
+    }
     $fragment = $this->actingAs($world['agent'])->get(route('dashboard.conversations.'.$world['spec'][2].'.show', $world['conversation']->support_code))->assertOk();
-    policyManualAssertVisibleStale($fragment->getContent(), $world['spec'][2]);
+    policyManualAssertWithdrawn($fragment->getContent(), $world['spec'][2]);
     $page = $this->get(route('dashboard.conversations.show', $world['conversation']->support_code))->assertOk();
-    policyManualAssertVisibleStale($page->getContent(), $world['spec'][2]);
+    policyManualAssertWithdrawn($page->getContent(), $world['spec'][2]);
 })->with(['summary', 'reply', 'knowledge', 'ticket'])->with(['edit', 'delete', 'during-provider']);
 
 test('unstamped legacy ready artifacts preserve their readable ID based freshness', function (string $kind): void {

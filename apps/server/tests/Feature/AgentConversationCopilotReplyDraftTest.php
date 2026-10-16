@@ -20,11 +20,14 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../Fixtures/copilot-test-clock.php';
 
 uses(RefreshDatabase::class);
 
@@ -50,6 +53,7 @@ function conversationCopilotReplyDraftWorld(): array
 
 function configureConversationCopilotReplyDraft(): void
 {
+    app()->instance(AiUsageClock::class, new CopilotTestUsageClock);
     $settings = app(OperatorSettings::class);
     $settings->set('ai.provider', 'ollama');
     $settings->set('ai.model', 'qwen3.5:4b');
@@ -86,7 +90,7 @@ test('the reply draft affordance and endpoints disappear when the provider is un
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertDontSee('Suggested reply')
-        ->assertDontSee('data-copilot-reply-draft', false);
+        ->assertDontSee('data-task="reply"', false);
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
@@ -117,7 +121,7 @@ test('reply suggestions require current reply permission even when the transcrip
     $this->actingAs($viewer)
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-reply-draft', false);
+        ->assertDontSee('data-task="reply"', false);
 
     $this->actingAs($viewer)
         ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
@@ -139,9 +143,9 @@ test('a configured provider exposes an explicitly suggested on-demand reply draf
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertSee('Suggested reply')
-        ->assertSee('Draft a reply')
+        ->assertSee('Prepare suggestion')
         ->assertSee('You review and send every reply.')
-        ->assertSee('data-copilot-reply-draft', false)
+        ->assertSee('data-task="reply"', false)
         ->assertSee('window.wayfindrConversationReplyDraftTranscriptUpdated', false);
 });
 
@@ -287,8 +291,8 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertSee($draft->draft)
-        ->assertSee('Use suggested draft')
-        ->assertSee('data-copilot-reply-draft-use', false)
+        ->assertSee('Insert suggestion')
+        ->assertSee('data-ai-use', false)
         ->assertSee('body.value.trim() !==', false)
         ->assertSee("body.dispatchEvent(new Event('input'", false)
         ->assertSee('const maximumAttempts = 210;', false);
@@ -363,8 +367,8 @@ test('provider failures are generic in storage logs and the agent surface', func
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('The reply draft could not be generated.')
-        ->assertSee('Try draft again')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
+        ->assertSee('Try again')
         ->assertDontSee('provider-secret');
 });
 
@@ -626,7 +630,7 @@ test('reply-draft rotation cannot replace an in-flight claim used by visitor era
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
-        ->assertStatus(409);
+        ->assertRedirect();
 
     $retained = $artifact->fresh();
     expect($retained->status)->toBe(ConversationCopilotReplyDraft::STATUS_RUNNING)

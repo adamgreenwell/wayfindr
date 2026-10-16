@@ -1,3 +1,6 @@
+@if (isset($copilotPolicy) && ($copilotPolicy->explicit || $copilotSummary === null || $copilotSummary->preparation_fingerprint !== null))
+    @include('agent.conversations.partials.ai-assist-task', ['assistPurpose' => 'conversation_summary'])
+@else
 @php
     $copilotSummaryState = $copilotSummary?->displayStatus();
     $copilotSummaryIsStale = $copilotSummary?->isStaleComparedTo($latestSummarizableMessageId) ?? false;
@@ -69,3 +72,5 @@
 
     <p class="field-help">{{ __('conversations.detail.copilot.privacy') }}</p>
 </section>
+
+@endif

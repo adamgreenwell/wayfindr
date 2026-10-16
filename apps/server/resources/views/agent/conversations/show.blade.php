@@ -1921,6 +1921,7 @@
                                 window.wayfindrConversationSummaryTranscriptUpdated();
                             }
 
+                            if (hasNewMessages) window.dispatchEvent(new CustomEvent('wayfindr:assist-source-changed'));
                             if (hasNewMessages && typeof window.wayfindrConversationReplyDraftTranscriptUpdated === 'function') {
                                 window.wayfindrConversationReplyDraftTranscriptUpdated();
                             }
@@ -2303,6 +2304,7 @@
                     }
 
                     if (event.event === config.messageEventName) {
+                        window.dispatchEvent(new CustomEvent('wayfindr:assist-source-changed'));
                         // Invalidate insertable provider suggestions at event
                         // receipt so a slow or failed transcript fetch cannot
                         // leave stale content available for insertion.
@@ -2372,6 +2374,8 @@
             })();
         </script>
     @endif
+
+    @include('agent.conversations.partials.ai-assist-script')
 
     @if ($copilotTicketSuggestionAvailable)
         @include('agent.conversations.partials.copilot-ticket-suggestion-script')

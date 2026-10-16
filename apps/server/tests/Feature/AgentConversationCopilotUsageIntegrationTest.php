@@ -8,6 +8,7 @@ use App\Jobs\GenerateConversationCopilotSummary;
 use App\Jobs\GenerateConversationCopilotTicketSuggestion;
 use App\Models\Account;
 use App\Models\AccountAiConnection;
+use App\Models\AiAssistPreparationReceipt;
 use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
@@ -371,8 +372,9 @@ test('a stale manual generation retires only its equivalent obsolete receipt bef
     }
     $artifact->forceFill([
         'status' => $state === 'reserved' ? 'pending' : 'running',
-        'requested_at' => now()->subMinutes(6), 'started_at' => now()->subMinutes(6),
+        'requested_at' => app(AiUsageClock::class)->now()->subMinutes(6), 'started_at' => app(AiUsageClock::class)->now()->subMinutes(6),
     ])->save();
+    app(AiUsageClock::class)->time = app(AiUsageClock::class)->now()->addSeconds(361);
     // An independent conversation's current reservation must remain intact.
     $other = $world;
     $other['conversation'] = Conversation::factory()->for($world['conversation']->site)->create();
@@ -384,8 +386,8 @@ test('a stale manual generation retires only its equivalent obsolete receipt bef
     $retired = DB::table('ai_usage_attempts')->where('attempt_id', $oldGeneration)->first();
     $replacement = $artifact->fresh();
     expect($retired->state)->toBe($state === 'dispatched' ? 'unknown' : 'cancelled', 'The stale equivalent receipt must retire without waiting for the configured queue TTL.')
-        ->and($retired->reason)->toBe('superseded')
-        ->and($replacement->generation)->not->toBe($oldGeneration)
+        ->and($retired->reason)->toBe($state === 'dispatched' ? 'dispatch_expired' : 'superseded')
+        ->and($replacement->generation === $oldGeneration)->toBe($state === 'dispatched')
         ->and(DB::table('ai_usage_attempts')->where('attempt_id', $otherArtifact->generation)->first())->toEqual($otherBefore);
     $providerCalls = 0;
     app()->instance(AgentCopilotProvider::class, manualUsageProvider(function () use (&$providerCalls): never {
@@ -395,8 +397,8 @@ test('a stale manual generation retires only its equivalent obsolete receipt bef
     app()->call([$oldJob, 'handle']);
     expect($providerCalls)->toBe(0);
     if ($state === 'dispatched') {
-        expect($replacement->status)->toBe('failed')
-            ->and((bool) $retired->concurrency_held)->toBeTrue('A live obsolete dispatch retains its concurrency lease.')
+        expect($replacement->status)->toBe('running', 'The expired claim remains visible until an admitted replacement; read classifies it unavailable.')
+            ->and((bool) $retired->concurrency_held)->toBeFalse('Only the expired dispatch lease is released; its charge stays conservative.')
             ->and((int) $retired->debited_tokens)->toBe((int) $retired->reserved_tokens)
             ->and(CarbonImmutable::parse($retired->retry_not_before, 'UTC')->greaterThanOrEqualTo(app(AiUsageClock::class)->now()->addSeconds(60)))->toBeTrue();
         app(AiUsageClock::class)->time = app(AiUsageClock::class)->now()->addSeconds(61);
@@ -425,6 +427,7 @@ test('superseded cleanup preserves a newer generation that wins before the ledge
     $old = DB::table('ai_usage_attempts')->sole();
     $artifact->forceFill(['generation' => (string) Str::uuid()])->save();
     $proposed = $artifact->fresh()->load('conversation.site');
+    AiAssistPreparationReceipt::query()->where('generation', $old->attempt_id)->update(['generation' => $proposed->generation]);
     $newer = (string) Str::uuid();
     app(AiUsageClock::class)->during = function () use ($artifact, $newer): void {
         $artifact->forceFill(['generation' => $newer])->save();
@@ -470,7 +473,7 @@ test('a superseded unknown dispatch keeps its original longer cooldown and charg
     $dispatch = $ledger->beginDispatch($connection, $world['spec'][3], $oldGeneration, $claim);
     $ledger->reconcile($oldGeneration, $dispatch->dispatchNonce, null, null, 'provider_failed', 900);
     $old = DB::table('ai_usage_attempts')->sole();
-    $artifact->forceFill(['status' => 'running', 'started_at' => now()->subMinutes(6)])->save();
+    $artifact->forceFill(['status' => 'running', 'started_at' => app(AiUsageClock::class)->now()->subMinutes(6)])->save();
     manualUsagePost($world)->assertRedirect();
     $retired = DB::table('ai_usage_attempts')->sole();
     expect($retired->terminal_at)->toBe($old->terminal_at)
@@ -518,11 +521,16 @@ test('known-unsent supersession preserves an existing retry boundary', function 
     $oldGeneration = $artifact->generation;
     $deadline = app(AiUsageClock::class)->now()->addSeconds(600)->format('Y-m-d H:i:s');
     DB::table('ai_usage_attempts')->where('attempt_id', $oldGeneration)->update(['retry_not_before' => $deadline]);
-    $artifact->forceFill(['requested_at' => now()->subMinutes(6)])->save();
+    $artifact->forceFill(['requested_at' => app(AiUsageClock::class)->now()->subMinutes(6)])->save();
     manualUsagePost($world)->assertRedirect();
     Queue::assertPushed($world['spec'][1], 1);
     $retired = DB::table('ai_usage_attempts')->sole();
-    expect($retired->state)->toBe('cancelled')
-        ->and($retired->retry_not_before)->toBe($deadline)
-        ->and((int) DB::table('ai_usage_periods')->where('scope_key', 'installation')->value('held_requests'))->toBe(0);
+    expect($retired->state)->toBe('reserved', 'A refused early refresh must preserve the existing queued hold.')
+        ->and($retired->retry_not_before)->toBe($deadline);
+    app(AiUsageClock::class)->time = app(AiUsageClock::class)->now()->addSeconds(601);
+    manualUsagePost($world)->assertRedirect();
+    expect(DB::table('ai_usage_attempts')->where('attempt_id', $oldGeneration)->value('state'))->toBe('cancelled')
+        ->and(DB::table('ai_usage_attempts')->where('attempt_id', $oldGeneration)->value('retry_not_before'))->toBe($deadline)
+        ->and((int) DB::table('ai_usage_periods')->where('scope_key', 'installation')->value('held_requests'))->toBe(1);
+    Queue::assertPushed($world['spec'][1], 2);
 });

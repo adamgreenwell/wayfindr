@@ -1,3 +1,6 @@
+@if (isset($copilotPolicy) && ($copilotPolicy->explicit || $copilotReplyDraft === null || $copilotReplyDraft->preparation_fingerprint !== null))
+    @include('agent.conversations.partials.ai-assist-task', ['assistPurpose' => 'conversation_reply_draft'])
+@else
 @php
     $copilotReplyDraftState = $copilotReplyDraft?->displayStatus();
     $copilotReplyDraftIsStale = $copilotReplyDraft?->isStaleComparedTo($latestConversationMessageId) ?? false;
@@ -71,3 +74,5 @@
 
     <p class="field-help">{{ __('conversations.detail.reply_copilot.privacy') }}</p>
 </div>
+
+@endif

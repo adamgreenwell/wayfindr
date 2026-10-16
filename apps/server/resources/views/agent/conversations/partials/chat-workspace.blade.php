@@ -23,6 +23,12 @@
     <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>{{ __('conversations.detail.reply.typing') }}</p>
 </section>
 
+@if (isset($copilotPolicy) && $copilotPolicy->mode === 'manual' && ($copilotSummaryAvailable || $copilotReplyDraftAvailable || $copilotKnowledgeSuggestionAvailable))
+    <div class="section-actions">
+        <button type="button" class="button secondary" data-ai-prepare-all disabled>{{ __('ai_assist.preparation.prepare_all') }}</button>
+    </div>
+@endif
+
 @if ($copilotSummaryAvailable)
     @include('agent.conversations.partials.copilot-summary')
     @include('agent.conversations.partials.copilot-summary-script')
