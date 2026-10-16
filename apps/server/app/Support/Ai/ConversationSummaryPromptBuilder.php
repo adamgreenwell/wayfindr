@@ -34,6 +34,7 @@ final readonly class ConversationSummaryPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
+            sourceRevision: $context->sourceRevision,
             lastMessageId: $context->lastMessageId,
         );
     }

@@ -14,7 +14,7 @@ final readonly class ConversationTicketSuggestionPromptBuilder
         private TicketLabelSuggestionMatcher $labelMatcher,
     ) {}
 
-    public function build(Conversation $conversation): ?ConversationTicketSuggestionContext
+    public function build(Conversation $conversation, bool $matchLabels = true): ?ConversationTicketSuggestionContext
     {
         // An attachment-only follow-up still changes what an agent should
         // review before creating a durable ticket, even though it never enters
@@ -43,8 +43,9 @@ final readonly class ConversationTicketSuggestionPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
+            sourceRevision: $context->sourceRevision,
             lastMessageId: (int) $latestMessageId,
-            labelIds: $this->labelMatcher->match($account, $context->input),
+            labelIds: $matchLabels ? $this->labelMatcher->match($account, $context->input) : [],
         );
     }
 }
