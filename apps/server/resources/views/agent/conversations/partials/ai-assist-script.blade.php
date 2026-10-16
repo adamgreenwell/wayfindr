@@ -125,7 +125,13 @@
     };
     const request = async (panel, action = null) => {
         const entry = data(panel);
-        if (!entry || entry.inFlight || !visible(panel)) { if (entry) entry.readQueued = true; return; }
+        if (!entry || entry.inFlight || !visible(panel)) {
+            if (entry) {
+                if (entry.inFlight && action === 'open' && visible(panel)) entry.openQueued = true;
+                else entry.readQueued = true;
+            }
+            return;
+        }
         const version = sourceVersion;
         entry.inFlight = true;
         try {
@@ -152,6 +158,8 @@
             entry.inFlight = false;
             if (panel.isConnected) render(panel);
             if (entry.readQueued) { entry.readQueued = false; entry.nextRead = 0; }
+            const reopen = entry.openQueued; entry.openQueued = false;
+            if (reopen && visible(panel) && panel.dataset.mode === 'prepare') void request(panel, 'open');
         }
     };
     const read = (panel, force = false) => {
@@ -165,7 +173,7 @@
             if (!data(panel)) {
                 try {
                     states.set(panel, {value:JSON.parse(panel.dataset.initial), copy:JSON.parse(panel.dataset.copy),
-                        nextRead:0, retryUntil:0, polls:0, wasVisible:false, inFlight:false, readQueued:false, using:false});
+                        nextRead:0, retryUntil:0, polls:0, wasVisible:false, inFlight:false, readQueued:false, openQueued:false, using:false});
                     const entry = data(panel); entry.retryUntil = Date.now() + (entry.value.retry_after || 0) * 1000;
                     render(panel);
                     panel.querySelector('[data-ai-form]').addEventListener('submit', event => {

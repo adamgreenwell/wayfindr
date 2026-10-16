@@ -217,3 +217,28 @@ test('fresh Prepare to Manual status preserves deliberate initial controls on la
   assert.equal(posts(f).length,4);
   assert.equal(JSON.parse(posts(f).at(-1).options.body).action,'initial');
 });
+
+test('a visible reopen during an older request preserves its preparation intent', async t => {
+  const f=page(t);
+  const original=f.requests.slice();
+  f.visibility('hidden');
+  f.window.dispatchEvent(new f.window.CustomEvent('wayfindr:assist-source-changed'));
+  f.visibility('visible');
+  original.forEach(r=>respond(r,{...empty,mode:'prepare'}));await flush();
+  assert.equal(posts(f).length,6,'Each reopened workspace task must ensure current input after its older in-flight request settles');
+});
+
+test('a queued visible reopen never prepares after the document becomes hidden', async t => {
+  const f=page(t);const original=f.requests.slice();
+  f.visibility('hidden');f.visibility('visible');f.visibility('hidden');
+  original.forEach(r=>respond(r,{...empty,mode:'prepare'}));await flush();
+  assert.equal(posts(f).length,3,'Queued open intent must not prepare a hidden document');
+});
+
+test('fresh Manual mode cancels an older queued automatic open intent', async t => {
+  const f=page(t);const original=f.requests.slice();
+  f.visibility('hidden');f.visibility('visible');
+  original.forEach(r=>respond(r,{...empty,mode:'manual'}));await flush();
+  assert.equal(posts(f).length,3,'Fresh Manual mode must cancel queued automatic preparation');
+  assert.equal(f.panel('reply').dataset.mode,'manual');
+});
