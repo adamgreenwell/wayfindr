@@ -51,6 +51,10 @@
                 </span>
             </div>
 
+            @if ($assist['active']['legacy'] && $assist['active']['available'])
+                <div class="notice-copy" data-ai-legacy-notice><p>{{ __('ai_assist.connection.legacy_help') }}</p></div>
+            @endif
+
             <form class="section-form ai-assist-form" method="POST" action="{{ route('dashboard.account.ai-assist.propose') }}" autocomplete="off" data-ai-connection-form>
                 @csrf
                 <input type="hidden" name="expected_revision" value="{{ $revision }}">

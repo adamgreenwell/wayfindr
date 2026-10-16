@@ -112,6 +112,29 @@ test('the account AI page is permission scoped and a GET never probes or discove
     $this->actingAs($owner)->get(route('dashboard.account.ai-assist.show'))->assertRedirect(route('login'));
 });
 
+test('the legacy accounting notice disappears after an explicit tested connection selection', function (string $source): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->get(route('dashboard.account.ai-assist.show'))->assertOk()
+        ->assertSee('data-ai-legacy-notice', false)
+        ->assertViewHas('assist', fn (array $assist): bool => $assist['active']['legacy'] && $assist['active']['available']);
+    $this->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput(null, [
+        'source' => $source, 'api_key' => $source === 'account' ? 'account-key-never-in-browser' : '',
+    ]))->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->postJson(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($record->proposed_revision, ['source' => $source, 'api_key' => '']))->assertOk();
+    $this->get(route('dashboard.account.ai-assist.show'))->assertOk()
+        ->assertDontSee('data-ai-legacy-notice', false)
+        ->assertViewHas('assist', fn (array $assist): bool => ! $assist['active']['legacy'] && $assist['active']['available']);
+})->with(['account', 'installation']);
+
+test('a paused legacy default does not claim unmetered support calls remain available', function (): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.enabled'), ['enabled' => 0])->assertOk();
+    $this->get(route('dashboard.account.ai-assist.show'))->assertOk()
+        ->assertDontSee('data-ai-legacy-notice', false)
+        ->assertViewHas('assist', fn (array $assist): bool => $assist['active']['legacy'] && ! $assist['active']['available']);
+});
+
 test('safe presentation never exposes either credential private installation routes or other account consumption', function (): void {
     $owner = accountAiAdminOwner();
     $record = accountAiAdminTestAndActivate($owner);
