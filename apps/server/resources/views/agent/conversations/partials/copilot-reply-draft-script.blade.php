@@ -11,7 +11,7 @@
             const panel = document.querySelector('[data-copilot-reply-draft]');
             const pending = panel?.dataset.state === 'pending';
 
-            if (!panel || (!pending && !force) || (pending && attempts >= maximumAttempts)) {
+            if (!panel || (pending && attempts >= maximumAttempts)) {
                 return;
             }
 
@@ -36,7 +36,7 @@
                     },
                 });
 
-                if (response.status === 204 || response.status === 404) {
+                if ([204, 403, 404, 410].includes(response.status)) {
                     panel.remove();
 
                     return;
@@ -46,7 +46,11 @@
                     throw new Error('Reply draft refresh failed.');
                 }
 
-                panel.outerHTML = await response.text();
+                const markup = await response.text();
+
+                if (panel.isConnected) {
+                    panel.outerHTML = markup;
+                }
             } catch (error) {
                 // Leave the current state in place. A page refresh remains a
                 // safe recovery path for transient polling failures.
@@ -62,62 +66,92 @@
 
                 const currentPanel = document.querySelector('[data-copilot-reply-draft]');
 
-                if (currentPanel?.dataset.state === 'pending') {
-                    window.setTimeout(() => refresh(), 2000);
+                if (currentPanel) {
+                    // Ready output is re-authorized too, so policy edits withdraw it.
+                    window.setTimeout(() => refresh(), currentPanel.dataset.state === 'pending' ? 2000 : 10000);
                 }
             }
         };
 
-        document.addEventListener('click', (event) => {
+        // An input revision also catches typing followed by deleting during fetch.
+        const bodyEdits = new WeakMap();
+        document.addEventListener('input', (event) => {
+            if (event.target instanceof Element && event.target.matches('[data-reply-body]')) {
+                bodyEdits.set(event.target, (bodyEdits.get(event.target) ?? 0) + 1);
+            }
+        });
+
+        document.addEventListener('click', async (event) => {
             const target = event.target instanceof Element ? event.target : null;
             const useButton = target?.closest('[data-copilot-reply-draft-use]');
-
-            if (!useButton) {
+            if (!useButton || useButton.disabled) {
                 return;
             }
-
             const panel = useButton.closest('[data-copilot-reply-draft]');
             const replyShell = useButton.closest('[data-reply-shell]');
             const body = replyShell?.querySelector('[data-reply-body]');
             const status = replyShell?.querySelector('[data-reply-status]');
             const staleNotice = panel?.querySelector('[data-copilot-reply-draft-stale]');
-            const draft = panel?.querySelector('[data-copilot-reply-draft-content]')?.textContent ?? '';
-
-            if (!body || !draft.trim()) {
+            if (!body || !panel?.dataset.useUrl || !panel.dataset.generation) {
                 return;
             }
-
             if (staleNotice && !staleNotice.hidden) {
-                if (status) {
-                    status.textContent = @json(__('conversations.detail.reply_copilot.use_stale'));
-                }
-
+                if (status) status.textContent = @json(__('conversations.detail.reply_copilot.use_stale'));
                 return;
             }
-
             if (body.value.trim() !== '') {
-                if (status) {
-                    status.textContent = @json(__('conversations.detail.reply_copilot.use_blocked'));
-                }
+                if (status) status.textContent = @json(__('conversations.detail.reply_copilot.use_blocked'));
                 body.focus();
-
                 return;
             }
+            const generation = panel.dataset.generation;
+            const policyRevision = panel.dataset.policyRevision;
+            const initialEdits = bodyEdits.get(body) ?? 0;
+            const initialValue = body.value;
+            const query = new URLSearchParams({ generation });
 
-            const templatePicker = replyShell.querySelector('[data-template-picker]');
-
-            if (templatePicker) {
-                templatePicker.value = '';
-                templatePicker.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-
-            body.value = draft.trim();
-            body.setAttribute('lang', '');
-            body.dispatchEvent(new Event('input', { bubbles: true }));
-            body.focus();
-
-            if (status) {
-                status.textContent = @json(__('conversations.detail.reply_copilot.used'));
+            useButton.disabled = true;
+            try {
+                const response = await fetch(`${panel.dataset.useUrl}?${query}`, {
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!response.ok) {
+                    if ([403, 404, 410].includes(response.status)) panel.remove();
+                    throw new Error('Suggestion is no longer available.');
+                }
+                const payload = await response.json();
+                if (!panel.isConnected || document.querySelector('[data-copilot-reply-draft]') !== panel
+                    || panel.dataset.generation !== generation || panel.dataset.policyRevision !== policyRevision
+                    || payload.generation !== generation || (payload.policy_revision ?? '') !== policyRevision
+                    || (staleNotice && !staleNotice.hidden)) {
+                    return;
+                }
+                // Recheck after the server reply; never replace an edit made meanwhile.
+                if ((bodyEdits.get(body) ?? 0) !== initialEdits || body.value !== initialValue || body.value.trim() !== '') {
+                    if (status) status.textContent = @json(__('conversations.detail.reply_copilot.use_blocked'));
+                    body.focus();
+                    return;
+                }
+                if (typeof payload.text !== 'string' || !payload.text.trim()) {
+                    throw new Error('Suggestion is no longer available.');
+                }
+                const templatePicker = replyShell.querySelector('[data-template-picker]');
+                if (templatePicker) {
+                    templatePicker.value = '';
+                    templatePicker.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                body.value = payload.text.trim();
+                body.setAttribute('lang', '');
+                body.dispatchEvent(new Event('input', { bubbles: true }));
+                body.focus();
+                if (status) status.textContent = @json(__('conversations.detail.reply_copilot.used'));
+            } catch (error) {
+                if (staleNotice) staleNotice.hidden = false;
+                if (status) status.textContent = @json(__('conversations.detail.reply_copilot.use_stale'));
+            } finally {
+                if (panel.isConnected && (!staleNotice || staleNotice.hidden)) useButton.disabled = false;
             }
         });
 

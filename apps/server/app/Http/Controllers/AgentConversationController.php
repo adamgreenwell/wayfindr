@@ -22,6 +22,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Automation\AutomationMacroAuthorization;
@@ -103,20 +104,28 @@ class AgentConversationController extends Controller
             ->max('id');
         $latestConversationMessageId = $messages->max('id');
         $copilotConnection = $copilotConnections->forAccount((int) $conversation->site->account_id);
-        $copilotSummaryAvailable = $copilotConnection !== null && $latestSummarizableMessageId !== null;
+        try {
+            $copilotPolicy = app(AiAssistPolicyResolver::class)->forConversation($conversation);
+        } catch (\Throwable) {
+            $copilotPolicy = null;
+        }
+        $policyAllows = fn (string $purpose): bool => $copilotPolicy?->allows($purpose) === true;
+        $policyCurrent = fn (string $purpose, ?string $revision): bool => $policyAllows($purpose)
+            && ($revision === null ? ! $copilotPolicy->explicit : hash_equals($copilotPolicy->revisionFor($purpose), $revision));
+        $copilotSummaryAvailable = $copilotConnection !== null && $policyAllows('conversation_summary') && $latestSummarizableMessageId !== null;
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
             : null;
-        if ($copilotSummary !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotSummary->connection_revision)) {
+        if ($copilotSummary !== null && (! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotSummary->connection_revision) || ! $policyCurrent('conversation_summary', $copilotSummary->policy_revision))) {
             $copilotSummary = null;
         }
-        $copilotReplyDraftAvailable = $copilotConnection !== null
+        $copilotReplyDraftAvailable = $copilotConnection !== null && $policyAllows('conversation_reply_draft')
             && $canReply
             && $latestSummarizableMessageId !== null;
         $copilotReplyDraft = $copilotReplyDraftAvailable
             ? $conversation->copilotReplyDraft()->first()
             : null;
-        if ($copilotReplyDraft !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotReplyDraft->connection_revision)) {
+        if ($copilotReplyDraft !== null && (! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotReplyDraft->connection_revision) || ! $policyCurrent('conversation_reply_draft', $copilotReplyDraft->policy_revision))) {
             $copilotReplyDraft = null;
         }
         $tickets = $canManageTickets
@@ -126,14 +135,14 @@ class AgentConversationController extends Controller
                 ->get()
             : collect();
         $account = $agent->account()->firstOrFail();
-        $copilotKnowledgeSuggestionAvailable = $copilotConnection !== null
+        $copilotKnowledgeSuggestionAvailable = $copilotConnection !== null && $policyAllows('conversation_knowledge_suggestion')
             && $canReply
             && $latestSummarizableMessageId !== null
             && $account->articles()->published()->exists();
         $copilotKnowledgeSuggestion = $copilotKnowledgeSuggestionAvailable
             ? $conversation->copilotKnowledgeSuggestion()->first()
             : null;
-        if ($copilotKnowledgeSuggestion !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotKnowledgeSuggestion->connection_revision)) {
+        if ($copilotKnowledgeSuggestion !== null && (! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotKnowledgeSuggestion->connection_revision) || ! $policyCurrent('conversation_knowledge_suggestion', $copilotKnowledgeSuggestion->policy_revision))) {
             $copilotKnowledgeSuggestion = null;
         }
         $suggestedKnowledgeArticles = $copilotKnowledgeSuggestion?->displayStatus() === ConversationCopilotKnowledgeSuggestion::STATUS_READY
@@ -142,14 +151,14 @@ class AgentConversationController extends Controller
         $ticketLabelOptions = $canManageTickets
             ? $account->ticketLabels()->orderBy('name')->get()
             : collect();
-        $copilotTicketSuggestionAvailable = $copilotConnection !== null
+        $copilotTicketSuggestionAvailable = $copilotConnection !== null && $policyAllows('conversation_ticket_suggestion')
             && $canManageTickets
             && $tickets->isEmpty()
             && $latestSummarizableMessageId !== null;
         $copilotTicketSuggestion = $copilotTicketSuggestionAvailable
             ? $conversation->copilotTicketSuggestion()->first()
             : null;
-        if ($copilotTicketSuggestion !== null && ! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotTicketSuggestion->connection_revision)) {
+        if ($copilotTicketSuggestion !== null && (! $copilotConnections->isCurrent((int) $conversation->site->account_id, $copilotTicketSuggestion->connection_revision) || ! $policyCurrent('conversation_ticket_suggestion', $copilotTicketSuggestion->policy_revision))) {
             $copilotTicketSuggestion = null;
         }
         $suggestedTicketLabels = $copilotTicketSuggestion?->displayStatus() === ConversationCopilotTicketSuggestion::STATUS_READY

@@ -11,6 +11,7 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,6 +27,8 @@ use Throwable;
 final class GenerateConversationCopilotSummary implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    private const PURPOSE = 'conversation_summary';
 
     public int $tries = 1;
 
@@ -62,6 +65,13 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
         $usageArtifact = $summary;
         $result = null;
+
+        if (! $this->policyIsCurrent($summary)) {
+            $this->cancelBeforeProvider($summary);
+            $this->recordFailure($summary, 'policy_changed');
+
+            return;
+        }
 
         $conversation = $summary->conversation;
         $requester = $summary->requestedBy;
@@ -135,6 +145,13 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 return;
             }
 
+            if (! $this->policyIsCurrent($summary)) {
+                $this->cancelBeforeProvider($summary);
+                $this->recordFailure($summary, 'policy_changed');
+
+                return;
+            }
+            $sourceFingerprint = AiSupportUsage::sourceFingerprint($summary, $context->prompt);
             $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($summary)));
             $output = mb_substr(trim($result->text), 0, 4_000);
 
@@ -145,7 +162,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 return;
             }
 
-            app(AiSupportUsage::class)->publish($summary, $result, fn () => DB::transaction(function () use ($context, $output, $result, $summary, $connections): void {
+            app(AiSupportUsage::class)->publish($summary, $result, fn () => DB::transaction(function () use ($context, $output, $result, $summary, $connections, $sourceFingerprint): void {
                 $accountId = (int) $summary->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -160,6 +177,12 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                     ->first();
 
                 if ($summary === null) {
+                    return;
+                }
+
+                if (! $this->policyIsCurrent($summary)) {
+                    $this->recordFailure($summary, 'policy_changed');
+
                     return;
                 }
 
@@ -184,6 +207,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                     ->update([
                         'status' => ConversationCopilotSummary::STATUS_READY,
                         'summary' => $output,
+                        'source_context_fingerprint' => $sourceFingerprint,
                         'source_last_message_id' => $context->lastMessageId,
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
@@ -247,6 +271,15 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
         return $summary !== null
             && $summary->generation === $this->generation
             && $summary->status === ConversationCopilotSummary::STATUS_PENDING;
+    }
+
+    private function policyIsCurrent(ConversationCopilotSummary $summary): bool
+    {
+        try {
+            return $summary->conversation !== null && app(AiAssistPolicyResolver::class)->isCurrent((int) $summary->conversation->site_id, self::PURPOSE, $summary->policy_revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function cancelBeforeProvider(ConversationCopilotSummary $summary): void

@@ -13,6 +13,7 @@ use App\Support\Ai\ConversationKnowledgeSuggestionOutputParser;
 use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,6 +29,8 @@ use Throwable;
 final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    private const PURPOSE = 'conversation_knowledge_suggestion';
 
     public int $tries = 1;
 
@@ -64,6 +67,13 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
 
         $usageArtifact = $suggestion;
         $result = null;
+
+        if (! $this->policyIsCurrent($suggestion)) {
+            $this->cancelBeforeProvider($suggestion);
+            $this->recordFailure($suggestion, 'policy_changed');
+
+            return;
+        }
 
         $conversation = $suggestion->conversation;
         $requester = $suggestion->requestedBy;
@@ -123,6 +133,13 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 return;
             }
 
+            if (! $this->policyIsCurrent($suggestion)) {
+                $this->cancelBeforeProvider($suggestion);
+                $this->recordFailure($suggestion, 'policy_changed');
+
+                return;
+            }
+
             $account = $conversation->site?->account;
 
             if ($account === null || ! $account->articles()->published()->exists()) {
@@ -140,6 +157,13 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 return;
             }
 
+            if (! $this->policyIsCurrent($suggestion)) {
+                $this->cancelBeforeProvider($suggestion);
+                $this->recordFailure($suggestion, 'policy_changed');
+
+                return;
+            }
+            $sourceFingerprint = AiSupportUsage::sourceFingerprint($suggestion, $context->prompt);
             $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($suggestion)));
             $output = $outputParser->parse($result->text);
 
@@ -150,7 +174,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                 return;
             }
 
-            app(AiSupportUsage::class)->publish($usageArtifact, $result, function () use ($articleMatcher, $connections, $context, $output, $result): void {
+            app(AiSupportUsage::class)->publish($usageArtifact, $result, function () use ($articleMatcher, $connections, $context, $output, $result, $sourceFingerprint): void {
                 // Re-read authority and publication state after the provider call.
                 // The external wait must never become an authorization cache.
                 $suggestion = $this->runningSuggestion();
@@ -167,6 +191,12 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                     return;
                 }
 
+                if (! $this->policyIsCurrent($suggestion)) {
+                    $this->recordFailure($suggestion, 'policy_changed');
+
+                    return;
+                }
+
                 $account = $conversation->site?->account;
 
                 if ($account === null || ! $account->articles()->published()->exists()) {
@@ -177,7 +207,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
 
                 $articleIds = $articleMatcher->match($account, $output->queries);
 
-                DB::transaction(function () use ($articleIds, $context, $result, $suggestion, $connections): void {
+                DB::transaction(function () use ($articleIds, $context, $result, $suggestion, $connections, $sourceFingerprint): void {
                     $accountId = (int) $suggestion->conversation->site->account_id;
                     if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                         return;
@@ -192,6 +222,12 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                         ->first();
 
                     if ($suggestion === null) {
+                        return;
+                    }
+
+                    if (! $this->policyIsCurrent($suggestion)) {
+                        $this->recordFailure($suggestion, 'policy_changed');
+
                         return;
                     }
 
@@ -222,6 +258,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
                         ->update([
                             'status' => ConversationCopilotKnowledgeSuggestion::STATUS_READY,
                             'article_ids' => $articleIds,
+                            'source_context_fingerprint' => $sourceFingerprint,
                             'source_last_message_id' => $context->lastMessageId,
                             'source_message_count' => $context->messageCount,
                             'provider' => mb_substr($result->provider, 0, 64),
@@ -295,6 +332,15 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
         return $suggestion !== null
             && $suggestion->generation === $this->generation
             && $suggestion->status === ConversationCopilotKnowledgeSuggestion::STATUS_PENDING;
+    }
+
+    private function policyIsCurrent(ConversationCopilotKnowledgeSuggestion $suggestion): bool
+    {
+        try {
+            return $suggestion->conversation !== null && app(AiAssistPolicyResolver::class)->isCurrent((int) $suggestion->conversation->site_id, self::PURPOSE, $suggestion->policy_revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function cancelBeforeProvider(ConversationCopilotKnowledgeSuggestion $suggestion): void

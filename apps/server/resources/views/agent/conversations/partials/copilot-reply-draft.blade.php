@@ -8,6 +8,9 @@
     class="reply-template-preview"
     data-copilot-reply-draft
     data-state="{{ $copilotReplyDraftState ?? 'empty' }}"
+    data-generation="{{ $copilotReplyDraft?->generation }}"
+    data-policy-revision="{{ $copilotReplyDraft?->policy_revision }}"
+    data-use-url="{{ route('dashboard.conversations.copilot-reply-draft.use', ['supportCode' => $conversation->support_code]) }}"
     data-status-url="{{ route('dashboard.conversations.copilot-reply-draft.show', $copilotReplyDraftRoute) }}"
 >
     <div class="reply-copilot-heading">

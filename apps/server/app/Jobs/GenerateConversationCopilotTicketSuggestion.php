@@ -13,6 +13,7 @@ use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationTicketSuggestionOutputParser;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,6 +29,8 @@ use Throwable;
 final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    private const PURPOSE = 'conversation_ticket_suggestion';
 
     public int $tries = 1;
 
@@ -63,6 +66,13 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
         $usageArtifact = $suggestion;
         $result = null;
+
+        if (! $this->policyIsCurrent($suggestion)) {
+            $this->cancelBeforeProvider($suggestion);
+            $this->recordFailure($suggestion, 'policy_changed');
+
+            return;
+        }
 
         $conversation = $suggestion->conversation;
         $requester = $suggestion->requestedBy;
@@ -141,6 +151,13 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 return;
             }
 
+            if (! $this->policyIsCurrent($suggestion)) {
+                $this->cancelBeforeProvider($suggestion);
+                $this->recordFailure($suggestion, 'policy_changed');
+
+                return;
+            }
+            $sourceFingerprint = AiSupportUsage::sourceFingerprint($suggestion, $context->prompt);
             $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($suggestion)));
             $output = $outputParser->parse(mb_substr(trim($result->text), 0, 8_000));
 
@@ -163,7 +180,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                     ->values()
                     ->all();
 
-            app(AiSupportUsage::class)->publish($suggestion, $result, fn () => DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion, $connections): void {
+            app(AiSupportUsage::class)->publish($suggestion, $result, fn () => DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion, $connections, $sourceFingerprint): void {
                 $accountId = (int) $suggestion->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -178,6 +195,12 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                     ->first();
 
                 if ($suggestion === null) {
+                    return;
+                }
+
+                if (! $this->policyIsCurrent($suggestion)) {
+                    $this->recordFailure($suggestion, 'policy_changed');
+
                     return;
                 }
 
@@ -210,6 +233,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                         'title' => $output->title,
                         'priority' => $output->priority,
                         'label_ids' => $labelIds,
+                        'source_context_fingerprint' => $sourceFingerprint,
                         'source_last_message_id' => $context->lastMessageId,
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
@@ -272,6 +296,15 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
         return $suggestion !== null
             && $suggestion->generation === $this->generation
             && $suggestion->status === ConversationCopilotTicketSuggestion::STATUS_PENDING;
+    }
+
+    private function policyIsCurrent(ConversationCopilotTicketSuggestion $suggestion): bool
+    {
+        try {
+            return $suggestion->conversation !== null && app(AiAssistPolicyResolver::class)->isCurrent((int) $suggestion->conversation->site_id, self::PURPOSE, $suggestion->policy_revision);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function cancelBeforeProvider(ConversationCopilotTicketSuggestion $suggestion): void

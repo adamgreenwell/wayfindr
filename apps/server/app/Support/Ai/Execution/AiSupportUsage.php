@@ -17,6 +17,7 @@ use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Ai\Usage\AiUsagePolicy;
@@ -46,6 +47,7 @@ final readonly class AiSupportUsage
         if ($connection === null || $fresh->connection_revision !== $connection->revision) {
             throw new AiNetworkException('connection_changed');
         }
+        $this->assertPolicy($fresh);
         if ($this->connections->isLegacyInstallationDefault($connection)) {
             return;
         }
@@ -112,6 +114,8 @@ final readonly class AiSupportUsage
             throw new AiNetworkException('connection_changed');
         }
 
+        $this->assertPolicy($fresh);
+
         return $this->connections->isLegacyInstallationDefault($connection) ? null : $this->context($fresh);
     }
 
@@ -145,10 +149,43 @@ final readonly class AiSupportUsage
         return $context->prompt;
     }
 
-    public static function sanitizedInput(#[SensitiveParameter] AgentCopilotPrompt $prompt): string
+    public static function sanitizedInput(#[SensitiveParameter] AgentCopilotPrompt $prompt, ?int $contextLimit = null): string
     {
-        return mb_substr(app(AiContextSanitizer::class)->sanitize($prompt->input), 0,
-            max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000)));
+        $maximum = max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000));
+        $limit = min($maximum, $contextLimit ?? $prompt->execution?->maxContextCharacters ?? $maximum);
+
+        return mb_substr(app(AiContextSanitizer::class)->sanitize($prompt->input), 0, $limit);
+    }
+
+    /** Opaque source proof; never stores a transcript, prompt, or article text. */
+    public static function sourceFingerprint(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ?AgentCopilotPrompt $prompt = null): string
+    {
+        $policy = app(AiAssistPolicyResolver::class)->forConversation($artifact->conversation);
+        $prompt ??= self::promptFor($artifact);
+
+        return hash_hmac('sha256', json_encode([
+            $prompt->purpose, $prompt->instructions, self::sanitizedInput($prompt, $policy->maxContextCharacters),
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+    }
+
+    /** Called only after policy commit; retain dispatched charges and leases. */
+    public function cancelPolicyReservations(int $accountId): void
+    {
+        try {
+            $attempts = DB::table('ai_usage_attempts')->where('account_id', $accountId)->where('state', 'reserved')
+                ->whereIn('purpose', array_keys(self::ARTIFACTS))->get(['attempt_id', 'purpose']);
+            foreach ($attempts as $attempt) {
+                $class = self::ARTIFACTS[$attempt->purpose];
+                $artifact = $class::query()->with('conversation.site')->where('generation', $attempt->attempt_id)->first();
+                if ($artifact === null || ! app(AiAssistPolicyResolver::class)->isCurrent(
+                    (int) $artifact->conversation?->site_id, $attempt->purpose, $artifact->policy_revision)) {
+                    $this->ledger->cancelReserved($attempt->attempt_id, 'access_revoked');
+                }
+            }
+        } catch (Throwable) {
+            // Policy revisions already forbid I/O. Expiry recovers an uncertain
+            // unsent hold; cleanup failure must not misreport a committed edit.
+        }
     }
 
     public static function workFingerprint(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ResolvedAgentCopilotConnection $connection): string
@@ -172,9 +209,18 @@ final readonly class AiSupportUsage
     private static function fingerprintForPrompt(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] AgentCopilotPrompt $prompt): string
     {
         return hash_hmac('sha256', json_encode([
-            'manual-v1', $artifact::class, $artifact->conversation_id,
-            $connection->revision, $prompt->instructions, self::sanitizedInput($prompt),
+            'manual-v2', $artifact::class, $artifact->conversation_id, $artifact->policy_revision,
+            $connection->revision, self::sourceFingerprint($artifact, $prompt),
         ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+    }
+
+    private function assertPolicy(#[SensitiveParameter] Model $artifact): void
+    {
+        $purpose = array_search($artifact::class, self::ARTIFACTS, true);
+        if ($purpose === false || ! app(AiAssistPolicyResolver::class)->isCurrent(
+            (int) $artifact->conversation?->site_id, $purpose, $artifact->policy_revision)) {
+            throw new AiNetworkException('access_revoked');
+        }
     }
 
     private function fresh(#[SensitiveParameter] Model $artifact): Model
@@ -196,6 +242,8 @@ final readonly class AiSupportUsage
 
         return new AiExecutionContext('support', (int) $artifact->conversation?->site?->account_id,
             (int) $artifact->requested_by_id, $purpose, $artifact->generation,
-            (int) $artifact->getKey(), $artifact->generation);
+            (int) $artifact->getKey(), $artifact->generation,
+            policyRevision: $artifact->policy_revision,
+            maxContextCharacters: app(AiAssistPolicyResolver::class)->forConversation($artifact->conversation)->maxContextCharacters);
     }
 }
