@@ -76,6 +76,15 @@ transaction. Invalid or discarded output keeps its failure cooldown; settlement
 failure rolls publication back. This transaction has one attempt and never
 retries a provider call. Ledger reconciliation remains idempotent.
 
+When an explicit manual retry replaces a stale artifact generation, the ledger
+retires only its latest equivalent obsolete receipt after checking that the new
+generation still owns the artifact. Known-unsent reservations/claims release their
+holds and permit that requested replacement, preserving any existing retry boundary.
+Dispatched work keeps its conservative debit, unexpired concurrency lease and
+failure/provider cooldown; targeted cleanup releases an expired lease without
+waiting for the global sweep. A newer generation or non-equivalent receipt is
+never retired by that retry. Late reconciliation stays bound to the old receipt.
+
 Explicit Refresh/Try again may replace a named terminal receipt. Concurrent
 replacements coalesce; failed/expired/unknown work requires at least a 60-second
 database-enforced cooldown. This is a backend seam for #1170, whose generation

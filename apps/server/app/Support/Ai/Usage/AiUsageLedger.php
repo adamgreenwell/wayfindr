@@ -30,7 +30,7 @@ final readonly class AiUsageLedger
         'cancelled', 'queue_failed', 'provider_failed', 'connection_changed',
         'access_revoked', 'invalid_output', 'reservation_expired', 'claim_expired',
         'dispatch_expired', 'account_deleted', 'usage_request_limit', 'usage_token_limit',
-        'usage_concurrency_limit', 'usage_output_limit',
+        'usage_concurrency_limit', 'usage_output_limit', 'superseded',
     ];
 
     public function __construct(private AiUsagePolicy $policy, private AiUsageClock $clock) {}
@@ -246,6 +246,51 @@ final readonly class AiUsageLedger
         $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($reason): void {
             if ($attempt->state === 'reserved') {
                 $this->finishUnsent($attempt, $now, $reason);
+            }
+        });
+    }
+
+    /** Retire only the latest equivalent receipt proven obsolete by its artifact. */
+    public function retireSuperseded(
+        #[SensitiveParameter] ResolvedAgentCopilotConnection $connection,
+        #[SensitiveParameter] string $purpose,
+        #[SensitiveParameter] string $attemptId,
+        #[SensitiveParameter] string $workFingerprint,
+        #[SensitiveParameter] Closure $isSuperseded,
+    ): void {
+        $this->identity($connection, $purpose, $attemptId);
+        if (preg_match('/\A[a-f0-9]{64}\z/', $workFingerprint) !== 1) {
+            throw new AiNetworkException('usage_invalid_request');
+        }
+        $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($connection, $purpose, $workFingerprint, $isSuperseded): void {
+            $this->matches($attempt, $connection, $purpose);
+            $latest = DB::table('ai_usage_attempts')->where('account_id', $connection->accountId)
+                ->where('source', $connection->source)->where('connection_revision', $connection->revision)
+                ->where('purpose', $purpose)->where('work_fingerprint', $workFingerprint)->orderByDesc('id')->value('attempt_id');
+            if ($account === null || $attempt->work_fingerprint !== $workFingerprint
+                || $latest !== $attempt->attempt_id || ! $isSuperseded()) {
+                return;
+            }
+            if (in_array($attempt->state, ['reserved', 'claimed'], true)) {
+                $retryNotBefore = $attempt->retry_not_before;
+                $this->finishUnsent($attempt, $now, 'superseded');
+                // No request crossed the dispatch boundary. A user's explicit
+                // stale retry can replace it now, preserving an existing wait.
+                $this->update($attempt, ['retry_not_before' => $retryNotBefore ?? $this->stamp($now)], $now);
+
+                return;
+            }
+            if (in_array($attempt->state, ['dispatched', 'unknown'], true)) {
+                if ($this->time($attempt->dispatch_expires_at)->lessThanOrEqualTo($now)) {
+                    $this->releaseConcurrency($attempt);
+                }
+                if ($attempt->state === 'dispatched') {
+                    $terminal = $attempt->terminal_at === null ? $now : $this->time($attempt->terminal_at);
+                    $this->update($attempt, [
+                        'state' => 'unknown', 'reason' => 'superseded', 'terminal_at' => $this->stamp($terminal),
+                        'retry_not_before' => $this->retryDeadline($attempt, $terminal, null),
+                    ], $now);
+                }
             }
         });
     }

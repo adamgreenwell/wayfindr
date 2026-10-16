@@ -60,6 +60,22 @@ final readonly class AiSupportUsage
         $latest = DB::table('ai_usage_attempts')->where('account_id', $connection->accountId)
             ->where('source', $connection->source)->where('connection_revision', $connection->revision)
             ->where('purpose', $context->purpose)->where('work_fingerprint', $fingerprint)->orderByDesc('id')->first();
+        if ($latest !== null && $latest->attempt_id !== $context->attemptId) {
+            // The controller may replace a five-minute-old generation while
+            // its queue/claim/dispatch receipt is still live. Retire only that
+            // equivalent work, after proving this new generation still owns it.
+            $this->ledger->retireSuperseded($connection, $context->purpose, $latest->attempt_id, $fingerprint,
+                function () use ($fresh, $connection, $context, $fingerprint, $latest): bool {
+                    $current = $fresh::query()->with('conversation.site')->whereKey($fresh->getKey())
+                        ->where('generation', $context->generation)->lockForUpdate()->first();
+                    if ($current === null || $current->generation === $latest->attempt_id) {
+                        return false;
+                    }
+                    $this->authority->assertAllowed($connection, $context, true);
+
+                    return hash_equals($fingerprint, self::workFingerprint($current, $connection));
+                });
+        }
         $receipt = $this->ledger->reserve($connection, $context->purpose, $context->attemptId, $bound, $output,
             $fingerprint, $context->actorId, $latest?->attempt_id,
             fn () => $this->authority->assertAllowed($connection, $context, true));
