@@ -65,7 +65,12 @@ opens. It recomputes identity under installation → Account → requesting User
 Conversation → artifact locks. Equivalent authorized viewers admit one generation,
 one usage reservation and one ID-only queued job. The reservation and artifact
 commit together; enqueue failure cancels only the captured unsent generation.
-GET rendering, status and Use never reserve or enqueue.
+GET rendering, status and Use never reserve or enqueue. Status reads allow
+60 requests per viewer/task per minute and 180 across the viewer's tasks, leaving
+room for three tasks polling at two seconds. Use has a separate 60/minute bucket,
+shared with native Use routes. Ensure has its own 60/minute bucket, isolated from
+ordinary support/export throttles; native Manual generation retains its existing
+6/minute bucket. HTTP query limits are separate from provider usage reservations.
 
 `ai_assist_preparation_receipts` keeps one mutable metadata row per account,
 conversation, task and fingerprint until conversation erasure. It contains no

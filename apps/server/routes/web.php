@@ -448,11 +448,11 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
     Route::get('/dashboard/conversations/{supportCode}/assist/{task}/use', [AgentConversationAiPreparationController::class, 'use'])
-        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->name('dashboard.conversations.assist.use');
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1,ai-assist-use:')->name('dashboard.conversations.assist.use');
     Route::get('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'show'])
-        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->name('dashboard.conversations.assist.show');
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:ai-assist-status')->name('dashboard.conversations.assist.show');
     Route::post('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'store'])
-        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1')->name('dashboard.conversations.assist.store');
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1,ai-assist-ensure:')->name('dashboard.conversations.assist.store');
 
     Route::get('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'show'])
         ->middleware('throttle:60,1,ai-assist-read:')
