@@ -183,8 +183,9 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   keys, preserving active accounting across deletion. No prompt, output,
   credential, model endpoint or visitor-record copy is stored here.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
-  conversation, one row per conversation, overwritten by each refresh instead
-  of kept as history. Every worker write is guarded on `generation`, so a
+  conversation, one current row per conversation. Shared preparation retains at
+  most one preceding authorized Ready snapshot during a pending/running refresh;
+  terminal completion or failure clears it. Every worker write is guarded on `generation`, so a
   superseded job cannot publish its answer, and `source_last_message_id` is
   what lets a ready summary be marked stale once the conversation moves on. No
   prompt text is stored; `requested_by_id` is kept so the worker can re-derive
@@ -198,6 +199,19 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   output independently of connection tests; source proofs bind insertion to the
   bounded scrubbed context actually used. Old unstamped output cannot be inserted.
   Opaque internal proofs are excluded from visitor-export payloads.
+
+- `ai_assist_preparation_receipts`: one mutable metadata receipt per account,
+  conversation, task and opaque fingerprint. The unique identity coalesces
+  equivalent viewers and retains failed/insufficient/expired results through
+  input A→B→A cycles. A database-clock retry deadline and current generation
+  allow deliberate bounded retries. No prompt or output is stored. Conversation
+  and account deletion cascade; the requesting agent becomes null on deletion.
+  Visitor export includes generation/lifecycle metadata, retry deadlines and staff
+  roles, omitting the internal fingerprint. All four copilot stores add
+  `preparation_fingerprint`, a bounded opaque `preparation_source_snapshot`,
+  `previous_output` and `retry_not_before`; these contain no copied prompt.
+  Export applies the same business-field rules to the current and prior slots;
+  erasure removes both. See [the lifecycle](ai-assist-preparation-lifecycle.md).
 
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
