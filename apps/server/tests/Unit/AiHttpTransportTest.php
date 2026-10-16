@@ -158,7 +158,9 @@ test('AI transport default admission denies before DNS and terminal dispatch', f
 });
 
 test('AI transport pins an admitted request and owns every transport option', function (): void {
-    $clock = hrtime(true) / 1e9;
+    // Policy also checks the real monotonic deadline. Start on an integer
+    // tick so injected elapsed time is exact without leaving that time domain.
+    $clock = ceil(hrtime(true) / 1e9);
     $events = [];
     $request = null;
     $options = null;
