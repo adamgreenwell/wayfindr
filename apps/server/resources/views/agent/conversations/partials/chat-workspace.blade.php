@@ -1,3 +1,5 @@
+<div class="conversation-assist-workspace" data-reply-shell>
+<div class="conversation-assist-main">
 <section class="section" aria-labelledby="messages-heading">
     <div class="section-header">
         <h2 id="messages-heading">{{ __('conversations.detail.headings.messages') }}</h2>
@@ -23,17 +25,6 @@
     <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>{{ __('conversations.detail.reply.typing') }}</p>
 </section>
 
-@if (isset($copilotPolicy) && $copilotPolicy->mode === 'manual' && ($copilotSummaryAvailable || $copilotReplyDraftAvailable || $copilotKnowledgeSuggestionAvailable))
-    <div class="section-actions">
-        <button type="button" class="button secondary" data-ai-prepare-all disabled>{{ __('ai_assist.preparation.prepare_all') }}</button>
-    </div>
-@endif
-
-@if ($copilotSummaryAvailable)
-    @include('agent.conversations.partials.copilot-summary')
-    @include('agent.conversations.partials.copilot-summary-script')
-@endif
-
 @if ($canReply)
 <section class="section" aria-labelledby="reply-heading">
     <div class="section-header">
@@ -47,7 +38,7 @@
         $selectedReplyTemplate = is_string($oldReplyTemplate) ? $oldReplyTemplate : '';
     @endphp
 
-    <div class="reply-workspace" data-reply-shell>
+    <div class="reply-workspace">
         <form
             class="section-form reply-form"
             method="POST"
@@ -159,15 +150,11 @@
         </form>
 
         <aside class="reply-assist" aria-labelledby="reply-assist-heading">
-            <h3 id="reply-assist-heading">{{ __('conversations.detail.reply.assist') }}</h3>
+            <h3 id="reply-assist-heading">{{ __('conversations.detail.reply.helper') }}</h3>
 
-            @if ($copilotReplyDraftAvailable)
-                @include('agent.conversations.partials.copilot-reply-draft')
-            @endif
 
-            @if ($copilotKnowledgeSuggestionAvailable)
-                @include('agent.conversations.partials.copilot-knowledge-suggestion')
-            @endif
+
+
 
             <div class="reply-template-preview" data-template-preview>
                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
@@ -199,10 +186,21 @@
 </section>
 
 @include('agent.partials.reply-composer-script')
+
+
+@endif
+
+</div>
+@include('agent.conversations.partials.assist-rail')
+</div>
+@include('agent.conversations.partials.assist-rail-styles')
+@include('agent.conversations.partials.assist-rail-script')
+@if ($copilotSummaryAvailable)
+    @include('agent.conversations.partials.copilot-summary-script')
+@endif
 @if ($copilotReplyDraftAvailable)
     @include('agent.conversations.partials.copilot-reply-draft-script')
 @endif
 @if ($copilotKnowledgeSuggestionAvailable)
     @include('agent.conversations.partials.copilot-knowledge-suggestion-script')
-@endif
 @endif

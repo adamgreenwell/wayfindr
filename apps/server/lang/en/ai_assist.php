@@ -223,4 +223,20 @@ return [
         'reused' => 'Existing AI preparation reused.',
         'unavailable' => 'AI preparation is unavailable.',
     ],
+    'rail' => [
+        'heading' => 'Assist',
+        'private' => 'Private suggestions. You review and send.',
+        'sections' => [
+            'summary' => 'Catch up',
+            'reply' => 'Suggested reply',
+            'knowledge' => 'Sources',
+        ],
+        'disabled' => 'Disabled',
+        'unavailable' => 'Unavailable',
+        'disabled_help' => 'Assistance is off for this task. You can keep replying normally.',
+        'coverage' => 'Each suggestion shows how much conversation text it covers.',
+        'source_limit' => 'Articles are guidance from this account, not conversation facts.',
+        'data_use' => 'Data use',
+        'insert' => 'Insert into reply',
+    ],
 ];

@@ -17,7 +17,7 @@
     data-status-url="{{ route('dashboard.conversations.copilot-knowledge-suggestion.show', $copilotKnowledgeRoute) }}"
 >
     <div class="reply-copilot-heading">
-        <strong>{{ __('conversations.detail.knowledge_copilot.heading') }}</strong>
+        <strong>{{ $assistHeading ?? __('conversations.detail.knowledge_copilot.heading') }}</strong>
         <span class="readiness-status" data-status="manual">{{ __('conversations.detail.knowledge_copilot.suggested') }}</span>
     </div>
 
