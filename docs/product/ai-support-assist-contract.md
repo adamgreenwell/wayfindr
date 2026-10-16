@@ -259,7 +259,10 @@ The first explicit policy save initializes existing sites as Manual; sites added
 later start Off until deliberately enabled. An explicit enabled policy requires
 a usable saved tested connection. A separate policy revision invalidates work
 without invalidating the connection's successful synthetic test. Prepare remains
-configuration until the conversation ensure integration in #1170.
+configuration until the conversation ensure integration in #1170. The first
+[preparation foundation](../architecture/ai-assist-preparation-lifecycle.md) defines
+read-only work identities and terminal-cache classification; it adds no automatic
+trigger, reservation or provider call.
 
 Native account/site policy forms bind both the reviewed policy revisions and the
 active processor snapshot. Changing the saved processor requires a fresh review;
