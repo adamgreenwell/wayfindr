@@ -41,10 +41,10 @@ final readonly class AgentAccountAiAssistPolicyController
             $siteInput = $sites ? $this->siteScopeInput($request) : null;
             if ($siteInput !== null && $siteInput['native']) {
                 if (! $siteInput['complete'] || $siteInput['overflow']) {
-                    throw ValidationException::withMessages(['site_selections_complete' => 'Choose fewer sites and review the settings.']);
+                    throw ValidationException::withMessages(['site_selections_complete' => __('ai_assist.validation.bulk_incomplete')]);
                 }
                 if (! $siteInput['valid']) {
-                    throw ValidationException::withMessages(['site_scope' => 'The selected site authority is invalid.']);
+                    throw ValidationException::withMessages(['site_scope' => __('ai_assist.validation.site_scope')]);
                 }
             }
             $rules = ['mode' => ['required', Rule::in(['off', 'manual', 'prepare'])],
