@@ -10,11 +10,56 @@ unnecessary.
 ## The flow
 
 1. **Sign in → Forgotten your password?**
-2. An email arrives with a signed link that expires.
+2. An email arrives with a single-use reset link that expires.
 3. The link sets a new password, and signs that account out everywhere else.
 
 Delivery uses this install's configured mail, so it honours the operator mail
 settings and shows up in the same readiness checks.
+
+## Keeping reset credentials out of request URLs
+
+New recovery notifications use a fixed `/reset-password` page. The credential
+and email are carried in its browser fragment, with this exact contract:
+
+```text
+/reset-password#v=1&token={64 lowercase hexadecimal characters}&email={RFC3986-encoded email}
+```
+
+Fields appear in that order. Duplicate or unknown fields, another version,
+noncanonical encoding, malformed escapes, and query/path credential fallbacks
+are refused. The decoded email must fit the reset form's email validation and
+254-character limit. JavaScript is required for this flow; the form starts
+disabled when the script is unavailable.
+
+If a reset link is opened in an already-signed-in browser, this fixed landing
+still renders so it can clear the fragment. It refuses submission and asks the
+person to sign out, then reopen the original link. Authenticated visitors do
+not receive password-reset authority.
+
+The first-party script clears the fragment before decoding it, keeps the token
+only in page memory, and submits it in a same-origin JSON **POST body** to the
+existing `/reset-password` endpoint, with the normal session and CSRF protection.
+It does not put the token in a hidden field, browser storage, history, console
+output, redirect, or request URL. Refreshing the cleared page loses this memory;
+reopen the original protected link if necessary. The landing and reset responses
+use `no-store` and `no-referrer`. A fragment does not travel in the HTTP request
+URL, but the original link remains a credential wherever it is delivered or
+retained. Operators still need to exclude request bodies and other credentials
+from their logging and monitoring.
+
+An exact JSON success confirms completion and offers the normal sign-in link.
+A known validation refusal lets the person correct the form deliberately, with
+the same token still in memory. An expired CSRF form, redirect, malformed
+response, timeout, or other ambiguous outcome disables submission without an
+automatic retry. If completion is uncertain, try signing in or request a new
+link. Passwords and reset tokens are never flashed into the session on a
+validation error.
+
+Legacy `/reset-password/{token}?email=…` links remain supported for compatibility;
+they still carry their credential in the request URL. Custom notification URL
+callbacks remain supported and own their destination's privacy behavior. The
+fragment flow retains the existing broker's expiry and single-use behavior,
+password rules, session revocation, and audit events.
 
 ## What it deliberately will not tell you
 
