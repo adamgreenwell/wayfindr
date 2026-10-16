@@ -4,8 +4,12 @@
         // Provider brands are interface data, not translated catalogue copy.
         $providerLabels = ['anthropic' => 'Anthropic', 'gemini' => 'Gemini', 'ollama' => 'Ollama', 'openai' => 'OpenAI', 'openai-compatible' => 'OpenAI-compatible', 'openrouter' => 'OpenRouter'];
         $source = old('source', $form['source']);
-        $state = session()->hasOldInput() ? 'stale' : $assist['state'];
-        $canSave = $assist['test']['can_save'] && ! session()->hasOldInput();
+        $hasConnectionOldInput = array_intersect(array_keys(session()->getOldInput()), [
+            'source', 'name', 'provider', 'model', 'endpoint', 'openrouter_provider',
+            'expected_revision', 'editor_token', 'clear_api_key',
+        ]) !== [];
+        $state = $hasConnectionOldInput ? 'stale' : $assist['state'];
+        $canSave = $assist['test']['can_save'] && ! $hasConnectionOldInput;
         $revision = old('expected_revision', $form['expected_revision']);
         $editorToken = old('editor_token', $form['editor_token']);
         $failure = $assist['test']['failure_code'] ?? 'provider_unavailable';

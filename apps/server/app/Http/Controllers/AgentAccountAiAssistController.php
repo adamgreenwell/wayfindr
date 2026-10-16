@@ -214,8 +214,17 @@ final class AgentAccountAiAssistController extends Controller
             // fields and revision together, never mix old fields with a new ID.
             return redirect()->route('dashboard.account.ai-assist.show')->withErrors($errors)->withInput([]);
         }
-        $old = $request->only(['source', 'name', 'provider', 'model', 'openrouter_provider', 'expected_revision', 'editor_token', 'clear_api_key',
-            'daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens']);
+        $connectionEdit = $request->routeIs(
+            'dashboard.account.ai-assist.propose', 'dashboard.account.ai-assist.test',
+            'dashboard.account.ai-assist.discover', 'dashboard.account.ai-assist.activate',
+        );
+        // Errors belong to the submitted form. Limits cannot replace connection
+        // fields, and management actions preserve only their reviewed authority.
+        $old = $request->only(match (true) {
+            $connectionEdit => ['source', 'name', 'provider', 'model', 'openrouter_provider', 'expected_revision', 'editor_token', 'clear_api_key'],
+            $request->routeIs('dashboard.account.ai-assist.limits') => ['daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens'],
+            default => ['expected_revision', 'editor_token'],
+        });
         foreach ($old as $field => $value) {
             $valid = match ($field) {
                 'clear_api_key' => in_array($value, [null, true, false, 0, 1, '0', '1'], true),
@@ -230,7 +239,7 @@ final class AgentAccountAiAssistController extends Controller
             }
         }
         // Never flash a credential, including one embedded in an invalid URL.
-        if ($this->safeEndpoint($request->input('endpoint'))) {
+        if ($connectionEdit && $request->has('endpoint') && $this->safeEndpoint($request->input('endpoint'))) {
             $old['endpoint'] = $request->input('endpoint');
         }
 

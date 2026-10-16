@@ -231,11 +231,21 @@ test('a genuine stale editor retains its old revision and cannot overwrite the c
     $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.propose'), accountAiAdminInput())->assertOk();
     $record = AccountAiConnection::query()->sole();
     $oldRevision = $record->proposed_revision;
+    $oldToken = accountAiAdminEditorToken();
     $this->postJson(route('dashboard.account.ai-assist.propose'), accountAiAdminInput($oldRevision, ['model' => 'other-editor-model', 'api_key' => '']))->assertOk();
-    $this->post(route('dashboard.account.ai-assist.propose'), accountAiAdminInput($oldRevision, ['model' => 'stale-editor-model', 'api_key' => '']))
+    $this->post(route('dashboard.account.ai-assist.propose'), accountAiAdminInput($oldRevision, ['editor_token' => $oldToken, 'model' => 'stale-editor-model', 'api_key' => '']))
         ->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors('expected_revision');
     expect(session('_old_input.expected_revision'))->toBe($oldRevision, 'Stale fields must not gain a newer proposal revision implicitly.')
+        ->and(session('_old_input.editor_token'))->toBe($oldToken)
         ->and($record->fresh()->proposedConfiguration()['model'])->toBe('other-editor-model');
+    $response = $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+    $xpath = new DOMXPath($document);
+    expect($xpath->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('stale')
+        ->and($xpath->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))
+        ->toBeTrue('Genuine stale connection edits must still withhold Save authority.')
+        ->and($xpath->query('//input[@name="editor_token"]')->item(0)->getAttribute('value'))->toBe($oldToken);
 });
 
 test('clearing a proposed key and discarding that draft preserves the active credential', function (): void {
@@ -317,6 +327,52 @@ test('new account usage limits can inherit narrow or explicitly prohibit before 
         'daily_requests' => 101, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null,
     ])->assertUnprocessable()->assertJsonValidationErrors('daily_requests');
 });
+
+test('usage limit errors preserve the connection state endpoint and native actions', function (string $state, string $limitField, int $invalidValue): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $record->forceFill(match ($state) {
+        'preparing' => ['test_status' => 'running', 'test_started_at' => now()],
+        'stale' => ['tested_policy_revision' => 'superseded-policy'],
+        'unavailable' => ['test_status' => 'unavailable', 'test_failure_code' => 'key_rejected'],
+        'untested' => ['test_status' => 'untested', 'tested_revision' => null, 'tested_fingerprint' => null, 'tested_policy_revision' => null, 'tested_at' => null],
+        default => [],
+    })->save();
+    $revision = $record->proposed_revision;
+    $editorToken = accountAiAdminEditorToken();
+    $limits = ['daily_requests' => null, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null, $limitField => $invalidValue];
+    // Extra connection fields on this route are not connection edits either.
+    $this->put(route('dashboard.account.ai-assist.limits'), [
+        ...accountAiAdminInput($revision, ['model' => 'irrelevant-limit-field', 'endpoint' => '']), ...$limits,
+    ])->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors($limitField);
+    $oldInput = session('_old_input', []);
+    $response = $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+    $xpath = new DOMXPath($document);
+    expect($xpath->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))
+        ->toBe($state, 'A usage-limit validation error must preserve the independently tested connection state.')
+        ->and($xpath->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))
+        ->toBe($state !== 'ready', 'Limit errors must not remove Save authority from a Ready connection.')
+        ->and($xpath->query('//button[@data-ai-action="test"]')->item(0)->hasAttribute('disabled'))
+        ->toBe($state === 'preparing', 'Limit errors must not unlock duplicate testing of a Preparing connection.')
+        ->and($xpath->query('//input[@name="endpoint"]')->item(0)->getAttribute('value'))
+        ->toBe('https://models.example.test/v1', 'A separate form error must never blank the saved draft endpoint.')
+        ->and($xpath->query('//input[@name="model"]')->item(0)->getAttribute('value'))->toBe('support-model:exact')
+        ->and($xpath->query('//input[@name="expected_revision"]')->item(0)->getAttribute('value'))->toBe($revision)
+        ->and($xpath->query('//input[@name="editor_token"]')->item(0)->getAttribute('value'))->toBe($editorToken)
+        ->and($oldInput)->toBe($limits)
+        ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(1)
+        ->and(app(AiModelDiscovery::class)->calls)->toBe(0);
+    if ($state === 'ready') {
+        $this->postJson(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($revision, ['api_key' => '']))
+            ->assertOk()->assertJsonPath('assist.active.configured', true);
+        expect($record->fresh()->active_revision)->toBe($revision)
+            ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(1);
+    }
+})->with(['ready', 'preparing', 'stale', 'unavailable', 'untested'])
+    ->with(['operator ceiling' => ['daily_requests', 101], 'field validation' => ['daily_tokens', -1]]);
 
 test('malformed array fields never survive validation into old input or break the redirected page', function (string $field): void {
     $owner = accountAiAdminOwner();
