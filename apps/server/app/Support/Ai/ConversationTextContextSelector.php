@@ -45,6 +45,7 @@ final readonly class ConversationTextContextSelector
             : null;
         $subject = $this->fitSubject($subject, $limit);
         $selected = [];
+        $selectedRevisions = [];
         $lastMessageId = null;
         $truncated = false;
 
@@ -68,11 +69,17 @@ final readonly class ConversationTextContextSelector
                 'role' => $this->role($message),
                 'body' => mb_substr($sanitizedBody, 0, self::MAX_MESSAGE_CHARACTERS),
             ];
+            // Server-only source identity also detects changes hidden by redaction.
+            // It never joins the provider input or retains a message body.
+            $revision = hash_hmac('sha256', json_encode([
+                (int) $message->id, $entry['role'], hash_hmac('sha256', $rawBody, (string) config('app.key')),
+            ], JSON_THROW_ON_ERROR), (string) config('app.key'));
             $candidate = [$entry, ...$selected];
             $candidateWasTruncated = $truncated || $entryWasTruncated;
 
             if (mb_strlen($this->encode($subject, $candidate, $candidateWasTruncated)) <= $limit) {
                 $selected = $candidate;
+                $selectedRevisions = [$revision, ...$selectedRevisions];
                 $truncated = $candidateWasTruncated;
 
                 continue;
@@ -83,6 +90,7 @@ final readonly class ConversationTextContextSelector
             if ($selected === []) {
                 $entry['body'] = $this->fitNewestBody($subject, $entry, $limit);
                 $selected = [$entry];
+                $selectedRevisions = [$revision];
             }
 
             break;
@@ -96,6 +104,10 @@ final readonly class ConversationTextContextSelector
             input: $this->encode($subject, $selected, $truncated),
             messageCount: count($selected),
             lastMessageId: $lastMessageId,
+            sourceRevision: hash_hmac('sha256', json_encode([
+                'conversation-text-v1', (int) $conversation->id,
+                hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')), $selectedRevisions,
+            ], JSON_THROW_ON_ERROR), (string) config('app.key')),
         );
     }
 

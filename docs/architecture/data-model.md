@@ -4,7 +4,15 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 
 ## Core Records
 
-- `accounts`: tenant boundary for a support team.
+- `accounts`: tenant boundary for a support team. Nullable server-managed
+  `ai_article_catalogue_revision` and `ai_ticket_label_catalogue_revision` UUIDs
+  identify local AI catalogue dependencies without scanning source content on
+  repeated opens. PostgreSQL/SQLite triggers rotate them within relevant source
+  writes, including bulk SQL, and invalidate both owners on a move. NULL denotes
+  the existing-content revision zero; migration performs no backfill. Knowledge
+  adds an indexed latest-publication watermark for scheduled eligibility. Tokens
+  contain no transcript, visitor link, credentials or output and disappear with
+  the account. See [AI preparation](ai-assist-preparation-lifecycle.md).
 - `users`: Laravel users attached to one account with a starter `account_role` of `owner`, `admin`, or `agent`, optional `platform_role` instance authority, and an explicit online/away routing status for new automatic assignments.
 - `owner_bootstrap_requests`: the locked singleton for headless fresh-instance
   owner bootstrap, holding the stable request hash, original completed receipt,
