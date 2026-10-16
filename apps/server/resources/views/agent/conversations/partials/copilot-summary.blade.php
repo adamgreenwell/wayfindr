@@ -16,7 +16,7 @@
     data-status-url="{{ route('dashboard.conversations.copilot-summary.show', $copilotSummaryRoute) }}"
 >
     <div class="section-header">
-        <h2 id="copilot-summary-heading">{{ $assistHeading ?? __('conversations.detail.copilot.heading') }}</h2>
+        <h2 id="copilot-summary-heading">{{ $assistHeading ?? __('ai_assist.rail.sections.summary') }}</h2>
         <span class="readiness-status" data-status="manual">{{ __('conversations.detail.copilot.suggested') }}</span>
     </div>
 

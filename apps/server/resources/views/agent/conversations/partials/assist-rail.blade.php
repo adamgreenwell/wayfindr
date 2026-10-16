@@ -5,7 +5,7 @@
             <span class="lede">{{ __('ai_assist.rail.private') }}</span>
         </summary>
         <div class="conversation-assist-content">
-            @if ($copilotPolicy->mode === 'manual' && ($copilotSummaryAvailable || $copilotReplyDraftAvailable || $copilotKnowledgeSuggestionAvailable))
+            @if ($copilotPolicy?->mode === 'manual' && ($copilotSummaryAvailable || $copilotReplyDraftAvailable || $copilotKnowledgeSuggestionAvailable))
                 <div class="conversation-assist-actions">
                     <button type="button" class="button secondary" data-ai-prepare-all disabled>{{ __('ai_assist.preparation.prepare_all') }}</button>
                 </div>
@@ -18,11 +18,11 @@
                 <div class="conversation-assist-section" data-assist-section="{{ $railTask }}">
                     @if ($railSection['available'])
                         @include('agent.conversations.partials.'.$railSection['view'], [
-                            'assistInRail' => true, 'assistHeading' => __('ai_assist.rail.sections.'.$railTask),
+                            'assistHeading' => __('ai_assist.rail.sections.'.$railTask),
                         ])
                     @else
                         <h3>{{ __('ai_assist.rail.sections.'.$railTask) }}</h3>
-                        @if ($copilotPolicy->mode === 'off' || ($railTask !== 'summary' && ! $canReply))
+                        @if ($copilotPolicy?->mode === 'off' || ($railTask !== 'summary' && ! $canReply))
                             <p class="lede">{{ __('ai_assist.rail.disabled') }}</p>
                             <p class="field-help">{{ __('ai_assist.rail.disabled_help') }}</p>
                         @else

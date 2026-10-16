@@ -17,7 +17,7 @@
     data-status-url="{{ route('dashboard.conversations.copilot-reply-draft.show', $copilotReplyDraftRoute) }}"
 >
     <div class="reply-copilot-heading">
-        <strong>{{ $assistHeading ?? __('conversations.detail.reply_copilot.heading') }}</strong>
+        <strong>{{ $assistHeading ?? __('ai_assist.rail.sections.reply') }}</strong>
         <span class="readiness-status" data-status="manual">{{ __('conversations.detail.reply_copilot.suggested') }}</span>
     </div>
 

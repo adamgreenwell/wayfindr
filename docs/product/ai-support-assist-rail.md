@@ -28,6 +28,11 @@ copy remain available; account article guidance is distinguished from conversati
 facts. Off or unavailable tasks have compact resting sections without processing
 controls. Reply helpers remain part of ordinary composing.
 
+Policy lookup failures leave the ordinary conversation usable and show unavailable
+rail sections without processing controls. Native legacy/prepared status fragments
+derive the same rail labels, so polling preserves the selected headings and
+insertion copy in every dashboard locale.
+
 ## Remaining #1171 work
 
 This foundation does not close the issue. The remaining integration includes:

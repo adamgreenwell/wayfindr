@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\AccountAiAssistPolicy;
+use App\Models\SiteAiAssistPolicy;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +13,15 @@ use Illuminate\Support\Facades\Queue;
 
 require_once __DIR__.'/../Fixtures/ai-assist-preparation.php';
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $copy = getenv('ASSIST_RAIL_VIEW_COPY');
+    if (is_string($copy) && $copy !== '') {
+        $finder = app('view')->getFinder();
+        $finder->prependLocation($copy);
+        $finder->flush();
+    }
+});
 afterEach(fn () => Carbon::setTestNow());
 
 function assistRailDocument(string $html): DOMXPath
@@ -82,3 +94,47 @@ test('a Ready rail suggestion remains separate from the restored human draft and
         ->and(DB::table('ai_usage_attempts')->count())->toBe($before);
     Http::assertNothingSent();
 });
+
+test('policy lookup failure keeps ordinary replying available with an unavailable rail', function (): void {
+    $world = assistPreparationWorld(mode: 'prepare');
+    $lookups = 0;
+    app()->beforeResolving(AiAssistPolicyResolver::class, function () use (&$lookups): void {
+        $lookups++;
+        throw new RuntimeException('Synthetic policy lookup failure.');
+    });
+    $this->withExceptionHandling();
+    $response = $this->actingAs($world['owner'])->get(route('dashboard.conversations.show', $world['conversation']->support_code));
+    expect($response->status())->toBe(200, 'Policy failure must keep ordinary replying available.');
+    expect($lookups)->toBeGreaterThan(0, 'The policy failure must actually be injected.');
+    $xpath = assistRailDocument($response->getContent());
+    expect($xpath->query('//form[@data-reply-composer]//button[@data-reply-submit and not(@disabled)]')->length)->toBe(1)
+        ->and($xpath->query('//details[@data-assist-rail]//*[@data-ai-prepare or @data-ai-prepare-all or @data-ai-use]')->length)->toBe(0)
+        ->and(DB::table('ai_usage_attempts')->count())->toBe(0);
+    $response->assertSee(__('ai_assist.rail.unavailable'))->assertDontSee('Synthetic policy lookup failure.');
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('native status polling keeps selected rail headings and action copy in legacy and prepared views', function (bool $legacy, string $locale): void {
+    $world = assistPreparationWorld(mode: 'manual');
+    $world['owner']->forceFill(['locale' => $locale])->save();
+    if ($legacy) {
+        SiteAiAssistPolicy::query()->where('account_id', $world['account']->id)->delete();
+        AccountAiAssistPolicy::query()->whereKey($world['account']->id)->delete();
+    }
+    foreach (['summary' => 'copilot-summary', 'knowledge' => 'copilot-knowledge-suggestion', 'reply' => 'copilot-reply-draft'] as $task => $route) {
+        $response = $this->actingAs($world['owner'])->get(route('dashboard.conversations.'.$route.'.show', $world['conversation']->support_code))->assertOk();
+        $xpath = assistRailDocument($response->getContent());
+        $heading = $xpath->query('(//h2 | //h3 | //div[@class="reply-copilot-heading"]/strong)[1]')->item(0);
+        expect($heading)->not->toBeNull()
+            ->and(trim($heading->textContent))->toBe(__('ai_assist.rail.sections.'.$task), 'Rail heading changed during native polling.');
+        if (! $legacy && $task === 'reply') {
+            $panel = $xpath->query('//*[@data-ai-assist]')->item(0);
+            $copy = json_decode($panel->getAttribute('data-copy'), true, flags: JSON_THROW_ON_ERROR);
+            expect($copy['use'])->toBe(__('ai_assist.rail.insert'), 'Rail insertion label changed during native polling.');
+        }
+    }
+    expect(DB::table('ai_usage_attempts')->count())->toBe(0);
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+})->with(['legacy' => true, 'prepared' => false])->with(['en', 'de', 'it']);
