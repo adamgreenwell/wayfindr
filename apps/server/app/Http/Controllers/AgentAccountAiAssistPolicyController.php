@@ -46,14 +46,27 @@ final readonly class AgentAccountAiAssistPolicyController
             if ($sites) {
                 $rules += ['account_policy_token' => ['required', 'regex:/\A[a-f0-9]{64}\z/'],
                     'site_ids' => ['required', 'array', 'min:1', 'max:1000'], 'site_ids.*' => ['integer', 'min:1'],
-                    'site_tokens' => ['required', 'array', 'max:1000'], 'site_tokens.*' => ['string', 'regex:/\A[a-f0-9]{64}\z/']];
+                    'site_tokens' => ['required', 'array', 'max:1000'], 'site_tokens.*' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/']];
             } else {
                 $rules['policy_token'] = ['required', 'regex:/\A[a-f0-9]{64}\z/'];
             }
             // Wildcard rule names are validation paths, never input names.
             // Request::only would synthesize literal '*' children in these arrays.
             $fields = array_filter(array_keys($rules), fn (string $field): bool => ! str_contains($field, '.'));
-            $values = Validator::make($request->only($fields), $rules)->validate();
+            $input = $request->only($fields);
+            if ($sites) {
+                // Native forms carry every rendered hidden token. Validate the
+                // bounded mutation scope first, then require only its tokens.
+                $scope = Validator::make($request->only('site_ids'), [
+                    'site_ids' => $rules['site_ids'], 'site_ids.*' => $rules['site_ids.*'],
+                ])->validate();
+                $tokens = $request->input('site_tokens');
+                $input['site_tokens'] = [];
+                foreach ($scope['site_ids'] as $id) {
+                    $input['site_tokens'][(int) $id] = is_array($tokens) ? ($tokens[(int) $id] ?? null) : null;
+                }
+            }
+            $values = Validator::make($input, $rules)->validate();
             foreach ([...AiAssistPolicyResolver::TASKS, 'article_context_consent'] as $task) {
                 $values[$task] = $request->boolean($task);
             }
