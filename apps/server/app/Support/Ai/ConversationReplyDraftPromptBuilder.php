@@ -39,6 +39,7 @@ final readonly class ConversationReplyDraftPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
+            sourceRevision: $context->sourceRevision,
             lastMessageId: (int) $latestMessageId,
         );
     }

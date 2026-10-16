@@ -43,6 +43,7 @@ final readonly class ConversationTicketSuggestionPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
+            sourceRevision: $context->sourceRevision,
             lastMessageId: (int) $latestMessageId,
             labelIds: $this->labelMatcher->match($account, $context->input),
         );
