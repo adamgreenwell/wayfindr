@@ -261,6 +261,13 @@ a usable saved tested connection. A separate policy revision invalidates work
 without invalidating the connection's successful synthetic test. Prepare remains
 configuration until the conversation ensure integration in #1170.
 
+Native account/site policy forms bind both the reviewed policy revisions and the
+active processor snapshot. Changing the saved processor requires a fresh review;
+unrelated proposed edits or synthetic tests leave active policy-save authority
+unchanged. A bulk save validates at most 1,000 selected sites and their tokens,
+not every site in the account; unselected tokens do not block that selection.
+Native forms send only checked-site tokens and refuse truncated input with
+smaller-batch guidance; the API/service bound remains 1,000 selected sites.
 
 For **Our connection**, **Clear key** edits only the proposed credential; the
 active saved connection remains in use until a valid tested proposal is saved.

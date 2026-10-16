@@ -55,7 +55,15 @@ Prepare. Newly enabled sites offer Prepare as the deliberate enablement choice.
 Account policy changes require current access to the affected account site set.
 Site or bulk changes require Manage AI connections and current support access to
 each selected site, checked again under the account lock. Stale forms cannot
-replace a newer policy. A scoped manager sees only sites they may administer;
+replace a newer policy. Native account and site forms bind the reviewed policy
+revisions and active processor snapshot; a changed saved processor requires a
+fresh review before saving. Unrelated connection draft edits and synthetic tests
+leave that active authority unchanged. Bulk saves accept up to 1,000 selected
+sites; larger accounts can update smaller selections. Unselected site tokens do
+not participate in the save. Native forms send only checked-site tokens;
+truncated input is refused with guidance to select a smaller batch, while the
+API/service bound remains 1,000 selected sites. A scoped manager sees only sites
+they may administer;
 shared connection activation and re-enablement also recheck the current enabled
 site set. Disable/disconnect remains available.
 
