@@ -7,6 +7,7 @@ namespace App\Support\Ai;
 use App\Models\Account;
 use App\Models\AccountAiConnection;
 use App\Support\Settings\OperatorSettings;
+use SensitiveParameter;
 use Throwable;
 
 /** Resolve afresh for each boundary. Never change installation-global config. */
@@ -62,6 +63,38 @@ final readonly class AgentCopilotConnectionResolver
         $current = $this->forAccount($accountId);
 
         return $current !== null && hash_equals($current->revision, $revision);
+    }
+
+    /** Only the pre-existing unselected operator path retains legacy SDK I/O. */
+    public function isLegacyInstallationDefault(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection): bool
+    {
+        if ($connection->source !== AccountAiConnection::INSTALLATION || ! Account::query()->whereKey($connection->accountId)->exists()) {
+            return false;
+        }
+        $record = AccountAiConnection::query()->where('account_id', $connection->accountId)->first();
+        if ($record !== null && (! $record->enabled || $record->active_revision !== null || ! $record->uses_installation_default)) {
+            return false;
+        }
+        $current = $this->installation($connection->accountId);
+
+        return $current !== null && hash_equals($current->revision, $connection->revision);
+    }
+
+    /** Discovery may precede model selection; every other required field remains valid. */
+    public function candidateForDiscovery(int $accountId, #[SensitiveParameter] string $revision, #[SensitiveParameter] array $values): ?ResolvedAgentCopilotConnection
+    {
+        if (($values['source'] ?? null) !== AccountAiConnection::ACCOUNT || trim((string) ($values['model'] ?? '')) !== '') {
+            return $this->candidate($accountId, $revision, $values);
+        }
+        $assessment = $this->configuration->assessValues((string) ($values['provider'] ?? ''), 'discovery-placeholder',
+            (string) ($values['endpoint'] ?? ''), (string) ($values['api_key'] ?? '') !== '', (string) ($values['openrouter_provider'] ?? ''));
+        if ($assessment['status'] !== 'ready') {
+            return null;
+        }
+
+        return new ResolvedAgentCopilotConnection($accountId, AccountAiConnection::ACCOUNT,
+            $this->fingerprint($values, $revision.':'.$this->probe->policyRevision()),
+            $assessment['provider'], '', $assessment['endpoint'], $assessment['openrouter_provider'], (string) ($values['api_key'] ?? ''));
     }
 
     public function isCurrentConnection(ResolvedAgentCopilotConnection $connection): bool

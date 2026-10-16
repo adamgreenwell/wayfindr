@@ -14,6 +14,7 @@ use App\Policies\SitePolicy;
 use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AccountAiConnections;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,7 +33,7 @@ function accountAiPermissionLifecycle(): array
             return 'ai-permission-synthetic-policy';
         }
 
-        public function probe(ResolvedAgentCopilotConnection $connection): AgentCopilotResult
+        public function probe(ResolvedAgentCopilotConnection $connection, ?AiExecutionContext $context = null): AgentCopilotResult
         {
             $this->calls++;
 

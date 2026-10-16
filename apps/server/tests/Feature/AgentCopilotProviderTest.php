@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
 use App\Models\OperatorSetting;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotSdkFactory;
@@ -201,9 +203,11 @@ test('resolved installation calls isolate credentials model endpoint and upstrea
         'openrouter' => ['provider' => 'wrong-upstream'],
     ]);
     $before = config('ai');
+    $a = Account::factory()->create();
+    $b = Account::factory()->create();
     $connections = [
-        new ResolvedAgentCopilotConnection(12, 'installation', str_repeat('a', 64), 'openrouter', 'model-a', 'https://a.example.test/v1', 'amazon-bedrock', 'key-a'),
-        new ResolvedAgentCopilotConnection(24, 'installation', str_repeat('b', 64), 'openrouter', 'model-b', 'https://b.example.test/v1', 'anthropic', 'key-b'),
+        [$a->id, 'model-a', 'https://a.example.test/v1', 'amazon-bedrock', 'key-a'],
+        [$b->id, 'model-b', 'https://b.example.test/v1', 'anthropic', 'key-b'],
     ];
     Http::preventStrayRequests();
     Http::fake(fn (Request $request) => Http::response([
@@ -215,7 +219,12 @@ test('resolved installation calls isolate credentials model endpoint and upstrea
     $provider = app(AgentCopilotProvider::class);
     $prompt = new AgentCopilotPrompt('draft_reply', 'Draft for review.', 'Synthetic question.');
 
-    foreach ([$connections[0], $connections[1], $connections[0]] as $connection) {
+    foreach ([$connections[0], $connections[1], $connections[0]] as [$accountId, $model, $endpoint, $upstream, $key]) {
+        $settings = app(OperatorSettings::class);
+        foreach (['provider' => 'openrouter', 'model' => $model, 'endpoint' => $endpoint, 'openrouter_provider' => $upstream, 'api_key' => $key] as $field => $value) {
+            $settings->set('ai.'.$field, $value);
+        }
+        $connection = app(AgentCopilotConnectionResolver::class)->installation($accountId);
         $result = $provider->generate($prompt->withConnection($connection));
 
         expect($result->provider)->toBe('openrouter/'.$connection->openRouterProvider)
@@ -261,7 +270,7 @@ test('account owned outbound calls remain blocked even when sdk or http fakes ar
     $prompt = (new AgentCopilotPrompt('configuration_probe', 'Synthetic probe.', 'No customer data.'))->withConnection($connection);
 
     expect(fn () => app(AgentCopilotProvider::class)->generate($prompt))
-        ->toThrow(AgentCopilotUnavailable::class, 'account_endpoint_policy_pending');
+        ->toThrow(AgentCopilotUnavailable::class, 'execution_context_required');
 
     Http::assertNothingSent();
     CopilotAgent::assertNeverPrompted();

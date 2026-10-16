@@ -10,7 +10,7 @@ use App\Support\Ai\Network\AiModelDiscovery;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Network\AiOutboundAdmission;
 use App\Support\Ai\Network\AiProviderRoutes;
-use App\Support\Ai\Network\UnavailableAiModelDiscovery;
+use App\Support\Ai\Network\GuardedAiModelDiscovery;
 use App\Support\Ai\Network\UnavailableAiOutboundAdmission;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -55,7 +55,7 @@ test('default discovery and usage admission cannot authorize a new account call'
     Http::preventStrayRequests();
     $connection = aiRouteContractConnection('openai');
     expect(app(AiOutboundAdmission::class))->toBeInstanceOf(UnavailableAiOutboundAdmission::class)
-        ->and(app(AiModelDiscovery::class))->toBeInstanceOf(UnavailableAiModelDiscovery::class)
+        ->and(app(AiModelDiscovery::class))->toBeInstanceOf(GuardedAiModelDiscovery::class)
         ->and(app(AiModelDiscovery::class)->discover($connection))->toBeNull();
     try {
         app(AiOutboundAdmission::class)->assertAllowed($connection, 'synthetic_probe', 'synthetic-attempt');
