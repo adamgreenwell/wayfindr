@@ -4,14 +4,31 @@
         // Provider brands are interface data, not translated catalogue copy.
         $providerLabels = ['anthropic' => 'Anthropic', 'gemini' => 'Gemini', 'ollama' => 'Ollama', 'openai' => 'OpenAI', 'openai-compatible' => 'OpenAI-compatible', 'openrouter' => 'OpenRouter'];
         $source = old('source', $form['source']);
-        $hasConnectionOldInput = array_intersect(array_keys(session()->getOldInput()), [
-            'source', 'name', 'provider', 'model', 'endpoint', 'openrouter_provider',
-            'expected_revision', 'editor_token', 'clear_api_key',
-        ]) !== [];
-        $state = $hasConnectionOldInput ? 'stale' : $assist['state'];
-        $canSave = $assist['test']['can_save'] && ! $hasConnectionOldInput;
+        $oldInput = session()->getOldInput();
         $revision = old('expected_revision', $form['expected_revision']);
         $editorToken = old('editor_token', $form['editor_token']);
+        // Names are cosmetic. Compare processing values using the lifecycle's
+        // normalization, while keeping reviewed null revisions and tokens exact.
+        $processingChanged = $source !== $form['source']
+            || $revision !== $form['expected_revision'] || $editorToken !== $form['editor_token'];
+        $normalizeProcessing = [
+            'provider' => static fn ($value): string => strtolower(trim((string) $value)),
+            'model' => static fn ($value): string => trim((string) $value),
+            'endpoint' => static fn ($value): string => rtrim(trim((string) $value), '/'),
+            'openrouter_provider' => static fn ($value): string => strtolower(trim((string) $value)),
+        ];
+        if ($source === 'account') {
+            foreach ($normalizeProcessing as $field => $normalize) {
+                if (array_key_exists($field, $oldInput) && $normalize($oldInput[$field]) !== $normalize($form[$field])) {
+                    $processingChanged = true;
+                }
+            }
+            // The credential itself is never flashed back into this page.
+            $processingChanged = $processingChanged || ($oldInput['_ai_assist_credential_edit'] ?? false) === true;
+        }
+        $selectedProvider = $normalizeProcessing['provider'](old('provider', $form['provider']));
+        $state = $processingChanged ? 'stale' : $assist['state'];
+        $canSave = $assist['test']['can_save'] && ! $processingChanged;
         $failure = $assist['test']['failure_code'] ?? 'provider_unavailable';
         $failureKey = 'ai_assist.failures.'.$failure;
         $failureCopy = \Illuminate\Support\Facades\Lang::has($failureKey) ? __($failureKey) : __('ai_assist.failures.provider_unavailable');
@@ -98,7 +115,7 @@
                             <select id="ai-provider" name="provider" data-ai-provider>
                                 <option value="">{{ __('ai_assist.fields.choose_provider') }}</option>
                                 @foreach ($assist['providers'] as $provider)
-                                    <option value="{{ $provider }}" @selected(old('provider', $form['provider']) === $provider) lang="">{{ $providerLabels[$provider] }}</option>
+                                    <option value="{{ $provider }}" @selected($selectedProvider === $provider) lang="">{{ $providerLabels[$provider] }}</option>
                                 @endforeach
                             </select>
                             @error('provider')<p class="field-error">{{ $message }}</p>@enderror

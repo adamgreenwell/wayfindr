@@ -243,6 +243,14 @@ final class AgentAccountAiAssistController extends Controller
             $old['endpoint'] = $request->input('endpoint');
         }
 
+        if ($connectionEdit && $request->input('source') === 'account') {
+            $key = $request->input('api_key');
+            // Retain only the fact that a credential edit failed, never its
+            // value or a digest. Blank replacements keep the tested credential.
+            $old['_ai_assist_credential_edit'] = $request->boolean('clear_api_key')
+                || ($key !== null && (! is_string($key) || trim($key) !== ''));
+        }
+
         return redirect()->route('dashboard.account.ai-assist.show')->withErrors($errors)->withInput($old);
     }
 }

@@ -23,6 +23,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
@@ -482,3 +483,126 @@ test('provider failures and corrupt failure metadata expose only a safe reason',
     $record->forceFill(['test_failure_code' => 'raw-private-provider-marker'])->save();
     expect(app(AccountAiConnectionPresenter::class)->present($owner)['test']['failure_code'])->toBe('provider_unavailable');
 });
+
+function accountAiAdminRenderedFields(TestResponse $response): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+
+    return new DOMXPath($document);
+}
+
+test('correcting a failed cosmetic name can save the same tested draft without another probe', function (array $normalizedChanges): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $revision = $record->proposed_revision;
+    $token = accountAiAdminEditorToken();
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($revision, [
+        'name' => str_repeat('n', 101), 'api_key' => '', ...$normalizedChanges,
+    ]))->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors('name');
+    expect($record->fresh()->proposed_revision)->toBe($revision)
+        ->and($record->fresh()->tested_revision)->toBe($revision)
+        ->and(session('_old_input._ai_assist_credential_edit'))->toBeFalse();
+    $fields = accountAiAdminRenderedFields($this->get(route('dashboard.account.ai-assist.show'))->assertOk());
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('ready', 'A rejected cosmetic name must not invalidate a successful processing test.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeFalse()
+        ->and($fields->query('//input[@name="name"]')->item(0)->getAttribute('value'))->toBe(str_repeat('n', 101))
+        ->and($fields->query('//input[@name="expected_revision"]')->item(0)->getAttribute('value'))->toBe($revision)
+        ->and($fields->query('//input[@name="editor_token"]')->item(0)->getAttribute('value'))->toBe($token)
+        ->and($fields->query('//select[@name="provider"]/option[@selected]')->item(0)->getAttribute('value'))->toBe('openai-compatible');
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($revision, ['name' => 'Corrected name', 'api_key' => '']))
+        ->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasNoErrors();
+    expect($record->fresh()->active_revision)->toBe($revision)
+        ->and($record->fresh()->name)->toBe('Corrected name')
+        ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(1, 'Name correction must not require a charged connection retest.');
+})->with([
+    'unchanged processing' => [[]],
+    'provider normalization' => [['provider' => ' OPENAI-COMPATIBLE ']],
+    'model normalization' => [['model' => ' support-model:exact ']],
+    'endpoint normalization' => [['endpoint' => 'https://models.example.test/v1///']],
+]);
+
+test('a failed cosmetic name preserves normalized OpenRouter upstream test authority', function (): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner);
+    $input = accountAiAdminInput(null, ['provider' => 'openrouter', 'endpoint' => '', 'openrouter_provider' => 'openai']);
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), $input)->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->post(route('dashboard.account.ai-assist.activate'), [
+        ...$input, 'expected_revision' => $record->proposed_revision, 'editor_token' => accountAiAdminEditorToken(),
+        'name' => str_repeat('n', 101), 'openrouter_provider' => ' OPENAI ', 'api_key' => '',
+    ])->assertSessionHasErrors('name');
+    $fields = accountAiAdminRenderedFields($this->get(route('dashboard.account.ai-assist.show'))->assertOk());
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('ready', 'Normalized upstream spelling must retain the same processing revision.');
+});
+
+test('failed credential-only or clear edits retain a nonsecret stale fence', function (array $changes, string $error): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($record->proposed_revision, $changes))
+        ->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors($error);
+    expect(session('_old_input'))->not->toHaveKey('api_key')
+        ->and(session('_old_input._ai_assist_credential_edit'))->toBeTrue('Failed credential edits must retain only their boolean stale fence.');
+    $response = $this->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertDontSee('failed-secret-marker');
+    $fields = accountAiAdminRenderedFields($response);
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('stale', 'A redacted credential edit must still withhold Save authority.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeTrue()
+        ->and($fields->query('//input[@name="api_key"]')->item(0)->getAttribute('value'))->toBe('')
+        ->and($record->fresh()->tested_revision)->toBe($record->proposed_revision)
+        ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(1);
+})->with([
+    'oversized replacement only' => [['name' => 'Support model', 'api_key' => 'failed-secret-marker'.str_repeat('k', 8192)], 'api_key'],
+    'replacement with invalid name' => [['name' => str_repeat('n', 101), 'api_key' => 'failed-secret-marker'], 'name'],
+    'clear with invalid name' => [['name' => str_repeat('n', 101), 'api_key' => '', 'clear_api_key' => 1], 'name'],
+]);
+
+test('failed cosmetic installation edits ignore irrelevant account processing fields and keys', function (): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput(null, ['source' => 'installation']))->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($record->proposed_revision, [
+        'source' => 'installation', 'name' => str_repeat('n', 101), 'provider' => 'ollama', 'model' => 'irrelevant-model',
+        'endpoint' => 'https://irrelevant.example.test', 'api_key' => 'failed-secret-marker', 'clear_api_key' => 1,
+    ]))->assertSessionHasErrors('name');
+    expect(session('_old_input'))->not->toHaveKey('api_key')->not->toHaveKey('_ai_assist_credential_edit');
+    $fields = accountAiAdminRenderedFields($this->get(route('dashboard.account.ai-assist.show'))->assertOk());
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('ready', 'Installation proposals ignore account-only processing values.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeFalse();
+});
+
+test('same processing fields cannot revive mismatched reviewed authority after name validation', function (array $authority): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $input = accountAiAdminInput($record->proposed_revision, ['name' => str_repeat('n', 101), 'api_key' => '', ...$authority]);
+    $this->post(route('dashboard.account.ai-assist.activate'), $input)->assertSessionHasErrors('name');
+    $old = session('_old_input');
+    $fields = accountAiAdminRenderedFields($this->get(route('dashboard.account.ai-assist.show'))->assertOk());
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('stale', 'Unchanged fields cannot replace a mismatched reviewed revision or token.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeTrue()
+        ->and($old)->toHaveKeys(['expected_revision', 'editor_token'])
+        ->and($fields->query('//input[@name="expected_revision"]')->item(0)->getAttribute('value'))->toBe((string) $input['expected_revision'])
+        ->and($fields->query('//input[@name="editor_token"]')->item(0)->getAttribute('value'))->toBe($input['editor_token']);
+})->with([
+    'meaningful null revision' => [['expected_revision' => null]],
+    'mismatched editor token' => [['editor_token' => str_repeat('a', 64)]],
+]);
+
+test('failed name validation still withholds tests after actual processing changes', function (array $changes): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($record->proposed_revision, ['name' => str_repeat('n', 101), 'api_key' => '', ...$changes]))
+        ->assertSessionHasErrors('name');
+    $fields = accountAiAdminRenderedFields($this->get(route('dashboard.account.ai-assist.show'))->assertOk());
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('stale', 'Processing edits must invalidate readiness even when name validation fails first.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeTrue();
+})->with([
+    'source' => [['source' => 'installation']],
+    'provider' => [['provider' => 'gemini']],
+    'model' => [['model' => 'different-model']],
+    'endpoint' => [['endpoint' => 'https://different.example.test/v1']],
+    'upstream' => [['openrouter_provider' => 'different-upstream']],
+]);
