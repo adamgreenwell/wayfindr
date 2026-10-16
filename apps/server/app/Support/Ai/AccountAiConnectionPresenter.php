@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Ai;
 
 use App\Enums\AccountPermission;
+use App\Models\Account;
 use App\Models\AccountAiConnection;
 use App\Models\User;
 use App\Support\Ai\Policy\AiAssistPolicies;
@@ -13,6 +14,7 @@ use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Ai\Usage\AiUsagePolicy;
 use App\Support\ReaderClock;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /** Explicit browser allowlist: encrypted snapshots and resolved secrets stay here. */
@@ -41,6 +43,37 @@ final readonly class AccountAiConnectionPresenter
             || ! $actor->hasAccountPermission(AccountPermission::ManageAiConnections)) {
             throw new AuthorizationException;
         }
+        $accountId = (int) $actor->account_id;
+        try {
+            $limits = $this->limits->accountSettings($accountId);
+        } catch (Throwable) {
+            $limits = ['unavailable' => true, 'limits_token' => '', 'overrides' => [], 'installation' => [], 'effective' => []];
+        }
+        try {
+            $summary = $this->usage->summary($accountId);
+            $usage = ['period_day' => $summary['period_day'], 'account' => $summary['account'], 'observed_tokens' => $summary['observed_tokens']];
+        } catch (Throwable) {
+            $usage = null;
+        }
+
+        // The ledger above acquires installation → Account. Never call it from
+        // this Account → actor presentation transaction.
+        $connection = DB::transaction(function () use ($actor, $accountId): array {
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $fresh = User::query()->whereKey($actor->id)->lockForUpdate()->first();
+            if ($fresh === null || (int) $fresh->account_id !== $accountId || $fresh->isDeactivated()
+                || ! $fresh->hasAccountPermission(AccountPermission::ManageAiConnections)) {
+                throw new AuthorizationException;
+            }
+
+            return $this->presentConnection($fresh);
+        });
+
+        return [...$connection, 'limits' => $limits, 'usage' => $usage, 'usage_unavailable' => $usage === null, 'models' => []];
+    }
+
+    private function presentConnection(User $actor): array
+    {
         $accountId = (int) $actor->account_id;
         $record = AccountAiConnection::query()->where('account_id', $accountId)->first();
         $proposed = $record?->proposedConfiguration();
@@ -74,17 +107,6 @@ final readonly class AccountAiConnectionPresenter
             $proposed !== null && ($record->active_revision !== null || $record->tested_revision !== null) => 'stale',
             default => 'untested',
         };
-        try {
-            $limits = $this->limits->accountSettings($accountId);
-        } catch (Throwable) {
-            $limits = ['unavailable' => true, 'limits_token' => '', 'overrides' => [], 'installation' => [], 'effective' => []];
-        }
-        try {
-            $summary = $this->usage->summary($accountId);
-            $usage = ['period_day' => $summary['period_day'], 'account' => $summary['account'], 'observed_tokens' => $summary['observed_tokens']];
-        } catch (Throwable) {
-            $usage = null;
-        }
 
         return [
             'form' => [
@@ -107,13 +129,12 @@ final readonly class AccountAiConnectionPresenter
                 'enabled' => $record?->enabled ?? true, 'available' => $current !== null,
                 'legacy' => $record?->active_revision === null && ($record === null || $record->uses_installation_default)
                     && ! app(AiAssistPolicyResolver::class)->hasExplicitAccountPolicy($accountId),
-                'source' => $active['source'] ?? ($current?->source),
-                'provider' => $active['provider'] ?? $current?->provider, 'model' => $active['model'] ?? $current?->model,
+                'source' => $current?->source ?? $active['source'] ?? null,
+                'provider' => $current?->provider ?? $active['provider'] ?? null, 'model' => $current?->model ?? $active['model'] ?? null,
             ],
             'installation' => ['available' => $installation !== null, 'provider' => $installation?->provider, 'model' => $installation?->model],
             'providers' => AgentCopilotConfiguration::PROVIDERS,
-            'policy' => app(AiAssistPolicies::class)->present($actor),
-            'limits' => $limits, 'usage' => $usage, 'usage_unavailable' => $usage === null, 'models' => [],
+            'policy' => app(AiAssistPolicies::class)->presentForConnection($actor, $record, $current),
         ];
     }
 }

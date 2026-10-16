@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AccountAiAssistPolicy;
+use App\Models\AccountAiConnection;
 use App\Models\Site;
 use App\Models\SiteAiAssistPolicy;
 use App\Models\User;
@@ -40,9 +41,15 @@ beforeEach(function (): void {
     {
         public int $calls = 0;
 
+        public string $policy = 'synthetic-policy-v1';
+
+        public ?Closure $duringPolicy = null;
+
         public function policyRevision(): string
         {
-            return 'synthetic-policy-v1';
+            ($this->duringPolicy ?? fn () => null)();
+
+            return $this->policy;
         }
 
         public function probe(ResolvedAgentCopilotConnection $connection, ?AiExecutionContext $context = null): AgentCopilotResult
@@ -445,4 +452,163 @@ test('valid native and JSON bulk policy forms preserve nested site arrays and sa
         ->assertOk()->assertJsonPath('assist.policy.sites.1.mode', 'off');
     expect(SiteAiAssistPolicy::query()->find($first->id)->mode)->toBe('off')
         ->and(SiteAiAssistPolicy::query()->find($second->id)->mode)->toBe('off', 'A valid JSON bulk form must preserve and validate its nested site arrays.');
+});
+
+function assistPolicySelectProcessor(User $owner, string $model, bool $testOnly = false): void
+{
+    $service = app(AccountAiConnections::class);
+    $record = $service->propose($owner, (int) $owner->account_id, [
+        'source' => 'account', 'provider' => 'openai-compatible', 'model' => $model,
+        'endpoint' => 'https://models.example.test/v1', 'api_key' => 'synthetic-private-key',
+    ]);
+    $service->test($owner, (int) $owner->account_id, $record->proposed_revision);
+    if (! $testOnly) {
+        $service->activate($owner, (int) $owner->account_id, $record->proposed_revision);
+    }
+}
+
+test('stale account and site policy forms cannot enable a newly selected processor', function (string $scope): void {
+    $owner = assistPolicyOwner();
+    $site = Site::factory()->for($owner->account)->create();
+    assistPolicySelectProcessor($owner, 'processor-A');
+    assistPolicySave($owner);
+    if ($scope === 'account') {
+        assistPolicySave($owner, ['mode' => 'off']);
+    } else {
+        assistPolicySiteSave($owner, $site, ['mode' => 'off']);
+    }
+    $service = app(AiAssistPolicies::class);
+    $reviewed = app(AccountAiConnectionPresenter::class)->present($owner);
+    expect($reviewed['active']['model'])->toBe('processor-A');
+    assistPolicySelectProcessor($owner, 'processor-B');
+    try {
+        if ($scope === 'account') {
+            $service->saveAccount($owner, (int) $owner->account_id, assistPolicyValues(), $reviewed['policy']['account_token']);
+        } else {
+            $service->saveSites($owner, (int) $owner->account_id, [$site->id], assistPolicyValues(),
+                $service->accountToken((int) $owner->account_id), [$site->id => $reviewed['policy']['sites'][0]['token']]);
+        }
+        $this->fail('A policy editor that disclosed processor A must not enable processor B.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey($scope === 'account' ? 'policy_token' : 'site_tokens');
+    }
+    expect(app(AiAssistPolicyResolver::class)->forSite((int) $site->id)->mode)->toBe('off');
+    if ($scope === 'account') {
+        assistPolicySave($owner);
+    } else {
+        assistPolicySiteSave($owner, $site);
+    }
+    expect(app(AiAssistPolicyResolver::class)->forSite((int) $site->id)->mode)->toBe('manual')
+        ->and(app(AgentCopilotConnectionResolver::class)->forAccount((int) $owner->account_id)->model)->toBe('processor-B');
+})->with(['account', 'sites']);
+
+test('unactivated proposals and their tests preserve policy authority for the active processor', function (): void {
+    $owner = assistPolicyOwner();
+    $site = Site::factory()->for($owner->account)->create();
+    assistPolicySelectProcessor($owner, 'processor-A');
+    assistPolicySave($owner, ['mode' => 'off']);
+    $service = app(AiAssistPolicies::class);
+    $accountToken = $service->accountToken((int) $owner->account_id);
+    $siteToken = $service->siteToken((int) $site->id);
+    app(AccountAiConnections::class)->propose($owner, (int) $owner->account_id, [
+        'source' => 'account', 'provider' => 'openai-compatible', 'model' => 'processor-B',
+        'endpoint' => 'https://models.example.test/v1', 'api_key' => 'synthetic-key-B',
+    ]);
+    expect($service->accountToken((int) $owner->account_id))->toBe($accountToken)
+        ->and($service->siteToken((int) $site->id))->toBe($siteToken);
+    $record = AccountAiConnection::query()->where('account_id', $owner->account_id)->sole();
+    app(AccountAiConnections::class)->test($owner, (int) $owner->account_id, $record->proposed_revision);
+    $presented = app(AccountAiConnectionPresenter::class)->present($owner);
+    expect($presented['form']['model'])->toBe('processor-B')->and($presented['active']['model'])->toBe('processor-A')
+        ->and($presented['policy']['account_token'])->toBe($accountToken)
+        ->and($presented['policy']['sites'][0]['token'])->toBe($siteToken);
+    $service->saveAccount($owner, (int) $owner->account_id, assistPolicyValues(), $accountToken);
+    expect(app(AgentCopilotConnectionResolver::class)->forAccount((int) $owner->account_id)->model)->toBe('processor-A');
+});
+
+test('processor availability and installation or processing policy changes invalidate reviewed policy tokens', function (string $change): void {
+    $owner = assistPolicyOwner();
+    $site = Site::factory()->for($owner->account)->create();
+    assistPolicyConnection($owner);
+    assistPolicySave($owner, ['mode' => 'off']);
+    $service = app(AiAssistPolicies::class);
+    $accountToken = $service->accountToken((int) $owner->account_id);
+    $siteToken = $service->siteToken((int) $site->id);
+    match ($change) {
+        'disabled' => app(AccountAiConnections::class)->setEnabled($owner, (int) $owner->account_id, false),
+        'disconnected' => app(AccountAiConnections::class)->disconnect($owner, (int) $owner->account_id),
+        'installation' => (function (): void {
+            config(['ai.providers.wayfindr.models.text.default' => 'new-installation-model']);
+            app(OperatorSettings::class)->captureBaseline();
+        })(),
+        'processing-policy' => app(AccountAiConnectionProbe::class)->policy = 'synthetic-policy-v2',
+    };
+    expect($service->accountToken((int) $owner->account_id))->not->toBe($accountToken)
+        ->and($service->siteToken((int) $site->id))->not->toBe($siteToken)
+        ->and(fn () => $service->saveAccount($owner, (int) $owner->account_id, assistPolicyValues(['mode' => 'off']), $accountToken))
+        ->toThrow(ValidationException::class);
+})->with(['disabled', 'disconnected', 'installation', 'processing-policy']);
+
+test('policy disclosure and tokens capture the same processor after usage collection without reversing ledger locks', function (): void {
+    $owner = assistPolicyOwner();
+    Site::factory()->for($owner->account)->create();
+    assistPolicySelectProcessor($owner, 'processor-A');
+    assistPolicySave($owner, ['mode' => 'off']);
+    $baselineTransactionLevel = DB::transactionLevel();
+    $mutated = false;
+    $usageEnteredAt = null;
+    DB::listen(function ($query) use ($owner, &$mutated, &$usageEnteredAt): void {
+        if (! $mutated && str_contains($query->sql, 'ai_usage_scopes')) {
+            $mutated = true;
+            $usageEnteredAt = DB::transactionLevel();
+            assistPolicySelectProcessor($owner, 'processor-B');
+        }
+    });
+    $presented = app(AccountAiConnectionPresenter::class)->present($owner);
+    $policies = app(AiAssistPolicies::class);
+    expect($mutated)->toBeTrue('The processor transition must occur during the separated usage read.')
+        ->and($usageEnteredAt)->toBe($baselineTransactionLevel + 1, 'Usage must enter its own installation-first transaction outside the Account presentation lock.')
+        ->and($presented['active']['model'])->toBe('processor-B', 'The processor caption must share the same snapshot as the policy editor tokens.')
+        ->and($presented['policy']['account_token'])->toBe($policies->accountToken((int) $owner->account_id))
+        ->and($presented['policy']['sites'][0]['token'])->toBe($policies->siteToken($presented['policy']['sites'][0]['site_id']))
+        ->and($presented['policy']['connection_ready'])->toBeTrue();
+});
+
+test('usable installation disclosure prefers the captured resolved processor over historical snapshot labels', function (): void {
+    $owner = assistPolicyOwner();
+    Site::factory()->for($owner->account)->create();
+    assistPolicyConnection($owner);
+    $record = AccountAiConnection::query()->where('account_id', $owner->account_id)->sole();
+    $record->forceFill(['active_configuration' => [...$record->activeConfiguration(), 'provider' => 'historical-provider', 'model' => 'historical-model']])->save();
+    $current = app(AgentCopilotConnectionResolver::class)->forAccount((int) $owner->account_id);
+    $presented = app(AccountAiConnectionPresenter::class)->present($owner);
+    expect($current)->not->toBeNull()->and($presented['active']['provider'])->toBe($current->provider)
+        ->and($presented['active']['model'])->toBe($current->model)->and($presented['active']['source'])->toBe($current->source);
+});
+
+test('an operator change after active resolution cannot pair an old processor caption with a new policy token', function (): void {
+    $owner = assistPolicyOwner();
+    $site = Site::factory()->for($owner->account)->create();
+    assistPolicyConnection($owner);
+    assistPolicySave($owner, ['mode' => 'off']);
+    $policies = app(AiAssistPolicies::class);
+    $accountToken = $policies->accountToken((int) $owner->account_id);
+    $siteToken = $policies->siteToken((int) $site->id);
+    $reads = 0;
+    $probe = app(AccountAiConnectionProbe::class);
+    $probe->duringPolicy = function () use (&$reads): void {
+        // The first two reads resolve active processing. The third assesses
+        // the editable proposal after the active object has been captured.
+        if (++$reads === 3) {
+            config(['ai.providers.wayfindr.models.text.default' => 'new-operator-processor']);
+            app(OperatorSettings::class)->captureBaseline();
+        }
+    };
+    $presented = app(AccountAiConnectionPresenter::class)->present($owner);
+    $probe->duringPolicy = null;
+    expect($reads)->toBeGreaterThanOrEqual(3)
+        ->and($presented['active']['model'])->toBe('synthetic-model')
+        ->and($presented['policy']['account_token'])->toBe($accountToken, 'A captured processor caption must retain its matching policy token.')
+        ->and($presented['policy']['sites'][0]['token'])->toBe($siteToken)
+        ->and($policies->accountToken((int) $owner->account_id))->not->toBe($accountToken);
 });

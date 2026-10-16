@@ -14,11 +14,13 @@ use App\Models\SiteAiAssistPolicy;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\ResolvedAgentCopilotConnection;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use SensitiveParameter;
 
 /** Account → fresh actor → sites. Usage cancellation runs only after commit. */
 final readonly class AiAssistPolicies
@@ -27,16 +29,17 @@ final readonly class AiAssistPolicies
 
     public function accountToken(int $accountId): string
     {
-        return $this->token(['account', $accountId, AccountAiAssistPolicy::query()->find($accountId)?->revision]);
+        return $this->accountEditorToken($accountId, AccountAiAssistPolicy::query()->find($accountId), $this->currentProcessor($accountId));
     }
 
     public function siteToken(int $siteId): string
     {
         $site = Site::query()->findOrFail($siteId);
 
-        return $this->token(['site', (int) $site->account_id, $siteId,
-            AccountAiAssistPolicy::query()->find($site->account_id)?->revision,
-            SiteAiAssistPolicy::query()->where('account_id', $site->account_id)->find($siteId)?->revision]);
+        return $this->siteEditorToken((int) $site->account_id, $siteId,
+            AccountAiAssistPolicy::query()->find($site->account_id),
+            SiteAiAssistPolicy::query()->where('account_id', $site->account_id)->find($siteId),
+            $this->currentProcessor((int) $site->account_id));
     }
 
     public function saveAccount(User $actor, int $accountId, array $input, string $policyToken): AccountAiAssistPolicy
@@ -145,9 +148,26 @@ final readonly class AiAssistPolicies
 
     public function present(User $actor): array
     {
-        $actor = User::query()->find($actor->id);
-        $this->requireActor($actor, (int) $actor?->account_id);
+        return $this->locked($actor, (int) $actor->account_id, function (User $fresh): array {
+            $accountId = (int) $fresh->account_id;
+
+            return $this->presentForConnection($fresh,
+                AccountAiConnection::query()->where('account_id', $accountId)->first(),
+                $this->connections->forAccount($accountId));
+        });
+    }
+
+    /** The caller holds Account and shares this exact current object with its caption. */
+    public function presentForConnection(User $actor, #[SensitiveParameter] ?AccountAiConnection $connection,
+        #[SensitiveParameter] ?ResolvedAgentCopilotConnection $current): array
+    {
         $accountId = (int) $actor->account_id;
+        $this->requireActor($actor, $accountId);
+        if (DB::transactionLevel() < 1 || ($connection !== null && (int) $connection->account_id !== $accountId)
+            || ($current !== null && $current->accountId !== $accountId)) {
+            throw new AuthorizationException;
+        }
+        $processor = $this->processorIdentity($connection, $current);
         $account = AccountAiAssistPolicy::query()->find($accountId);
         $canUpdateAccount = true;
         $rows = [];
@@ -163,17 +183,49 @@ final readonly class AiAssistPolicies
                 continue;
             }
             $policy = SiteAiAssistPolicy::query()->where('account_id', $accountId)->find($site->id);
-            $rows[] = ['site_id' => (int) $site->id, 'name' => $site->name, 'token' => $this->siteToken((int) $site->id),
+            $rows[] = ['site_id' => (int) $site->id, 'name' => $site->name, 'token' => $this->siteEditorToken($accountId, (int) $site->id, $account, $policy, $processor),
                 ...$this->form($policy, $account === null ? 'manual' : 'off'),
                 'effective_mode' => $effective->mode, 'article_context_allowed' => $effective->articleContextAllowed];
         }
 
         return [
-            'explicit' => $account !== null, 'account_token' => $this->accountToken($accountId),
-            'can_update_account' => $canUpdateAccount, 'connection_ready' => $this->connectionReady($accountId),
+            'explicit' => $account !== null, 'account_token' => $this->accountEditorToken($accountId, $account, $processor),
+            'can_update_account' => $canUpdateAccount, 'connection_ready' => $connection !== null
+                && $connection->active_revision !== null && $connection->enabled && $current !== null,
             'installation_context_limit' => $this->resolver->installationContextLimit(),
             'account' => $this->form($account, 'manual'), 'sites' => $rows,
         ];
+    }
+
+    private function currentProcessor(int $accountId): array
+    {
+        return $this->processorIdentity(AccountAiConnection::query()->where('account_id', $accountId)->first(),
+            $this->connections->forAccount($accountId));
+    }
+
+    private function processorIdentity(#[SensitiveParameter] ?AccountAiConnection $connection,
+        #[SensitiveParameter] ?ResolvedAgentCopilotConnection $current): array
+    {
+        // Drafts and their synthetic test receipts never change active consent.
+        return [
+            'active_selection' => $connection?->active_revision,
+            'enabled' => $connection?->enabled ?? true,
+            'installation_default' => $connection === null || $connection->uses_installation_default,
+            'source' => $current?->source ?? $connection?->activeConfiguration()['source'] ?? null,
+            'available' => $current !== null,
+            'resolved_revision' => $current?->revision,
+        ];
+    }
+
+    private function accountEditorToken(int $accountId, ?AccountAiAssistPolicy $account, array $processor): string
+    {
+        return $this->token(['account', $accountId, $account?->revision, $processor]);
+    }
+
+    private function siteEditorToken(int $accountId, int $siteId, ?AccountAiAssistPolicy $account,
+        ?SiteAiAssistPolicy $site, array $processor): string
+    {
+        return $this->token(['site', $accountId, $siteId, $account?->revision, $site?->revision, $processor]);
     }
 
     private function form(AccountAiAssistPolicy|SiteAiAssistPolicy|null $record, string $defaultMode): array
