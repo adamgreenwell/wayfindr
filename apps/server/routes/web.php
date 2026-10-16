@@ -4,6 +4,7 @@ use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
 use App\Http\Controllers\AgentAccountAiAssistController;
+use App\Http\Controllers\AgentAccountAiAssistPolicyController;
 use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
@@ -171,6 +172,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     }
     Route::put('/dashboard/account/ai-assist/limits', [AgentAccountAiAssistController::class, 'limits'])
         ->name('dashboard.account.ai-assist.limits');
+    Route::post('/dashboard/account/ai-assist/policy/account', [AgentAccountAiAssistPolicyController::class, 'account'])
+        ->name('dashboard.account.ai-assist.policy.account');
+    Route::post('/dashboard/account/ai-assist/policy/sites', [AgentAccountAiAssistPolicyController::class, 'sites'])
+        ->name('dashboard.account.ai-assist.policy.sites');
     Route::get('/dashboard/account/team', AgentAccountTeamController::class)
         ->name('dashboard.account.team.show');
     Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])

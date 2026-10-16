@@ -84,6 +84,8 @@ final class DashboardLanguage
         'dashboard.account.ai-assist.disconnect',
         'dashboard.account.ai-assist.discard',
         'dashboard.account.ai-assist.limits',
+        'dashboard.account.ai-assist.policy.account',
+        'dashboard.account.ai-assist.policy.sites',
         // The operator-console rollout now covers the dashboard, onboarding,
         // break-glass, and settings surfaces listed here. The shared shell uses
         // the same catalogue but stays English on every route not yet listed,

@@ -7,6 +7,8 @@ namespace App\Support\Ai;
 use App\Enums\AccountPermission;
 use App\Models\AccountAiConnection;
 use App\Models\User;
+use App\Support\Ai\Policy\AiAssistPolicies;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Ai\Usage\AiUsagePolicy;
 use App\Support\ReaderClock;
@@ -103,12 +105,14 @@ final readonly class AccountAiConnectionPresenter
             'active' => [
                 'configured' => $record?->active_revision !== null || ($record === null || $record->uses_installation_default) && $installation !== null,
                 'enabled' => $record?->enabled ?? true, 'available' => $current !== null,
-                'legacy' => $record?->active_revision === null && ($record === null || $record->uses_installation_default),
+                'legacy' => $record?->active_revision === null && ($record === null || $record->uses_installation_default)
+                    && ! app(AiAssistPolicyResolver::class)->hasExplicitAccountPolicy($accountId),
                 'source' => $active['source'] ?? ($current?->source),
                 'provider' => $active['provider'] ?? $current?->provider, 'model' => $active['model'] ?? $current?->model,
             ],
             'installation' => ['available' => $installation !== null, 'provider' => $installation?->provider, 'model' => $installation?->model],
             'providers' => AgentCopilotConfiguration::PROVIDERS,
+            'policy' => app(AiAssistPolicies::class)->present($actor),
             'limits' => $limits, 'usage' => $usage, 'usage_unavailable' => $usage === null, 'models' => [],
         ];
     }

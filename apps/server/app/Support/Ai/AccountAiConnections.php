@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\Network\AiModelDiscovery;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -355,10 +356,9 @@ final readonly class AccountAiConnections
 
     private function requireAffectedSiteAccess(AccountAiConnection $record, User $actor): void
     {
-        // Until #1169 introduces narrower per-site enablement, every account
-        // site can use the existing manual path and is potentially affected.
-        // Site/access writers share the account lock held by locked().
-        foreach ($record->account->sites()->get() as $site) {
+        // The account lock stabilizes effective policy and site assignments.
+        // An absent policy preserves the legacy all-site Manual scope.
+        foreach (app(AiAssistPolicyResolver::class)->enabledSitesForAccount((int) $record->account_id) as $site) {
             if (! $site->supportsAgent($actor)) {
                 throw new AuthorizationException('Connection activation requires access to every affected site.');
             }
