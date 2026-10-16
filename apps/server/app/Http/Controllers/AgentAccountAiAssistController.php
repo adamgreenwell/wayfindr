@@ -30,7 +30,11 @@ final class AgentAccountAiAssistController extends Controller
 
     public function show(Request $request): View
     {
-        return view('agent.account.ai-assist', ['assist' => $this->presenter->present($this->actor($request))]);
+        $actor = $this->actor($request);
+        $assist = $this->presenter->present($actor);
+        $assist['models'] = $this->matchingModels($actor, $assist, $request->session()->pull('ai_assist_discovery_models'));
+
+        return view('agent.account.ai-assist', ['assist' => $assist]);
     }
 
     public function propose(Request $request): RedirectResponse|JsonResponse
@@ -51,12 +55,18 @@ final class AgentAccountAiAssistController extends Controller
         }, 'tested');
     }
 
-    public function discover(Request $request): RedirectResponse|JsonResponse|View
+    public function discover(Request $request): RedirectResponse|JsonResponse
     {
         return $this->perform($request, function (User $actor) use ($request): array {
             $input = $this->connectionInput($request);
             $draft = $this->connections->proposeForRevision($actor, (int) $actor->account_id, $input, $input['expected_revision'], $input['editor_token']);
             $request->attributes->set('ai_assist_proposal_saved', true);
+            // Bind suggestions to the proposal actually dispatched, never to
+            // a newer processor that another manager may save before redirect.
+            $request->attributes->set('ai_assist_discovery_scope', [
+                'account_id' => (int) $actor->account_id, 'proposed_revision' => $draft->proposed_revision,
+                'editor_token' => AccountAiConnections::editorToken((int) $actor->account_id, $draft),
+            ]);
 
             return $this->connections->discoverModels($actor, (int) $actor->account_id, $draft->proposed_revision) ?? [];
         }, 'discovery_finished', true);
@@ -164,23 +174,27 @@ final class AgentAccountAiAssistController extends Controller
             && array_intersect(['user', 'pass', 'query', 'fragment'], array_keys($parts)) === [];
     }
 
-    private function perform(Request $request, Closure $operation, string $status, bool $discovery = false): RedirectResponse|JsonResponse|View
+    private function perform(Request $request, Closure $operation, string $status, bool $discovery = false): RedirectResponse|JsonResponse
     {
         $actor = $this->actor($request);
         try {
             $models = $operation($actor);
-            if ($request->expectsJson() || $discovery) {
+            $receipt = $discovery ? [
+                ...$request->attributes->get('ai_assist_discovery_scope'), 'models' => $this->boundedModels($models),
+            ] : null;
+            if ($request->expectsJson()) {
                 $assist = $this->presenter->present($actor);
                 if ($discovery) {
+                    $models = $this->matchingModels($actor, $assist, $receipt);
                     $assist['models'] = $models;
                 }
 
-                return $request->expectsJson()
-                    ? response()->json(['assist' => $assist, ...($discovery ? ['models' => $models] : [])])
-                    : view('agent.account.ai-assist', ['assist' => $assist]);
+                return response()->json(['assist' => $assist, ...($discovery ? ['models' => $models] : [])]);
             }
 
-            return redirect()->route('dashboard.account.ai-assist.show')->with('status', 'ai_assist.flash.'.$status);
+            $response = redirect()->route('dashboard.account.ai-assist.show')->with('status', 'ai_assist.flash.'.$status);
+
+            return $discovery ? $response->with('ai_assist_discovery_models', $receipt) : $response;
         } catch (ValidationException $exception) {
             $errors = [];
             foreach (array_keys($exception->errors()) as $field) {
@@ -202,6 +216,35 @@ final class AgentAccountAiAssistController extends Controller
         } catch (Throwable) {
             return $this->failure($request, ['connection' => [__('ai_assist.failures.provider_unavailable')]]);
         }
+    }
+
+    /** Optional browser suggestions are bounded and expire with their reviewed scope. */
+    private function matchingModels(User $actor, array $assist, mixed $receipt): array
+    {
+        if (! is_array($receipt) || ($receipt['account_id'] ?? null) !== (int) $actor->account_id
+            || ($receipt['proposed_revision'] ?? null) !== $assist['form']['expected_revision']
+            || ! is_string($receipt['editor_token'] ?? null)
+            || ! hash_equals($assist['form']['editor_token'], $receipt['editor_token'])) {
+            return [];
+        }
+
+        return $this->boundedModels($receipt['models'] ?? null);
+    }
+
+    private function boundedModels(mixed $models): array
+    {
+        if (! is_array($models) || ! array_is_list($models)) {
+            return [];
+        }
+        $bounded = [];
+        foreach (array_slice($models, 0, 100) as $model) {
+            if (is_string($model) && strlen($model) <= 255 && preg_match('/\A[^\x00-\x20\x7f]+\z/u', $model) === 1
+                && ! in_array($model, $bounded, true)) {
+                $bounded[] = $model;
+            }
+        }
+
+        return $bounded;
     }
 
     private function failure(Request $request, array $errors): RedirectResponse|JsonResponse
@@ -244,6 +287,7 @@ final class AgentAccountAiAssistController extends Controller
         }
 
         if ($connectionEdit && $request->input('source') === 'account') {
+            $old['_ai_assist_redacted_endpoint_edit'] = $request->has('endpoint') && ! $this->safeEndpoint($request->input('endpoint'));
             $key = $request->input('api_key');
             // Retain only the fact that a credential edit failed, never its
             // value or a digest. Blank replacements keep the tested credential.

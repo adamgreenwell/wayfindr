@@ -24,7 +24,8 @@
                 }
             }
             // The credential itself is never flashed back into this page.
-            $processingChanged = $processingChanged || ($oldInput['_ai_assist_credential_edit'] ?? false) === true;
+            $processingChanged = $processingChanged || ($oldInput['_ai_assist_credential_edit'] ?? false) === true
+                || ($oldInput['_ai_assist_redacted_endpoint_edit'] ?? false) === true;
         }
         $selectedProvider = $normalizeProcessing['provider'](old('provider', $form['provider']));
         $state = $processingChanged ? 'stale' : $assist['state'];

@@ -194,3 +194,27 @@ test('a reloaded Preparing page blocks the same proposal until processing settin
   edit(window, form.elements.model, 'corrected-model');
   assert.equal(submit(window, form, testButton).defaultPrevented, false);
 });
+
+test('restoring a discovery GET from history clears typed keys and only reloads the GET document', (t) => {
+  const { runInNewContext } = require('node:vm');
+  const { window, form } = page(t);
+  const callbacks = new Map();
+  let reloads = 0;
+  let requests = 0;
+  const documentUrl = window.location.href;
+  const browserWindow = {
+    addEventListener: (name, callback) => callbacks.set(name, callback),
+    location: { href: documentUrl, reload: () => { reloads++; } },
+    setTimeout: window.setTimeout,
+    fetch: () => { requests++; throw new Error('History must never dispatch discovery'); },
+  };
+  runInNewContext(script, { window: browserWindow, document: window.document, Intl, JSON });
+  form.elements.api_key.value = 'synthetic-replacement-not-persisted';
+  callbacks.get('pageshow')({ persisted: false });
+  assert.equal(reloads, 0);
+  callbacks.get('pageshow')({ persisted: true });
+  assert.equal(form.elements.api_key.value, '');
+  assert.equal(reloads, 1);
+  assert.equal(browserWindow.location.href, documentUrl);
+  assert.equal(requests, 0);
+});

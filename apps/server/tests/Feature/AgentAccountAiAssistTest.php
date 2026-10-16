@@ -606,3 +606,92 @@ test('failed name validation still withholds tests after actual processing chang
     'endpoint' => [['endpoint' => 'https://different.example.test/v1']],
     'upstream' => [['openrouter_provider' => 'different-upstream']],
 ]);
+
+test('redacted unsafe account endpoints withhold Save without preserving their secrets', function (string $endpoint): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->post(route('dashboard.account.ai-assist.activate'), accountAiAdminInput($record->proposed_revision, ['endpoint' => $endpoint, 'api_key' => '']))
+        ->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors('endpoint');
+    expect(session('_old_input'))->not->toHaveKey('endpoint')
+        ->and(session('_old_input._ai_assist_redacted_endpoint_edit'))->toBeTrue('Redacted processing changes need a content-free stale fence.');
+    $response = $this->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertDontSee('redacted-endpoint-marker');
+    $fields = accountAiAdminRenderedFields($response);
+    expect($fields->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('stale', 'Redacting an unsafe endpoint must not restore Ready for the old endpoint.')
+        ->and($fields->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeTrue()
+        ->and($record->fresh()->active_revision)->toBeNull()
+        ->and($record->fresh()->tested_revision)->toBe($record->proposed_revision)
+        ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(1);
+})->with([
+    'https://user:redacted-endpoint-marker@models.example.test/v1',
+    'https://models.example.test/v1?key=redacted-endpoint-marker',
+    'https://models.example.test/v1#redacted-endpoint-marker',
+]);
+
+test('native model discovery redirects to one GET so refresh and history never repeat provider work', function (): void {
+    $owner = accountAiAdminOwner();
+    $response = $this->actingAs($owner)->post(route('dashboard.account.ai-assist.discover'), accountAiAdminInput(null, ['model' => '']));
+    $response->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHas('status', 'ai_assist.flash.discovery_finished');
+    $record = AccountAiConnection::query()->sole();
+    $receipt = session('ai_assist_discovery_models');
+    expect($receipt['account_id'])->toBe((int) $owner->account_id)
+        ->and($receipt['proposed_revision'])->toBe($record->proposed_revision)
+        ->and($receipt['editor_token'])->toBe(accountAiAdminEditorToken())
+        ->and($receipt['models'])->toBe(['support-model:exact', 'support-model/version-2']);
+    $this->get($response->headers->get('Location'))->assertOk()
+        ->assertViewHas('assist', fn (array $assist): bool => $assist['models'] === ['support-model:exact', 'support-model/version-2'])
+        ->assertSee('value="support-model:exact"', false);
+    // Both a refresh and a restored-page reload target this GET, not /discover.
+    $refreshed = $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    expect($refreshed->viewData('assist')['models'])->toBe([], 'Discovery suggestions must be consumed once instead of replayed from session history.');
+    $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    expect(app(AiModelDiscovery::class)->calls)->toBe(1, 'Reloading discovery results must not consume another external request.')
+        ->and(app(AccountAiConnectionProbe::class)->calls)->toBe(0)
+        ->and($record->fresh()->proposedConfiguration()['model'])->toBe('')
+        ->and(session()->has('ai_assist_discovery_models'))->toBeFalse();
+});
+
+test('redirected suggestions are withdrawn when the proposal or reviewed connection scope changes', function (string $change): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->post(route('dashboard.account.ai-assist.discover'), accountAiAdminInput())->assertRedirect();
+    $record = AccountAiConnection::query()->sole();
+    if ($change === 'proposal') {
+        $input = accountAiAdminInput($record->proposed_revision, ['model' => 'new-reviewed-model', 'api_key' => '']);
+        app(AccountAiConnections::class)->proposeForRevision($owner, (int) $owner->account_id, $input, $record->proposed_revision, $input['editor_token']);
+    } else {
+        app(AccountAiConnections::class)->setEnabled($owner, (int) $owner->account_id, false);
+    }
+    expect(session('ai_assist_discovery_models'))->not->toBeNull('The old receipt must still be present so its binding is actually exercised.');
+    $refreshed = $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    expect($refreshed->viewData('assist')['models'])->toBe([], 'Suggestions from an obsolete proposal or reviewed connection scope must be withdrawn.')
+        ->and(app(AiModelDiscovery::class)->calls)->toBe(1);
+})->with(['proposal', 'enablement']);
+
+test('discovery flash receipts remain bound to account and proposal independently', function (string $field): void {
+    $owner = accountAiAdminOwner();
+    $this->actingAs($owner)->postJson(route('dashboard.account.ai-assist.test'), accountAiAdminInput())->assertOk();
+    $record = AccountAiConnection::query()->sole();
+    $this->withSession(['ai_assist_discovery_models' => [
+        'account_id' => (int) $owner->account_id, 'proposed_revision' => $record->proposed_revision,
+        'editor_token' => accountAiAdminEditorToken(), 'models' => ['foreign-catalogue-marker'],
+        $field => $field === 'account_id' ? (int) Account::factory()->create()->id : (string) Str::uuid(),
+    ]])->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertDontSee('foreign-catalogue-marker')
+        ->assertViewHas('assist', fn (array $assist): bool => $assist['models'] === []);
+})->with(['account_id', 'proposed_revision']);
+
+test('browser discovery flash carries only bounded valid model identifiers', function (): void {
+    $owner = accountAiAdminOwner();
+    app()->instance(AiModelDiscovery::class, new class implements AiModelDiscovery
+    {
+        public function discover(ResolvedAgentCopilotConnection $connection, ?AiExecutionContext $context = null): ?array
+        {
+            return [str_repeat('x', 256), 'invalid model with spaces', ...array_map(fn (int $id): string => 'valid-model-'.$id, range(1, 150))];
+        }
+    });
+    $this->actingAs($owner)->post(route('dashboard.account.ai-assist.discover'), accountAiAdminInput())->assertRedirect();
+    $models = session('ai_assist_discovery_models.models');
+    expect($models)->toHaveCount(98, 'Only the first bounded hundred catalogue entries may reach session storage.')
+        ->and($models[0])->toBe('valid-model-1')->and(end($models))->toBe('valid-model-98')
+        ->and(json_encode(session('ai_assist_discovery_models')))->not->toContain('account-key-never-in-browser');
+    $this->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertViewHas('assist', fn (array $assist): bool => count($assist['models']) === 98);
+});
