@@ -159,9 +159,13 @@ final readonly class AiHttpTransport
             // Guzzle wraps header/sink failures with the request and previous
             // exception. Retain only our stable reason, never that object chain.
             $reason = 'transport_failed';
+            $httpStatus = $retryAfterSeconds = $retryAtUnix = null;
             for ($current = $exception; $current !== null; $current = $current->getPrevious()) {
                 if ($current instanceof AiNetworkException) {
                     $reason = $current->reason;
+                    $httpStatus = $current->httpStatus;
+                    $retryAfterSeconds = $current->retryAfterSeconds;
+                    $retryAtUnix = $current->retryAtUnix;
                     break;
                 }
             }
@@ -182,7 +186,7 @@ final readonly class AiHttpTransport
                 }
             }
 
-            throw new AiNetworkException($reason);
+            throw new AiNetworkException($reason, $httpStatus, $retryAfterSeconds, $retryAtUnix);
         }
     }
 
@@ -233,7 +237,11 @@ final readonly class AiHttpTransport
             throw new AiNetworkException('redirect_denied');
         }
         if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
-            throw new AiNetworkException('http_error');
+            $status = $response->getStatusCode();
+            $advice = AiRetryAdvice::parse($response);
+            throw new AiNetworkException(match ($status) {
+                401, 403 => 'key_rejected', 404 => 'model_unavailable', 429 => 'provider_rate_limited', default => 'http_error',
+            }, $status, $advice['seconds'], $advice['at']);
         }
         $encoding = strtolower(trim($response->getHeaderLine('Content-Encoding')));
         if ($encoding !== '' && $encoding !== 'identity') {

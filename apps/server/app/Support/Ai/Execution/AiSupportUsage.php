@@ -1,0 +1,185 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support\Ai\Execution;
+
+use App\Models\ConversationCopilotKnowledgeSuggestion;
+use App\Models\ConversationCopilotReplyDraft;
+use App\Models\ConversationCopilotSummary;
+use App\Models\ConversationCopilotTicketSuggestion;
+use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\AgentCopilotPrompt;
+use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\AiContextSanitizer;
+use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
+use App\Support\Ai\ConversationReplyDraftPromptBuilder;
+use App\Support\Ai\ConversationSummaryPromptBuilder;
+use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
+use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\ResolvedAgentCopilotConnection;
+use App\Support\Ai\Usage\AiUsageLedger;
+use App\Support\Ai\Usage\AiUsagePolicy;
+use Closure;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use SensitiveParameter;
+use Throwable;
+
+/** Enroll the existing explicit manual jobs without changing upgrade behavior. */
+final readonly class AiSupportUsage
+{
+    public const ARTIFACTS = [
+        'conversation_summary' => ConversationCopilotSummary::class,
+        'conversation_reply_draft' => ConversationCopilotReplyDraft::class,
+        'conversation_knowledge_suggestion' => ConversationCopilotKnowledgeSuggestion::class,
+        'conversation_ticket_suggestion' => ConversationCopilotTicketSuggestion::class,
+    ];
+
+    public function __construct(private AgentCopilotConnectionResolver $connections, private AiUsageLedger $ledger,
+        private AiUsagePolicy $policy, private AiRequestAuthority $authority) {}
+
+    public function reserveFor(#[SensitiveParameter] Model $artifact): void
+    {
+        $fresh = $this->fresh($artifact);
+        $connection = $this->connections->forAccount((int) $fresh->conversation?->site?->account_id);
+        if ($connection === null || $fresh->connection_revision !== $connection->revision) {
+            throw new AiNetworkException('connection_changed');
+        }
+        if ($this->connections->isLegacyInstallationDefault($connection)) {
+            return;
+        }
+        $context = $this->context($fresh);
+        $prompt = self::promptFor($fresh);
+        $input = self::sanitizedInput($prompt);
+        // Conservative protocol envelope, checked against the actual SDK JSON
+        // again at dispatch. Unexpected SDK growth fails before transmission.
+        $bound = min(66_560, strlen(json_encode([$prompt->instructions, $input], JSON_THROW_ON_ERROR)) + 5_120);
+        $output = min(2_048, $this->policy->forConnection($connection)->maxOutputTokens);
+        $fingerprint = self::workFingerprint($fresh, $connection);
+        $latest = DB::table('ai_usage_attempts')->where('account_id', $connection->accountId)
+            ->where('source', $connection->source)->where('connection_revision', $connection->revision)
+            ->where('purpose', $context->purpose)->where('work_fingerprint', $fingerprint)->orderByDesc('id')->first();
+        $receipt = $this->ledger->reserve($connection, $context->purpose, $context->attemptId, $bound, $output,
+            $fingerprint, $context->actorId, $latest?->attempt_id,
+            fn () => $this->authority->assertAllowed($connection, $context, true));
+        if ($receipt->attemptId !== $context->attemptId || $receipt->state !== 'reserved') {
+            throw new AiNetworkException('usage_attempt_reused');
+        }
+    }
+
+    /** Publish and settle atomically in installation -> Account order. */
+    public function publish(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] AgentCopilotResult $result, #[SensitiveParameter] Closure $publication): void
+    {
+        if (! $result->isGuarded()) {
+            $publication();
+            $result->settle('completed');
+
+            return;
+        }
+        if (! DB::table('ai_usage_attempts')->where('attempt_id', $artifact->generation)->exists()) {
+            throw new AiNetworkException('usage_reservation_missing');
+        }
+        $accountId = (int) $artifact->conversation?->site?->account_id;
+        $this->ledger->withAccountUsageLock($accountId, function () use ($artifact, $result, $publication): void {
+            $publication();
+            $fresh = $artifact::query()->whereKey($artifact->getKey())->where('generation', $artifact->generation)->first();
+            $result->settle($fresh?->status === 'ready' ? 'completed' : 'invalid_output');
+        });
+    }
+
+    public function contextFor(#[SensitiveParameter] Model $artifact): ?AiExecutionContext
+    {
+        $fresh = $this->fresh($artifact);
+        $connection = $this->connections->forAccount((int) $fresh->conversation?->site?->account_id);
+        if ($connection === null || $fresh->connection_revision !== $connection->revision) {
+            throw new AiNetworkException('connection_changed');
+        }
+
+        return $this->connections->isLegacyInstallationDefault($connection) ? null : $this->context($fresh);
+    }
+
+    public function cancelFor(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] string $reason = 'queue_failed'): void
+    {
+        // Use the captured generation; a reloaded newer artifact is another
+        // attempt. Missing holds include all preserved legacy requests.
+        try {
+            if (DB::table('ai_usage_attempts')->where('attempt_id', $artifact->generation)->exists()) {
+                $this->ledger->cancelReserved($artifact->generation, $reason);
+            }
+        } catch (Throwable) {
+            // A failed store never permits I/O; bounded expiry remains recovery.
+        }
+    }
+
+    public static function promptFor(#[SensitiveParameter] Model $artifact): AgentCopilotPrompt
+    {
+        $builder = match ($artifact::class) {
+            ConversationCopilotSummary::class => ConversationSummaryPromptBuilder::class,
+            ConversationCopilotReplyDraft::class => ConversationReplyDraftPromptBuilder::class,
+            ConversationCopilotKnowledgeSuggestion::class => ConversationKnowledgeSuggestionPromptBuilder::class,
+            ConversationCopilotTicketSuggestion::class => ConversationTicketSuggestionPromptBuilder::class,
+            default => throw new AiNetworkException('execution_identity_invalid'),
+        };
+        $context = app($builder)->build($artifact->conversation);
+        if ($context === null) {
+            throw new AiNetworkException('context_unavailable');
+        }
+
+        return $context->prompt;
+    }
+
+    public static function sanitizedInput(#[SensitiveParameter] AgentCopilotPrompt $prompt): string
+    {
+        return mb_substr(app(AiContextSanitizer::class)->sanitize($prompt->input), 0,
+            max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000)));
+    }
+
+    public static function workFingerprint(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ResolvedAgentCopilotConnection $connection): string
+    {
+        return self::fingerprintForPrompt($artifact, $connection, self::promptFor($artifact));
+    }
+
+    public static function assertActualPrompt(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] AiExecutionContext $context, #[SensitiveParameter] AgentCopilotPrompt $prompt): void
+    {
+        if ($context->kind !== 'support') {
+            return;
+        }
+        $class = self::ARTIFACTS[$context->purpose] ?? null;
+        $artifact = $class === null ? null : $class::query()->whereKey($context->artifactId)->where('generation', $context->generation)->first();
+        $attempt = DB::table('ai_usage_attempts')->where('attempt_id', $context->attemptId)->first();
+        if ($artifact === null || $attempt === null || ! hash_equals($attempt->work_fingerprint, self::fingerprintForPrompt($artifact, $connection, $prompt))) {
+            throw new AiNetworkException('context_changed');
+        }
+    }
+
+    private static function fingerprintForPrompt(#[SensitiveParameter] Model $artifact, #[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] AgentCopilotPrompt $prompt): string
+    {
+        return hash_hmac('sha256', json_encode([
+            'manual-v1', $artifact::class, $artifact->conversation_id,
+            $connection->revision, $prompt->instructions, self::sanitizedInput($prompt),
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
+    }
+
+    private function fresh(#[SensitiveParameter] Model $artifact): Model
+    {
+        $fresh = $artifact::query()->with('conversation.site')->whereKey($artifact->getKey())->where('generation', $artifact->generation)->first();
+        if ($fresh === null) {
+            throw new AiNetworkException('execution_superseded');
+        }
+
+        return $fresh;
+    }
+
+    private function context(#[SensitiveParameter] Model $artifact): AiExecutionContext
+    {
+        $purpose = array_search($artifact::class, self::ARTIFACTS, true);
+        if ($purpose === false) {
+            throw new AiNetworkException('execution_identity_invalid');
+        }
+
+        return new AiExecutionContext('support', (int) $artifact->conversation?->site?->account_id,
+            (int) $artifact->requested_by_id, $purpose, $artifact->generation,
+            (int) $artifact->getKey(), $artifact->generation);
+    }
+}

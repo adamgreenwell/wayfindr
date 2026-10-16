@@ -44,6 +44,7 @@ final readonly class AiUsageLedger
         #[SensitiveParameter] string $workFingerprint,
         ?int $requesterId = null,
         #[SensitiveParameter] ?string $replacementOf = null,
+        #[SensitiveParameter] ?Closure $authorize = null,
     ): AiUsageReservation {
         $this->identity($connection, $purpose, $attemptId);
         $this->uuid($replacementOf);
@@ -54,10 +55,11 @@ final readonly class AiUsageLedger
             throw new AiNetworkException('usage_invalid_request');
         }
 
-        return $this->locked($connection->accountId, function (?Account $account, CarbonImmutable $now) use ($connection, $purpose, $attemptId, $inputTokenBound, $maxOutputTokens, $workFingerprint, $requesterId, $replacementOf): AiUsageReservation {
+        return $this->locked($connection->accountId, function (?Account $account, CarbonImmutable $now) use ($connection, $purpose, $attemptId, $inputTokenBound, $maxOutputTokens, $workFingerprint, $requesterId, $replacementOf, $authorize): AiUsageReservation {
             if ($account === null) {
                 throw new AiNetworkException('usage_account_unavailable');
             }
+            $authorize?->__invoke();
             $existing = DB::table('ai_usage_attempts')->where('attempt_id', $attemptId)->first();
             if ($existing !== null) {
                 $this->matches($existing, $connection, $purpose);
@@ -114,10 +116,10 @@ final readonly class AiUsageLedger
         });
     }
 
-    public function claim(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] string $purpose, #[SensitiveParameter] string $attemptId): string
+    public function claim(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] string $purpose, #[SensitiveParameter] string $attemptId, #[SensitiveParameter] ?Closure $authorize = null): string
     {
         $this->identity($connection, $purpose, $attemptId);
-        $result = $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($connection, $purpose): string|AiNetworkException {
+        $result = $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($connection, $purpose, $authorize): string|AiNetworkException {
             $this->matches($attempt, $connection, $purpose);
             if ($this->expireUnsent($attempt, $now)) {
                 return new AiNetworkException('usage_attempt_terminal');
@@ -129,6 +131,13 @@ final readonly class AiUsageLedger
                 $this->finishUnsent($attempt, $now, 'account_deleted');
 
                 return new AiNetworkException('usage_account_unavailable');
+            }
+            try {
+                $authorize?->__invoke();
+            } catch (AiNetworkException $exception) {
+                $this->finishUnsent($attempt, $now, 'access_revoked');
+
+                return new AiNetworkException($exception->reason);
             }
             $limits = $this->policy->forConnection($connection);
             $today = $now->toDateString();
@@ -153,11 +162,11 @@ final readonly class AiUsageLedger
         return $this->unwrap($result);
     }
 
-    public function beginDispatch(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] string $purpose, #[SensitiveParameter] string $attemptId, #[SensitiveParameter] string $claimNonce): AiUsageDispatch
+    public function beginDispatch(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] string $purpose, #[SensitiveParameter] string $attemptId, #[SensitiveParameter] string $claimNonce, #[SensitiveParameter] ?Closure $authorize = null): AiUsageDispatch
     {
         $this->identity($connection, $purpose, $attemptId);
         $this->uuid($claimNonce);
-        $result = $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($connection, $purpose, $claimNonce): AiUsageDispatch|AiNetworkException {
+        $result = $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($connection, $purpose, $claimNonce, $authorize): AiUsageDispatch|AiNetworkException {
             $this->matches($attempt, $connection, $purpose);
             $this->nonce($attempt->claim_nonce, $claimNonce);
             if ($this->expireUnsent($attempt, $now)) {
@@ -170,6 +179,13 @@ final readonly class AiUsageLedger
                 $this->finishUnsent($attempt, $now, 'account_deleted');
 
                 return new AiNetworkException('usage_account_unavailable');
+            }
+            try {
+                $authorize?->__invoke();
+            } catch (AiNetworkException $exception) {
+                $this->finishUnsent($attempt, $now, 'access_revoked');
+
+                return new AiNetworkException($exception->reason);
             }
             $limits = $this->policy->forConnection($connection);
             $today = $now->toDateString();
@@ -221,6 +237,17 @@ final readonly class AiUsageLedger
         });
 
         return $this->unwrap($result);
+    }
+
+    /** Cancel only a definitely unclaimed queue hold; never a competing worker. */
+    public function cancelReserved(#[SensitiveParameter] string $attemptId, #[SensitiveParameter] string $reason = 'queue_failed'): void
+    {
+        $this->reason($reason);
+        $this->attempt($attemptId, function (#[SensitiveParameter] stdClass $attempt, ?Account $account, CarbonImmutable $now) use ($reason): void {
+            if ($attempt->state === 'reserved') {
+                $this->finishUnsent($attempt, $now, $reason);
+            }
+        });
     }
 
     public function cancelUnsent(#[SensitiveParameter] string $attemptId, #[SensitiveParameter] string $claimNonce, #[SensitiveParameter] string $reason = 'known_unsent'): void
@@ -300,6 +327,17 @@ final readonly class AiUsageLedger
                     'retry_not_before' => $succeeded ? null : $this->retryDeadline($attempt, $terminal, $retryAfterSeconds),
                 ], $now);
             } else {
+                // Missing usage never credits a hold, but observed components
+                // above its bound must increase the conservative debit.
+                $knownInput = $inputTokens ?? (int) $attempt->input_token_bound;
+                $knownOutput = $outputTokens ?? (int) $attempt->max_output_tokens;
+                if ($knownInput > PHP_INT_MAX - $knownOutput) {
+                    throw new AiNetworkException('usage_invalid_receipt');
+                }
+                $conservative = max((int) $attempt->debited_tokens, $knownInput + $knownOutput);
+                $this->changePeriod((int) $attempt->account_id, $attempt->dispatch_day,
+                    ['charged_tokens' => $conservative - (int) $attempt->debited_tokens]);
+                $this->update($attempt, ['debited_tokens' => $conservative], $now);
                 if ($this->time($attempt->dispatch_expires_at)->lessThanOrEqualTo($now)) {
                     $this->releaseConcurrency($attempt);
                 }
@@ -361,6 +399,18 @@ final readonly class AiUsageLedger
         }
     }
 
+    /** Atomic publication/settlement; caller enters before holding Account. No I/O. */
+    public function withAccountUsageLock(int $accountId, #[SensitiveParameter] Closure $operation): mixed
+    {
+        return $this->locked($accountId, function (?Account $account, CarbonImmutable $now) use ($operation): mixed {
+            if ($account === null) {
+                throw new AiNetworkException('usage_account_unavailable');
+            }
+
+            return $operation();
+        }, 1);
+    }
+
     public function summary(int $accountId): array
     {
         return $this->locked($accountId, function (?Account $account, CarbonImmutable $now) use ($accountId): array {
@@ -386,7 +436,7 @@ final readonly class AiUsageLedger
     }
 
     /** Caller must never enter while holding an Account lock. No I/O in callback. */
-    private function locked(int $accountId, #[SensitiveParameter] Closure $operation): mixed
+    private function locked(int $accountId, #[SensitiveParameter] Closure $operation, int $attempts = 3): mixed
     {
         try {
             return DB::transaction(function () use ($accountId, $operation): mixed {
@@ -412,7 +462,7 @@ final readonly class AiUsageLedger
                 $now = $this->clock->now()->utc();
 
                 return $operation($account, $now);
-            }, 3);
+            }, $attempts);
         } catch (AiNetworkException $exception) {
             throw new AiNetworkException($exception->reason);
         } catch (Throwable) {
