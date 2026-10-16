@@ -242,3 +242,37 @@ test('fresh Manual mode cancels an older queued automatic open intent', async t 
   assert.equal(posts(f).length,3,'Fresh Manual mode must cancel queued automatic preparation');
   assert.equal(f.panel('reply').dataset.mode,'manual');
 });
+
+test('in-flight status reads synchronously disable explicit preparation controls', async t => {
+  const f=page(t,{mode:'manual'}), panel=f.panel('reply');
+  const button=panel.querySelector('[data-ai-prepare]');
+  assert.equal(button.disabled,true,'An in-flight read must synchronously disable Prepare instead of silently losing its action');
+  panel.querySelector('[data-ai-form]').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(posts(f).length,0);
+  f.requests.slice().forEach(r=>respond(r,empty));await flush();
+  assert.equal(button.disabled,false);
+  panel.querySelector('[data-ai-form]').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(posts(f).length,1);
+  assert.equal(button.disabled,true,'An admitted explicit request must synchronously disable its control too');
+});
+
+test('grouped Prepare waits for every eligible status read then ensures every task', async t => {
+  const f=page(t,{mode:'manual'}), group=f.window.document.querySelector('[data-ai-prepare-all]');
+  const reads=f.requests.slice();respond(reads[0],empty);respond(reads[1],empty);await flush();
+  assert.equal(group.disabled,true,'Grouped Prepare must wait for every eligible task instead of dropping the still-reading task');
+  group.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));assert.equal(posts(f).length,0);
+  respond(reads[2],empty);await flush();assert.equal(group.disabled,false);
+  group.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
+  assert.equal(posts(f).length,3);assert.equal(group.disabled,true);
+});
+
+test('a fresh Ready task disables Refresh synchronously during its status read', async t => {
+  const f=page(t,{mode:'manual',ready:'reply'}), panel=f.panel('reply');
+  const button=panel.querySelector('[data-ai-prepare]');
+  assert.equal(button.disabled,true,'An in-flight Ready read must visibly disable Refresh');
+  f.requests.slice().forEach(r=>respond(r,r.url.endsWith('/reply')?ready('reply'):empty));await flush();
+  assert.equal(button.disabled,false);
+  panel.querySelector('[data-ai-form]').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(JSON.parse(posts(f).at(-1).options.body).action,'refresh');
+  assert.equal(button.disabled,true);
+});

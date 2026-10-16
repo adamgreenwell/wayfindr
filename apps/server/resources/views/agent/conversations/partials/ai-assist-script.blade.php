@@ -11,7 +11,8 @@
     const initialTasks = () => panels().filter(panel => panel.dataset.mode === 'manual' && panel.dataset.workspace === 'conversation'
         && visible(panel) && data(panel)?.value?.generation === null && data(panel)?.value?.can_prepare);
     const updateGroups = () => document.querySelectorAll('[data-ai-prepare-all]').forEach(button => {
-        button.disabled = !initialTasks().some(panel => !data(panel).inFlight);
+        const targets = initialTasks();
+        button.disabled = targets.length === 0 || targets.some(panel => data(panel).inFlight);
     });
     const markDirty = event => {
         if (!(event.target instanceof Element)) return;
@@ -134,6 +135,7 @@
         }
         const version = sourceVersion;
         entry.inFlight = true;
+        render(panel);
         try {
             const headers = {'Accept':'application/json','X-Requested-With':'XMLHttpRequest'};
             const options = {credentials:'same-origin', cache:'no-store', headers};
