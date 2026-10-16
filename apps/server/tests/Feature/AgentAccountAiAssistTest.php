@@ -18,6 +18,7 @@ use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\Network\AiModelDiscovery;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
+use App\Support\Ai\Usage\AiUsagePolicy;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -321,11 +322,13 @@ test('new account usage limits can inherit narrow or explicitly prohibit before 
     $owner = accountAiAdminOwner();
     $this->actingAs($owner)->putJson(route('dashboard.account.ai-assist.limits'), [
         'daily_requests' => 10, 'daily_tokens' => null, 'concurrency' => 0, 'max_output_tokens' => 64,
+        'limits_token' => accountAiAdminLimitsToken($owner),
     ])->assertOk()->assertJsonPath('assist.limits.effective.daily_requests', 10)
         ->assertJsonPath('assist.limits.effective.daily_tokens', 50000)->assertJsonPath('assist.limits.effective.concurrency', 0);
     expect(AccountAiConnection::query()->count())->toBe(0);
     $this->putJson(route('dashboard.account.ai-assist.limits'), [
         'daily_requests' => 101, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null,
+        'limits_token' => accountAiAdminLimitsToken($owner),
     ])->assertUnprocessable()->assertJsonValidationErrors('daily_requests');
 });
 
@@ -342,7 +345,8 @@ test('usage limit errors preserve the connection state endpoint and native actio
     })->save();
     $revision = $record->proposed_revision;
     $editorToken = accountAiAdminEditorToken();
-    $limits = ['daily_requests' => null, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null, $limitField => $invalidValue];
+    $limits = ['daily_requests' => null, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null, $limitField => $invalidValue,
+        'limits_token' => accountAiAdminLimitsToken($owner)];
     // Extra connection fields on this route are not connection edits either.
     $this->put(route('dashboard.account.ai-assist.limits'), [
         ...accountAiAdminInput($revision, ['model' => 'irrelevant-limit-field', 'endpoint' => '']), ...$limits,
@@ -387,7 +391,7 @@ test('malformed usage limit arrays never survive validation into a number input'
     $owner = accountAiAdminOwner();
     $this->actingAs($owner)->put(route('dashboard.account.ai-assist.limits'), [
         'daily_requests' => null, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null,
-        $field => ['unexpected-array'],
+        $field => ['unexpected-array'], 'limits_token' => accountAiAdminLimitsToken($owner),
     ])->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors($field);
     expect(session('_old_input', []))->not->toHaveKey($field);
     $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
@@ -694,4 +698,70 @@ test('browser discovery flash carries only bounded valid model identifiers', fun
         ->and($models[0])->toBe('valid-model-1')->and(end($models))->toBe('valid-model-98')
         ->and(json_encode(session('ai_assist_discovery_models')))->not->toContain('account-key-never-in-browser');
     $this->get(route('dashboard.account.ai-assist.show'))->assertOk()->assertViewHas('assist', fn (array $assist): bool => count($assist['models']) === 98);
+});
+
+test('a stale full limits form cannot restore another managers narrowed token cap', function (): void {
+    $owner = accountAiAdminOwner();
+    $manager = User::factory()->for($owner->account)->create(['account_role' => AccountRole::Owner]);
+    $policy = app(AiUsagePolicy::class);
+    $original = ['daily_requests' => 10, 'daily_tokens' => 1000, 'concurrency' => 1, 'max_output_tokens' => 64];
+    $policy->setAccountLimits($owner, (int) $owner->account_id, $original);
+    $oldToken = $policy->accountSettings((int) $owner->account_id)['limits_token'];
+    $policy->setAccountLimits($owner, (int) $owner->account_id, ['daily_tokens' => 100]);
+    $response = $this->actingAs($manager)->putJson(route('dashboard.account.ai-assist.limits'), [
+        ...$original, 'concurrency' => 2, 'limits_token' => $oldToken,
+    ]);
+    $this->assertSame(422, $response->getStatusCode(), 'A stale full limits form must not restore another manager’s narrowed token cap.');
+    $response->assertJsonValidationErrors('limits_token');
+    expect($policy->accountSettings((int) $owner->account_id)['overrides'])->toBe([...$original, 'daily_tokens' => 100]);
+});
+
+function accountAiAdminLimitsToken(User $actor): string
+{
+    return app(AiUsagePolicy::class)->accountSettings((int) $actor->account_id)['limits_token'];
+}
+
+test('identical reviewed limits forms remain valid and trusted partial patches retain compatibility', function (): void {
+    $owner = accountAiAdminOwner();
+    $values = ['daily_requests' => 10, 'daily_tokens' => 1000, 'concurrency' => 1, 'max_output_tokens' => 64];
+    $policy = app(AiUsagePolicy::class);
+    $policy->setAccountLimits($owner, (int) $owner->account_id, $values);
+    $token = accountAiAdminLimitsToken($owner);
+    $this->actingAs($owner)->putJson(route('dashboard.account.ai-assist.limits'), [...$values, 'limits_token' => $token])
+        ->assertOk()->assertJsonPath('assist.limits.limits_token', $token);
+    $this->putJson(route('dashboard.account.ai-assist.limits'), [...$values, 'limits_token' => $token])->assertOk();
+    $policy->setAccountLimits($owner, (int) $owner->account_id, ['concurrency' => 0]);
+    expect($policy->accountSettings((int) $owner->account_id)['overrides'])->toBe([...$values, 'concurrency' => 0]);
+});
+
+test('failed limits tokens never remint authority or dirty the independent tested connection', function (mixed $token, bool $present): void {
+    $owner = accountAiAdminOwner();
+    accountAiAdminTestAndActivate($owner);
+    $values = ['daily_requests' => 10, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null];
+    $this->put(route('dashboard.account.ai-assist.limits'), [...$values, ...($present ? ['limits_token' => $token] : [])])
+        ->assertRedirect(route('dashboard.account.ai-assist.show'))->assertSessionHasErrors('limits_token');
+    $oldToken = is_string($token) && preg_match('/\A[a-f0-9]{64}\z/', $token) === 1 ? $token : '';
+    expect(session('_old_input'))->toHaveKey('limits_token')
+        ->and(session('_old_input.limits_token'))->toBe($oldToken, 'Failed limits authority must remain exact or explicitly empty on redirect.');
+    $response = $this->get(route('dashboard.account.ai-assist.show'))->assertOk();
+    $document = new DOMDocument;
+    @$document->loadHTML($response->getContent());
+    $xpath = new DOMXPath($document);
+    expect($xpath->query('//input[@name="limits_token"]')->item(0)->getAttribute('value'))->toBe($oldToken, 'A failed native limits form must never receive fresh authority.')
+        ->and($xpath->query('//*[@data-ai-test-status]')->item(0)->getAttribute('data-state'))->toBe('ready')
+        ->and($xpath->query('//button[@data-ai-action="activate"]')->item(0)->hasAttribute('disabled'))->toBeFalse()
+        ->and($xpath->query('//input[@name="endpoint"]')->item(0)->getAttribute('value'))->toBe('https://models.example.test/v1');
+    $this->putJson(route('dashboard.account.ai-assist.limits'), [...$values, 'limits_token' => $oldToken])
+        ->assertUnprocessable()->assertJsonValidationErrors('limits_token');
+    expect(DB::table('account_ai_usage_limits')->where('account_id', $owner->account_id)->exists())->toBeFalse();
+})->with([[null, false], [null, true], ['', true], ['invalid-token', true], [['malformed'], true], [str_repeat('a', 64), true]]);
+
+test('a limits form token cannot be replayed across accounts', function (): void {
+    $owner = accountAiAdminOwner();
+    $foreign = accountAiAdminOwner();
+    $this->actingAs($owner)->putJson(route('dashboard.account.ai-assist.limits'), [
+        'daily_requests' => 10, 'daily_tokens' => null, 'concurrency' => null, 'max_output_tokens' => null,
+        'limits_token' => accountAiAdminLimitsToken($foreign), 'account_id' => $foreign->account_id,
+    ])->assertUnprocessable()->assertJsonValidationErrors('limits_token');
+    expect(DB::table('account_ai_usage_limits')->count())->toBe(0);
 });

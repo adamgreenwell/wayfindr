@@ -98,6 +98,7 @@ return [
         'help' => 'KI liefert manuell angeforderte Support-Vorschläge. Anfragen können begrenzte, bereinigte Gesprächstexte und ausgewählte veröffentlichte Artikelpassagen dieses Kontos enthalten. Anhänge und Cobrowsing-Inhalte sind ausgeschlossen. Ein Agent prüft Vorschläge und entscheidet, was gesendet wird.',
     ],
     'validation' => [
+        'limits_conflict' => 'Diese Nutzungslimits wurden in einer anderen Sitzung geändert. Laden Sie die Seite vor einem neuen Versuch neu.',
         'reload_help' => 'Beim Neuladen gehen ungespeicherte Änderungen verloren.',
         'heading' => 'Verbindungseinstellungen prüfen',
         'invalid_fields' => 'Prüfen Sie dieses Feld und versuchen Sie es erneut.',

@@ -75,7 +75,7 @@ final readonly class AccountAiConnectionPresenter
         try {
             $limits = $this->limits->accountSettings($accountId);
         } catch (Throwable) {
-            $limits = ['unavailable' => true, 'overrides' => [], 'installation' => [], 'effective' => []];
+            $limits = ['unavailable' => true, 'limits_token' => '', 'overrides' => [], 'installation' => [], 'effective' => []];
         }
         try {
             $summary = $this->usage->summary($accountId);

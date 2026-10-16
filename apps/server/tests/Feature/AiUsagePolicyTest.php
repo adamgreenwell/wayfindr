@@ -214,3 +214,18 @@ test('invalid stored limits or unavailable storage cannot fall back to installat
     Schema::drop('account_ai_usage_limits');
     expect(fn () => $policy->forConnection(usagePolicyConnection($owner->account)))->toThrow(AiNetworkException::class);
 });
+
+test('reviewed usage tokens compare current stored fields under the account lock before any patch', function (): void {
+    $owner = usagePolicyOwner();
+    $policy = app(AiUsagePolicy::class);
+    $policy->setAccountLimits($owner, (int) $owner->account_id, ['daily_tokens' => 1000, 'concurrency' => 1]);
+    $token = $policy->accountSettings((int) $owner->account_id)['limits_token'];
+    $policy->setAccountLimits($owner, (int) $owner->account_id, ['daily_tokens' => 100]);
+    try {
+        $policy->setAccountLimits($owner, (int) $owner->account_id, ['daily_tokens' => 1000, 'concurrency' => 2], $token);
+        $this->fail('The locked usage-limit token check must reject an old snapshot before applying any fields.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('limits_token');
+    }
+    expect($policy->accountSettings((int) $owner->account_id)['overrides'])->toMatchArray(['daily_tokens' => 100, 'concurrency' => 1]);
+});

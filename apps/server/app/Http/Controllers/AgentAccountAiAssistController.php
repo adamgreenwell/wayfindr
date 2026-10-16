@@ -119,8 +119,11 @@ final class AgentAccountAiAssistController extends Controller
     {
         return $this->perform($request, function (User $actor) use ($request): void {
             $fields = ['daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens'];
-            $input = Validator::make($request->only($fields), array_fill_keys($fields, ['present', 'nullable', 'integer', 'min:0']))->validate();
-            $this->limits->setAccountLimits($actor, (int) $actor->account_id, $input);
+            $input = Validator::make($request->only([...$fields, 'limits_token']), [
+                ...array_fill_keys($fields, ['present', 'nullable', 'integer', 'min:0']),
+                'limits_token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
+            ])->validate();
+            $this->limits->setAccountLimits($actor, (int) $actor->account_id, array_intersect_key($input, array_flip($fields)), $input['limits_token']);
         }, 'limits_saved');
     }
 
@@ -199,7 +202,7 @@ final class AgentAccountAiAssistController extends Controller
             $errors = [];
             foreach (array_keys($exception->errors()) as $field) {
                 $key = match ($field) {
-                    'expected_revision', 'editor_token' => 'stale_edit', 'endpoint' => 'invalid_endpoint',
+                    'expected_revision', 'editor_token' => 'stale_edit', 'limits_token' => 'limits_conflict', 'endpoint' => 'invalid_endpoint',
                     'api_key' => $request->boolean('clear_api_key') && filled($request->input('api_key')) ? 'key_conflict' : 'invalid_fields',
                     default => 'invalid_fields',
                 };
@@ -265,7 +268,7 @@ final class AgentAccountAiAssistController extends Controller
         // fields, and management actions preserve only their reviewed authority.
         $old = $request->only(match (true) {
             $connectionEdit => ['source', 'name', 'provider', 'model', 'openrouter_provider', 'expected_revision', 'editor_token', 'clear_api_key'],
-            $request->routeIs('dashboard.account.ai-assist.limits') => ['daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens'],
+            $request->routeIs('dashboard.account.ai-assist.limits') => ['daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens', 'limits_token'],
             default => ['expected_revision', 'editor_token'],
         });
         foreach ($old as $field => $value) {
@@ -274,12 +277,17 @@ final class AgentAccountAiAssistController extends Controller
                 'daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens' => $value === null || is_int($value)
                     || is_string($value) && preg_match('/\A-?[0-9]{1,12}\z/', $value) === 1,
                 'expected_revision' => $value === null || is_string($value) && Str::isUuid($value),
-                'editor_token' => is_string($value) && preg_match('/\A[a-f0-9]{64}\z/', $value) === 1,
+                'editor_token', 'limits_token' => is_string($value) && preg_match('/\A[a-f0-9]{64}\z/', $value) === 1,
                 default => $value === null || is_string($value),
             };
             if (! $valid) {
                 unset($old[$field]);
             }
+        }
+        if ($request->routeIs('dashboard.account.ai-assist.limits')) {
+            // A missing/malformed token is failed authority, not permission to
+            // combine old numeric values with a fresh token on the redirect.
+            $old['limits_token'] ??= '';
         }
         // Never flash a credential, including one embedded in an invalid URL.
         if ($connectionEdit && $request->has('endpoint') && $this->safeEndpoint($request->input('endpoint'))) {

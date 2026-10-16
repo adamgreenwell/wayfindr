@@ -98,6 +98,7 @@ return [
         'help' => 'L’IA fornisce suggerimenti di assistenza richiesti manualmente. Le richieste possono includere testo delle conversazioni limitato e ripulito e passaggi selezionati di articoli pubblicati di questo account. Allegati e contenuti di cobrowsing sono esclusi. Un agente esamina i suggerimenti e sceglie cosa inviare.',
     ],
     'validation' => [
+        'limits_conflict' => 'Questi limiti di utilizzo sono cambiati in un’altra sessione. Ricarichi la pagina prima di riprovare.',
         'reload_help' => 'Il ricaricamento elimina le modifiche non salvate.',
         'heading' => 'Controlla le impostazioni della connessione',
         'invalid_fields' => 'Controlli questo campo e riprovi.',

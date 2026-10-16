@@ -98,6 +98,7 @@ return [
         'help' => 'AI provides manually requested support suggestions. Requests may include bounded, scrubbed conversation text and selected published article passages from this account. Attachments and cobrowsing content are excluded. An agent reviews suggestions and chooses what to send.',
     ],
     'validation' => [
+        'limits_conflict' => 'These usage limits changed in another session. Reload the page before trying again.',
         'reload_help' => 'Reloading clears unsaved changes.',
         'heading' => 'Check the connection settings',
         'invalid_fields' => 'Check this field and try again.',

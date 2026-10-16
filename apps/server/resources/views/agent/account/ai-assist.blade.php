@@ -231,6 +231,8 @@
                 <form class="section-form ai-assist-limits" method="POST" action="{{ route('dashboard.account.ai-assist.limits') }}" data-ai-management-form>
                     @csrf
                     @method('PUT')
+                    <input type="hidden" name="limits_token" value="{{ old('limits_token', $assist['limits']['limits_token']) }}">
+                    @error('limits_token')<p class="field-error">{{ $message }} <a href="{{ route('dashboard.account.ai-assist.show') }}">{{ __('ai_assist.actions.reload') }}</a></p>@enderror
                     <p class="field-help">{{ __('ai_assist.limits.help') }}</p>
                     <div class="ai-assist-grid">
                         @foreach (['daily_requests', 'daily_tokens', 'concurrency', 'max_output_tokens'] as $field)
