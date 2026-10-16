@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationCopilotKnowledgeSuggestion;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
@@ -118,8 +119,14 @@ final class AgentConversationCopilotKnowledgeSuggestionController extends Contro
 
         if ($shouldDispatch) {
             try {
+                app(AiSupportUsage::class)->reserveFor($suggestion);
                 GenerateConversationCopilotKnowledgeSuggestion::dispatch($suggestion->id, $suggestion->generation);
             } catch (Throwable $exception) {
+                try {
+                    app(AiSupportUsage::class)->cancelFor($suggestion);
+                } catch (Throwable) {
+                    // Bounded expiry recovers an uncertain reservation release.
+                }
                 Log::warning('Conversation copilot knowledge suggestion could not be queued.', [
                     'exception_type' => $exception::class,
                     'suggestion_id' => $suggestion->id,

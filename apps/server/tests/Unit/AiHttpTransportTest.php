@@ -158,7 +158,9 @@ test('AI transport default admission denies before DNS and terminal dispatch', f
 });
 
 test('AI transport pins an admitted request and owns every transport option', function (): void {
-    $clock = hrtime(true) / 1e9;
+    // Policy also checks the real monotonic deadline. Start on an integer
+    // tick so injected elapsed time is exact without leaving that time domain.
+    $clock = ceil(hrtime(true) / 1e9);
     $events = [];
     $request = null;
     $options = null;
@@ -453,7 +455,7 @@ test('AI transport rejects redirects and non-success responses after exactly one
 
     aiTransportFailure(fn () => $transport->send(aiTransportConnection(), 'probe', 'attempt-1', 'GET', 'https://models.example.test/v1/models'), $reason);
     expect($calls)->toBe(1);
-})->with([[301, 'redirect_denied'], [302, 'redirect_denied'], [307, 'redirect_denied'], [308, 'redirect_denied'], [401, 'http_error'], [500, 'http_error']]);
+})->with([[301, 'redirect_denied'], [302, 'redirect_denied'], [307, 'redirect_denied'], [308, 'redirect_denied'], [401, 'key_rejected'], [403, 'key_rejected'], [404, 'model_unavailable'], [429, 'provider_rate_limited'], [500, 'http_error']]);
 
 test('AI transport checks encoded and oversized headers even when a fake skips callbacks', function (array $headers, string $reason): void {
     $transport = new AiHttpTransport(aiTransportPolicy(), aiTransportAdmission(), fn () => Create::promiseFor(new Response(200, $headers, '{}')));

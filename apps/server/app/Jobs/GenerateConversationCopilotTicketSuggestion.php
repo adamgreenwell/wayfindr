@@ -12,6 +12,7 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationTicketSuggestionOutputParser;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
+use App\Support\Ai\Execution\AiSupportUsage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -60,16 +61,21 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             return;
         }
 
+        $usageArtifact = $suggestion;
+        $result = null;
+
         $conversation = $suggestion->conversation;
         $requester = $suggestion->requestedBy;
 
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('createTicket', $conversation)) {
+            $this->cancelBeforeProvider($suggestion);
             $this->recordFailure($suggestion, 'access_revoked');
 
             return;
         }
 
         if ($conversation->tickets()->exists()) {
+            $this->cancelBeforeProvider($suggestion);
             $this->recordFailure($suggestion, 'ticket_exists');
 
             return;
@@ -79,6 +85,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             $context = $promptBuilder->build($conversation);
 
             if ($context === null) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'no_messages');
 
                 return;
@@ -107,16 +114,20 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             $requester = $suggestion?->requestedBy;
 
             if ($suggestion === null || $conversation === null || $requester === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+
                 return;
             }
 
             if (! Gate::forUser($requester)->allows('createTicket', $conversation)) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'access_revoked');
 
                 return;
             }
 
             if ($conversation->tickets()->exists()) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'ticket_exists');
 
                 return;
@@ -124,15 +135,17 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $suggestion->connection_revision !== $connection->revision) {
+                $this->cancelBeforeProvider($suggestion);
                 $this->recordFailure($suggestion, 'connection_changed');
 
                 return;
             }
 
-            $result = $provider->generate($context->prompt->withConnection($connection));
+            $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($suggestion)));
             $output = $outputParser->parse(mb_substr(trim($result->text), 0, 8_000));
 
             if ($output === null) {
+                $result->settle('invalid_output');
                 $this->recordFailure($suggestion, 'invalid_output');
 
                 return;
@@ -150,7 +163,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                     ->values()
                     ->all();
 
-            DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion, $connections): void {
+            app(AiSupportUsage::class)->publish($suggestion, $result, fn () => DB::transaction(function () use ($context, $labelIds, $output, $result, $suggestion, $connections): void {
                 $accountId = (int) $suggestion->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -201,8 +214,8 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                         'source_message_count' => $context->messageCount,
                         'provider' => mb_substr($result->provider, 0, 64),
                         'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
+                        'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                        'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                         'failure_code' => null,
                         'completed_at' => now(),
                     ]);
@@ -213,12 +226,20 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                         'suggested_label_count' => count($labelIds),
                         'provider' => mb_substr($result->provider, 0, 64),
                         'model' => mb_substr($result->model, 0, 255),
-                        'prompt_tokens' => max(0, $result->promptTokens),
-                        'completion_tokens' => max(0, $result->completionTokens),
+                        'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
+                        'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
                     ]);
                 }
-            });
+            }));
         } catch (Throwable $exception) {
+            try {
+                $result?->settle('invalid_output');
+            } catch (Throwable) {
+                // Withhold output even when final usage persistence is unavailable.
+            }
+            if ($result === null) {
+                $this->cancelBeforeProvider($usageArtifact);
+            }
             Log::warning('Conversation copilot ticket suggestion generation failed.', [
                 'exception_type' => $exception::class,
                 'suggestion_id' => $suggestion->id,
@@ -253,6 +274,15 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             && $suggestion->status === ConversationCopilotTicketSuggestion::STATUS_PENDING;
     }
 
+    private function cancelBeforeProvider(ConversationCopilotTicketSuggestion $suggestion): void
+    {
+        try {
+            app(AiSupportUsage::class)->cancelFor($suggestion, 'known_unsent');
+        } catch (Throwable) {
+            // Bounded expiry recovers an uncertain reservation release.
+        }
+    }
+
     private function recordFailure(ConversationCopilotTicketSuggestion $suggestion, string $code): void
     {
         DB::transaction(function () use ($code, $suggestion): void {
@@ -277,7 +307,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
         });
     }
 
-    /** @param  array<string, int|string>  $metadata */
+    /** @param  array<string, int|string|null>  $metadata */
     private function audit(ConversationCopilotTicketSuggestion $suggestion, string $action, array $metadata): void
     {
         $conversation = $suggestion->conversation;

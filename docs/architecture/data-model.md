@@ -137,7 +137,8 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   key. Opaque proposal/test/active revisions, fingerprint and policy identity
   bind a successful synthetic test to the exact configuration, and a test
   generation fences duplicate or superseded probes. Explicit activation changes
-  the processor; draft edits leave active processing intact. `enabled` pauses
+  the processor; draft edits leave active processing intact. A nullable, sanitized
+  `test_failure_code` records actionable unavailable causes without provider text. `enabled` pauses
   processing, while `uses_installation_default` preserves the existing manual
   path only until deliberate selection or disconnect retires that eligibility.
 - `account_ai_usage_limits`: one account's nullable request/token, concurrency

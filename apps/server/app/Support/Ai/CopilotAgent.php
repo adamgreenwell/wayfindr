@@ -17,7 +17,19 @@ final class CopilotAgent implements Agent, HasProviderOptions
     public function __construct(
         private readonly string $systemInstructions,
         private readonly string $openRouterProvider = '',
+        private readonly ?int $outputCap = null,
+        private readonly bool $guarded = false,
     ) {}
+
+    public function maxTokens(): ?int
+    {
+        return $this->outputCap;
+    }
+
+    public function maxSteps(): int
+    {
+        return 1;
+    }
 
     public function instructions(): string
     {
@@ -49,6 +61,7 @@ final class CopilotAgent implements Agent, HasProviderOptions
                 'order' => [$upstreamProvider],
                 'allow_fallbacks' => false,
                 'zdr' => true,
+                ...($this->guarded ? ['require_parameters' => true] : []),
             ],
         ];
     }

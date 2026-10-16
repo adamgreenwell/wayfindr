@@ -42,6 +42,7 @@ const READER_CLOCK_EXEMPT = [
     // machine identities/validation, never reader-facing timestamp labels;
     // a reader timezone would move the budget boundary or stored instant.
     'app/Support/Ai/Usage/AiUsageLedger.php' => 'database UTC allowance keys and storage wire timestamps, never reader-facing',
+    'app/Support/Ai/Network/AiRetryAdvice.php' => 'HTTP UTC wire-date validation, never reader-facing',
     'app/Support/Ai/Usage/DatabaseAiUsageClock.php' => 'database UTC timestamp validation, never reader-facing',
 
     // Filenames. A downloaded artifact outlives the session that made it and

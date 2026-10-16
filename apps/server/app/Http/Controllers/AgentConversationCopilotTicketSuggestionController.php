@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -119,8 +120,14 @@ final class AgentConversationCopilotTicketSuggestionController extends Controlle
 
         if ($shouldDispatch) {
             try {
+                app(AiSupportUsage::class)->reserveFor($suggestion);
                 GenerateConversationCopilotTicketSuggestion::dispatch($suggestion->id, $suggestion->generation);
             } catch (Throwable $exception) {
+                try {
+                    app(AiSupportUsage::class)->cancelFor($suggestion);
+                } catch (Throwable) {
+                    // Bounded expiry recovers an uncertain reservation release.
+                }
                 Log::warning('Conversation copilot ticket suggestion could not be queued.', [
                     'exception_type' => $exception::class,
                     'suggestion_id' => $suggestion->id,

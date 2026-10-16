@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\ConversationCopilotSummary;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Conversations\ConversationReturnPath;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -114,8 +115,14 @@ final class AgentConversationCopilotSummaryController extends Controller
 
         if ($shouldDispatch) {
             try {
+                app(AiSupportUsage::class)->reserveFor($summary);
                 GenerateConversationCopilotSummary::dispatch($summary->id, $summary->generation);
             } catch (Throwable $exception) {
+                try {
+                    app(AiSupportUsage::class)->cancelFor($summary);
+                } catch (Throwable) {
+                    // Bounded expiry recovers an uncertain reservation release.
+                }
                 Log::warning('Conversation copilot summary could not be queued.', [
                     'exception_type' => $exception::class,
                     'summary_id' => $summary->id,

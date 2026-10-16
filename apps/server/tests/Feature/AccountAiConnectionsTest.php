@@ -12,6 +12,7 @@ use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AccountAiConnections;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Ai\UnavailableAccountAiConnectionProbe;
 use App\Support\Settings\OperatorSettings;
@@ -67,7 +68,7 @@ beforeEach(function (): void {
             return $this->policy;
         }
 
-        public function probe(ResolvedAgentCopilotConnection $connection): AgentCopilotResult
+        public function probe(ResolvedAgentCopilotConnection $connection, ?AiExecutionContext $context = null): AgentCopilotResult
         {
             $this->calls++;
 

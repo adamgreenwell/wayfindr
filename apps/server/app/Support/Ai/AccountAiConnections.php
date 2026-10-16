@@ -9,6 +9,9 @@ use App\Models\Account;
 use App\Models\AccountAiConnection;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Ai\Execution\AiExecutionContext;
+use App\Support\Ai\Network\AiModelDiscovery;
+use App\Support\Ai\Network\AiNetworkException;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +26,7 @@ final readonly class AccountAiConnections
         private AgentCopilotConnectionResolver $resolver,
         private AgentCopilotConfiguration $configuration,
         private AccountAiConnectionProbe $probe,
+        private AiModelDiscovery $discovery,
     ) {}
 
     public function propose(User $actor, int $accountId, array $input): AccountAiConnection
@@ -100,16 +104,17 @@ final readonly class AccountAiConnections
         });
 
         // Never hold database locks across an external synthetic request. The
-        // default executor makes no request; #1168 supplies policy and probes.
+        // executor rechecks proposal, actor and generation under usage locks.
         $success = false;
+        $failure = 'provider_unavailable';
         try {
-            $result = $this->probe->probe($candidate);
+            $result = $this->probe->probe($candidate, AiExecutionContext::probe($accountId, (int) $actor->id, $revision, $generation));
             $success = trim($result->text) !== '';
-        } catch (Throwable) {
-            // Raw provider failures can contain keys/endpoints or echoed input.
+        } catch (Throwable $exception) {
+            $failure = $this->failureCode($exception);
         }
 
-        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($revision, $generation, $candidate, $policy, $success): AccountAiConnection {
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record, User $freshActor) use ($revision, $generation, $candidate, $policy, $success, $failure): AccountAiConnection {
             $proposed = $this->requireRevision($record, $revision);
             $current = $this->resolver->candidate((int) $record->account_id, $revision, $proposed);
 
@@ -125,12 +130,56 @@ final readonly class AccountAiConnections
                 'tested_policy_revision' => $success ? $policy : null,
                 'tested_at' => $success ? now() : null,
                 'test_status' => $success ? 'ready' : 'unavailable',
+                'test_failure_code' => $success ? null : $failure,
                 'test_generation' => null,
             ])->save();
             $this->audit($record, $freshActor, $success ? 'tested' : 'test_failed');
 
             return $record;
         });
+    }
+
+    /** First-page suggestions only. Exact manual model entry remains available. */
+    public function discoverModels(User $actor, int $accountId, string $revision): ?array
+    {
+        $candidate = $this->locked($actor, $accountId, function (AccountAiConnection $record) use ($revision): ResolvedAgentCopilotConnection {
+            $values = $this->requireRevision($record, $revision);
+            $candidate = $this->resolver->candidateForDiscovery((int) $record->account_id, $revision, $values);
+            if ($candidate === null) {
+                throw ValidationException::withMessages(['connection' => 'Complete the provider, credential and endpoint fields first.']);
+            }
+
+            return $candidate;
+        });
+        $models = $this->discovery->discover($candidate,
+            AiExecutionContext::discovery($accountId, (int) $actor->id, $revision, (string) Str::uuid()));
+
+        return $this->locked($actor, $accountId, function (AccountAiConnection $record) use ($revision, $candidate, $models): ?array {
+            $values = $this->requireRevision($record, $revision);
+            $current = $this->resolver->candidateForDiscovery((int) $record->account_id, $revision, $values);
+            if ($current === null || ! hash_equals($current->revision, $candidate->revision)) {
+                throw ValidationException::withMessages(['connection' => 'The connection changed during model discovery.']);
+            }
+
+            return $models;
+        });
+    }
+
+    private function failureCode(Throwable $exception): string
+    {
+        $code = $exception instanceof AiNetworkException ? $exception->reason : '';
+        if ($code === 'probe_invalid_output') {
+            return 'invalid_output';
+        }
+
+        return in_array($code, [
+            'key_rejected', 'model_unavailable', 'deadline_exceeded', 'dns_deadline', 'dns_unavailable',
+            'destination_denied', 'private_destination_denied', 'redirect_denied', 'endpoint_mismatch',
+            'usage_request_limit', 'usage_token_limit', 'usage_concurrency_limit', 'usage_output_limit',
+            'usage_retry_cooldown', 'usage_attempt_reused', 'usage_reconciliation_unavailable',
+            'usage_policy_unavailable', 'usage_store_unavailable', 'response_too_large', 'invalid_output',
+            'connection_changed', 'access_revoked', 'context_changed', 'provider_rate_limited',
+        ], true) ? $code : 'provider_unavailable';
     }
 
     public function activate(User $actor, int $accountId, string $revision): AccountAiConnection
@@ -287,7 +336,7 @@ final readonly class AccountAiConnections
         return [
             'tested_revision' => null, 'tested_fingerprint' => null,
             'tested_policy_revision' => null, 'tested_at' => null,
-            'test_generation' => null, 'test_status' => 'untested', 'test_started_at' => null,
+            'test_generation' => null, 'test_status' => 'untested', 'test_started_at' => null, 'test_failure_code' => null,
         ];
     }
 
