@@ -11,7 +11,7 @@ fresh Use actions. The #1169 administration implementation is merged in #1185;
 [its delivery boundary](ai-support-assist-admin.md)
 describes upgrade defaults, explicit consent and scoped management. The unified
 Assist surface, grounding/refinement and automatic preparation remain pending.
-The first #1170 slice defines [preparation identities and cache classification](../architecture/ai-assist-preparation-lifecycle.md); atomic ensure and actual-open integration remain next.
+The first #1170 slice defines account catalogue revision metadata and [preparation identities and cache classification](../architecture/ai-assist-preparation-lifecycle.md); atomic ensure and actual-open integration remain next.
 The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The

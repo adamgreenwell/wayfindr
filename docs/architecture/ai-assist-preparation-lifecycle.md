@@ -29,14 +29,23 @@ do not. Attachment-only activity changes the activity position without exposing
 attachment content. Unselected older messages do not expand the input partition.
 The optional source proof on existing context DTOs does not join provider input.
 
-Knowledge preparation hashes only published same-account article records, including
-raw content, search text and local link identity, in bounded chunks. It does not
-send that catalogue to the provider. Current reply/summary recipes remain
-transcript-only and do not query articles. Ticket preparation instead binds the
-same-account label catalogue. A future grounded recipe must add its actual
-knowledge dependencies here before being admitted. Bump the preparation recipe
-version when local matching or output-schema semantics change without changing
-the prompt instructions.
+Knowledge and ticket identities read server-maintained account catalogue UUIDs,
+without scanning article bodies or label rows. PostgreSQL/SQLite triggers rotate
+these tokens atomically on relevant inserts, edits, deletes and account moves,
+including bulk SQL. Both owners are invalidated when a record moves. Draft
+article edits and timestamp-only writes leave tokens unchanged; non-null future
+publication edits conservatively invalidate them. Rollback restores the token
+with the source. Account deletion removes the metadata with its parent row.
+
+Knowledge also reads the latest eligible `published_at` using the existing
+`(account_id, published_at)` index and `LIMIT 1`. This watermark advances when a
+scheduled article becomes eligible without a database write. No eligible article
+means insufficient context. Existing installations begin with NULL revision zero;
+the migration does no content scan or backfill. Ticket identity skips local label
+matching, while ordinary generation still matches labels by default. Summary and
+reply identities remain transcript-only. No catalogue content leaves the install.
+A future grounded recipe must add its actual dependencies before admission; bump
+the recipe version when matching or output-schema semantics change.
 
 ## Implemented cache classification
 
@@ -51,7 +60,10 @@ still needs fresh admission and safe supersession of any existing work.
 conversion-only ticket details. Manual never enables automatic preparation.
 Neither helper proves an actual open, reserves usage, authorizes provider I/O,
 validates output, or replaces fresh read/Use authority. This slice adds no endpoint,
-queue work, schema, persistent receipt store, automatic trigger or provider call.
+queue work, persistent receipt store, automatic trigger or provider call. Its
+only schema change is two nullable account catalogue UUIDs and their source-write
+triggers. These configuration tokens contain no visitor links or source content;
+see the [data inventory](../privacy/data-inventory.md).
 Existing context DTO constructors remain compatible.
 
 ## Remaining execution order

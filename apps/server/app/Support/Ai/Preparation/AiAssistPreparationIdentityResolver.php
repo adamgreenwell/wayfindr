@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Ai\Preparation;
 
-use App\Models\Article;
 use App\Models\Conversation;
-use App\Models\TicketLabel;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
@@ -17,12 +15,13 @@ use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /** Read-only input snapshot for the future locked ensure/admission coordinator. */
 final readonly class AiAssistPreparationIdentityResolver
 {
-    private const VERSION = 'assist-preparation-v1';
+    private const VERSION = 'assist-preparation-v2';
 
     public function __construct(private AiAssistPolicyResolver $policies, private AgentCopilotConnectionResolver $connections) {}
 
@@ -65,7 +64,8 @@ final readonly class AiAssistPreparationIdentityResolver
         // Capture all activity first, including attachment-only follow-ups.
         // Attachment bytes, metadata and profiles never enter the source proof.
         $lastMessageId = $conversation->messages()->max('id');
-        $context = app($builder)->build($conversation);
+        $context = $purpose === 'conversation_ticket_suggestion'
+            ? app($builder)->build($conversation, matchLabels: false) : app($builder)->build($conversation);
         if ($context !== null && (! is_string($context->sourceRevision)
             || preg_match('/\A[a-f0-9]{64}\z/', $context->sourceRevision) !== 1)) {
             throw new AiNetworkException('execution_identity_invalid');
@@ -95,26 +95,19 @@ final readonly class AiAssistPreparationIdentityResolver
             $policy->maxContextCharacters, $fingerprint);
     }
 
-    /** Current knowledge uses local matching; no catalogue is added to provider input. */
+    /** Constant-size metadata reads; never scan article bodies or label rows here. */
     private function catalogue(int $accountId, string $purpose): array
     {
-        $hash = hash_init('sha256', HASH_HMAC, (string) config('app.key'));
-        hash_update($hash, json_encode([self::VERSION, $accountId, $purpose], JSON_THROW_ON_ERROR)."\n");
-        $rows = $purpose === 'conversation_knowledge_suggestion'
-            ? Article::query()->where('account_id', $accountId)->published()
-                ->select(['id', 'title', 'slug', 'body', 'search_text', 'published_at'])
-            : TicketLabel::query()->where('account_id', $accountId)->select(['id', 'name', 'slug']);
-        $count = 0;
-        foreach ($rows->lazyById(25) as $row) {
-            $revision = [];
-            foreach ($row->getRawOriginal() as $key => $value) {
-                $revision[$key] = is_string($value) ? hash_hmac('sha256', $value, (string) config('app.key')) : $value;
-            }
-            hash_update($hash, json_encode($revision, JSON_THROW_ON_ERROR)."\n");
-            $count++;
-        }
+        $knowledge = $purpose === 'conversation_knowledge_suggestion';
+        $column = $knowledge ? 'ai_article_catalogue_revision' : 'ai_ticket_label_catalogue_revision';
+        $revision = DB::table('accounts')->where('id', $accountId)->value($column);
+        // The existing (account_id, published_at) index makes this a single
+        // watermark lookup. Scheduled publication advances it without a write.
+        $published = $knowledge ? DB::table('articles')->where('account_id', $accountId)
+            ->whereNotNull('published_at')->where('published_at', '<=', now())
+            ->orderByDesc('published_at')->value('published_at') : null;
 
-        return [hash_final($hash), $count === 0];
+        return [$this->hash([self::VERSION, $accountId, $purpose, $revision, $published]), $knowledge && $published === null];
     }
 
     private function hash(array $identity): string

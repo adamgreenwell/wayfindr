@@ -20,6 +20,7 @@ use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\ConversationSummaryContext;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
+use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Preparation\AiAssistPreparationIdentity;
 use App\Support\Ai\Preparation\AiAssistPreparationIdentityResolver;
@@ -28,6 +29,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -286,4 +288,94 @@ test('snapshot and cache classification perform no writes reservations queueing 
     Queue::assertNothingPushed();
     Http::assertNothingSent();
     expect(DB::table('ai_usage_attempts')->count())->toBe(0);
+});
+
+test('catalogue identity reads stay bounded as knowledge and labels grow', function (): void {
+    $world = preparationIdentityWorld();
+    Article::factory()->count(120)->for($world['account'])->published()->create(['body' => str_repeat('Large catalogue content. ', 500)]);
+    TicketLabel::factory()->count(120)->for($world['account'])->create();
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+    preparationIdentity($world, 'conversation_knowledge_suggestion');
+    $articles = array_values(array_filter($queries, fn ($sql) => str_contains($sql, '"articles"')));
+    expect($articles)->toHaveCount(1, 'Catalogue lookup must read one bounded publication watermark only.');
+    expect($articles[0])->toContain('"published_at"', 'limit 1')->not->toContain('"body"', '"search_text"');
+    $queries = [];
+    preparationIdentity($world, 'conversation_ticket_suggestion');
+    expect(array_filter($queries, fn ($sql) => str_contains($sql, '"ticket_labels"')))->toBe([], 'Ticket identity must avoid scanning label rows.');
+    $context = app(ConversationTicketSuggestionPromptBuilder::class)->build($world['conversation']);
+    expect($context->labelIds)->toContain($world['label']->id)
+        ->and(array_filter($queries, fn ($sql) => str_contains($sql, '"ticket_labels"')))->not->toBe([]);
+    $indexes = Schema::getIndexes('articles');
+    expect(array_filter($indexes, fn ($index) => $index['columns'] === ['account_id', 'published_at']))->not->toBe([]);
+});
+
+test('scheduled publication changes only the owning account identity without a source write', function (): void {
+    $world = preparationIdentityWorld();
+    $this->freezeTime();
+    $foreign = Account::factory()->create();
+    Article::factory()->for($foreign)->create(['published_at' => now()->addMinute()]);
+    Article::factory()->for($world['account'])->create(['published_at' => now()->addMinutes(3)]);
+    $revision = DB::table('accounts')->where('id', $world['account']->id)->value('ai_article_catalogue_revision');
+    $first = preparationIdentity($world, 'conversation_knowledge_suggestion');
+    $this->travel(2)->minutes();
+    expect(preparationIdentity($world, 'conversation_knowledge_suggestion')->matches($first))->toBeTrue('Foreign scheduled publication must not alter this account identity.');
+    $this->travel(2)->minutes();
+    expect(preparationIdentity($world, 'conversation_knowledge_suggestion')->matches($first))->toBeFalse()
+        ->and(DB::table('accounts')->where('id', $world['account']->id)->value('ai_article_catalogue_revision'))->toBe($revision);
+});
+
+test('catalogue revisions join bulk writes and roll back with their source', function (string $table, string $field, string $column, string $purpose): void {
+    $world = preparationIdentityWorld();
+    $before = preparationIdentity($world, $purpose);
+    $revision = DB::table('accounts')->where('id', $world['account']->id)->value($column);
+    DB::beginTransaction();
+    try {
+        DB::table($table)->where('account_id', $world['account']->id)->update([$field => 'Changed through bulk SQL']);
+        expect(DB::table('accounts')->where('id', $world['account']->id)->value($column))->not->toBe($revision)
+            ->and(preparationIdentity($world, $purpose)->matches($before))->toBeFalse();
+    } finally {
+        DB::rollBack();
+    }
+    expect(DB::table('accounts')->where('id', $world['account']->id)->value($column))->toBe($revision)
+        ->and(preparationIdentity($world, $purpose)->matches($before))->toBeTrue();
+    DB::table($table)->where('account_id', $world['account']->id)->update([$field => 'Committed through bulk SQL']);
+    expect(preparationIdentity($world, $purpose)->matches($before))->toBeFalse('Committed bulk SQL must invalidate catalogue identity.');
+})->with([
+    ['articles', 'body', 'ai_article_catalogue_revision', 'conversation_knowledge_suggestion'],
+    ['ticket_labels', 'name', 'ai_ticket_label_catalogue_revision', 'conversation_ticket_suggestion'],
+]);
+
+test('catalogue moves invalidate both owners and account cascade remains deletable', function (string $table, string $source, string $column): void {
+    $world = preparationIdentityWorld();
+    $other = Account::factory()->create();
+    $oldRevision = DB::table('accounts')->where('id', $world['account']->id)->value($column);
+    DB::table($table)->where('id', $world[$source]->id)->update(['account_id' => $other->id]);
+    expect(DB::table('accounts')->where('id', $world['account']->id)->value($column))->not->toBe($oldRevision)
+        ->and(DB::table('accounts')->where('id', $other->id)->value($column))->not->toBeNull();
+    $other->delete();
+    expect(DB::table($table)->where('id', $world[$source]->id)->exists())->toBeFalse();
+})->with([
+    ['articles', 'article', 'ai_article_catalogue_revision'],
+    ['ticket_labels', 'label', 'ai_ticket_label_catalogue_revision'],
+]);
+
+test('catalogue revision migration round trips without seeding or changing content', function (): void {
+    $world = preparationIdentityWorld();
+    $article = DB::table('articles')->where('id', $world['article']->id)->first();
+    $label = DB::table('ticket_labels')->where('id', $world['label']->id)->first();
+    $migration = require database_path('migrations/2026_10_16_170000_add_ai_catalogue_revisions_to_accounts.php');
+    $migration->down();
+    expect(Schema::hasColumn('accounts', 'ai_article_catalogue_revision'))->toBeFalse();
+    $migration->up();
+    expect(DB::table('articles')->where('id', $world['article']->id)->first())->toEqual($article)
+        ->and(DB::table('ticket_labels')->where('id', $world['label']->id)->first())->toEqual($label)
+        ->and(DB::table('accounts')->where('id', $world['account']->id)->value('ai_article_catalogue_revision'))->toBeNull()
+        ->and(DB::table('accounts')->where('id', $world['account']->id)->value('ai_ticket_label_catalogue_revision'))->toBeNull();
+    DB::table('articles')->where('id', $article->id)->update(['body' => 'Post migration SQL edit']);
+    DB::table('ticket_labels')->where('id', $label->id)->delete();
+    expect(DB::table('accounts')->where('id', $world['account']->id)->value('ai_article_catalogue_revision'))->toBeUuid()
+        ->and(DB::table('accounts')->where('id', $world['account']->id)->value('ai_ticket_label_catalogue_revision'))->toBeUuid();
 });
