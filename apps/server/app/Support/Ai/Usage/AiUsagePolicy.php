@@ -99,7 +99,33 @@ final readonly class AiUsagePolicy
         }
     }
 
-    private function forAccount(int $accountId): AiUsageLimits
+    /** Numeric account settings, usable before a connection is configured. */
+    public function accountSettings(int $accountId): array
+    {
+        $limits = $this->forAccount($accountId);
+        $installation = $this->installation();
+        $stored = DB::table('account_ai_usage_limits')->where('account_id', $accountId)->first();
+        $overrides = [];
+        foreach (self::CAPS as $field => $maximum) {
+            $value = $stored?->{$field};
+            $overrides[$field] = $value === null ? null : $this->integer($value, 0, $maximum);
+            if ($value !== null && $overrides[$field] === null) {
+                throw new AiNetworkException('usage_policy_unavailable');
+            }
+        }
+
+        return [
+            'unavailable' => false,
+            'overrides' => $overrides,
+            'installation' => array_intersect_key($installation, self::CAPS),
+            'effective' => [
+                'daily_requests' => $limits->account['requests'], 'daily_tokens' => $limits->account['tokens'],
+                'concurrency' => $limits->account['concurrency'], 'max_output_tokens' => $limits->maxOutputTokens,
+            ],
+        ];
+    }
+
+    public function forAccount(int $accountId): AiUsageLimits
     {
         try {
             if ($accountId <= 0 || ! Account::query()->whereKey($accountId)->exists()) {
