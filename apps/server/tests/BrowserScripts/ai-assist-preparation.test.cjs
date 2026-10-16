@@ -162,3 +162,33 @@ test('unchanged polling preserves focused suggestion controls and does not reann
   f.requests.filter(r=>r.url.endsWith('/reply')).at(-1).resolve({ok:true,status:200,headers:{get:()=>null},json:async()=>ready('reply')});
   await flush(); assert.equal(panel.querySelector('[data-ai-use]'),button);
 });
+
+test('each replacement generation gets a fresh bounded polling allowance', async t => {
+  const f=page(t,{mode:'manual'});
+  let clock=1000000;
+  f.window.Date.now=()=>clock;
+  const pending={...empty,state:'preparing',generation,can_prepare:false};
+  f.requests.forEach(r=>respond(r,r.url.endsWith('/reply') ? pending : empty));
+  await flush();
+  for (let index=0;index<210;index++) {
+    clock+=2001;
+    const before=f.requests.length;
+    f.timers.forEach(fn=>fn());
+    f.requests.slice(before).forEach(r=>respond(r,r.url.endsWith('/reply')
+      ? (index===209 ? {...pending,state:'unavailable',can_prepare:true} : pending) : empty));
+    await flush();
+  }
+  f.panel('reply').querySelector('[data-ai-form]').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  const retry=posts(f).at(-1);
+  assert.ok(retry,'Explicit retry must be available after the terminal generation');
+  const next={...pending,generation:'d0620693-f65c-4ae7-9820-c8b5cde95fe4'};
+  respond(retry,next);await flush();
+  clock+=2001;
+  const before=f.requests.length;
+  f.timers.forEach(fn=>fn());
+  const reads=f.requests.slice(before).filter(r=>r.url==='/assist/reply');
+  assert.equal(reads.length,1,'A replacement generation must poll even after the prior generation exhausted its allowance');
+  respond(reads[0],{...ready('reply'),generation:next.generation});await flush();
+  assert.equal(f.panel('reply').dataset.state,'ready');
+  assert.equal(posts(f).length,1,'Only the deliberate retry may admit replacement work');
+});
