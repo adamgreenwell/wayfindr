@@ -3,7 +3,9 @@
 This implements the backend foundation for [#1167](https://github.com/adamgreenwell/wayfindr/issues/1167)
 under the [Assist behavior/data contract](ai-support-assist-contract.md).
 Existing copilot assistance remains explicitly requested. This slice adds no
-automatic preparation, account connection screen or executable account endpoint.
+automatic preparation or account connection screen. The subsequent
+[#1168 integration](ai-support-assist-provider-policy.md) supplies guarded account
+execution, proposal probes and optional discovery.
 The [delivery plan](ai-support-assist-feature-plan.md#backlog-and-delivery-order)
 keeps actual destination policy/probes in #1168 and account/site UI in #1169.
 
@@ -33,11 +35,13 @@ Future site-policy writes must also check each affected site's access.
 | `setEnabled(actor, accountId, enabled)` | Disable independently of testing; re-enabling checks affected-site access and retains the explicitly selected processor. |
 | `disconnect(actor, accountId)` | Disable and erase both credential-bearing snapshots. Re-enabling requires a newly chosen, tested and activated connection. |
 
-Browser input cannot supply a successful receipt. The default
-`AccountAiConnectionProbe` implementation is unavailable and makes no external
-request. #1168 must supply the synthetic executor and applicable endpoint-policy
-revision; its dispatch also needs the usage controls from #1174. Tests bind
-synthetic executors solely to qualify this lifecycle.
+Browser input cannot supply a successful receipt. `GuardedAccountAiConnectionProbe`
+uses a fixed synthetic sample with current proposal/generation/actor and atomic
+usage checks. Processing policy binds guarded adapter and network revisions.
+`discoverModels` accepts an otherwise complete draft without a model, performs
+one bounded catalogue request, then rechecks authority and revision before return.
+A content-free `test_failure_code` distinguishes actionable unavailable causes.
+Tests qualify this lifecycle with synthetic terminal responses only.
 
 One account row holds only proposed and active encrypted snapshots, opaque
 revision/test identity and content-free state. Installation selection stores an
@@ -73,8 +77,10 @@ under the account lock. Main and fragment reads withhold obsolete results.
 Fresh running attempts retain their erasure-visible claim during rotation;
 replacing pending work cannot cause late generation writes to win.
 
-Production account-owned outbound calls remain blocked before SDK construction
-until #1168 supplies destination policy. SDK/HTTP fakes never grant authority.
+Guarded account calls require a server-owned execution context and pre-enqueue
+usage reservation. Final wire checks repeat the capability and source fences;
+actual prompt text must match reserved context. Publication and settlement are
+atomic in installation-first lock order. SDK/HTTP fakes never grant authority.
 Operator probes and offline evaluation retain their installation path.
 
 ## Upgrade, deletion and rollback
