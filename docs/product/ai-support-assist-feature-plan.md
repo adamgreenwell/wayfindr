@@ -320,6 +320,11 @@ the contract does not complete those downstream dependencies.
 
 ## Qualification and rollout
 
+The [qualification and rollout record](ai-support-assist-qualification.md) owns
+the cross-slice fake-provider journey, role-based UAT scripts, evidence rules,
+pilot decision criteria and containment/recovery procedure for #1176. Its human
+UAT and provider-quality gates remain open until executed under current identities.
+
 Use fake providers and synthetic source material for automated coverage. Verify
 the complete agent journey, connection editing and testing, multiple accounts in
 one worker, concurrent viewers, provider/configuration changes during generation,
@@ -340,10 +345,9 @@ their own authorized steps.
 
 ## Observability completion (#1175)
 
-The private audit foundation is merged through #1196 (`e84e1879`). The completion
-branch `feat/1175-ai-assist-feedback` adds shared audit provenance, explicit visible/
+The private audit foundation merged through #1196 (`e84e1879`). Completion merged
+in #1197 (`f08740c4`), adding shared audit provenance, explicit visible/
 inserted/rejected observations, versioned assessments, useful-draft/correction coverage,
 bounded site-scoped reports, visitor export/deletion and opt-in metadata retention.
-Qualification and review remain separate gates; #1175 stays In Progress until its
-completion PR merges. Provider quality/assistive-technology acceptance and rollout
+Issue #1175 is closed. Provider quality/assistive-technology acceptance and rollout
 remain #1176. See [observability contract](../architecture/ai-assist-observability.md).
