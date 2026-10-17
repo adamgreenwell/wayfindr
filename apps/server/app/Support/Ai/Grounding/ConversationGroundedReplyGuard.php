@@ -39,7 +39,7 @@ final class ConversationGroundedReplyGuard
     public function identity(): string
     {
         $sources = [];
-        foreach ([self::class, ConversationGroundedReplyOutputParser::class, ConversationGroundingSelector::class, ConversationReplyDraftPromptBuilder::class] as $class) {
+        foreach ([self::class, ConversationGroundedReplyOutputParser::class, ConversationGroundingSelector::class, GroundingSourceReference::class, ConversationReplyDraftPromptBuilder::class] as $class) {
             $sources[$class] = app(GroundedAnswerScoringContract::class)->sourceFingerprint(file_get_contents((new ReflectionClass($class))->getFileName()));
         }
 
