@@ -114,31 +114,37 @@ test('the current guarded Assist recipes qualify each synthetic case without sid
         'refinement_guard' => app(DraftRefinementSafetyGuard::class)->identity()];
 })->with(assistRuntimeEvaluationCases());
 
-/** Admission/readback orchestration is part of the tested recipe, not just its prompt. */
+/** Conservatively bind every production PHP dependency and the complete synthetic fixture tree. */
 function assistRuntimeEvaluationSources(): array
 {
+    $root = dirname(__DIR__, 2);
     $sources = [];
-    foreach (['ai-assist-runtime-evaluation.json', 'ai-assist-preparation.php', 'draft-refinement.php'] as $file) {
-        $sources[$file] = hash_file('sha256', __DIR__.'/../Fixtures/'.$file);
+    foreach (['app', 'config', 'database', 'lang', 'routes', 'resources/views', 'tests/Fixtures'] as $directory) {
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root.'/'.$directory, FilesystemIterator::SKIP_DOTS));
+        foreach ($files as $file) {
+            if (! $file->isFile() || ($directory !== 'tests/Fixtures' && $file->getExtension() !== 'php')) {
+                continue;
+            }
+            $relative = substr($file->getPathname(), strlen($root) + 1);
+            $sources[$relative] = hash_file('sha256', $file->getPathname());
+        }
     }
-    $sources['AiAssistRuntimeEvaluationTest.php'] = hash_file('sha256', __FILE__);
-    foreach (['app/Support/Ai/Preparation/AiAssistPreparation.php', 'app/Support/Ai/Refinement/DraftRefinements.php',
-        'composer.lock', 'app/Support/Ai/ConversationReplyDraftPromptBuilder.php',
-        'app/Support/Ai/ConversationTextContextSelector.php', 'app/Support/Ai/AiContextSanitizer.php',
-        'app/Support/Ai/Grounding/ConversationGroundingSelector.php', 'app/Support/Ai/Grounding/GroundingSourceReference.php',
-        'app/Support/Ai/Grounding/ConversationGroundedReplyGuard.php', 'app/Support/Ai/Grounding/ConversationGroundedReplyOutputParser.php',
-        'app/Support/Ai/Refinement/ConversationDraftRefinementPromptBuilder.php', 'app/Support/Ai/Refinement/DraftRefinementSafetyGuard.php',
-        'app/Support/Ai/Refinement/DraftRefinementOutputParser.php', 'app/Jobs/GenerateConversationCopilotReplyDraft.php',
-        'app/Jobs/GenerateConversationDraftRefinement.php', 'lang/en/ai_assist.php', 'lang/de/ai_assist.php', 'lang/it/ai_assist.php'] as $file) {
-        $sources[$file] = hash_file('sha256', dirname(__DIR__, 2).'/'.$file);
+    // Bootstrap caches and .env are generated configuration, not source. Never hash or copy secrets.
+    foreach (['composer.json', 'composer.lock', 'bootstrap/app.php', 'bootstrap/providers.php'] as $file) {
+        $sources[$file] = hash_file('sha256', $root.'/'.$file);
     }
+    $sources['tests/Feature/AiAssistRuntimeEvaluationTest.php'] = hash_file('sha256', __FILE__);
+    ksort($sources);
 
     return $sources;
 }
 
-test('runtime qualification identity includes shared and private orchestration', function (): void {
+test('runtime qualification identity includes shared and private orchestration and their dependencies', function (): void {
     $sources = assistRuntimeEvaluationSources();
-    foreach (['app/Support/Ai/Preparation/AiAssistPreparation.php', 'app/Support/Ai/Refinement/DraftRefinements.php'] as $file) {
+    foreach (['app/Support/Ai/Preparation/AiAssistPreparation.php', 'app/Support/Ai/Refinement/DraftRefinements.php',
+        'app/Support/Ai/Grounding/ConversationGroundedReplyPresentation.php', 'app/Support/Ai/Policy/AiAssistPolicyResolver.php',
+        'app/Support/Ai/Usage/AiUsageLedger.php', 'config/ai.php', 'routes/web.php', 'lang/en/ai_assist.php',
+        'resources/views/agent/conversations/partials/assist-feedback.blade.php', 'tests/Fixtures/ai-assist-runtime-evaluation.json'] as $file) {
         expect($sources)->toHaveKey($file)
             ->and($sources[$file])->toBe(hash_file('sha256', dirname(__DIR__, 2).'/'.$file));
     }

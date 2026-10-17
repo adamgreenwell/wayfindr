@@ -57,6 +57,12 @@
       "variant": "missing-orchestration-identity",
       "expected_assertion": "receipt sources include shared preparation orchestration hash",
       "failed": 1
+    },
+    {
+      "variant": "missing-presentation-identity",
+      "expected_assertion": "receipt sources include grounded reply presentation hash",
+      "failed": 1,
+      "receipt_complete": false
     }
   ],
   "live_source_unchanged": true
