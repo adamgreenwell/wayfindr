@@ -64,8 +64,9 @@ The runtime guard accepts supported prose only when every complete sentence is
 present in a cited passage, whitespace normalized, and every citation supports a
 sentence. It prefixes localized attribution to published guidance, distinguishing
 it from conversation facts or evidence that an action occurred. Attribution and
-server clarification use the selected visitor text to detect English, German or
-Italian, including short requests; a viewer locale never changes shared output. New claims,
+server clarification use the latest selected visitor turn to detect English,
+German or Italian, including short requests. Older visitor history, a later agent
+message and the viewer locale never override that turn for shared output. New claims,
 dropped negations, changed numbers and known instruction/action/promise patterns
 produce a server-owned clarification instead. Model-declared insufficiency or
 conflict also uses this safe clarification; arbitrary model limitation prose is

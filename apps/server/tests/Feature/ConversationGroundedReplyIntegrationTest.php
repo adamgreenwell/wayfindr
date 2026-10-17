@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Article;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Models\ConversationMessage;
+use App\Models\User;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AiContextSanitizer;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
@@ -313,11 +314,17 @@ test('localized grounded presentation labels guidance limitations sources and di
         ->assertSee('target="_blank"', false)->assertDontSee('server-only article mapping');
 })->with(['en', 'de', 'it']);
 
-test('short visitor requests keep their language for attribution and safe clarification', function (string $locale, string $question, string $passage, bool $hasSource): void {
+test('short visitor requests keep their language for attribution and safe clarification', function (string $locale, string $question, string $passage, bool $hasSource, bool $mixedHistory): void {
     $world = groundedReplyWorld($passage);
     $world['conversation']->update(['subject' => $question]);
     $world['message']->update(['body' => $question]);
     $world['article']->update(['title' => $question]);
+    if ($mixedHistory) {
+        $world['message']->update(['body' => str_repeat('I would like to understand your product return policy and receipt requirements. ', 55)]);
+        ConversationMessage::factory()->for($world['conversation'])->create(['body' => $question]);
+        ConversationMessage::factory()->for($world['conversation'])->create(['sender_type' => User::class,
+            'sender_id' => $world['agent']->id, 'body' => str_repeat('Thank you for the detailed information about your order. ', 40)]);
+    }
     if (! $hasSource) {
         $world['article']->delete();
     }
@@ -333,4 +340,4 @@ test('short visitor requests keep their language for attribution and safe clarif
     ['de', 'Wie lange gilt die Rückgabe?', 'Die Rückgabe ist innerhalb von 14 Tagen möglich.'],
     ['it', 'Quanto dura il reso?', 'Il reso è possibile entro 14 giorni.'],
     ['en', 'How long do returns take?', 'Returns are accepted within 14 days.'],
-])->with([true, false]);
+])->with([true, false])->with([false, true]);

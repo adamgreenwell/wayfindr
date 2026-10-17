@@ -149,7 +149,13 @@ final class ConversationGroundedReplyGuard
     {
         $input = json_decode($context->prompt->input, true, 12, JSON_THROW_ON_ERROR);
         $messages = $input['conversation']['messages'] ?? [];
-        $text = implode(' ', array_column(array_filter($messages, fn ($message) => ($message['role'] ?? '') === 'visitor'), 'body'));
+        $text = '';
+        foreach (array_reverse($messages) as $message) {
+            if (($message['role'] ?? '') === 'visitor' && trim((string) ($message['body'] ?? '')) !== '') {
+                $text = $message['body'];
+                break;
+            }
+        }
         if (trim($text) === '') {
             return 'en';
         }
