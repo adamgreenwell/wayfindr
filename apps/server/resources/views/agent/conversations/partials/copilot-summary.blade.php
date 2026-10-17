@@ -5,6 +5,7 @@
     $copilotSummaryState = $copilotSummary?->displayStatus();
     $copilotSummaryIsStale = $copilotSummary?->isStaleComparedTo($latestSummarizableMessageId) ?? false;
     $copilotSummaryRoute = ['supportCode' => $conversation->support_code] + $conversationReturnQuery;
+    $assistProvenance = app(\App\Support\Ai\ConversationAssistPresentation::class)->provenance($conversation, $copilotSummaryState === 'ready' ? $copilotSummary : null);
 @endphp
 
 <section
@@ -12,7 +13,10 @@
     id="copilot-summary"
     aria-labelledby="copilot-summary-heading"
     data-copilot-summary
+    data-generation="{{ $copilotSummary?->generation }}" data-policy-revision="{{ $copilotSummary?->policy_revision }}"
     data-state="{{ $copilotSummaryState ?? 'empty' }}"
+    data-source-position="{{ $assistProvenance['source_position'] ?? '' }}" data-source-ordinal="{{ $assistProvenance['source_ordinal'] ?? '' }}"
+    data-source-message-count="{{ $assistProvenance['source_message_count'] ?? '' }}" data-source-url="{{ $assistProvenance['source_url'] ?? '' }}"
     data-status-url="{{ route('dashboard.conversations.copilot-summary.show', $copilotSummaryRoute) }}"
 >
     <div class="section-header">
@@ -21,7 +25,7 @@
     </div>
 
     @if ($copilotSummaryState === \App\Models\ConversationCopilotSummary::STATUS_PENDING)
-        <div class="live-update" data-state="pending" role="status">
+        <div class="live-update" data-state="pending">
             <div>
                 <strong>{{ __('conversations.detail.copilot.pending') }}</strong>
                 <p class="lede">{{ __('conversations.detail.copilot.pending_detail') }}</p>
@@ -51,7 +55,7 @@
             <button class="button secondary" type="submit">{{ __('conversations.detail.copilot.regenerate') }}</button>
         </form>
     @elseif ($copilotSummaryState === \App\Models\ConversationCopilotSummary::STATUS_FAILED)
-        <div class="live-update" data-state="attention" role="status">
+        <div class="live-update" data-state="attention">
             <div>
                 <strong>{{ __('conversations.detail.copilot.failed') }}</strong>
                 <p class="lede">{{ __('conversations.detail.copilot.failed_detail') }}</p>
@@ -70,6 +74,9 @@
         </form>
     @endif
 
+    @if ($assistProvenance !== null)
+        <p class="field-help" data-assist-card-position><a href="#conversation-message-{{ $assistProvenance['source_position'] }}">{{ __('ai_assist.rail.position', ['position' => \App\Support\ReaderNumber::count($assistProvenance['source_ordinal']), 'count' => \App\Support\ReaderNumber::count($assistProvenance['source_message_count'])]) }}</a></p>
+    @endif
     <p class="field-help">{{ __('conversations.detail.copilot.privacy') }}</p>
 </section>
 

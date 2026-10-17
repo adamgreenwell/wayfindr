@@ -5,12 +5,15 @@
     $copilotReplyDraftState = $copilotReplyDraft?->displayStatus();
     $copilotReplyDraftIsStale = $copilotReplyDraft?->isStaleComparedTo($latestConversationMessageId) ?? false;
     $copilotReplyDraftRoute = ['supportCode' => $conversation->support_code] + $conversationReturnQuery;
+    $assistProvenance = app(\App\Support\Ai\ConversationAssistPresentation::class)->provenance($conversation, $copilotReplyDraftState === 'ready' ? $copilotReplyDraft : null);
 @endphp
 
 <div
     class="reply-template-preview"
     data-copilot-reply-draft
     data-state="{{ $copilotReplyDraftState ?? 'empty' }}"
+    data-source-position="{{ $assistProvenance['source_position'] ?? '' }}" data-source-ordinal="{{ $assistProvenance['source_ordinal'] ?? '' }}"
+    data-source-message-count="{{ $assistProvenance['source_message_count'] ?? '' }}" data-source-url="{{ $assistProvenance['source_url'] ?? '' }}"
     data-generation="{{ $copilotReplyDraft?->generation }}"
     data-policy-revision="{{ $copilotReplyDraft?->policy_revision }}"
     data-use-url="{{ route('dashboard.conversations.copilot-reply-draft.use', ['supportCode' => $conversation->support_code]) }}"
@@ -22,7 +25,7 @@
     </div>
 
     @if ($copilotReplyDraftState === \App\Models\ConversationCopilotReplyDraft::STATUS_PENDING)
-        <p role="status"><strong>{{ __('conversations.detail.reply_copilot.pending') }}</strong></p>
+        <p><strong>{{ __('conversations.detail.reply_copilot.pending') }}</strong></p>
         <p class="lede">{{ __('conversations.detail.reply_copilot.pending_detail') }}</p>
     @elseif ($copilotReplyDraftState === \App\Models\ConversationCopilotReplyDraft::STATUS_READY)
         <div
@@ -72,6 +75,9 @@
         </form>
     @endif
 
+    @if ($assistProvenance !== null)
+        <p class="field-help" data-assist-card-position><a href="#conversation-message-{{ $assistProvenance['source_position'] }}">{{ __('ai_assist.rail.position', ['position' => \App\Support\ReaderNumber::count($assistProvenance['source_ordinal']), 'count' => \App\Support\ReaderNumber::count($assistProvenance['source_message_count'])]) }}</a></p>
+    @endif
     <p class="field-help">{{ __('conversations.detail.reply_copilot.privacy') }}</p>
 </div>
 

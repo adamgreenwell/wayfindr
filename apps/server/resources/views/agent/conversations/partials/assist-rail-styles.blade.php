@@ -9,6 +9,7 @@
         grid-template-columns: minmax(0, 1fr) 176px;
     }
     .conversation-assist-main { min-width: 0; }
+    [data-assist-rail][data-initialized="true"] [data-assist-card-position] { display: none; }
     .conversation-assist-main > .section:first-child { margin-top: 0; }
     .conversation-assist-main .reply-workspace { grid-template-columns: minmax(0, 1fr); }
     .conversation-assist-main .reply-workspace > * + * {
@@ -28,7 +29,7 @@
         cursor: pointer;
     }
     .conversation-assist-toggle > .lede { display: block; margin-top: 4px; }
-    .conversation-assist-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    .conversation-assist-rail :is(a,button,summary,[tabindex]):focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
     .conversation-assist-content { max-height: 72dvh; overflow-y: auto; overscroll-behavior: contain; }
     .conversation-assist-section, .conversation-assist-actions, .conversation-assist-foot {
         border-top: var(--wf-border) solid var(--border);
@@ -60,6 +61,12 @@
         background: transparent;
         color: var(--muted);
     }
+    .assist-draft-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 200px; overflow: auto; padding: 8px; border: var(--wf-border) solid var(--border); }
+    .assist-draft-review h4 { margin: 12px 0 4px; font-size: .875rem; }
+    .assist-draft-review [data-assist-review-apply] { background: var(--text); color: var(--surface); border-color: var(--text); }
+    .assist-freshness { font-size: .75rem; color: var(--muted); }
+    .assist-freshness a { display: block; }
+    @media (prefers-reduced-motion: reduce) { .conversation-assist-rail *, .conversation-assist-rail *::before, .conversation-assist-rail *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
     .assist-task-data-use { margin-top: 12px; }
     .assist-task-data-use > summary { cursor: pointer; color: var(--muted); }
     .conversation-assist-foot p { margin: 0; }

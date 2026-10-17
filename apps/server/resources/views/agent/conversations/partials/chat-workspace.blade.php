@@ -195,6 +195,7 @@
 </div>
 @include('agent.conversations.partials.assist-rail-styles')
 @include('agent.conversations.partials.assist-rail-script')
+@include('agent.conversations.partials.assist-draft-review-script')
 @if ($copilotSummaryAvailable)
     @include('agent.conversations.partials.copilot-summary-script')
 @endif

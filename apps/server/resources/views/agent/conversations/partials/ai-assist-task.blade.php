@@ -19,7 +19,7 @@
         'summary' => 'conversations.detail.copilot', 'reply' => 'conversations.detail.reply_copilot',
         'knowledge' => 'conversations.detail.knowledge_copilot', 'ticket' => 'conversations.detail.ticket_copilot',
     };
-    $assistCopy = ['source_one' => trans_choice($assistLegacyCopy.'.source_count', 1, ['count' => ':count']),
+    $assistCopy = ['source_new_tab' => __('ai_assist.rail.source_new_tab'), 'source_one' => trans_choice($assistLegacyCopy.'.source_count', 1, ['count' => ':count']),
         'source_many' => trans_choice($assistLegacyCopy.'.source_count', 2, ['count' => ':count']),
         'no_matches' => __('conversations.detail.knowledge_copilot.no_matches'), 'states' => __('ai_assist.preparation.states'), 'prepare_ticket' => __('ai_assist.preparation.prepare_ticket'), 'prepare' => __('ai_assist.preparation.prepare'), 'refresh' => __('ai_assist.preparation.refresh'),
         'retry' => __('ai_assist.preparation.retry'), 'use' => $assistTask === 'reply' ? __('ai_assist.rail.insert') : __('ai_assist.preparation.use'), 'use_article' => __('ai_assist.preparation.use_article'),
@@ -30,10 +30,14 @@
     data-status-url="{{ route('dashboard.conversations.assist.show', $assistParameters) }}"
     data-ensure-url="{{ route('dashboard.conversations.assist.store', $assistParameters) }}"
     data-use-url="{{ route('dashboard.conversations.assist.use', $assistParameters) }}"
+    data-generation="{{ $assistState['generation'] ?? '' }}" data-policy-revision="{{ $assistState['policy_revision'] ?? '' }}"
+    data-source-position="{{ $assistState['source_position'] ?? '' }}" data-source-ordinal="{{ $assistState['source_ordinal'] ?? '' }}"
+    data-source-message-count="{{ $assistState['source_message_count'] ?? '' }}" data-source-url="{{ $assistState['source_url'] ?? '' }}"
+    data-output-generation="{{ $assistState['output_generation'] ?? '' }}"
     data-initial="{{ json_encode($assistState, JSON_THROW_ON_ERROR) }}" data-copy="{{ json_encode($assistCopy, JSON_THROW_ON_ERROR) }}">
     <h3 id="assist-heading-{{ $assistTask }}">{{ $assistHeading ?? ($assistTask === 'ticket' ? __('ai_assist.preparation.tasks.ticket') : __('ai_assist.rail.sections.'.$assistTask)) }}</h3>
     <span class="readiness-status" data-status="manual">{{ __('conversations.detail.copilot.suggested') }}</span>
-    <p data-ai-message role="status">{{ __('ai_assist.preparation.states.'.$assistState['state']) }}</p>
+    <p data-ai-message @if ($assistTask === 'ticket') role="status" @endif>{{ __('ai_assist.preparation.states.'.$assistState['state']) }}</p>
     <div data-ai-output lang="">
         @if (is_string($assistState['output']['text'] ?? null))
             <p>{{ $assistState['output']['text'] }}</p>
@@ -46,7 +50,7 @@
             <button type="button" class="button secondary" data-ai-use disabled>{{ __('ai_assist.preparation.apply') }}</button>
         @elseif (is_array($assistState['output']['articles'] ?? null))
             @forelse ($assistState['output']['articles'] as $assistArticle)
-                <p>{{ $assistArticle['title'] }}</p><p>{{ $assistArticle['snippet'] }}</p>
+                <p><a href="{{ $assistArticle['source_url'] }}" target="_blank" rel="noopener" aria-label="{{ $assistArticle['title'] }} — {{ __('ai_assist.rail.source_new_tab') }}">{{ $assistArticle['title'] }}</a></p><p>{{ $assistArticle['snippet'] }}</p>
                 <button type="button" class="button secondary" data-ai-use disabled>{{ __('ai_assist.preparation.use_article') }}</button>
             @empty
                 <p>{{ __('conversations.detail.knowledge_copilot.no_matches') }}</p>
@@ -58,6 +62,9 @@
             {{ trans_choice($assistLegacyCopy.'.source_count', $assistState['source_message_count'], ['count' => \App\Support\ReaderNumber::count($assistState['source_message_count'])]) }}
         @endif
     </p>
+    @if (is_int($assistState['source_ordinal'] ?? null))
+        <p class="field-help" data-assist-card-position><a href="#conversation-message-{{ $assistState['source_position'] }}">{{ __('ai_assist.rail.position', ['position' => \App\Support\ReaderNumber::count($assistState['source_ordinal']), 'count' => \App\Support\ReaderNumber::count($assistState['source_message_count'])]) }}</a></p>
+    @endif
     <p class="field-help" data-ai-cooldown></p>
     <form method="POST" action="{{ route($assistNativeRoute, ['supportCode' => $conversation->support_code] + ($conversationReturnQuery ?? [])) }}" data-ai-form>
         @csrf

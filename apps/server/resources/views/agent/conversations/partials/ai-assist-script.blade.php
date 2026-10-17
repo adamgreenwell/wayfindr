@@ -27,6 +27,48 @@
         const entry = data(panel);
         const state = entry?.value;
         if (!state?.can_use || state.state !== 'ready' || entry.using || !visible(panel)) return;
+        if (panel.dataset.task !== 'ticket' && window.wayfindrAssistDraftReview) {
+            const task = panel.dataset.task;
+            const shell = panel.closest('[data-reply-shell]');
+            const selected = value => articleId === null ? null : value?.output?.articles?.find(article => article.id === articleId);
+            const describe = (value, currentPanel = null) => ({
+                canUse:value?.state === 'ready' && value.can_use === true && (articleId === null || !!selected(value)),
+                generation:value?.generation, policyRevision:value?.policy_revision,
+                sourcePosition:value?.source_position, outputGeneration:value?.output_generation || value?.generation,
+                articleId, articleRevision:selected(value)?.revision || '',
+                text:articleId === null ? value?.output?.text : selected(value)?.snippet,
+                button:currentPanel?.querySelector(articleId === null ? '[data-ai-use]' : `[data-ai-use][data-article-id="${articleId}"]`)
+            });
+            const readCurrent = () => {
+                const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"][data-workspace="conversation"]`);
+                if (!currentPanel || !visible(currentPanel)) return null;
+                let value = data(currentPanel)?.value;
+                if (!value) { try { value = JSON.parse(currentPanel.dataset.initial); } catch (error) { return null; } }
+                return describe(value, currentPanel);
+            };
+            const generation = state.generation;
+            void window.wayfindrAssistDraftReview.offer({shell, task, readCurrent,
+                fetchAuthorized:async () => {
+                    const response = await fetch(`${panel.dataset.useUrl}?${new URLSearchParams({generation})}`, {
+                        credentials:'same-origin', cache:'no-store', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                    });
+                    if (!response.ok) throw new Error('Unavailable');
+                    return describe(await response.json());
+                },
+                onApplied:() => { const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"]`); if (currentPanel && data(currentPanel)) setMessage(currentPanel, data(currentPanel).copy.used); },
+                onUnavailable:() => {
+                    const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"]`), currentEntry = currentPanel && data(currentPanel);
+                    if (currentEntry && currentEntry.value.generation === generation) {
+                        currentEntry.value = {...currentEntry.value, state:'unavailable', output:null, can_use:false, can_prepare:false};
+                        render(currentPanel); void read(currentPanel, true);
+                    } else if (currentPanel && !currentEntry && readCurrent()?.generation === generation) {
+                        // Native polling may have replaced this card before its first client initialization.
+                        currentPanel.remove(); window.wayfindrAssistDraftReview.sync(task);
+                    }
+                }
+            });
+            return;
+        }
         const generation = state.generation;
         const policy = state.policy_revision;
         const version = sourceVersion;
@@ -77,6 +119,13 @@
     const render = panel => {
         const entry = data(panel), state = entry.value, copy = entry.copy;
         panel.dataset.state = state.state;
+        panel.dataset.generation = state.generation || '';
+        panel.dataset.policyRevision = state.policy_revision || '';
+        panel.dataset.sourcePosition = String(state.source_position ?? '');
+        panel.dataset.sourceUrl = typeof state.source_url === 'string' ? state.source_url : '';
+        panel.dataset.sourceOrdinal = String(state.source_ordinal ?? '');
+        panel.dataset.sourceMessageCount = String(state.source_message_count ?? '');
+        panel.dataset.outputGeneration = state.output_generation || '';
         const signature = JSON.stringify([state.state, state.output, state.can_use, state.generation, state.policy_revision, state.source_message_count]);
         if (entry.renderedSignature !== signature) {
             entry.renderedSignature = signature;
@@ -87,6 +136,7 @@
             const button = (label, articleId = null) => {
                 const element = document.createElement('button'); element.type = 'button'; element.className = 'button secondary';
                 element.textContent = label; element.disabled = !state.can_use; element.dataset.aiUse = '';
+                if (articleId !== null) element.dataset.articleId = String(articleId);
                 element.addEventListener('click', () => void useOutput(panel, articleId)); output.append(element);
             };
             if (state.output) {
@@ -95,7 +145,13 @@
                     if (panel.dataset.task === 'reply') button(copy.use);
                 } else if (Array.isArray(state.output.articles)) {
                     if (state.output.articles.length === 0) text(copy.no_matches);
-                state.output.articles.forEach(article => { text(article.title); text(article.snippet); button(copy.use_article, article.id); });
+                    state.output.articles.forEach(article => {
+                        let url = null;
+                        try { const candidate = new URL(article.source_url, window.location.href); if (candidate.origin === window.location.origin && !candidate.username && !candidate.password && ['http:','https:'].includes(candidate.protocol) && typeof article.source_url === 'string' && article.source_url.trim()) url = candidate; } catch (error) { /* Invalid links are plain text. */ }
+                        if (url) { const link = document.createElement('a'); link.href = url.href; link.target = '_blank'; link.rel = 'noopener'; link.textContent = article.title; link.setAttribute('aria-label', `${article.title} — ${copy.source_new_tab || ''}`); output.append(link); }
+                        else text(article.title);
+                        text(article.snippet); button(copy.use_article, article.id);
+                    });
                 } else if (typeof state.output.title === 'string') { text(state.output.title); text(copy.priorities[state.output.priority] || state.output.priority); button(copy.apply); }
             }
         }
@@ -113,6 +169,7 @@
         const seconds = Math.max(0, Math.ceil((entry.retryUntil - Date.now()) / 1000));
         panel.querySelector('[data-ai-cooldown]').textContent = seconds ? copy.cooldown.replace(':seconds', String(seconds)) : '';
         updateGroups();
+        panel.dispatchEvent(new CustomEvent('wayfindr:assist-task-updated', {bubbles:true, detail:{task:panel.dataset.task, workspace:panel.dataset.workspace, state:state.state}}));
 
     };
     const accept = (panel, value) => {
