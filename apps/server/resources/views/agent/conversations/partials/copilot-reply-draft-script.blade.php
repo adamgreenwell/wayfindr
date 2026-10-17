@@ -38,6 +38,7 @@
 
                 if ([204, 403, 404, 410].includes(response.status)) {
                     panel.remove();
+                    window.wayfindrAssistDraftReview?.sync('reply');
 
                     return;
                 }
@@ -50,6 +51,7 @@
 
                 if (panel.isConnected) {
                     panel.outerHTML = markup;
+                    window.wayfindrAssistDraftReview?.sync('reply');
                 }
             } catch (error) {
                 // Leave the current state in place. A page refresh remains a
@@ -97,6 +99,39 @@
             }
             if (staleNotice && !staleNotice.hidden) {
                 if (status) status.textContent = @json(__('conversations.detail.reply_copilot.use_stale'));
+                return;
+            }
+            if (window.wayfindrAssistDraftReview) {
+                const generation = panel.dataset.generation;
+                const policyRevision = panel.dataset.policyRevision || '';
+                const sourcePosition = panel.dataset.sourcePosition || '';
+                const query = new URLSearchParams({generation});
+                void window.wayfindrAssistDraftReview.offer({shell:replyShell, task:'reply',
+                    readCurrent:() => {
+                        const currentPanel = replyShell.querySelector('[data-copilot-reply-draft]');
+                        if (!currentPanel || currentPanel.closest('[hidden]')) return null;
+                        return {canUse:currentPanel.dataset.state === 'ready' && !currentPanel.querySelector('[data-copilot-reply-draft-stale]:not([hidden])'),
+                            generation:currentPanel.dataset.generation, policyRevision:currentPanel.dataset.policyRevision,
+                            sourcePosition:currentPanel.dataset.sourcePosition || '', outputGeneration:currentPanel.dataset.generation,
+                             button:currentPanel.querySelector('[data-copilot-reply-draft-use]')};
+                    },
+                    fetchAuthorized:async () => {
+                        const response = await fetch(`${panel.dataset.useUrl}?${query}`, {
+                            credentials:'same-origin', cache:'no-store', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                        });
+                        if (!response.ok) {
+                            if ([403,404,410].includes(response.status)) {
+                                const denied = replyShell.querySelector('[data-copilot-reply-draft]');
+                                if (denied?.dataset.generation === generation && (denied.dataset.policyRevision || '') === policyRevision) denied.remove();
+                                window.wayfindrAssistDraftReview.sync('reply');
+                            }
+                            throw new Error('Unavailable');
+                        }
+                        const payload = await response.json();
+                        return {canUse:true, generation:payload.generation, policyRevision:payload.policy_revision || '',
+                            sourcePosition, outputGeneration:payload.generation,  text:payload.text};
+                    }
+                });
                 return;
             }
             if (body.value.trim() !== '') {

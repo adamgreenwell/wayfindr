@@ -38,6 +38,7 @@
 
                 if ([204, 403, 404, 410].includes(response.status)) {
                     panel.remove();
+                    window.wayfindrAssistDraftReview?.sync('knowledge');
 
                     return;
                 }
@@ -50,6 +51,7 @@
 
                 if (panel.isConnected) {
                     panel.outerHTML = markup;
+                    window.wayfindrAssistDraftReview?.sync('knowledge');
                 }
             } catch (error) {
                 // The page remains usable and a manual refresh can recover.
@@ -96,6 +98,45 @@
             }
             if (staleNotice && !staleNotice.hidden) {
                 if (status) status.textContent = @json(__('conversations.detail.knowledge_copilot.use_stale'));
+                return;
+            }
+            if (window.wayfindrAssistDraftReview) {
+                const article = useButton.closest('[data-copilot-knowledge-article]');
+                const articleId = article?.dataset.articleId, articleRevision = article?.dataset.articleRevision;
+                if (!articleId || !articleRevision) return;
+                const generation = panel.dataset.generation;
+                const policyRevision = panel.dataset.policyRevision || '';
+                const sourcePosition = panel.dataset.sourcePosition || '';
+                const query = new URLSearchParams({generation});
+                query.set('article_id', articleId); query.set('article_revision', articleRevision);
+                void window.wayfindrAssistDraftReview.offer({shell:replyShell, task:'knowledge',
+                    readCurrent:() => {
+                        const currentPanel = replyShell.querySelector('[data-copilot-knowledge-suggestion]');
+                        if (!currentPanel || currentPanel.closest('[hidden]')) return null;
+                    const article = currentPanel.querySelector(`[data-copilot-knowledge-article][data-article-id="${articleId}"]`);
+                    if (!article) return null;
+                        return {canUse:currentPanel.dataset.state === 'ready' && !currentPanel.querySelector('[data-copilot-knowledge-suggestion-stale]:not([hidden])'),
+                            generation:currentPanel.dataset.generation, policyRevision:currentPanel.dataset.policyRevision,
+                            sourcePosition:currentPanel.dataset.sourcePosition || '', outputGeneration:currentPanel.dataset.generation,
+                            articleId, articleRevision:article.dataset.articleRevision, button:article.querySelector('[data-copilot-knowledge-use]')};
+                    },
+                    fetchAuthorized:async () => {
+                        const response = await fetch(`${panel.dataset.useUrl}?${query}`, {
+                            credentials:'same-origin', cache:'no-store', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+                        });
+                        if (!response.ok) {
+                            if ([403,404,410].includes(response.status)) {
+                                const denied = replyShell.querySelector('[data-copilot-knowledge-suggestion]');
+                                if (denied?.dataset.generation === generation && (denied.dataset.policyRevision || '') === policyRevision) denied.remove();
+                                window.wayfindrAssistDraftReview.sync('knowledge');
+                            }
+                            throw new Error('Unavailable');
+                        }
+                        const payload = await response.json();
+                        return {canUse:true, generation:payload.generation, policyRevision:payload.policy_revision || '',
+                            sourcePosition, outputGeneration:payload.generation, articleId:payload.article_id ?? articleId, articleRevision, text:payload.text};
+                    }
+                });
                 return;
             }
             if (body.value.trim() !== '') {
