@@ -47,7 +47,8 @@
     }
     .conversation-assist-section .section-header { padding: 0; border: 0; }
     .conversation-assist-rail .button { border-radius: 0; }
-    .conversation-assist-rail [data-assist-section="reply"] [data-ai-use] {
+    .conversation-assist-rail [data-assist-section="reply"] [data-ai-use],
+    .conversation-assist-rail [data-assist-section="reply"] [data-copilot-reply-draft-use] {
         background: var(--text);
         color: var(--surface);
         border-color: var(--text);

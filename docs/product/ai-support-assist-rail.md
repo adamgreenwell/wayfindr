@@ -31,7 +31,9 @@ controls. Reply helpers remain part of ordinary composing.
 Policy lookup failures leave the ordinary conversation usable and show unavailable
 rail sections without processing controls. Native legacy/prepared status fragments
 derive the same rail labels, so polling preserves the selected headings and
-insertion copy in every dashboard locale.
+insertion copy in every dashboard locale. Each section keeps an independent resting
+heading and status, revealed if legacy polling removes its card. This fallback
+only observes direct card changes; it never prepares work or touches the composer.
 
 ## Remaining #1171 work
 

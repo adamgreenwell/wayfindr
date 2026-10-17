@@ -14,12 +14,14 @@ function fixture(t, options={}) {
   const dom = new JSDOM(`<div data-tab-panel="conversation"><div data-reply-shell>
     <main><form data-reply-composer><textarea data-reply-body></textarea></form></main>
     <aside><details data-assist-rail data-preference-key="${key}" open><summary>Assist</summary>
-    <section data-ai-assist data-task="reply" data-workspace="conversation" data-mode="${options.mode||'manual'}"
+    <section data-assist-section="${options.legacyTask||'reply'}">
+    <div data-assist-resting hidden><h3>Suggested reply</h3><p>Unavailable. Keep replying.</p></div>
+    ${options.legacyTask ? `<div data-copilot-${{summary:'summary',reply:'reply-draft',knowledge:'knowledge-suggestion'}[options.legacyTask]}><p>Legacy suggestion.</p></div>` : `<section data-ai-assist data-task="reply" data-workspace="conversation" data-mode="${options.mode||'manual'}"
       data-status-url="/assist/reply" data-ensure-url="/assist/reply" data-use-url="/assist/reply/use"
       data-initial="${attr(state)}" data-copy="${attr(copy)}">
       <p data-ai-message>Ready</p><div data-ai-output></div><p data-ai-cooldown></p>
       <form data-ai-form><input name="_token" value="synthetic"><button data-ai-prepare>Refresh</button></form>
-    </section></details></aside></div></div>`,{url:'https://support.example.test',runScripts:'outside-only',pretendToBeVisual:true});
+    </section>`}</section></details></aside></div></div>`,{url:'https://support.example.test',runScripts:'outside-only',pretendToBeVisual:true});
   t.after(()=>dom.window.close());
   const {window}=dom;const requests=[],timers=[];let submits=0;
   window.matchMedia=()=>({matches:options.wide!==false});
@@ -68,5 +70,30 @@ test('a suggestion in the right rail freshly inserts into the ordinary composer 
   const use=f.rail.querySelector('[data-ai-use]');assert.ok(use&&!use.disabled);use.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
   const fresh=f.requests.find(r=>r.url.includes('/use?'));assert.ok(fresh,'Rail insertion must retain its fresh authorized Use request');respond(fresh);await flush();
   assert.equal(f.body.value,'Approved private reply.','The rail must find the ordinary composer through their shared workspace');assert.equal(f.window.document.activeElement,f.body);assert.equal(f.submits(),0);
+  assert.equal(f.requests.filter(r=>r.options.method==='POST').length,0);
+});
+
+
+for (const task of ['summary','reply','knowledge']) {
+  test(`removed legacy ${task} cards retain a visible resting heading without new work`,async t=>{
+    const f=fixture(t,{legacyTask:task}),section=f.rail.querySelector('[data-assist-section]');
+    const resting=section.querySelector('[data-assist-resting]');
+    assert.equal(resting.hidden,true);
+    f.body.value='Draft survives card removal.';f.body.focus();
+    section.querySelector('[data-copilot-summary], [data-copilot-reply-draft], [data-copilot-knowledge-suggestion]').remove();await flush();
+    assert.equal(resting.hidden,false,'Removing a legacy card must reveal its resting heading and status');
+    assert.ok(resting.querySelector('h3').textContent.trim());
+    assert.equal(f.body.value,'Draft survives card removal.');assert.equal(f.window.document.activeElement,f.body);
+    assert.equal(f.requests.length,0,'A resting-state fallback must not issue provider or status requests');
+  });
+}
+
+test('replacing a task card keeps the resting state hidden and later removal restores it',async t=>{
+  const f=fixture(t),section=f.rail.querySelector('[data-assist-section]');
+  respond(f.requests[0]);await flush();
+  const resting=section.querySelector('[data-assist-resting]'),card=section.querySelector('[data-ai-assist]'),replacement=card.cloneNode(true);
+  card.replaceWith(replacement);await flush();assert.equal(resting.hidden,true);
+  replacement.remove();await flush();assert.equal(resting.hidden,false,'Removing a replacement must restore the stable resting state');
+  section.append(replacement);await flush();assert.equal(resting.hidden,true);
   assert.equal(f.requests.filter(r=>r.options.method==='POST').length,0);
 });

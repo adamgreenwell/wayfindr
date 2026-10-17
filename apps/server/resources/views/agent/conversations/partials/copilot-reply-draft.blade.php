@@ -49,7 +49,7 @@
                 type="button"
                 data-copilot-reply-draft-use
                 @disabled($copilotReplyDraftIsStale)
-            >{{ __('conversations.detail.reply_copilot.use') }}</button>
+            >{{ __('ai_assist.rail.insert') }}</button>
 
             <form method="POST" action="{{ route('dashboard.conversations.copilot-reply-draft.store', $copilotReplyDraftRoute) }}">
                 @csrf

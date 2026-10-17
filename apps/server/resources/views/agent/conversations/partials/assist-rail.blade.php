@@ -11,24 +11,25 @@
                 </div>
             @endif
             @foreach ([
-                'summary' => ['available' => $copilotSummaryAvailable, 'view' => 'copilot-summary'],
-                'reply' => ['available' => $copilotReplyDraftAvailable, 'view' => 'copilot-reply-draft'],
-                'knowledge' => ['available' => $copilotKnowledgeSuggestionAvailable, 'view' => 'copilot-knowledge-suggestion'],
+                'summary' => ['purpose' => 'conversation_summary', 'available' => $copilotSummaryAvailable, 'view' => 'copilot-summary'],
+                'reply' => ['purpose' => 'conversation_reply_draft', 'available' => $copilotReplyDraftAvailable, 'view' => 'copilot-reply-draft'],
+                'knowledge' => ['purpose' => 'conversation_knowledge_suggestion', 'available' => $copilotKnowledgeSuggestionAvailable, 'view' => 'copilot-knowledge-suggestion'],
             ] as $railTask => $railSection)
                 <div class="conversation-assist-section" data-assist-section="{{ $railTask }}">
-                    @if ($railSection['available'])
-                        @include('agent.conversations.partials.'.$railSection['view'], [
-                            'assistHeading' => __('ai_assist.rail.sections.'.$railTask),
-                        ])
-                    @else
+                    <div data-assist-resting @if ($railSection['available']) hidden @endif>
                         <h3>{{ __('ai_assist.rail.sections.'.$railTask) }}</h3>
-                        @if ($copilotPolicy?->mode === 'off' || ($railTask !== 'summary' && ! $canReply))
+                        @if (($copilotPolicy !== null && ! $copilotPolicy->allows($railSection['purpose'])) || ($railTask !== 'summary' && ! $canReply))
                             <p class="lede">{{ __('ai_assist.rail.disabled') }}</p>
                             <p class="field-help">{{ __('ai_assist.rail.disabled_help') }}</p>
                         @else
                             <p class="lede">{{ __('ai_assist.rail.unavailable') }}</p>
                             <p class="field-help">{{ __('ai_assist.preparation.states.unavailable') }}</p>
                         @endif
+                    </div>
+                    @if ($railSection['available'])
+                        @include('agent.conversations.partials.'.$railSection['view'], [
+                            'assistHeading' => __('ai_assist.rail.sections.'.$railTask),
+                        ])
                     @endif
                 </div>
             @endforeach
