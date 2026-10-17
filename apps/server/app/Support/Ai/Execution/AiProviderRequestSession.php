@@ -85,7 +85,7 @@ final class AiProviderRequestSession implements AiGuardedSession
                 }
             }
             $stored = DB::table('ai_usage_attempts')->where('attempt_id', $this->context->attemptId)->first();
-            if ($this->context->kind === 'support') {
+            if ($this->context->requiresReservation()) {
                 if ($stored === null || strlen($body) + 1_024 > (int) $stored->input_token_bound) {
                     throw new AiNetworkException('usage_input_limit');
                 }
@@ -104,7 +104,7 @@ final class AiProviderRequestSession implements AiGuardedSession
             }
             $reservation = $this->ledger->reserve($this->connection, $this->context->purpose, $this->context->attemptId,
                 $bound, $this->outputCap, $fingerprint, $this->context->actorId, $replacement,
-                fn () => $this->authority->assertAllowed($this->connection, $this->context, $this->context->kind === 'support'));
+                fn () => $this->authority->assertAllowed($this->connection, $this->context, $this->context->requiresReservation()));
             if ($reservation->attemptId !== $this->context->attemptId || $reservation->state !== 'reserved') {
                 throw new AiNetworkException('usage_attempt_reused');
             }

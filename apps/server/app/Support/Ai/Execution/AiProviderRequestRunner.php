@@ -24,8 +24,8 @@ final readonly class AiProviderRequestRunner
             if ($connection->accountId !== $context->accountId) {
                 throw new AiNetworkException('execution_identity_invalid');
             }
-            $stored = $context->kind === 'support' ? DB::table('ai_usage_attempts')->where('attempt_id', $context->attemptId)->first() : null;
-            if ($context->kind === 'support' && $stored === null) {
+            $stored = $context->requiresReservation() ? DB::table('ai_usage_attempts')->where('attempt_id', $context->attemptId)->first() : null;
+            if ($context->requiresReservation() && $stored === null) {
                 throw new AiNetworkException('usage_reservation_missing');
             }
             $output = $context->kind === 'discovery' ? 0 : ($stored === null

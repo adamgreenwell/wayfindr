@@ -75,6 +75,14 @@ final class VisitorEraser
      * @var array<string, array{erasure: string, export: string}>
      */
     public const COVERAGE = [
+        'conversation_draft_refinements' => [
+            'erasure' => 'deleted by cascade from the conversation; also expires after 15 minutes and cascades on owning agent/account deletion',
+            'export' => 'not exported: private unsent agent input, source proofs and unaccepted preview are transient composer work, never a visitor support record',
+        ],
+        'conversation_draft_refinement_sends' => [
+            'erasure' => 'fresh claims refuse erasure for the bounded in-flight window; old claims cascade from the conversation',
+            'export' => 'not exported: bounded transport-admission identifiers and timestamps, without support text or a private draft',
+        ],
         'visitors' => [
             'erasure' => 'deleted',
             'export' => 'visitor.json#visitor',
@@ -827,6 +835,15 @@ final class VisitorEraser
     {
         $cutoff = now()->subSeconds(self::IN_FLIGHT_WINDOW_SECONDS);
         $running = false;
+
+        // Kept separately from private requests: cancellation or agent deletion
+        // must never conceal a call that already passed its outbound admission.
+        $this->whereInChunks(DB::table('conversation_draft_refinement_sends'), 'conversation_id', $conversationIds,
+            function (Builder $query) use ($cutoff, &$running): void {
+                $fresh = $query->lockForUpdate()->get(['started_at'])
+                    ->contains(fn (object $send): bool => Carbon::parse($send->started_at)->greaterThan($cutoff));
+                $running = $running || $fresh;
+            });
 
         foreach (self::COPILOT_TABLES as $table) {
             $this->whereInChunks(

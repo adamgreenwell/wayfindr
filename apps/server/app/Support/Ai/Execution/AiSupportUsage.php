@@ -24,6 +24,7 @@ use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
 use App\Support\Ai\Preparation\AiAssistPreparationIdentityResolver;
+use App\Support\Ai\Refinement\DraftRefinements;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Ai\Usage\AiUsageLedger;
@@ -266,6 +267,11 @@ final readonly class AiSupportUsage
 
     public static function assertActualPrompt(#[SensitiveParameter] ResolvedAgentCopilotConnection $connection, #[SensitiveParameter] AiExecutionContext $context, #[SensitiveParameter] AgentCopilotPrompt $prompt): void
     {
+        if ($context->kind === 'refinement') {
+            app(DraftRefinements::class)->assertActualPrompt($connection, $context, $prompt);
+
+            return;
+        }
         if ($context->kind !== 'support') {
             return;
         }

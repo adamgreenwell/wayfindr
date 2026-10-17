@@ -35,6 +35,7 @@ use App\Http\Controllers\AgentConversationCopilotKnowledgeSuggestionController;
 use App\Http\Controllers\AgentConversationCopilotReplyDraftController;
 use App\Http\Controllers\AgentConversationCopilotSummaryController;
 use App\Http\Controllers\AgentConversationCopilotTicketSuggestionController;
+use App\Http\Controllers\AgentConversationDraftRefinementController;
 use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
@@ -463,6 +464,14 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'store'])
         ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-summary.store');
+    Route::get('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'show'])
+        ->middleware('throttle:120,1,ai-refinement-read:')->name('dashboard.conversations.draft-refinement.show');
+    Route::post('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'store'])
+        ->middleware('throttle:6,1,ai-refinement-request:')->name('dashboard.conversations.draft-refinement.store');
+    foreach (['apply', 'cancel'] as $action) {
+        Route::post('/dashboard/conversations/{supportCode}/draft-refinement/'.$action, [AgentConversationDraftRefinementController::class, $action])
+            ->middleware('throttle:60,1,ai-refinement-action:')->name('dashboard.conversations.draft-refinement.'.$action);
+    }
     Route::get('/dashboard/conversations/{supportCode}/copilot-reply-draft/use', [AgentConversationCopilotReplyDraftController::class, 'use'])
         ->middleware('throttle:60,1,ai-assist-use:')
         ->name('dashboard.conversations.copilot-reply-draft.use');
