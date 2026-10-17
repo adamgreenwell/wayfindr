@@ -14,6 +14,7 @@ use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\ConversationAssistPresentation;
 use App\Support\Ai\ConversationTextContextSelector;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
@@ -216,14 +217,14 @@ final readonly class AiAssistPreparation
         $now = $this->clock->now()->utc();
         $state = $identity->state === 'insufficient_context' ? 'insufficient_context' : ($receipt === null && $artifact?->preparation_fingerprint === null ? 'empty' : 'unavailable');
         $output = null;
-        $outputCount = null;
+        $displayArtifact = null;
         $current = $artifact !== null && $receipt !== null && $artifact->generation === $receipt->generation
             && hash_equals($identity->fingerprint, (string) $artifact->preparation_fingerprint);
         if ($current) {
             $state = $identity->reuseState($artifact->preparation_fingerprint, $artifact->status, $this->pendingFresh($artifact, $now));
             if ($state === 'ready' && $this->readableSource($artifact, $identity, $conversation->fresh())) {
                 $output = $this->output($artifact, $identity);
-                $outputCount = (int) $artifact->source_message_count;
+                $displayArtifact = $artifact;
             } elseif ($state === 'ready') {
                 $state = 'unavailable';
             }
@@ -233,7 +234,7 @@ final readonly class AiAssistPreparation
                 : (is_array($artifact->previous_output) ? $artifact->newFromBuilder($artifact->previous_output) : null);
             if ($prior !== null && $this->readableSource($prior, $identity, $conversation->fresh())) {
                 $output = $this->output($prior, $identity);
-                $outputCount = (int) $prior->source_message_count;
+                $displayArtifact = $prior;
                 $state = $current && $this->pendingFresh($artifact, $now) ? 'preparing' : 'stale';
             } elseif ($artifact->status === 'running' && $this->runningClaimLive($artifact, $now)) {
                 $state = 'preparing';
@@ -242,12 +243,17 @@ final readonly class AiAssistPreparation
         $retry = max(0, $this->retryDeadline($artifact?->preparation_fingerprint === $identity->fingerprint ? $artifact : null, $receipt)->getTimestamp() - $now->getTimestamp());
         $busy = $artifact !== null && ($this->runningClaimLive($artifact, $now) || ($current && $this->pendingFresh($artifact, $now)));
 
+        $provenance = app(ConversationAssistPresentation::class)->provenance($conversation, $displayArtifact);
+
         return ['task' => $purpose, 'mode' => $identity->mode, 'state' => $state, 'output' => $output,
+            'output_generation' => $displayArtifact?->generation,
             'generation' => $current ? $artifact->generation : $receipt?->generation,
             'policy_revision' => $identity->policyRevision, 'retry_after' => $retry,
             'can_use' => $state === 'ready',
             'can_prepare' => $identity->state === 'eligible' && ! $busy && ($receipt === null || $retry === 0),
-            'source_message_count' => $outputCount, 'source_position' => $current ? $artifact->source_last_message_id : null];
+            'source_message_count' => $provenance['source_message_count'] ?? null,
+            'source_position' => $provenance['source_position'] ?? null,
+            'source_ordinal' => $provenance['source_ordinal'] ?? null, 'source_url' => $provenance['source_url'] ?? null];
     }
 
     /** Use is a fresh read capability; it never inserts, submits, or sends. */
@@ -391,7 +397,10 @@ final readonly class AiAssistPreparation
             'conversation_knowledge_suggestion' => ['articles' => app(KnowledgeArticleSuggestionMatcher::class)
                 ->present(Account::query()->findOrFail($identity->accountId), $artifact->suggestedArticleIds())
                 ->map(fn ($item) => ['id' => $item['article']->id, 'title' => $item['article']->title,
-                    'snippet' => $item['snippet'], 'revision' => KnowledgeArticleSuggestionMatcher::revision($item['article'], $item['snippet'])])->all()],
+                    'snippet' => $item['snippet'], 'revision' => KnowledgeArticleSuggestionMatcher::revision($item['article'], $item['snippet']),
+                    'source_url' => route('dashboard.conversations.assist.sources.show', ['supportCode' => $artifact->conversation->support_code,
+                        'article' => $item['article']->id, 'generation' => $artifact->generation,
+                        'article_revision' => KnowledgeArticleSuggestionMatcher::revision($item['article'], $item['snippet'])])])->all()],
         };
     }
 }

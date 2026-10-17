@@ -22,7 +22,7 @@ final class KnowledgeArticleSuggestionMatcher
     {
         return hash_hmac('sha256', json_encode([
             (int) $article->account_id, (int) $article->id, $article->title, $snippet,
-            $article->getRawOriginal('updated_at'),
+            $article->getRawOriginal('updated_at'), hash('sha256', (string) $article->body),
         ], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
