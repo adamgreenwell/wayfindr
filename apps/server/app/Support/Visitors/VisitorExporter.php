@@ -210,7 +210,7 @@ final class VisitorExporter
             'retry_not_before' => true, 'created_at' => true, 'updated_at' => true,
         ],
         'conversation_copilot_summaries' => self::COPILOT + ['summary' => true],
-        'conversation_copilot_reply_drafts' => self::COPILOT + ['draft' => true],
+        'conversation_copilot_reply_drafts' => self::COPILOT + ['draft' => true, 'grounding' => 'server-only article mapping, source proofs and proposal validation metadata; the editable draft is exported'],
         'conversation_copilot_ticket_suggestions' => self::COPILOT + ['title' => true, 'priority' => true, 'label_ids' => true],
         'conversation_copilot_knowledge_suggestions' => self::COPILOT + ['article_ids' => true],
         'proactive_message_deliveries' => [

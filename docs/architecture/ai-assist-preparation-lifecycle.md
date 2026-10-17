@@ -48,7 +48,7 @@ do not. Attachment-only activity changes the activity position without exposing
 attachment content. Unselected older messages do not expand the input partition.
 The optional source proof on existing context DTOs does not join provider input.
 
-Knowledge and ticket identities read server-maintained account catalogue UUIDs,
+Knowledge, consented grounded reply and ticket identities read server-maintained account catalogue UUIDs,
 without scanning article bodies or label rows. PostgreSQL/SQLite triggers rotate
 these tokens atomically on relevant inserts, edits, deletes and account moves,
 including bulk SQL. Both owners are invalidated when a record moves. Draft
@@ -64,9 +64,14 @@ the migration does no content scan or backfill. PostgreSQL function definitions
 are replaced on migration, including functions retained after `migrate:fresh`
 drops tables; rollback removes the owned functions and triggers. Ticket identity skips local label
 matching, while ordinary generation still matches labels by default. Summary and
-reply identities remain transcript-only. No catalogue content leaves the install.
-A future grounded recipe must add its actual dependencies before admission; bump
-the recipe version when matching or output-schema semantics change.
+article-disabled reply identities remain transcript-only. Preparation v3 binds
+the article watermark for consented replies without reading bodies; no matching
+article still admits a safe clarification. The actual grounded prompt adds bounded
+scrubbed selected passages within the combined context ceiling, and its work
+fingerprint binds exact source references. Source proofs and stored passage hashes
+are rechecked before transmission, publication, display and Use. See the
+[grounded reply contract](ai-assist-grounded-drafts.md). Bump the recipe version
+when matching or output-schema semantics change.
 
 ## Implemented cache classification
 
@@ -134,7 +139,8 @@ silently enable automatic calls.
 
 Status and Use freshly resolve the viewing actor's access. Use requires the exact
 current Ready generation and policy; stale or withdrawn suggestions cannot be
-inserted/applied. Reply and article insertion requires an empty composer and
+inserted/applied. Reply and article insertion requires an empty composer or a freshly authorized
+Preview/Apply replacement of the exact unchanged original, and
 rechecks edits after its response. Ticket details always require deliberate
 **Apply** into an untouched form. Neither action sends a reply or creates a ticket.
 

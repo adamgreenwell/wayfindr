@@ -19,6 +19,7 @@ use App\Support\Ai\ConversationKnowledgeSuggestionPromptBuilder;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
+use App\Support\Ai\Grounding\ConversationGroundedReplyPresentation;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
@@ -209,7 +210,9 @@ final readonly class AiSupportUsage
             ConversationCopilotTicketSuggestion::class => ConversationTicketSuggestionPromptBuilder::class,
             default => throw new AiNetworkException('execution_identity_invalid'),
         };
-        $context = app($builder)->build($artifact->conversation);
+        $context = $artifact instanceof ConversationCopilotReplyDraft
+            ? app($builder)->build($artifact->conversation, User::query()->find($artifact->requested_by_id))
+            : app($builder)->build($artifact->conversation);
         if ($context === null) {
             throw new AiNetworkException('context_unavailable');
         }
@@ -306,6 +309,11 @@ final readonly class AiSupportUsage
             throw new AiNetworkException('ticket_exists');
         }
         $identity = app(AiAssistPreparationIdentityResolver::class)->forTask($fresh->requestedBy, $fresh->conversation, $purpose);
+        if ($fresh instanceof ConversationCopilotReplyDraft && $fresh->status === 'ready'
+            && ($identity->sourceSnapshot['grounding_enabled'] ?? false)
+            && ! app(ConversationGroundedReplyPresentation::class)->isCurrent($fresh, $fresh->requestedBy, $fresh->conversation)) {
+            throw new AiNetworkException('context_changed');
+        }
         if (! hash_equals($identity->fingerprint, $fresh->preparation_fingerprint)
             || ! AiAssistPreparationReceipt::query()->where('account_id', $identity->accountId)
                 ->where('conversation_id', $identity->conversationId)->where('purpose', $purpose)

@@ -19,7 +19,7 @@
         'summary' => 'conversations.detail.copilot', 'reply' => 'conversations.detail.reply_copilot',
         'knowledge' => 'conversations.detail.knowledge_copilot', 'ticket' => 'conversations.detail.ticket_copilot',
     };
-    $assistCopy = ['source_new_tab' => __('ai_assist.rail.source_new_tab'), 'source_one' => trans_choice($assistLegacyCopy.'.source_count', 1, ['count' => ':count']),
+    $assistCopy = ['grounding' => __('ai_assist.grounding'), 'source_new_tab' => __('ai_assist.rail.source_new_tab'), 'source_one' => trans_choice($assistLegacyCopy.'.source_count', 1, ['count' => ':count']),
         'source_many' => trans_choice($assistLegacyCopy.'.source_count', 2, ['count' => ':count']),
         'no_matches' => __('conversations.detail.knowledge_copilot.no_matches'), 'states' => __('ai_assist.preparation.states'), 'prepare_ticket' => __('ai_assist.preparation.prepare_ticket'), 'prepare' => __('ai_assist.preparation.prepare'), 'refresh' => __('ai_assist.preparation.refresh'),
         'retry' => __('ai_assist.preparation.retry'), 'use' => $assistTask === 'reply' ? __('ai_assist.rail.insert') : __('ai_assist.preparation.use'), 'use_article' => __('ai_assist.preparation.use_article'),
@@ -41,6 +41,32 @@
     <div data-ai-output lang="">
         @if (is_string($assistState['output']['text'] ?? null))
             <p>{{ $assistState['output']['text'] }}</p>
+            @if (is_array($assistState['output']['grounding'] ?? null))
+                <div data-ai-grounding>
+                    <p>{{ __('ai_assist.grounding.transcript') }}</p>
+                    <p><strong>{{ __('ai_assist.grounding.heading') }}</strong></p>
+                    @if ($assistState['output']['grounding']['decision'] === 'supported')
+                        <p>{{ __('ai_assist.grounding.supported') }}</p>
+                    @endif
+                    @if ($assistState['output']['grounding']['limitation'] !== null)
+                        <p>{{ $assistState['output']['grounding']['limitation'] }}</p>
+                    @endif
+                    @if ($assistState['output']['grounding']['missing_information'] !== [])
+                        <p><strong>{{ __('ai_assist.grounding.missing') }}</strong></p>
+                        @foreach ($assistState['output']['grounding']['missing_information'] as $assistMissing)
+                            <p>{{ $assistMissing }}</p>
+                        @endforeach
+                    @endif
+                    @if ($assistState['output']['grounding']['sources'] !== [])
+                    <details class="assist-grounding-sources"><summary>{{ __('ai_assist.grounding.sources') }}</summary>
+                    @foreach ($assistState['output']['grounding']['sources'] as $assistArticle)
+                        <p><a href="{{ $assistArticle['source_url'] }}" target="_blank" rel="noopener" aria-label="{{ $assistArticle['title'] }} — {{ __('ai_assist.rail.source_new_tab') }}">{{ $assistArticle['title'] }}</a></p>
+                        <blockquote>{{ $assistArticle['snippet'] }}</blockquote>
+                    @endforeach
+                    </details>
+                    @endif
+                </div>
+            @endif
             @if ($assistTask === 'reply')
                 <button type="button" class="button secondary" data-ai-use disabled>{{ $assistTask === 'reply' ? __('ai_assist.rail.insert') : __('ai_assist.preparation.use') }}</button>
             @endif

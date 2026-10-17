@@ -173,7 +173,16 @@ function policyManualRun(array $world, object $job, ?Closure $during = null): vo
             }
             $session = new PolicyManualSession($connection, fn (string $reason) => $ledger->reconcile($context->attemptId, $dispatch->dispatchNonce, 10, 5, $reason));
 
-            return new AgentCopilotResult($this->world['spec'][4], 'synthetic', 'synthetic', 10, 5, $session);
+            $output = $this->world['spec'][4];
+            $input = json_decode($prompt->input, true, 12, JSON_THROW_ON_ERROR);
+            if ($prompt->purpose === 'conversation_reply_draft' && isset($input['knowledge'])) {
+                $sources = $input['knowledge']['sources'];
+                $output = json_encode($sources === []
+                    ? ['decision' => 'insufficient', 'reply' => 'Could you clarify?', 'citations' => [], 'limitation' => 'No relevant guidance.', 'missing_information' => ['Request details']]
+                    : ['decision' => 'supported', 'reply' => $sources[0]['passage'], 'citations' => [$sources[0]['ref']], 'limitation' => null, 'missing_information' => []], JSON_THROW_ON_ERROR);
+            }
+
+            return new AgentCopilotResult($output, 'synthetic', 'synthetic', 10, 5, $session);
         }
     };
     app()->call([$job, 'handle'], ['provider' => $provider]);
@@ -239,7 +248,7 @@ test('manual generation stamps policy and actual source and returns fresh Use da
         $response = $this->actingAs($world['agent'])->getJson(route('dashboard.conversations.'.$world['spec'][2].'.use', policyManualUseQuery($world, $artifact)))->assertOk()->assertJsonPath('generation', $artifact->generation)->assertJsonPath('policy_revision', $artifact->policy_revision);
         expect($response->headers->get('Cache-Control'))->toContain('no-store');
         if ($kind === 'reply') {
-            $response->assertJsonPath('text', 'A freshly authorized reply.');
+            $response->assertJsonPath('text', __('ai_assist.grounding.attribution')."\n\nReview the checkout button.");
         }
         if ($kind === 'ticket') {
             $response->assertJsonPath('title', 'Checkout assistance')->assertJsonPath('priority', 'high');

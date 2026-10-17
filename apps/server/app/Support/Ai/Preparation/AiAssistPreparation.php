@@ -12,11 +12,13 @@ use App\Models\Account;
 use App\Models\AiAssistPreparationReceipt;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\ConversationCopilotReplyDraft;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\ConversationAssistPresentation;
 use App\Support\Ai\ConversationTextContextSelector;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Grounding\ConversationGroundedReplyPresentation;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Usage\AiUsageClock;
@@ -41,7 +43,7 @@ final readonly class AiAssistPreparation
     ];
 
     private const OUTPUT = [
-        'conversation_summary' => ['summary'], 'conversation_reply_draft' => ['draft'],
+        'conversation_summary' => ['summary'], 'conversation_reply_draft' => ['draft', 'grounding'],
         'conversation_knowledge_suggestion' => ['article_ids'],
         'conversation_ticket_suggestion' => ['title', 'priority', 'label_ids'],
     ];
@@ -100,12 +102,12 @@ final readonly class AiAssistPreparation
                 }
                 $previous = null;
                 if ($artifact !== null) {
-                    if ($artifact->status === 'ready' && $this->readableSource($artifact, $identity, $conversation)) {
+                    if ($artifact->status === 'ready' && $this->readableSource($artifact, $identity, $conversation, $actor)) {
                         $previous = $artifact->getRawOriginal();
                         unset($previous['previous_output']);
                     } elseif (is_array($artifact->previous_output)) {
                         $candidate = $artifact->newFromBuilder($artifact->previous_output);
-                        if ($this->readableSource($candidate, $identity, $conversation)) {
+                        if ($this->readableSource($candidate, $identity, $conversation, $actor)) {
                             $previous = $artifact->previous_output;
                         }
                     }
@@ -222,7 +224,7 @@ final readonly class AiAssistPreparation
             && hash_equals($identity->fingerprint, (string) $artifact->preparation_fingerprint);
         if ($current) {
             $state = $identity->reuseState($artifact->preparation_fingerprint, $artifact->status, $this->pendingFresh($artifact, $now));
-            if ($state === 'ready' && $this->readableSource($artifact, $identity, $conversation->fresh())) {
+            if ($state === 'ready' && $this->readableSource($artifact, $identity, $conversation->fresh(), $actor)) {
                 $output = $this->output($artifact, $identity);
                 $displayArtifact = $artifact;
             } elseif ($state === 'ready') {
@@ -232,7 +234,7 @@ final readonly class AiAssistPreparation
         if ($artifact !== null && $output === null && in_array($artifact->status, ['ready', 'pending', 'running'], true)) {
             $prior = $artifact->status === 'ready' ? $artifact
                 : (is_array($artifact->previous_output) ? $artifact->newFromBuilder($artifact->previous_output) : null);
-            if ($prior !== null && $this->readableSource($prior, $identity, $conversation->fresh())) {
+            if ($prior !== null && $this->readableSource($prior, $identity, $conversation->fresh(), $actor)) {
                 $output = $this->output($prior, $identity);
                 $displayArtifact = $prior;
                 $state = $current && $this->pendingFresh($artifact, $now) ? 'preparing' : 'stale';
@@ -332,7 +334,7 @@ final readonly class AiAssistPreparation
             ->where('fingerprint', $identity->fingerprint);
     }
 
-    private function readableSource(Model $artifact, AiAssistPreparationIdentity $identity, Conversation $conversation): bool
+    private function readableSource(Model $artifact, AiAssistPreparationIdentity $identity, Conversation $conversation, User $actor): bool
     {
         $snapshot = $artifact->preparation_source_snapshot;
 
@@ -340,7 +342,9 @@ final readonly class AiAssistPreparation
             && $artifact->connection_revision === $identity->connectionRevision
             && $artifact->policy_revision === $identity->policyRevision && is_array($snapshot)
             && ($snapshot['catalogue_revision'] ?? null) === $identity->catalogueRevision
-            && app(ConversationTextContextSelector::class)->sourceStillCurrent($conversation, $snapshot);
+            && app(ConversationTextContextSelector::class)->sourceStillCurrent($conversation, $snapshot)
+            && (! $artifact instanceof ConversationCopilotReplyDraft || ! ($identity->sourceSnapshot['grounding_enabled'] ?? false)
+                || app(ConversationGroundedReplyPresentation::class)->isCurrent($artifact, $actor, $conversation));
     }
 
     private function pendingFresh(Model $artifact, CarbonImmutable $now): bool
@@ -390,7 +394,8 @@ final readonly class AiAssistPreparation
     {
         return match ($identity->purpose) {
             'conversation_summary' => ['text' => $artifact->summary],
-            'conversation_reply_draft' => ['text' => $artifact->draft],
+            'conversation_reply_draft' => ['text' => $artifact->draft] + (is_array($artifact->grounding)
+                ? ['grounding' => app(ConversationGroundedReplyPresentation::class)->output($artifact, $artifact->conversation)] : []),
             'conversation_ticket_suggestion' => ['title' => $artifact->title, 'priority' => $artifact->priority,
                 'label_ids' => Account::query()->findOrFail($identity->accountId)->ticketLabels()
                     ->whereIn('id', $artifact->suggestedLabelIds())->pluck('id')->all()],

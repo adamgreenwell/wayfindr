@@ -30,7 +30,7 @@ final readonly class ConversationTextContextSelector
     public function __construct(private AiContextSanitizer $sanitizer) {}
 
     /** @throws JsonException */
-    public function select(Conversation $conversation): ?ConversationTextContext
+    public function select(Conversation $conversation, ?int $maximumCharacters = null): ?ConversationTextContext
     {
         $messageQuery = $conversation->messages()
             ->whereNotNull('body')
@@ -39,6 +39,7 @@ final readonly class ConversationTextContextSelector
         $limit = min(
             self::PREFERRED_CONTEXT_CHARACTERS,
             app(AiAssistPolicyResolver::class)->forConversation($conversation)->maxContextCharacters,
+            $maximumCharacters === null ? PHP_INT_MAX : max(300, $maximumCharacters),
         );
         $subject = filled($conversation->subject)
             ? mb_substr($this->sanitizer->sanitize(trim((string) $conversation->subject)), 0, self::MAX_SUBJECT_CHARACTERS)

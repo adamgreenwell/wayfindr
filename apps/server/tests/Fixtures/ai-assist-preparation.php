@@ -136,13 +136,13 @@ final readonly class AssistPreparationSession implements AiGuardedSession
     }
 }
 
-function assistPreparationProvider(?Closure $duringCall = null): AgentCopilotProvider
+function assistPreparationProvider(?Closure $duringCall = null, ?Closure $replyOutput = null, ?Closure $beforeClaim = null): AgentCopilotProvider
 {
-    return new class($duringCall) implements AgentCopilotProvider
+    return new class($duringCall, $replyOutput, $beforeClaim) implements AgentCopilotProvider
     {
         public int $calls = 0;
 
-        public function __construct(private ?Closure $duringCall) {}
+        public function __construct(private ?Closure $duringCall, private ?Closure $replyOutput, private ?Closure $beforeClaim) {}
 
         public function probe(): AgentCopilotResult
         {
@@ -157,6 +157,7 @@ function assistPreparationProvider(?Closure $duringCall = null): AgentCopilotPro
             if ($context === null || $connection === null) {
                 throw new LogicException('Prepared fixture requires guarded execution.');
             }
+            $this->beforeClaim?->__invoke($prompt);
             AiSupportUsage::assertActualPrompt($connection, $context, $prompt);
             $ledger = app(AiUsageLedger::class);
             $authority = app(AiRequestAuthority::class);
@@ -166,7 +167,7 @@ function assistPreparationProvider(?Closure $duringCall = null): AgentCopilotPro
             $this->duringCall?->__invoke($prompt, $receipt);
             $text = match ($context->purpose) {
                 'conversation_summary' => 'Synthetic checkout summary.',
-                'conversation_reply_draft' => 'Synthetic reply, reviewed by a human before sending.',
+                'conversation_reply_draft' => $this->replyOutput?->__invoke($prompt) ?? assistPreparationReplyOutput($prompt),
                 'conversation_knowledge_suggestion' => '{"queries":["checkout"]}',
                 'conversation_ticket_suggestion' => '{"title":"Synthetic checkout follow-up","priority":"normal"}',
             };
@@ -186,4 +187,18 @@ function assistPreparationRun(array $world, ?AgentCopilotProvider $provider = nu
     app()->call([$job, 'handle']);
 
     return $provider;
+}
+
+/** Synthetic replies follow the actual selected runtime recipe, with no extra provider call. */
+function assistPreparationReplyOutput(AgentCopilotPrompt $prompt): string
+{
+    $input = json_decode($prompt->input, true, 12, JSON_THROW_ON_ERROR);
+    if (! isset($input['knowledge'])) {
+        return 'Synthetic reply, reviewed by a human before sending.';
+    }
+    $sources = $input['knowledge']['sources'];
+
+    return json_encode($sources === []
+        ? ['decision' => 'insufficient', 'reply' => 'Could you clarify the request?', 'citations' => [], 'limitation' => 'No relevant published guidance.', 'missing_information' => ['Details of the request']]
+        : ['decision' => 'supported', 'reply' => $sources[0]['passage'], 'citations' => [$sources[0]['ref']], 'limitation' => null, 'missing_information' => []], JSON_THROW_ON_ERROR);
 }

@@ -142,6 +142,28 @@
             if (state.output) {
                 if (typeof state.output.text === 'string') {
                     text(state.output.text);
+                    const grounding = state.output.grounding;
+                    if (grounding && Array.isArray(grounding.sources)) {
+                        const labels = copy.grounding || {};
+                        const region = document.createElement('div'); region.dataset.aiGrounding = ''; output.append(region);
+                        const note = value => { const p = document.createElement('p'); p.textContent = value; region.append(p); };
+                        note(labels.transcript || ''); note(labels.heading || '');
+                        if (grounding.decision === 'supported') note(labels.supported || '');
+                        if (typeof grounding.limitation === 'string') note(grounding.limitation);
+                        if (Array.isArray(grounding.missing_information) && grounding.missing_information.length) {
+                            note(labels.missing || ''); grounding.missing_information.forEach(value => note(value));
+                        }
+                        const details = document.createElement('details'); details.className = 'assist-grounding-sources';
+                        const summary = document.createElement('summary'); summary.textContent = labels.sources || ''; details.append(summary);
+                        if (grounding.sources.length) region.append(details);
+                        grounding.sources.forEach(article => {
+                            let url = null;
+                            try { const candidate = new URL(article.source_url, window.location.href); if (candidate.origin === window.location.origin && !candidate.username && !candidate.password && ['http:','https:'].includes(candidate.protocol) && typeof article.source_url === 'string' && article.source_url.trim()) url = candidate; } catch (error) { /* Unusable citations remain plain text. */ }
+                            if (url) { const link = document.createElement('a'); link.href = url.href; link.target = '_blank'; link.rel = 'noopener'; link.textContent = article.title; link.setAttribute('aria-label', `${article.title} — ${copy.source_new_tab || ''}`); details.append(link); }
+                            else { const title = document.createElement('p'); title.textContent = article.title; details.append(title); }
+                            const quote = document.createElement('blockquote'); quote.textContent = article.snippet; details.append(quote);
+                        });
+                    }
                     if (panel.dataset.task === 'reply') button(copy.use);
                 } else if (Array.isArray(state.output.articles)) {
                     if (state.output.articles.length === 0) text(copy.no_matches);

@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'source_context_fingerprint',
     'status',
     'draft',
+    'grounding',
     'source_last_message_id',
     'source_message_count',
     'provider',
@@ -46,6 +47,7 @@ final class ConversationCopilotReplyDraft extends Model
     protected function casts(): array
     {
         return [
+            'grounding' => 'array',
             'source_last_message_id' => 'integer',
             'source_message_count' => 'integer',
             'prompt_tokens' => 'integer',

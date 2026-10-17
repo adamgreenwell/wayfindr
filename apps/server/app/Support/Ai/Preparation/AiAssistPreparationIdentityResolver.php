@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Gate;
 /** Read-only input snapshot for the future locked ensure/admission coordinator. */
 final readonly class AiAssistPreparationIdentityResolver
 {
-    private const VERSION = 'assist-preparation-v2';
+    private const VERSION = 'assist-preparation-v3';
 
     public function __construct(private AiAssistPolicyResolver $policies, private AgentCopilotConnectionResolver $connections) {}
 
@@ -65,7 +65,8 @@ final readonly class AiAssistPreparationIdentityResolver
         // Attachment bytes, metadata and profiles never enter the source proof.
         $lastMessageId = $conversation->messages()->max('id');
         $context = $purpose === 'conversation_ticket_suggestion'
-            ? app($builder)->build($conversation, matchLabels: false) : app($builder)->build($conversation);
+            ? app($builder)->build($conversation, matchLabels: false)
+            : ($purpose === 'conversation_reply_draft' ? app($builder)->build($conversation, $actor, selectSources: false) : app($builder)->build($conversation));
         if ($context !== null && (! is_string($context->sourceRevision)
             || preg_match('/\A[a-f0-9]{64}\z/', $context->sourceRevision) !== 1)) {
             throw new AiNetworkException('execution_identity_invalid');
@@ -73,8 +74,9 @@ final readonly class AiAssistPreparationIdentityResolver
         $sourceRevision = $context === null ? $this->hash(['no-text', $conversation->subject, $lastMessageId]) : $context->sourceRevision;
         $catalogueRevision = null;
         $catalogueEmpty = false;
-        if ($context !== null && in_array($purpose, ['conversation_knowledge_suggestion', 'conversation_ticket_suggestion'], true)) {
-            [$catalogueRevision, $catalogueEmpty] = $this->catalogue($accountId, $purpose);
+        if ($context !== null && (in_array($purpose, ['conversation_knowledge_suggestion', 'conversation_ticket_suggestion'], true)
+            || $purpose === 'conversation_reply_draft' && $policy->articleContextAllowed)) {
+            [$catalogueRevision, $catalogueEmpty] = $this->catalogue($accountId, $purpose === 'conversation_reply_draft' ? 'conversation_knowledge_suggestion' : $purpose);
         }
         $state = $context === null || ($purpose === 'conversation_knowledge_suggestion' && $catalogueEmpty)
             ? 'insufficient_context' : 'eligible';

@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
 use Throwable;
 
-/** Standalone local selection contract. No runtime prompt, queue or provider uses this yet. */
+/** Bounded local selection and exact payload proof for private grounded replies. */
 final readonly class ConversationGroundingSelector
 {
-    private const VERSION = 'conversation-grounding-selection-v1';
+    private const VERSION = 'conversation-grounding-selection-v2';
 
     private const PURPOSE = 'conversation_reply_draft';
 
@@ -51,7 +51,7 @@ final readonly class ConversationGroundingSelector
     public function __construct(private ConversationTextContextSelector $transcripts, private AiContextSanitizer $sanitizer) {}
 
     /** Select only from fresh, permitted conversation text; callers cannot supply an arbitrary prompt/draft. */
-    public function select(User $actor, Conversation $conversation, int $maximumCharacters = 3000): ConversationGroundingSelection
+    public function select(User $actor, Conversation $conversation, int $maximumCharacters = 3000, ?int $transcriptMaximumCharacters = null): ConversationGroundingSelection
     {
         if ($maximumCharacters < 2) {
             throw new InvalidArgumentException('Grounding source budget must allow an empty JSON list.');
@@ -62,7 +62,7 @@ final readonly class ConversationGroundingSelector
             return new ConversationGroundingSelection('disabled', [], []);
         }
         $lastMessageId = $conversation->messages()->max('id');
-        $transcript = $this->transcripts->select($conversation);
+        $transcript = $this->transcripts->select($conversation, $transcriptMaximumCharacters);
         if ($transcript === null || ! is_string($transcript->sourceRevision)
             || ! $this->transcripts->sourceStillCurrent($conversation, $transcript->sourceSnapshot)) {
             return new ConversationGroundingSelection('no_sources', [], []);
@@ -118,11 +118,12 @@ final readonly class ConversationGroundingSelector
             }
             $revision = KnowledgeArticleSuggestionMatcher::revision($candidate['article'], '');
             $passageProof = $this->hash(['passage', $passage]);
+            $titleProof = $this->hash(['title', $candidate['title']]);
             $reference = 'src-'.substr($this->hash(['reference', (int) $actor->account_id,
-                (int) $candidate['article']->id, $revision, $passageProof]), 0, 24);
+                (int) $candidate['article']->id, $revision, $passageProof, $titleProof]), 0, 24);
             $providerSources[] = ['ref' => $reference, 'title' => $candidate['title'], 'passage' => $passage];
             $snapshot['sources'][] = ['ref' => $reference, 'article_id' => (int) $candidate['article']->id,
-                'full_revision' => $revision, 'passage_hash' => $passageProof];
+                'full_revision' => $revision, 'passage_hash' => $passageProof, 'title_hash' => $titleProof];
         }
 
         return $this->selection($providerSources, $snapshot);
@@ -157,11 +158,12 @@ final readonly class ConversationGroundingSelector
             }
             $seen = [];
             foreach ($snapshot['sources'] as $source) {
-                if (! is_array($source) || array_keys($source) !== ['ref', 'article_id', 'full_revision', 'passage_hash']
+                if (! is_array($source) || array_keys($source) !== ['ref', 'article_id', 'full_revision', 'passage_hash', 'title_hash']
                     || ! is_string($source['ref']) || preg_match('/\Asrc-[a-f0-9]{24}\z/', $source['ref']) !== 1
                     || ! is_int($source['article_id']) || $source['article_id'] < 1
                     || ! is_string($source['full_revision']) || preg_match('/\A[a-f0-9]{64}\z/', $source['full_revision']) !== 1
                     || ! is_string($source['passage_hash']) || preg_match('/\A[a-f0-9]{64}\z/', $source['passage_hash']) !== 1
+                    || ! is_string($source['title_hash']) || preg_match('/\A[a-f0-9]{64}\z/', $source['title_hash']) !== 1
                     || isset($seen[$source['ref']])) {
                     return false;
                 }
@@ -174,8 +176,34 @@ final readonly class ConversationGroundingSelector
                     return false;
                 }
                 $reference = 'src-'.substr($this->hash(['reference', (int) $actor->account_id, $source['article_id'],
-                    $source['full_revision'], $source['passage_hash']]), 0, 24);
+                    $source['full_revision'], $source['passage_hash'], $source['title_hash']]), 0, 24);
                 if (! hash_equals($reference, $source['ref'])) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** Bind exactly the scrubbed fields supplied to the processor, not just article membership. */
+    public function payloadStillCurrent(User $actor, Conversation $conversation, array $snapshot, array $sources): bool
+    {
+        try {
+            if (! $this->sourceStillCurrent($actor, $conversation, $snapshot)
+                || ! array_is_list($sources) || count($sources) !== count($snapshot['sources'])
+                || mb_strlen(json_encode($sources, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) > $snapshot['maximum_characters']) {
+                return false;
+            }
+            foreach ($sources as $index => $source) {
+                $proof = $snapshot['sources'][$index];
+                if (! is_array($source) || array_keys($source) !== ['ref', 'title', 'passage']
+                    || ! is_string($source['title']) || ! is_string($source['passage'])
+                    || $source['ref'] !== $proof['ref']
+                    || ! hash_equals($proof['passage_hash'], $this->hash(['passage', $source['passage']]))
+                    || ! hash_equals($proof['title_hash'], $this->hash(['title', $source['title']]))) {
                     return false;
                 }
             }
@@ -236,15 +264,23 @@ final readonly class ConversationGroundingSelector
     {
         $best = null;
         $bestScore = 0;
-        foreach (preg_split('/\R{2,}/u', $text) ?: [] as $paragraph) {
-            $paragraph = trim((string) preg_replace('/\s+/u', ' ', $paragraph));
-            for ($offset = 0; $offset < mb_strlen($paragraph); $offset += self::MAX_PASSAGE_CHARACTERS - 200) {
-                $window = mb_substr($paragraph, $offset, self::MAX_PASSAGE_CHARACTERS);
-                $score = $this->score($window, $tokens);
-                if ($score > $bestScore) {
-                    $best = $window;
-                    $bestScore = $score;
-                }
+        $window = [];
+        foreach (preg_split('/(?<=[.!?])\s+|\R+/u', $text) ?: [] as $sentence) {
+            $sentence = trim((string) preg_replace('/\s+/u', ' ', $sentence));
+            if ($sentence === '' || mb_strlen($sentence) > self::MAX_PASSAGE_CHARACTERS) {
+                $window = [];
+
+                continue;
+            }
+            $window[] = $sentence;
+            while (mb_strlen(implode(' ', $window)) > self::MAX_PASSAGE_CHARACTERS) {
+                array_shift($window);
+            }
+            $candidate = implode(' ', $window);
+            $score = $this->score($candidate, $tokens);
+            if ($score > $bestScore) {
+                $best = $candidate;
+                $bestScore = $score;
             }
         }
 
@@ -280,7 +316,19 @@ final readonly class ConversationGroundingSelector
             }
         }
 
-        return rtrim(mb_substr($passage, 0, $low));
+        if ($low >= mb_strlen($passage)) {
+            return $passage;
+        }
+        $fitted = '';
+        foreach (preg_split('/(?<=[.!?])\s+|\R+/u', $passage) ?: [] as $sentence) {
+            $candidate = ltrim($fitted.' '.$sentence);
+            if (mb_strlen($candidate) > $low) {
+                break;
+            }
+            $fitted = $candidate;
+        }
+
+        return $fitted;
     }
 
     /** @param list<array{ref: string, title: string, passage: string}> $sources */

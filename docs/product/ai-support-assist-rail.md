@@ -64,9 +64,14 @@ attachment content remains excluded.
 How Assist uses this conversation identifies only the selected connection source,
 provider, model, optional OpenRouter upstream and effective character ceiling.
 Credentials, endpoints and configuration objects are excluded. It explains bounded
-scrubbed subject/message text, excluded data, current local account-article
-matching and the explicit unsent-draft boundary for refinement. Grounded generation
-and refinement actions remain the separate #1172/#1173 slices.
+scrubbed subject/message text, excluded data and the explicit unsent-draft boundary
+for refinement. The #1172 completion adds truthful consent-dependent passage
+sharing disclosure: Relevant articles On allows bounded published same-account
+passages in reply requests, and Off retains transcript-only help. Grounded drafts
+show published-guidance attribution, limitations and missing information separately.
+Validated citations and scrubbed excerpts sit in a collapsed native Published
+sources section; source/access changes withdraw the whole draft before Use.
+Refinement generation remains #1173.
 
 One polite AI live region outside the disclosure announces meaningful task and
 preview changes. Initial content and repeated identical polls stay silent.
@@ -76,8 +81,8 @@ keyboard-focusable scroll regions so long drafts can be reviewed in Safari.
 Arbitrary original/candidate text uses unknown language metadata, and the rail
 follows reduced-motion preferences.
 
-The remaining implementation is delivered in the follow-up feature branch after
-#1190; #1171 stays open until that follow-up pull request is merged.
+The #1171 panel completion merged in #1191. Grounded reply completion is tracked
+separately in #1172 and remains open until its completion pull request merges.
 
 ## Verification
 
