@@ -35,20 +35,47 @@ insertion copy in every dashboard locale. Each section keeps an independent rest
 heading and status, revealed if legacy polling removes its card. This fallback
 only observes direct card changes; it never prepares work or touches the composer.
 
-## Remaining #1171 work
+## Completed panel integration
 
-This foundation does not close the issue. The remaining integration includes:
+An existing composer draft opens a stable Preview reply section with the exact
+original and proposed replacement. Cancel never writes a captured original back
+over newer text. Apply performs a second fresh authorized Use read and compares
+the exact original value, input/change revision, source revision, generation,
+policy, article revision and reviewed candidate. Typing and deleting back to the
+same text still invalidates Apply. The preview is transient page memory only;
+no unsent draft is sent or stored durably. Empty-composer insertion and reviewed
+ticket details keep their established separate paths; Assist never submits.
 
-- Preview/Apply/Cancel for an existing draft, with original preservation and
-  revision checks. Current dirty-draft insertion remains safely blocked.
-- Inspectable authorized source links and the selected-processor/context
-  disclosure, including the explicit refinement data-use explanation.
-- Rail-foot included-message position/freshness and consolidated limitations.
-- One polite rail live region across legacy and prepared task updates, with
-  meaningful announcements and the full keyboard/screen-reader acceptance pass.
-- Full Option 1 state, conversion, responsive and theme qualification after
-  those behaviors land. Grounded generation and refinement remain their separate
-  #1172/#1173 implementation slices.
+Sources open in a labelled independent tab, preserving the conversation and
+composer. Inspection is a read-only conversation capability for replying agents;
+it requires selected membership, current policy/connection, publication and the
+exact full article revision. It has no authoring controls, model calls or usage
+reservations. A full-body digest inside the existing opaque HMAC detects even
+same-second edits beyond the displayed excerpt. Included-position links stay
+within the current document and preserve its query and draft.
+
+The rail foot lists each task independently: state, included conversation
+position and count of text messages used. Both current and retained prior output
+use provenance from the exact displayed artifact. Positions follow the
+conversation's transcript ordering rather than exposing global IDs as human
+message numbers. An activity boundary can include attachment-only messages;
+attachment content remains excluded.
+
+How Assist uses this conversation identifies only the selected connection source,
+provider, model, optional OpenRouter upstream and effective character ceiling.
+Credentials, endpoints and configuration objects are excluded. It explains bounded
+scrubbed subject/message text, excluded data, current local account-article
+matching and the explicit unsent-draft boundary for refinement. Grounded generation
+and refinement actions remain the separate #1172/#1173 slices.
+
+One polite AI live region outside the disclosure announces meaningful task and
+preview changes. Initial content and repeated identical polls stay silent.
+Background completion never moves focus; intentional Preview, Apply and Cancel
+have predictable keyboard focus. Arbitrary original/candidate text uses unknown
+language metadata, and the rail follows reduced-motion preferences.
+
+The remaining implementation is delivered in the follow-up feature branch after
+#1190; #1171 stays open until that follow-up pull request is merged.
 
 ## Verification
 
@@ -56,6 +83,7 @@ HTTP rendering tests cover translated placement, read-only Prepare rendering,
 Manual initial actions, Off and preserved restored drafts. Browser-script tests
 exercise responsive defaults, saved preferences, denied storage, collapse without
 new work and fresh insertion into the separate composer without sending. Copied
-mutants prove the default/preference assertions catch regressions. Real-browser
+variants prove preference, revision, source withdrawal, second authorization,
+legacy freshness, language and safe navigation assertions catch regressions. Real-browser
 checks use synthetic accounts, isolated storage and disposable PostgreSQL; they
 establish UI behavior without activating a real provider.
