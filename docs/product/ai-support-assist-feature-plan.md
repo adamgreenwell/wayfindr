@@ -20,9 +20,9 @@ The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
 plan maps that contract and the selected screens to the delivery backlog. The
 [account-connection foundation](ai-support-assist-account-connections.md) records
-the implemented backend lifecycle and the remaining endpoint/UI gates. The
+the implemented lifecycle, permissions and administration boundaries. The
 [provider policy foundation](ai-support-assist-provider-policy.md) records the
-first #1168 slice and the remaining guarded SDK/probe/discovery/usage integration.
+guarded SDK/probe/discovery/usage integration completed through #1183.
 The [usage admission foundation](ai-support-assist-usage-admission.md) records
 the ledger, transport receipt and expiry seams required by that integration.
 
