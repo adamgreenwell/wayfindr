@@ -142,7 +142,8 @@ test('AI dispatch admission can refuse after DNS without transmitting', function
 
 test('AI dispatch lock waits reduce both wire timeouts under the original deadline', function (): void {
     $admission = new AiLifecycleAdmissionFixture;
-    $clock = hrtime(true) / 1e9;
+    // Integral monotonic time avoids fractional host-uptime rounding in exact timeout assertions.
+    $clock = ceil(hrtime(true) / 1e9);
     $admission->dispatchAction = function () use (&$clock): string {
         $clock += 18;
 
