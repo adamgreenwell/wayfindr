@@ -76,6 +76,7 @@ for(const failure of ['network','server','json'])test(`an inserted suggestion re
  f.timers[0]();await flush();assert.equal(f.requests.length,2,'A failed insertion observation waits before retrying');
  f.advance(2000);f.timers[0]();f.timers[0]();await flush();assert.deepEqual(f.requests.slice(1),[{event:'used',receipt:'opaque-receipt',generation},{event:'used',receipt:'opaque-receipt',generation}]);
  const root=f.panel.querySelector('[data-assist-feedback]');assert.equal(root.querySelector('[data-feedback-correction-label]').hidden,false,'A recovered use acknowledgement permits correction feedback');
+ assert.equal(root.querySelector('[data-feedback-status]').textContent,'','A recovered use clears its transient failure');
  f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,3,'Acknowledged insertion observations stop retrying');
  root.querySelector('[data-feedback-usefulness]').value='useful';root.querySelector('[data-feedback-correction]').value='material';root.querySelector('[data-feedback-save]').click();await flush();assert.equal(f.requests[3].correction,'material');
 });

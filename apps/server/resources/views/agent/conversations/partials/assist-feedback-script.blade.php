@@ -59,7 +59,7 @@
                 }
                 const value = await response.json();
                 if (record.generation !== generation) return;
-                if (input.event === 'used' && record.pendingUse?.receipt === input.receipt) discardUse(record);
+                if (input.event === 'used' && record.pendingUse?.receipt === input.receipt) { discardUse(record); record.status(''); }
                 if (input.event === 'viewed') {
                     record.root.querySelector('[data-feedback-usefulness]').value = value.usefulness || '';
                     record.root.querySelector('[data-feedback-correction]').value = value.correction || 'unassessed';
