@@ -229,7 +229,8 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `conversation_draft_refinement_sends`: metadata-only account/conversation,
   generation and start time for an erasure-visible provider send claim. It is
   committed before provider code, survives Cancel/supersession/user deletion,
-  and clears after return or the 180-second interrupted-call uncertainty window.
+  and clears after a known returned result/proven unsent failure, or the 180-second
+  uncertainty window for timeouts, lost responses and interrupted calls.
   Visitor erasure refuses fresh claims. Account/conversation deletion cascades;
   excluded from visitor export. Rollback drops claims before private slots after
   stopping admission/workers; both tables are additive without backfill.

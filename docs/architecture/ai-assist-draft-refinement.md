@@ -157,8 +157,8 @@ automatic provider retry. Errors retain only a fixed reason code.
 `conversation_draft_refinement_sends` stores only account/conversation/generation
 and start time. It survives cancellation, supersession and owning-agent deletion,
 so those actions cannot hide an active call from visitor erasure. Erasure shares
-the account lock and refuses a fresh claim within 180 seconds. Normal worker
-return removes its own claim; interrupted calls retain the uncertainty window.
+the account lock and refuses a fresh claim within 180 seconds. A known returned result or a proven unsent failure removes its own claim;
+post-dispatch timeouts, lost responses and interrupted calls retain the uncertainty window.
 Cleanup removes only claims aged at least 180 seconds. Both tables cascade with
 account/conversation/site deletion; the private slot also cascades with its user.
 As with existing copilot sends, ordinary parent deletion cannot recall data

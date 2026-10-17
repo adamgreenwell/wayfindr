@@ -73,9 +73,13 @@ final class GenerateConversationDraftRefinement implements ShouldBeUnique, Shoul
                 ? $exception->reason : 'provider_failed';
             $refinements->fail($this->refinementId, $this->generation, $reason);
         } finally {
-            // The bounded provider call has returned; cancellation never removes this claim early.
             if ($claimed) {
-                DB::table('conversation_draft_refinement_sends')->where('generation', $this->generation)->delete();
+                // A returned result proves a response. A thrown post-dispatch request may still
+                // be processing upstream: keep its erasure claim for the full uncertainty window.
+                $attempt = DB::table('ai_usage_attempts')->where('attempt_id', $this->generation)->first(['dispatch_nonce']);
+                if ($result !== null || ($attempt !== null && $attempt->dispatch_nonce === null)) {
+                    DB::table('conversation_draft_refinement_sends')->where('generation', $this->generation)->delete();
+                }
             }
         }
     }

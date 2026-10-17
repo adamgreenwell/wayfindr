@@ -137,7 +137,8 @@ expired rows. There is no shared refinement output or durable draft history.
 `conversation_draft_refinement_sends` retains only account/conversation/generation
 and send start time for the bounded in-flight erasure exclusion. It survives
 private-slot cancellation/supersession and user deletion, and expires after the
-180-second uncertainty window. Normal returned calls remove their own claim.
+180-second uncertainty window. Known returned results or proven unsent failures remove their own claim.
+Post-dispatch timeouts and lost responses retain the uncertainty window.
 Visitor erasure refuses fresh claims under the shared account lock, then removes
 both tables via conversation cascade. Account/site/conversation deletion cascades
 both tables; user deletion removes the private slot. Neither table is included in

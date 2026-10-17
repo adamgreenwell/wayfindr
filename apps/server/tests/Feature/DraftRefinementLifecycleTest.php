@@ -334,7 +334,7 @@ test('private HTTP endpoints refuse another agent without leaking preview conten
     expect(ConversationDraftRefinement::query()->sole()->status)->toBe('ready');
 });
 
-test('the real Laravel SDK adapter runs private work only through a reserved scoped transport', function (bool $changeDuringDns): void {
+test('the real Laravel SDK adapter runs private work only through a reserved scoped transport', function (bool $changeDuringDns, bool $loseResponse): void {
     $w = assistPreparationWorld('conversation_reply_draft', 'manual');
     $wire = new class
     {
@@ -358,9 +358,12 @@ test('the real Laravel SDK adapter runs private work only through a reserved sco
     $policy = new AiNetworkPolicy($dns, ['mode' => 'public-only'], 'synthetic-network-key');
     app()->instance(AiGuardedTransportFactory::class,
         new AiGuardedTransportFactory($policy, app(AiUsageLedger::class), app(AiRequestAuthority::class),
-            function ($request) use ($wire) {
+            function ($request) use ($wire, $loseResponse) {
                 $wire->calls++;
                 $wire->body = json_decode((string) $request->getBody(), true, 16, JSON_THROW_ON_ERROR);
+                if ($loseResponse) {
+                    return Create::rejectionFor(new RuntimeException('Synthetic lost response after dispatch.'));
+                }
                 $text = json_encode(['candidate' => 'It might take 3 days.', 'citations' => [], 'limitation' => null], JSON_THROW_ON_ERROR);
 
                 return Create::promiseFor(new Response(200, [], json_encode([
@@ -372,10 +375,27 @@ test('the real Laravel SDK adapter runs private work only through a reserved sco
     $row = ConversationDraftRefinement::query()->sole();
     app()->call([new GenerateConversationDraftRefinement((int) $row->id, $r['generation']), 'handle']);
     expect($wire->calls)->toBe($changeDuringDns ? 0 : 1)->and($row->fresh()->input)->toBeNull()
-        ->and($row->fresh()->status)->toBe($changeDuringDns ? 'failed' : 'ready');
-    if (! $changeDuringDns) {
+        ->and($row->fresh()->status)->toBe($changeDuringDns || $loseResponse ? 'failed' : 'ready');
+    if ($loseResponse) {
+        expect(DB::table('ai_usage_attempts')->where('attempt_id', $r['generation'])->sole()->state)->toBe('unknown')
+            ->and(DB::table('conversation_draft_refinement_sends')->count())->toBe(1)
+            ->and($row->fresh()->scope)->toBeNull()->and($row->fresh()->preview)->toBeNull();
+        expect(fn () => app(VisitorEraser::class)->erase($w['owner'], $w['conversation']->visitor))
+            ->toThrow(ValidationException::class, __('visitor_erasure.errors.copilot_running'));
+        assistPreparationAdvance($w, 179);
+        app(DraftRefinements::class)->cleanup();
+        expect(DB::table('conversation_draft_refinement_sends')->count())->toBe(1);
+        assistPreparationAdvance($w, 1);
+        app(DraftRefinements::class)->cleanup();
+        expect(DB::table('conversation_draft_refinement_sends')->count())->toBe(0);
+        app(VisitorEraser::class)->erase($w['owner'], $w['conversation']->visitor);
+        expect(ConversationDraftRefinement::query()->count())->toBe(0);
+    } else {
+        expect(DB::table('conversation_draft_refinement_sends')->count())->toBe(0);
+    }
+    if (! $changeDuringDns && ! $loseResponse) {
         expect(DB::table('ai_usage_attempts')->where('attempt_id', $r['generation'])->sole()->state)->toBe('completed')
             ->and($wire->body['max_tokens'])->toBeLessThanOrEqual(2048);
     }
     Http::assertNothingSent();
-})->with([false, true]);
+})->with([[false, false], [true, false], [false, true]]);

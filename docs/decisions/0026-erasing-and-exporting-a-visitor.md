@@ -622,7 +622,8 @@ agent drafts and private scope proofs are not visitor records. A claim is commit
 under the existing installation/account usage locks before provider code and is
 checked by erasure under the account lock. Cancellation, supersession and owning
 user deletion cannot remove a live claim; duplicate workers cannot clear another
-worker's claim. Returned calls remove their own claim; interruption retains the
+worker's claim. Known returned results and proven unsent failures remove their
+own claim; post-dispatch timeouts, lost responses and interruption retain the
 existing 180-second uncertainty window. Minute cleanup removes expired private
 content and only aged claims. This preserves the distinction between deleting
 local data and recalling data already transmitted to a configured processor.
