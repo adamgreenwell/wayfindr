@@ -223,4 +223,20 @@ return [
         'reused' => 'Preparazione IA esistente riutilizzata.',
         'unavailable' => 'Preparazione IA non disponibile.',
     ],
+    'rail' => [
+        'heading' => 'Assistenza',
+        'private' => 'Suggerimenti privati. Li riveda prima di inviare.',
+        'sections' => [
+            'summary' => 'Sintesi',
+            'reply' => 'Risposta suggerita',
+            'knowledge' => 'Fonti',
+        ],
+        'disabled' => 'Disattivato',
+        'unavailable' => 'Non disponibile',
+        'disabled_help' => 'Questa assistenza è disattivata. Può continuare a rispondere normalmente.',
+        'coverage' => 'Ogni suggerimento indica quanto testo della conversazione considera.',
+        'source_limit' => 'Gli articoli offrono indicazioni di questo account, non fatti della conversazione.',
+        'data_use' => 'Uso dei dati',
+        'insert' => 'Inserisci nella risposta',
+    ],
 ];

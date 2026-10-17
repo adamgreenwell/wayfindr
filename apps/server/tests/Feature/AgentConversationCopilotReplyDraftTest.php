@@ -81,7 +81,7 @@ function queueConversationCopilotReplyDraft(array $world): GenerateConversationC
     return $queued;
 }
 
-test('the reply draft affordance and endpoints disappear when the provider is unconfigured', function (): void {
+test('an unconfigured provider leaves a resting rail without reply processing controls or endpoints', function (): void {
     $world = conversationCopilotReplyDraftWorld();
     ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'The checkout button is stuck.']);
     Queue::fake();
@@ -89,7 +89,7 @@ test('the reply draft affordance and endpoints disappear when the provider is un
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('Suggested reply')
+        ->assertSee(__('ai_assist.rail.unavailable'))
         ->assertDontSee('data-task="reply"', false);
 
     $this->actingAs($world['agent'])

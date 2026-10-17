@@ -17,7 +17,7 @@
     data-status-url="{{ route('dashboard.conversations.copilot-reply-draft.show', $copilotReplyDraftRoute) }}"
 >
     <div class="reply-copilot-heading">
-        <strong>{{ __('conversations.detail.reply_copilot.heading') }}</strong>
+        <strong>{{ $assistHeading ?? __('ai_assist.rail.sections.reply') }}</strong>
         <span class="readiness-status" data-status="manual">{{ __('conversations.detail.reply_copilot.suggested') }}</span>
     </div>
 
@@ -49,7 +49,7 @@
                 type="button"
                 data-copilot-reply-draft-use
                 @disabled($copilotReplyDraftIsStale)
-            >{{ __('conversations.detail.reply_copilot.use') }}</button>
+            >{{ __('ai_assist.rail.insert') }}</button>
 
             <form method="POST" action="{{ route('dashboard.conversations.copilot-reply-draft.store', $copilotReplyDraftRoute) }}">
                 @csrf

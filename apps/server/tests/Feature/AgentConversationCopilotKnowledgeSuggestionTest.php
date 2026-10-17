@@ -149,7 +149,7 @@ test('a published article exposes an explicit suggested knowledge action', funct
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('Relevant articles')
+        ->assertSee(__('ai_assist.rail.sections.knowledge'))
         ->assertSee('Prepare suggestion')
         ->assertSee('article titles, content, and the catalogue stay inside Wayfindr')
         ->assertSee('data-task="knowledge"', false)

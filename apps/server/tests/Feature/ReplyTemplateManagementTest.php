@@ -322,7 +322,8 @@ test('conversation reply surface shows context and helper preview affordances', 
     $this->actingAs($agent)
         ->get("/dashboard/conversations/{$conversation->support_code}")
         ->assertOk()
-        ->assertSee('Reply assist')
+        ->assertSee(__('conversations.detail.reply.helper'))
+        ->assertSee('data-assist-rail', false)
         ->assertSee('Billing follow-up')
         ->assertSee('I will check the billing details and follow up shortly.')
         ->assertSee('data-shortcut-submit', false)
@@ -389,7 +390,8 @@ test('reply surfaces tolerate malformed flashed reply template input', function 
         ->withSession(['_old_input' => ['reply_template' => ['managed:'.$template->id]]])
         ->get("/dashboard/conversations/{$conversation->support_code}")
         ->assertOk()
-        ->assertSee('Reply assist')
+        ->assertSee(__('conversations.detail.reply.helper'))
+        ->assertSee('data-assist-rail', false)
         ->assertSee('Writing this one yourself');
 
     $this->actingAs($agent)

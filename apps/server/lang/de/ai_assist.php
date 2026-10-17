@@ -223,4 +223,20 @@ return [
         'reused' => 'Vorhandene KI-Vorbereitung wiederverwendet.',
         'unavailable' => 'KI-Vorbereitung nicht verfügbar.',
     ],
+    'rail' => [
+        'heading' => 'KI-Unterstützung',
+        'private' => 'Private Vorschläge. Sie prüfen und senden.',
+        'sections' => [
+            'summary' => 'Zusammenfassung der Unterhaltung',
+            'reply' => 'Antwortvorschlag',
+            'knowledge' => 'Quellen',
+        ],
+        'disabled' => 'Deaktiviert',
+        'unavailable' => 'Nicht verfügbar',
+        'disabled_help' => 'Diese Unterstützung ist deaktiviert. Sie können weiterhin normal antworten.',
+        'coverage' => 'Jeder Vorschlag nennt den Umfang des berücksichtigten Unterhaltungstexts.',
+        'source_limit' => 'Artikel bieten Hinweise aus diesem Konto, keine Fakten über die Unterhaltung.',
+        'data_use' => 'Datennutzung',
+        'insert' => 'In die Antwort einfügen',
+    ],
 ];

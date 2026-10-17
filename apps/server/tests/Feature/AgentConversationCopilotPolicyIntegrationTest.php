@@ -190,13 +190,22 @@ function policyManualUseQuery(array $world, object $artifact): array
     return $query;
 }
 
+function policyManualPanelCount(string $html, string $attribute): int
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="UTF-8"?>'.$html, LIBXML_NONET);
+
+    return (new DOMXPath($document))->query('//*[@'.$attribute.']')->length;
+}
+
 test('manual task policy Off blocks queue and read without disturbing the conversation', function (string $kind): void {
     $world = policyManualWorld($kind);
     policyManualEdit($world, ['mode' => 'off']);
     Queue::fake();
     $this->actingAs($world['agent'])->post(route('dashboard.conversations.'.$world['spec'][2].'.store', $world['conversation']->support_code))->assertNotFound();
     $this->get(route('dashboard.conversations.'.$world['spec'][2].'.show', $world['conversation']->support_code))->assertNotFound();
-    $this->get(route('dashboard.conversations.show', $world['conversation']->support_code))->assertOk()->assertDontSee('data-'.$world['spec'][2], false);
+    $response = $this->get(route('dashboard.conversations.show', $world['conversation']->support_code))->assertOk();
+    expect(policyManualPanelCount($response->getContent(), 'data-'.$world['spec'][2]))->toBe(0);
     Queue::assertNothingPushed();
     expect($world['spec'][0]::query()->count())->toBe(0);
 })->with(['summary', 'reply', 'knowledge', 'ticket']);
@@ -212,7 +221,8 @@ test('shared articles Off never queries article content on support task boundari
     });
     $this->actingAs($world['agent'])->post(route('dashboard.conversations.copilot-knowledge-suggestion.store', $world['conversation']->support_code))->assertNotFound();
     $this->get(route('dashboard.conversations.copilot-knowledge-suggestion.show', $world['conversation']->support_code))->assertNotFound();
-    $this->get(route('dashboard.conversations.show', $world['conversation']->support_code))->assertOk()->assertDontSee('data-copilot-knowledge-suggestion', false);
+    $response = $this->get(route('dashboard.conversations.show', $world['conversation']->support_code))->assertOk();
+    expect(policyManualPanelCount($response->getContent(), 'data-copilot-knowledge-suggestion'))->toBe(0);
     expect($queries)->toBe([], 'Disabled shared articles must be checked before any article exists, matching, or presentation query.');
 });
 
