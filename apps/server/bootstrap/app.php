@@ -135,6 +135,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 || $request->expectsJson(),
         );
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+            if ($request->is('dashboard/conversations/*/draft-refinement', 'dashboard/conversations/*/draft-refinement/*')) {
+                $response->headers->set('Cache-Control', 'no-store, private');
+                $response->headers->set('Pragma', 'no-cache');
+            }
             if ($request->is('operator/updates', 'operator/updates/*')) {
                 $response->headers->set('Cache-Control', 'no-store');
             }
@@ -156,5 +160,5 @@ return Application::configure(basePath: dirname(__DIR__))
         // `credential_token` and `webhook_secret` are the provider connection
         // form's: a typo in its base URL used to flash both. Every password
         // field in a view is held to this list by SecretInputFlashTest.
-        $exceptions->dontFlash(['token', 's3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key', 'credential_token', 'webhook_secret']);
+        $exceptions->dontFlash(['token', 's3_access_key', 's3_secret_key', 'one_time_code', 'client_secret', 'private_key', 'api_key', 'credential_token', 'webhook_secret', 'refinement_draft']);
     })->create();

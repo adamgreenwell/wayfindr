@@ -119,8 +119,8 @@ final readonly class ConversationGroundingSelector
             $revision = KnowledgeArticleSuggestionMatcher::revision($candidate['article'], '');
             $passageProof = $this->hash(['passage', $passage]);
             $titleProof = $this->hash(['title', $candidate['title']]);
-            $reference = 'src-'.substr($this->hash(['reference', (int) $actor->account_id,
-                (int) $candidate['article']->id, $revision, $passageProof, $titleProof]), 0, 24);
+            $reference = app(GroundingSourceReference::class)->forDigest($this->hash(['reference', (int) $actor->account_id,
+                (int) $candidate['article']->id, $revision, $passageProof, $titleProof]));
             $providerSources[] = ['ref' => $reference, 'title' => $candidate['title'], 'passage' => $passage];
             $snapshot['sources'][] = ['ref' => $reference, 'article_id' => (int) $candidate['article']->id,
                 'full_revision' => $revision, 'passage_hash' => $passageProof, 'title_hash' => $titleProof];
@@ -175,8 +175,8 @@ final readonly class ConversationGroundingSelector
                     || ! hash_equals(KnowledgeArticleSuggestionMatcher::revision($article, ''), $source['full_revision'])) {
                     return false;
                 }
-                $reference = 'src-'.substr($this->hash(['reference', (int) $actor->account_id, $source['article_id'],
-                    $source['full_revision'], $source['passage_hash'], $source['title_hash']]), 0, 24);
+                $reference = app(GroundingSourceReference::class)->forDigest($this->hash(['reference', (int) $actor->account_id, $source['article_id'],
+                    $source['full_revision'], $source['passage_hash'], $source['title_hash']]));
                 if (! hash_equals($reference, $source['ref'])) {
                     return false;
                 }

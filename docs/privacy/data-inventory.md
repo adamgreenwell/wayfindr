@@ -123,16 +123,34 @@ Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually
 long or indefinite retention windows.
 
-### Private refinement development boundary
+### Private agent draft refinement
 
-The first #1173 slice constructs bounded scrubbed private task input in process
-and refuses implicit serialization. Its signed owner/draft/source snapshot has a
-15-minute validity bound and contains no original draft or article prose. There
-is no refinement route, provider call, queued input, preview store or new retained
-row in this slice, so the existing export/erasure schema is unchanged.
+Explicit Preview can send the bounded, scrubbed unsent draft and permitted minimum
+context to the configured processor. Automatic preparation never receives composer
+text. Before sending a draft, the browser obtains a content-free, expiring
+`authorized` generation using only a UUID revision. Lost authorization replies
+leave metadata only; cancellation of a known handle also fences capture replies
+that arrive after navigation. A cancelled, deleted or superseded handle cannot
+recreate work. `conversation_draft_refinements` retains one owner/account/conversation-bound
+slot, with encrypted scrubbed prompt, encrypted scope/source proofs and encrypted
+candidate. The raw original stays in the owning browser's memory. Input clears on
+Ready and every terminal/cancel path; scope/preview clear on failure, stale, Cancel
+and Apply. A fixed 15-minute maximum bounds all content, and minute cleanup deletes
+expired rows. There is no shared refinement output or durable draft history.
 
-Before runtime refinement, its encrypted transient input/preview store must join
-this inventory, export field classification, erasure admission/in-flight claims,
-retention cleanup and parent deletion. Queue IDs only; never persist the raw
-original or flash refinement text into validation old input/request logs. See the
-[private refinement contract and integration gates](../architecture/ai-assist-draft-refinement.md).
+`conversation_draft_refinement_sends` retains only account/conversation/generation
+and send start time for the bounded in-flight erasure exclusion. It survives
+private-slot cancellation/supersession and user deletion, and expires after the
+180-second uncertainty window. Known returned results or proven unsent failures remove their own claim.
+Post-dispatch timeouts and lost responses retain the uncertainty window.
+Visitor erasure refuses fresh claims under the shared account lock, then removes
+both tables via conversation cascade. Account/site/conversation deletion cascades
+both tables; user deletion removes the private slot. Neither table is included in
+visitor exports: private unsent staff drafts/proofs are not visitor business
+records, and transient send metadata exists solely for erasure admission.
+
+Queue payloads contain IDs only; private text is not flashed into old input or
+request/session history. Usage retains its existing content-free attempt metadata,
+including provider cooldowns independently of private cleanup. Selected processors
+and backups have their own retention boundaries. See the [runtime contract and
+rollback guidance](../architecture/ai-assist-draft-refinement.md).

@@ -128,6 +128,11 @@ return [
                 'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three PLUS the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
             ],
             [
+                'label' => 'Private AI refinements',
+                'value' => '15-minute validity; minute cleanup',
+                'description' => 'The scheduled wayfindr:prune-draft-refinements command deletes expired private input, source scope and previews every minute. Content is unusable after 15 minutes; physical deletion requires the scheduler. Metadata send claims survive cancellation and user deletion until the bounded 180-second uncertainty window ends.',
+            ],
+            [
                 'label' => 'API write receipts',
                 'value' => 'Deleted after '.ApiIdempotency::RETENTION_HOURS.' hours',
                 'description' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',

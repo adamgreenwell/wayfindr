@@ -125,3 +125,15 @@ fixture and current prompt/scorer identities are distinct from historical ground
 answer evaluation captures. See [evaluation](../development/ai-evaluation.md).
 Passing this fixture proves these assertions, not quality of any current provider,
 route or model. Release, deployment and provider activation are separate work.
+
+### References survive final scrubbing
+
+Source labels keep the opaque `src-` plus 24 lowercase hexadecimal format. A
+scoped server HMAC can accidentally contain a Luhn-valid payment-card-shaped
+number. The whole-payload scrubber would then alter that label and correctly
+refuse admission. `GroundingSourceReference` deterministically rehashes only an
+unstable digest (at most eight candidates), preserving the label format and 96
+label bits. Selection and source revalidation use the same mapping. Already safe
+labels keep their identities. The scrubber and final exact-source comparison
+remain intact; failure to produce a stable reference refuses the request. The
+helper's code participates in the grounded-reply recipe identity.

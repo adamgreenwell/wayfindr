@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
+use App\Support\Ai\Refinement\DraftRefinements;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -28,6 +29,11 @@ final readonly class AiRequestAuthority
         $actor = User::query()->whereKey($context->actorId)->where('account_id', $context->accountId)->lockForUpdate()->first();
         if ($actor === null || $actor->isDeactivated()) {
             throw new AiNetworkException('access_revoked');
+        }
+        if ($context->kind === 'refinement') {
+            app(DraftRefinements::class)->assertAllowed($actor, $connection, $context, $beforeQueue);
+
+            return;
         }
         if ($context->kind === 'support') {
             $class = AiSupportUsage::ARTIFACTS[$context->purpose] ?? null;

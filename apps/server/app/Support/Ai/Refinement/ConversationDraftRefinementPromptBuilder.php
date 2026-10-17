@@ -21,7 +21,7 @@ use InvalidArgumentException;
 use SensitiveParameter;
 use Throwable;
 
-/** Offline first slice: no endpoint, storage, reservation, queue or provider call. */
+/** Constructs private bounded context; runtime authority belongs to DraftRefinements. */
 final readonly class ConversationDraftRefinementPromptBuilder
 {
     public const PURPOSE = 'conversation_draft_refinement';
@@ -100,7 +100,22 @@ final readonly class ConversationDraftRefinementPromptBuilder
         string $draftRevision): bool
     {
         try {
-            $snapshot = $context->sourceSnapshot();
+            $data = json_decode($context->providerPrompt()->input, true, 12, JSON_THROW_ON_ERROR);
+
+            return ($context->sourceSnapshot()['prompt_hash'] ?? null) === $this->promptHash($context->providerPrompt())
+                && ($data['operation'] ?? null) === ($context->sourceSnapshot()['operation'] ?? null)
+                && ($data['knowledge']['sources'] ?? null) === $context->providerSources()
+                && $this->scopeIsCurrent($actor, $conversation, $context->sourceSnapshot(), $context->providerSources(), $draftRevision);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** Ready previews retain signed source proofs, never the consumed draft input. */
+    public function scopeIsCurrent(User $actor, Conversation $conversation, #[SensitiveParameter] array $snapshot,
+        #[SensitiveParameter] array $sources, string $draftRevision): bool
+    {
+        try {
             $proof = $snapshot['proof'] ?? null;
             unset($snapshot['proof']);
             $now = app(AiUsageClock::class)->now()->getTimestamp();
@@ -117,8 +132,7 @@ final readonly class ConversationDraftRefinementPromptBuilder
                 'draft_revision' => $draftRevision,
                 'policy_revision' => $policy->revisionFor(self::PURPOSE), 'connection_revision' => $connection?->revision,
                 'max_context_characters' => min(20000, $policy->maxContextCharacters), 'article_context_allowed' => $policy->articleContextAllowed,
-                'last_message_id' => ($latest = $conversation->messages()->max('id')) === null ? null : (int) $latest,
-                'prompt_hash' => $this->promptHash($context->providerPrompt())];
+                'last_message_id' => ($latest = $conversation->messages()->max('id')) === null ? null : (int) $latest];
             if ($connection === null) {
                 return false;
             }
@@ -127,10 +141,7 @@ final readonly class ConversationDraftRefinementPromptBuilder
                     return false;
                 }
             }
-            $decoded = json_decode($context->providerPrompt()->input, true, 12, JSON_THROW_ON_ERROR);
-            if (($decoded['operation'] ?? null) !== ($snapshot['operation'] ?? null)
-                || ($decoded['knowledge']['sources'] ?? null) !== $context->providerSources()
-                || (! $policy->articleContextAllowed && $context->providerSources() !== [])) {
+            if (! $policy->articleContextAllowed && $sources !== []) {
                 return false;
             }
             if (is_array($snapshot['transcript_snapshot'] ?? null)
@@ -139,8 +150,8 @@ final readonly class ConversationDraftRefinementPromptBuilder
             }
 
             return is_array($snapshot['grounding_snapshot'] ?? null)
-                ? app(ConversationGroundingSelector::class)->payloadStillCurrent($actor, $conversation, $snapshot['grounding_snapshot'], $context->providerSources())
-                : $context->providerSources() === [];
+                ? app(ConversationGroundingSelector::class)->payloadStillCurrent($actor, $conversation, $snapshot['grounding_snapshot'], $sources)
+                : $sources === [];
         } catch (Throwable) {
             return false;
         }

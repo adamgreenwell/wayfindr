@@ -23,16 +23,22 @@
         if (!active) return;
         const changed = !active.invalid || active.message !== message;
         active.invalid = true; active.message = message;
-        if (withdraw) { active.candidate = null; text(record.candidate, ''); text(record.original, ''); }
+        if (withdraw) { active.candidate = null; text(record.candidate, ''); text(record.original, ''); record.sources?.replaceChildren(); if (record.sources) record.sources.hidden = true; }
         text(record.status, message); controls(record);
-        if (changed) announce(message);
+        if (changed) {
+            announce(message);
+            active.adapter.onInvalidated?.();
+        }
     };
-    const close = record => {
+    const close = (record, reason = 'cancelled') => {
+        const previous = record.active;
         record.sequence++;
         record.active = null;
         text(record.candidate, ''); text(record.original, ''); text(record.status, '');
+        record.sources?.replaceChildren(); if (record.sources) record.sources.hidden = true;
         if (record.region) record.region.hidden = true;
         controls(record);
+        previous?.adapter.onClosed?.(reason);
     };
     const authorityCurrent = (record, active) => {
         const value = current(active);
@@ -40,18 +46,21 @@
     };
     const draftCurrent = (record, active) => writable(record) && record.revision === active.revision && record.body.value === active.original;
     const valid = (record, active) => record.active === active && !active.invalid && authorityCurrent(record, active) && draftCurrent(record, active);
+    const candidateText = (active, value) => active.adapter.preserveWhitespace ? value : value.trim();
     const authorized = (active, value) => eligible(value) && identity(value) === active.identity && typeof value.text === 'string' && value.text.trim() !== '';
     const commit = (record, active) => {
         if (!valid(record, active)) return;
         const candidate = active.candidate;
-        close(record);
-        announce(record.copy.used);
         const picker = record.shell.querySelector('[data-template-picker]');
-        if (picker) { picker.value = ''; picker.dispatchEvent(new Event('change', {bubbles:true})); }
+        // The last comparison and assignment are adjacent: callbacks may make later edits.
         record.body.value = candidate;
         record.body.setAttribute('lang', '');
+        if (picker) picker.value = '';
+        close(record, 'applied');
+        if (picker) picker.dispatchEvent(new Event('change', {bubbles:true}));
         record.body.dispatchEvent(new Event('input', {bubbles:true}));
         record.body.focus();
+        announce(record.copy.used);
         active.adapter.onApplied?.();
     };
     const apply = async record => {
@@ -61,11 +70,11 @@
         if (!draftCurrent(record, active)) { invalidate(record, false); return; }
         active.busy = true; controls(record);
         try {
-            const value = await active.adapter.fetchAuthorized();
+            const value = await active.adapter.fetchAuthorized('apply');
             if (record.active !== active) return;
             if (!authorityCurrent(record, active)) { invalidate(record); return; }
             if (!draftCurrent(record, active)) { invalidate(record, false); return; }
-            if (!authorized(active, value) || value.text.trim() !== active.candidate) { invalidate(record); return; }
+            if (!authorized(active, value) || candidateText(active, value.text) !== active.candidate) { invalidate(record); return; }
             commit(record, active);
         } catch (error) {
             if (record.active === active) {
@@ -84,7 +93,7 @@
         const record = {shell, body, region, copy, revision:0, sequence:0, active:null,
             heading:region?.querySelector('[data-assist-review-heading]'),
             original:region?.querySelector('[data-assist-review-original]'), candidate:region?.querySelector('[data-assist-review-candidate]'),
-            status:region?.querySelector('[data-assist-review-status]'), apply:region?.querySelector('[data-assist-review-apply]')};
+            status:region?.querySelector('[data-assist-review-status]'), sources:region?.querySelector('[data-assist-review-sources]'), apply:region?.querySelector('[data-assist-review-apply]')};
         records.set(shell, record); mounted.add(record);
         record.apply?.addEventListener('click', () => void apply(record));
         region?.querySelector('[data-assist-review-cancel]')?.addEventListener('click', () => {
@@ -116,23 +125,30 @@
         const active = {adapter, identity:identity(value), sourceRevision, original:record.body.value, revision:record.revision,
             sequence:record.sequence, candidate:null, stage:'loading', busy:true, invalid:false};
         record.active = active;
-        const preview = active.original !== '';
+        const preview = adapter.forcePreview === true || active.original !== '';
         if (preview && (!record.region || !record.original || !record.candidate || !record.apply)) {
             close(record); adapter.onUnavailable?.(); return;
         }
         if (preview) { record.region.hidden = false; text(record.original, active.original); }
         controls(record);
         try {
-            const fresh = await adapter.fetchAuthorized();
+            const fresh = await adapter.fetchAuthorized('preview');
             if (record.active !== active) return;
             if (!authorityCurrent(record, active)) { invalidate(record); return; }
             if (!draftCurrent(record, active)) { invalidate(record, false); return; }
             if (!authorized(active, fresh)) { invalidate(record); return; }
-            active.candidate = fresh.text.trim();
+            active.candidate = candidateText(active, fresh.text);
             if (!preview) { commit(record, active); return; }
-            active.stage = 'preview'; text(record.candidate, active.candidate); text(record.status, record.copy.previewed || '');
+            active.stage = 'preview'; active.adapter.onPreview?.(fresh);
+            if (record.active !== active) return;
+            text(record.candidate, active.candidate); text(record.status, record.copy.previewed || '');
             announce(record.copy.previewed);
+            if (adapter.forcePreview) {
+                const rail = record.shell.querySelector('[data-assist-rail]');
+                if (rail) rail.open = true;
+            }
             (record.heading || record.apply).focus();
+            if (adapter.forcePreview) record.region.scrollIntoView?.({block:'nearest'});
         } catch (error) {
             if (record.active === active) { invalidate(record, true, record.copy.unavailable || ''); adapter.onUnavailable?.(); }
         } finally { active.busy = false; controls(record); }
@@ -152,6 +168,10 @@
     }));
     window.addEventListener('wayfindr:assist-source-changed', () => { sourceRevision++; mounted.forEach(record => invalidate(record)); });
     document.addEventListener('wayfindr:assist-task-updated', event => sync(event.detail?.task));
+    new MutationObserver(() => mounted.forEach(record => {
+        if (!record.shell.isConnected) { close(record, 'workspace-ended'); mounted.delete(record); }
+        else if (record.active && record.shell.closest('[hidden]')) close(record, 'workspace-ended');
+    })).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['hidden']});
     window.wayfindrAssistDraftReview = {offer, sync, cancel:shell => { const record = records.get(shell); if (record) close(record); }};
 })();
 </script>

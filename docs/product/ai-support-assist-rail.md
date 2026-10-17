@@ -71,9 +71,15 @@ passages in reply requests, and Off retains transcript-only help. Grounded draft
 show published-guidance attribution, limitations and missing information separately.
 Validated citations and scrubbed excerpts sit in a collapsed native Published
 sources section; source/access changes withdraw the whole draft before Use.
-The [private refinement foundation](../architecture/ai-assist-draft-refinement.md)
-starts #1173 without adding composer actions yet. Its runtime must reuse explicit
-Preview/Apply and preserve the ordinary composer ownership and separate Send.
+The [private draft refinement runtime](../architecture/ai-assist-draft-refinement.md)
+completes #1173 on `feat/1173-draft-refinement-integration` after foundation #1194
+merged. Explicit composer actions share this review region while keeping separate
+owner-bound encrypted input, preview, usage and erasure admission. Apply rechecks
+server authority and the exact local draft/edit revision; Cancel, failure and late
+work preserve the original. Cited passages are collapsed and sources are always
+revalidated. Clarify, shorten, tone and en/de/it translation never insert invisibly,
+send a reply or alter shared output. Automatic preparation never captures unsent
+text. Completion review/CI and real-provider quality remain separate gates.
 
 One polite AI live region outside the disclosure announces meaningful task and
 preview changes. Initial content and repeated identical polls stay silent.
@@ -83,8 +89,8 @@ keyboard-focusable scroll regions so long drafts can be reviewed in Safari.
 Arbitrary original/candidate text uses unknown language metadata, and the rail
 follows reduced-motion preferences.
 
-The #1171 panel completion merged in #1191. Grounded reply completion is tracked
-separately in #1172 and remains open until its completion pull request merges.
+The #1171 panel completion merged in #1191. Grounded reply completion merged in #1193; private refinement completion is
+tracked in #1173 until its completion pull request merges.
 
 ## Verification
 

@@ -977,8 +977,8 @@ test('the key-loss runbook still matches the schema it tells operators to edit',
 
     // The count is asserted so that a model added without a thought here fails
     // loudly rather than slipping past a per-column loop that never ran for it.
-    expect(array_sum(array_map('count', $encrypted)))->toBe(12)
-        ->and($encrypted)->toHaveCount(9)
+    expect(array_sum(array_map('count', $encrypted)))->toBe(15)
+        ->and($encrypted)->toHaveCount(10)
         ->and($encrypted['account_ai_connections'])->toBe(['proposed_configuration', 'active_configuration']);
 
     $nullableBlock = str($section)->between('Nullable — clear the column', '`NOT NULL` — delete the rows')->toString();

@@ -219,6 +219,23 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   Export applies the same business-field rules to the current and prior slots;
   erasure removes both. See [the lifecycle](ai-assist-preparation-lifecycle.md).
 
+- `conversation_draft_refinements`: one private slot per owning agent/conversation,
+  scoped to its account, with encrypted scrubbed input, scope/source proofs and
+  candidate. A content-free `authorized` slot grants the browser a cancellation
+  handle before draft capture; it has an empty operation, no payload/reservation
+  and can be consumed once. Raw original text is never stored. Input clears on Ready/terminal;
+  scope/preview clear on Cancel/failure/stale/Apply. Fixed 15-minute validity and
+  minute cleanup bound retention. Account/conversation/user deletion cascades;
+  site/visitor erasure reaches it through conversation deletion. Excluded from
+  visitor export and shared preparation. See [private refinement](ai-assist-draft-refinement.md).
+- `conversation_draft_refinement_sends`: metadata-only account/conversation,
+  generation and start time for an erasure-visible provider send claim. It is
+  committed before provider code, survives Cancel/supersession/user deletion,
+  and clears after a known returned result/proven unsent failure, or the 180-second
+  uncertainty window for timeouts, lost responses and interrupted calls.
+  Visitor erasure refuses fresh claims. Account/conversation deletion cascades;
+  excluded from visitor export. Rollback drops claims before private slots after
+  stopping admission/workers; both tables are additive without backfill.
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly

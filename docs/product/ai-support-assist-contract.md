@@ -145,7 +145,9 @@ Work is shared only when all of the following match:
 
 A requester ID is retained server-side for authorization and audit; it is not a
 reason to duplicate equivalent shared work. A different allowed input partition
-must not reuse a broader viewer's answer. Personalized draft refinement uses the
+must not reuse a broader viewer's answer. Personalized draft refinement first obtains a content-free cancellation handle
+before explicit capture sends unsent text; a lost handle acknowledgement cannot
+queue draft work. HTTP capture consumes that exact live grant once. It uses the
 agent's current draft revision, is partitioned by the owning agent and draft,
 and never overwrites shared conversation output.
 
@@ -336,7 +338,9 @@ admission and fencing. Every external attempt carrying visitor-derived text,
 including grounded generation and agent-owned refinement, must register an
 erasure-visible in-flight claim with bounded start/terminal timing before
 transmission. New call paths/stores must join erasure admission, not merely the
-late-write check: the existing eraser knows only the current four copilot stores.
+late-write check. Private refinement adds a separate metadata send-claim table
+that survives cancellation, supersession and owning-agent deletion; the eraser
+checks it under the shared account lock alongside the four copilot stores.
 Queued work cannot run after erasure, and late completion cannot recreate
 content. This contract introduces no longer retention window
 than the parent support record. Content-free audits follow their documented
