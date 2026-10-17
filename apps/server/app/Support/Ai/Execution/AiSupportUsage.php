@@ -21,6 +21,7 @@ use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Grounding\ConversationGroundedReplyPresentation;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
 use App\Support\Ai\Preparation\AiAssistPreparationIdentityResolver;
@@ -63,8 +64,15 @@ final readonly class AiSupportUsage
                 }
                 self::assertPreparationCurrent($fresh);
 
-                return $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
+                $changed = $artifact::query()->whereKey($artifact->id)->where('generation', $artifact->generation)
                     ->where('status', 'pending')->update(['status' => 'running', 'started_at' => app(AiUsageClock::class)->now()]);
+                if ($changed === 1) {
+                    $purpose = array_search($artifact::class, self::ARTIFACTS, true);
+                    $event = ['conversation_summary' => 'ai_summary', 'conversation_reply_draft' => 'ai_reply_draft', 'conversation_knowledge_suggestion' => 'ai_knowledge_suggestion', 'conversation_ticket_suggestion' => 'ai_ticket_suggestion'][$purpose];
+                    app(SharedAssistAudit::class)->record($artifact, 'conversation.'.$event.'.started');
+                }
+
+                return $changed;
             });
     }
 
@@ -138,7 +146,7 @@ final readonly class AiSupportUsage
                     try {
                         self::assertPreparationCurrent($fresh);
                     } catch (Throwable $failure) {
-                        app(AiAssistPreparation::class)->withdrawPublication($fresh, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked');
+                        app(AiAssistPreparation::class)->withdrawPublication($fresh, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked', $result);
                         $result->settle('invalid_output');
 
                         return;
@@ -149,7 +157,7 @@ final readonly class AiSupportUsage
                         try {
                             self::assertPreparationCurrent($current);
                         } catch (Throwable $failure) {
-                            app(AiAssistPreparation::class)->withdrawPublication($current, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked');
+                            app(AiAssistPreparation::class)->withdrawPublication($current, $failure instanceof AiNetworkException ? $failure->reason : 'access_revoked', $result);
                         }
                     }
                     app(AiAssistPreparation::class)->syncTerminal($artifact);

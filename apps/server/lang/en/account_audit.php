@@ -80,6 +80,11 @@ return [
     ],
 
     'actions' => [
+        'conversation_ai_summary_started' => 'Summary preparation started',
+        'conversation_ai_reply_draft_started' => 'Reply draft preparation started',
+        'conversation_ai_knowledge_suggestion_started' => 'Article suggestion preparation started',
+        'conversation_ai_ticket_suggestion_started' => 'Ticket suggestion preparation started',
+
         'conversation_ai_draft_refinement_requested' => 'Private draft refinement requested',
         'conversation_ai_draft_refinement_started' => 'Private draft refinement started',
         'conversation_ai_draft_refinement_ready' => 'Private draft preview prepared',

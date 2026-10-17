@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\Account;
-use App\Models\AuditEvent;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Grounding\ConversationGroundedReplyGuard;
 use App\Support\Ai\Grounding\ConversationGroundingSelector;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
+use App\Support\Ai\Usage\AiUsageLedger;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -70,7 +72,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
         if (! $this->policyIsCurrent($draft)) {
             $this->cancelBeforeProvider($draft);
-            $this->recordFailure($draft, 'policy_changed');
+            $this->recordFailure($draft, 'policy_changed', $result);
 
             return;
         }
@@ -82,7 +84,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
         // execution time because the output is intended for the composer.
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
             $this->cancelBeforeProvider($draft);
-            $this->recordFailure($draft, 'access_revoked');
+            $this->recordFailure($draft, 'access_revoked', $result);
 
             return;
         }
@@ -92,7 +94,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
             if ($context === null) {
                 $this->cancelBeforeProvider($draft);
-                $this->recordFailure($draft, 'no_messages');
+                $this->recordFailure($draft, 'no_messages', $result);
 
                 return;
             }
@@ -131,7 +133,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
             if (! Gate::forUser($requester)->allows('reply', $conversation)) {
                 $this->cancelBeforeProvider($draft);
-                $this->recordFailure($draft, 'access_revoked');
+                $this->recordFailure($draft, 'access_revoked', $result);
 
                 return;
             }
@@ -139,14 +141,14 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $draft->connection_revision !== $connection->revision) {
                 $this->cancelBeforeProvider($draft);
-                $this->recordFailure($draft, 'connection_changed');
+                $this->recordFailure($draft, 'connection_changed', $result);
 
                 return;
             }
 
             if (! $this->policyIsCurrent($draft)) {
                 $this->cancelBeforeProvider($draft);
-                $this->recordFailure($draft, 'policy_changed');
+                $this->recordFailure($draft, 'policy_changed', $result);
 
                 return;
             }
@@ -157,7 +159,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 $proposal = app(ConversationGroundedReplyGuard::class)->propose($result->text, $context);
                 if ($proposal === null) {
                     $result->settle('invalid_output');
-                    $this->recordFailure($draft, 'invalid_output');
+                    $this->recordFailure($draft, 'invalid_output', $result);
 
                     return;
                 }
@@ -174,7 +176,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
 
             if ($output === '') {
                 $result->settle('invalid_output');
-                $this->recordFailure($draft, 'empty_output');
+                $this->recordFailure($draft, 'empty_output', $result);
 
                 return;
             }
@@ -198,7 +200,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 }
 
                 if (! $this->policyIsCurrent($draft)) {
-                    $this->recordFailure($draft, 'policy_changed');
+                    $this->recordFailure($draft, 'policy_changed', $result);
 
                     return;
                 }
@@ -206,20 +208,20 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 $conversation = $draft->conversation;
                 $requester = $draft->requestedBy;
                 if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('reply', $conversation)) {
-                    $this->recordFailure($draft, 'access_revoked');
+                    $this->recordFailure($draft, 'access_revoked', $result);
 
                     return;
                 }
 
                 if (! $connections->isCurrent($accountId, $draft->connection_revision)) {
-                    $this->recordFailure($draft, 'connection_changed');
+                    $this->recordFailure($draft, 'connection_changed', $result);
 
                     return;
                 }
 
                 if ($grounding !== null && ! app(ConversationGroundingSelector::class)->payloadStillCurrent(
                     $requester, $conversation, $context->groundingSnapshot, $context->groundingSources)) {
-                    $this->recordFailure($draft, 'context_changed');
+                    $this->recordFailure($draft, 'context_changed', $result);
 
                     return;
                 }
@@ -250,7 +252,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                         'model' => mb_substr($result->model, 0, 255),
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
-                    ]);
+                    ], $result);
                 }
             }));
         } catch (Throwable $exception) {
@@ -270,7 +272,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             $code = is_string($draft->preparation_fingerprint) && $exception instanceof AiNetworkException
                 && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
                 ? $exception->reason : 'provider';
-            $this->recordFailure($draft, $code);
+            $this->recordFailure($draft, $code, $result);
         }
     }
 
@@ -317,9 +319,9 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
         }
     }
 
-    private function recordFailure(ConversationCopilotReplyDraft $draft, string $code): void
+    private function recordFailure(ConversationCopilotReplyDraft $draft, string $code, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        DB::transaction(function () use ($code, $draft): void {
+        app(AiUsageLedger::class)->withAccountUsageLock((int) $draft->conversation?->site?->account_id, function () use ($code, $draft, $result): void {
             $updated = ConversationCopilotReplyDraft::query()
                 ->whereKey($draft->id)
                 ->where('generation', $this->generation)
@@ -338,35 +340,14 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 app(AiAssistPreparation::class)->syncTerminal($draft);
                 $this->audit($draft, 'conversation.ai_reply_draft.failed', [
                     'failure_code' => $code,
-                ]);
+                ], $result);
             }
         });
     }
 
     /** @param  array<string, int|string|null>  $metadata */
-    private function audit(ConversationCopilotReplyDraft $draft, string $action, array $metadata): void
+    private function audit(#[\SensitiveParameter] ConversationCopilotReplyDraft $draft, string $action, #[\SensitiveParameter] array $metadata, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        $conversation = $draft->conversation;
-
-        if ($conversation === null) {
-            return;
-        }
-
-        AuditEvent::query()->create([
-            'account_id' => $conversation->site?->account_id,
-            'site_id' => $conversation->site_id,
-            'actor_type' => $draft->requestedBy?->getMorphClass(),
-            'actor_id' => $draft->requested_by_id,
-            'subject_type' => $conversation->getMorphClass(),
-            'subject_id' => $conversation->id,
-            'action' => $action,
-            'metadata' => [
-                'draft_id' => $draft->id,
-                'generation' => $this->generation,
-                'connection_revision' => $draft->connection_revision,
-                ...$metadata,
-            ],
-            'occurred_at' => AiSupportUsage::lifecycleNow($draft),
-        ]);
+        app(SharedAssistAudit::class)->record($draft, $action, $metadata, result: $result);
     }
 }

@@ -23,6 +23,7 @@ use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -191,7 +192,7 @@ test('requesting a reply draft queues one id-only job and records safe audit met
         ->not->toContain('WF-AIDRAFT');
 
     $event = AuditEvent::query()->where('action', 'conversation.ai_reply_draft.requested')->sole();
-    expect($event->metadata)->toBe([
+    expect(Arr::only($event->metadata, ['draft_id', 'generation', 'connection_revision']))->toBe([
         'draft_id' => $draft->id,
         'generation' => $draft->generation,
         'connection_revision' => $draft->connection_revision,

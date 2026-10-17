@@ -40,8 +40,8 @@ test('admission failures retain one sanitized request and failure event per gene
     $events = AuditEvent::query()->where('account_id', $world['account']->id)->whereIn('action', ['conversation.'.$event.'.requested', 'conversation.'.$event.'.failed'])->orderBy('id')->get();
     expect($events)->toHaveCount(2, 'A terminal admission must preserve both its request and sanitized failure audit events.');
     $metadata = [$artifactKey => $artifact->id, 'generation' => $artifact->generation, 'connection_revision' => $artifact->connection_revision];
-    expect($events[0]->action)->toBe('conversation.'.$event.'.requested')->and($events[0]->metadata)->toBe($metadata)
-        ->and($events[1]->action)->toBe('conversation.'.$event.'.failed')->and($events[1]->metadata)->toBe($metadata + ['failure_code' => $failure]);
+    expect($events[0]->action)->toBe('conversation.'.$event.'.requested')->and(array_intersect_key($events[0]->metadata, $metadata))->toBe($metadata)
+        ->and($events[1]->action)->toBe('conversation.'.$event.'.failed')->and(array_intersect_key($events[1]->metadata, $metadata + ['failure_code' => $failure]))->toBe($metadata + ['failure_code' => $failure]);
     foreach ($events as $audit) {
         expect($audit->actor_id)->toBe($world['owner']->id)->and($audit->actor_type)->toBe($world['owner']->getMorphClass())
             ->and($audit->subject_id)->toBe($world['conversation']->id)->and($audit->site_id)->toBe($world['site']->id)

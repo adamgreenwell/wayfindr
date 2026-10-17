@@ -466,3 +466,17 @@ operator-facing data inventory and retention posture.
   self-hosted installs persist their current version state for upgrade checks.
 - Integration packages should stay thin and write through Laravel APIs rather than owning product persistence directly.
 - Platform operator data should describe instance authority only. It should not grant account support visibility, customer content access, or site-access bypass by default.
+
+## AI Assist feedback
+
+- `ai_assist_feedback`: one server-scoped observation per conversation, purpose,
+  generation and viewer, protected by a database unique key. Account, site,
+  conversation and user foreign keys cascade deletion. Viewed, used and rejected
+  timestamps are independent; no event implies another. Nullable usefulness and
+  correction enums preserve unanswered observations. Assessment revisions support
+  explicit compare-and-set updates and identical retries. A keyed source revision
+  fences feedback after private Apply clears its encrypted scope. No suggestion,
+  draft, prompt, edit history, free-text feedback or authorization receipt is stored.
+  Visitor export projects the viewer to a staff role and omits the source proof.
+  The additive migration needs no backfill; rollback drops only this feedback table.
+  See [Assist observability](ai-assist-observability.md).

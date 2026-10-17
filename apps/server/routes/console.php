@@ -133,3 +133,6 @@ Schedule::command('wayfindr:prune-proactive-message-deliveries')
 
 Schedule::command('wayfindr:prune-draft-refinements')->everyMinute()->withoutOverlapping()
     ->description('Remove private input and previews after their fixed 15-minute expiry.');
+
+Schedule::command('wayfindr:prune-assist-observability')->hourly()->withoutOverlapping()
+    ->description('Prune operator-configured Assist metadata in bounded batches.');

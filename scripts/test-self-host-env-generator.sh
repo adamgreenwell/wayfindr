@@ -24,6 +24,12 @@ grep -F 'APP_URL=https://support.example.test' "$ENV_FILE" >/dev/null
 grep -F 'REVERB_HOST=support.example.test' "$ENV_FILE" >/dev/null
 grep -F 'SESSION_SECURE_COOKIE=true' "$ENV_FILE" >/dev/null
 grep -F 'MAIL_MAILER=log' "$ENV_FILE" >/dev/null
+for assist_retention_key in WAYFINDR_AI_FEEDBACK_RETENTION_DAYS WAYFINDR_AI_AUDIT_RETENTION_DAYS WAYFINDR_AI_USAGE_RETENTION_DAYS; do
+    if ! grep -Fx "$assist_retention_key=0" "$ENV_FILE" >/dev/null; then
+        echo "Expected disabled Assist retention default: $assist_retention_key=0" >&2
+        exit 1
+    fi
+done
 
 DB_PASSWORD="$(grep '^DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
 POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"

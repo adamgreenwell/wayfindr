@@ -76,6 +76,7 @@ final class DashboardLanguage
      */
     public const EXTRACTED_ROUTES = [
         'dashboard.account.ai-assist.show',
+        'dashboard.account.ai-assist.report',
         'dashboard.account.ai-assist.propose',
         'dashboard.account.ai-assist.test',
         'dashboard.account.ai-assist.discover',

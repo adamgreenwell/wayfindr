@@ -67,6 +67,7 @@
         };
         const clear = (note, announce = true, remote = true) => {
             const previous = active;
+            window.wayfindrAssistFeedback?.end?.(panel);
             active = null; stop();
             if (remote) cancelRemote(previous);
             window.wayfindrAssistDraftReview.cancel(shell);
@@ -119,8 +120,9 @@
                         if (!matchesDraft(capture) || fresh.state !== 'ready' || fresh.generation !== capture.generation
                             || fresh.draft_revision !== capture.revision || fresh.policy_revision !== capture.policy
                             || typeof fresh.preview?.candidate !== 'string' || JSON.stringify(fresh.sources) !== capture.sources || !Number.isInteger(fresh.ttl_seconds) || fresh.ttl_seconds <= 0 || fresh.ttl_seconds > 900) throw new Error('unavailable');
-                        return {...identity(), text:fresh.preview.candidate, sources:fresh.sources};
+                        return {...identity(), text:fresh.preview.candidate, sources:fresh.sources, feedbackReceipt:fresh.feedback_receipt};
                     },
+                    onDisplayed:() => window.wayfindrAssistFeedback?.viewed(panel, capture.generation, shell.querySelector('[data-assist-review-candidate]')),
                     onPreview:fresh => {
                         const region = shell.querySelector('[data-assist-review-sources]');
                         if (!region || !Array.isArray(fresh.sources) || fresh.sources.length > 3) { clear(copy.unavailable); return; }
@@ -137,9 +139,9 @@
                         if (active === capture) region.append(details);
                     },
                     onInvalidated:() => clear(copy.stale, false),
-                    onClosed:reason => { if (active === capture) { active = null; stop(); if (reason !== 'applied') cancelRemote(capture); sync(); } },
+                    onClosed:reason => { if (active === capture) { active = null; stop(); if (reason !== 'applied') { window.wayfindrAssistFeedback?.end?.(panel); cancelRemote(capture); } sync(); } },
                     onUnavailable:() => { if (active === capture) clear(copy.unavailable, false); },
-                    onApplied:() => { message(copy.applied, false); sync(); }
+                    onApplied:receipt => { window.wayfindrAssistFeedback?.used(panel, capture.generation, receipt); message(copy.applied, false); sync(); }
                 });
                 if (active === capture) timer = window.setTimeout(() => void poll(capture), 2000);
             } catch (error) { if (active === capture && !capture.applying) clear(copy.unavailable); }

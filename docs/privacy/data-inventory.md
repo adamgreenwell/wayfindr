@@ -165,3 +165,26 @@ request/session history. Usage retains its existing content-free attempt metadat
 including provider cooldowns independently of private cleanup. Selected processors
 and backups have their own retention boundaries. See the [runtime contract and
 rollback guidance](../architecture/ai-assist-draft-refinement.md).
+
+
+### AI Assist observation metadata
+
+`ai_assist_feedback` stores server-scoped account/site/conversation/viewer/generation
+identities, a keyed source proof, independent viewed/used/rejected timestamps, closed
+usefulness/correction categories, assessment revision and bookkeeping timestamps. It
+stores no prompt, original/edited draft, generated text, free-text feedback or receipt.
+Visitor export includes observations with a staff-role viewer and omits the keyed proof.
+Conversation/site/account/user deletion cascades it; visitor erasure removes it with the
+conversation under the same account lock as admission. Shared/private lifecycle audits
+use configured opaque model/route tags, closed state/reasons and nullable bounded timing
+and token measurements; legacy action names stay compatible.
+
+Optional operator settings `WAYFINDR_AI_FEEDBACK_RETENTION_DAYS`,
+`WAYFINDR_AI_AUDIT_RETENTION_DAYS` and `WAYFINDR_AI_USAGE_RETENTION_DAYS` default to 0
+(no automatic pruning). Feedback/audit accept 1–3650 days; usage requires 32–3650.
+The hourly bounded metadata command preserves active usage holds/current-day budgets,
+prunes only Assist audit actions, and provides a non-mutating dry-run. Private content
+still expires within 15 minutes; metadata retention cannot extend its usability.
+Backup/log/processor retention remains operator-owned. See
+[Assist observability](../architecture/ai-assist-observability.md#operator-retention-and-privacy)
+for scope, limits, export/deletion, unknown observations and command details.

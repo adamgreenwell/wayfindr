@@ -21,6 +21,7 @@ use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -178,7 +179,7 @@ test('requesting a summary queues one id-only job and records safe audit metadat
     expect($event->account_id)->toBe($world['account']->id)
         ->and($event->site_id)->toBe($world['site']->id)
         ->and($event->subject_id)->toBe($world['conversation']->id)
-        ->and($event->metadata)->toBe([
+        ->and(Arr::only($event->metadata, ['summary_id', 'generation', 'connection_revision']))->toBe([
             'summary_id' => $summary->id,
             'generation' => $summary->generation,
             'connection_revision' => $summary->connection_revision,
@@ -368,7 +369,7 @@ test('worker failures become generic retryable audited state', function (): void
         ->and($summary->summary)->toBeNull();
 
     $failed = AuditEvent::query()->where('action', 'conversation.ai_summary.failed')->sole();
-    expect($failed->metadata)->toBe([
+    expect(Arr::only($failed->metadata, ['summary_id', 'generation', 'connection_revision', 'failure_code']))->toBe([
         'summary_id' => $summary->id,
         'generation' => $summary->generation,
         'connection_revision' => $summary->connection_revision,

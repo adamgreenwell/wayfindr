@@ -29,7 +29,7 @@ async function fixture(t, {available=true, sources=[]}={}) {
     <section data-assist-draft-review data-copy="${attr(reviewCopy)}" hidden><h3 data-assist-review-heading tabindex="-1">Review</h3><pre data-assist-review-original></pre><pre data-assist-review-candidate></pre><div data-assist-review-sources hidden></div><p data-assist-review-status></p><button type="button" data-assist-review-apply>Apply</button><button type="button" data-assist-review-cancel>Cancel</button></section>
     </details></aside></div></main>`, {url:'https://support.example.test/dashboard/conversations/WF-SYNTHETIC',runScripts:'outside-only',pretendToBeVisual:true});
   t.after(() => dom.window.close());
-  const {window} = dom, requests=[], timers=[], announcements=[];
+  const {window} = dom, requests=[], timers=[], announcements=[], feedbackUses=[], feedbackViews=[]; window.wayfindrAssistFeedback={used:(...args)=>feedbackUses.push(args),viewed:(...args)=>feedbackViews.push(args)};
   let time=0, uuid=0, sends=0, storageWrites=0;
   Object.defineProperty(window.performance,'now',{value:()=>time});
   Object.defineProperty(window.crypto,'randomUUID',{value:()=>`11111111-1111-4111-8111-${String(++uuid).padStart(12,'0')}`});
@@ -48,13 +48,13 @@ async function fixture(t, {available=true, sources=[]}={}) {
   const byPath=pathname=>requests.filter(request=>request.url.pathname===pathname);
   const pending = (id=generation) => ({generation:id,draft_revision:JSON.parse((byPath('/refine').at(-1)||byPath('/refine/authorize').at(-1)).options.body).draft_revision,policy_revision:'policy',state:'pending',expires_at:2000000000,ttl_seconds:900,preview:null,sources:[]});
   const authorized = () => ({...pending(),state:'authorized'});
-  const ready = (changes={}) => ({...pending(),state:'ready',preview:{candidate,citations:sources.map(source=>source.ref),limitation:null},sources,...changes});
+  const ready = (changes={}) => ({...pending(),state:'ready',feedback_receipt:'private-apply-receipt',preview:{candidate,citations:sources.map(source=>source.ref),limitation:null},sources,...changes});
   const buttons={request:shell.querySelector('[data-refinement-request]'),cancel:shell.querySelector('[data-refinement-cancel]'),apply:shell.querySelector('[data-assist-review-apply]'),reviewCancel:shell.querySelector('[data-assist-review-cancel]')};
   const controls={action:shell.querySelector('[data-refinement-action]'),tone:shell.querySelector('[data-refinement-tone]'),language:shell.querySelector('[data-refinement-language]')};
   const change=(control,value)=>{control.value=value;control.dispatchEvent(new window.Event('change',{bubbles:true}));};
   return {window,shell,body,requests,timers,announcements,respond,byPath,pending,authorized,ready,buttons,controls,change,
     region:shell.querySelector('[data-assist-draft-review]'),status:shell.querySelector('[data-refinement-status]'),
-    sends:()=>sends,storageWrites:()=>storageWrites,
+    sends:()=>sends,feedbackUses:()=>feedbackUses,feedbackViews:()=>feedbackViews,storageWrites:()=>storageWrites,
     edit(value){body.value=value;body.dispatchEvent(new window.Event('input',{bubbles:true}));},
     async grant(){buttons.request.click();respond(byPath('/refine/authorize').at(-1),authorized(),201);await flush();},
     async start(){await this.grant();respond(byPath('/refine').at(-1),pending(),202);await flush();},
@@ -212,4 +212,10 @@ for(const invalid of ['failed','wrong-revision','wrong-state','wrong-generation'
   if(invalid==='wrong-generation')grant.generation='invalid';
   f.respond(f.byPath('/refine/authorize')[0],grant,invalid==='failed'?503:201);await flush();
   assert.equal(f.byPath('/refine').length,0);assert.equal(f.body.value,original);
+});
+
+test('private preview records view only and the guarded Apply records use without Send',async t=>{
+ const f=await fixture(t);await f.preview();assert.equal(f.feedbackViews().length,1);assert.equal(f.feedbackUses().length,0);
+ f.buttons.apply.click();f.respond(f.byPath('/refine/apply').at(-1),f.ready());await flush();
+ assert.equal(f.feedbackUses().length,1);assert.equal(f.feedbackUses()[0][2],'private-apply-receipt');assert.equal(f.sends(),0);
 });

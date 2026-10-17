@@ -1787,6 +1787,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.ai-assist.show'),
         route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
+        route('dashboard.account.ai-assist.report'),
         route('dashboard.account.team.show'),
         route('dashboard.account.security.show'),
         route('dashboard.account.sla-policies.index'),

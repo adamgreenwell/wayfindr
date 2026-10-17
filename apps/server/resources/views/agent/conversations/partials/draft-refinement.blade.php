@@ -44,4 +44,5 @@
         <button type="button" class="button secondary" data-refinement-cancel hidden>{{ __('ai_assist.refinement.cancel') }}</button>
     </div>
     <p class="field-help" data-refinement-status id="draft-refinement-status">{{ $refinementAllowed ? __('ai_assist.refinement.review_help') : __('ai_assist.refinement.unavailable') }}</p>
+    @include('agent.conversations.partials.assist-feedback', ['feedbackTask' => 'refinement'])
 </section>
