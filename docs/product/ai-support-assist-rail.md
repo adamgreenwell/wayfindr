@@ -71,7 +71,9 @@ passages in reply requests, and Off retains transcript-only help. Grounded draft
 show published-guidance attribution, limitations and missing information separately.
 Validated citations and scrubbed excerpts sit in a collapsed native Published
 sources section; source/access changes withdraw the whole draft before Use.
-Refinement generation remains #1173.
+The [private refinement foundation](../architecture/ai-assist-draft-refinement.md)
+starts #1173 without adding composer actions yet. Its runtime must reuse explicit
+Preview/Apply and preserve the ordinary composer ownership and separate Send.
 
 One polite AI live region outside the disclosure announces meaningful task and
 preview changes. Initial content and repeated identical polls stay silent.

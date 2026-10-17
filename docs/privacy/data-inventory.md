@@ -122,3 +122,17 @@ server's temporary directory and removed once it has been sent; the
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually
 long or indefinite retention windows.
+
+### Private refinement development boundary
+
+The first #1173 slice constructs bounded scrubbed private task input in process
+and refuses implicit serialization. Its signed owner/draft/source snapshot has a
+15-minute validity bound and contains no original draft or article prose. There
+is no refinement route, provider call, queued input, preview store or new retained
+row in this slice, so the existing export/erasure schema is unchanged.
+
+Before runtime refinement, its encrypted transient input/preview store must join
+this inventory, export field classification, erasure admission/in-flight claims,
+retention cleanup and parent deletion. Queue IDs only; never persist the raw
+original or flash refinement text into validation old input/request logs. See the
+[private refinement contract and integration gates](../architecture/ai-assist-draft-refinement.md).
