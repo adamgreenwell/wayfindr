@@ -158,7 +158,9 @@ replay automatically. A missing acknowledgement after this window remains unknow
 
 The visible workspace reports one view per displayed generation; collapsed rails,
 hidden workspaces, output below the viewport, polling and preparation do not report
-views. A displayed output must intersect the viewport; scrolling can reveal it later.
+views. A displayed output must intersect the viewport and the client scrollport of
+every clipping ancestor on the applicable axis; a card clipped inside the Assist rail
+is not viewed. Internal scroll events are captured so scrolling can reveal it later.
 A failed view request may retry on a later visibility scan while that output remains
 visible; the unique observation stays idempotent, including an uncertain prior delivery.
 Successful views are not replayed. Explicit assessments and rejections require another

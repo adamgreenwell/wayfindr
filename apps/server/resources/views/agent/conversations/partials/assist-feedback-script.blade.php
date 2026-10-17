@@ -2,11 +2,23 @@
 (() => {
     if (window.wayfindrAssistFeedback) return;
     const records = new WeakMap(), mounted = new Set();
+    const clips = value => ['auto','scroll','hidden','clip','overlay'].includes(value);
     const visible = element => element?.isConnected && document.visibilityState === 'visible' && document.prerendering !== true
         && !element.closest('[hidden]') && !Array.from(element.closest('[data-reply-shell], [data-tab-panel]')?.querySelectorAll('details:not([open])') || []).some(details => details.contains(element))
         && element.getClientRects().length > 0 && (() => {
             const rect = element.getBoundingClientRect();
-            return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+            let top = Math.max(0, rect.top), bottom = Math.min(window.innerHeight, rect.bottom),
+                left = Math.max(0, rect.left), right = Math.min(window.innerWidth, rect.right);
+            if (bottom <= top || right <= left) return false;
+            for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+                const style = window.getComputedStyle(ancestor), clipX = clips(style.overflowX || style.overflow), clipY = clips(style.overflowY || style.overflow);
+                if (!clipX && !clipY) continue;
+                const box = ancestor.getBoundingClientRect(), x = box.left + ancestor.clientLeft, y = box.top + ancestor.clientTop;
+                if (clipX) { left = Math.max(left, x); right = Math.min(right, x + ancestor.clientWidth); }
+                if (clipY) { top = Math.max(top, y); bottom = Math.min(bottom, y + ancestor.clientHeight); }
+                if (bottom <= top || right <= left) return false;
+            }
+            return true;
         })();
     const region = panel => panel?.querySelector('[data-assist-feedback]');
     const mount = panel => {
@@ -16,11 +28,12 @@
         const record = {root, panel, copy, generation:null, revision:0, used:false, viewed:false, queue:Promise.resolve()};
         records.set(root, record); mounted.add(record);
         const status = message => {
+            const previous = root.querySelector('[data-feedback-status]').textContent;
             root.querySelector('[data-feedback-status]').textContent = message;
-            if (message) {
-                if (panel.dataset.task === 'ticket') panel.querySelector('[data-ai-message]').textContent = message;
-                else window.dispatchEvent(new CustomEvent('wayfindr:assist-action', {detail:{message}}));
-            }
+            if (panel.dataset.task === 'ticket') {
+                const live = panel.querySelector('[data-ai-message]');
+                if (live && (message || live.textContent === previous)) live.textContent = message;
+            } else if (message) window.dispatchEvent(new CustomEvent('wayfindr:assist-action', {detail:{message}}));
         };
         record.status = status;
         root.querySelector('[data-feedback-reject]')?.addEventListener('click', () => {
@@ -139,7 +152,7 @@
     document.addEventListener('visibilitychange', scan);
     document.addEventListener('toggle', scan, true);
     window.addEventListener('wayfindr:tab-shown', scan);
-    window.addEventListener('scroll', scan, {passive:true});
+    window.addEventListener('scroll', scan, {passive:true,capture:true});
     window.addEventListener('resize', scan);
     window.addEventListener('pagehide', () => mounted.forEach(discardUse));
     window.setInterval(scan, 2000); scan();
