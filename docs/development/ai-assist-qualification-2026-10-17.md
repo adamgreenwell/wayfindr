@@ -38,7 +38,9 @@ Pest invocation and `-d memory_limit=1G`.
 The 48-file PostgreSQL qualification run passed **1,268 cases / 9,153 assertions**.
 It includes the connection, provider, policy, preparation, grounding, refinement,
 usage, observability, retention and race suites listed in `verification.json`.
-Subsequent affected-suite results and the full SQLite baseline comparison are
+The scoped run predates the final UI copy/layout and orchestration-identity
+correction; its earlier runtime receipt is superseded. Current affected-suite
+results and the full SQLite baseline comparison are
 recorded there separately, rather than treating different revisions as one run.
 Local macOS owner-bootstrap failures are an exact pre-existing baseline, not a
 passing full suite. Candidate CI must independently pass the complete lanes.
@@ -61,7 +63,9 @@ citations, unselected sentences, unsupported action/promise claims, changed numb
 dropped qualification/negation, missing guidance and wrong-language translation.
 
 The JSON receipts retain per-case state/decision, selected-source count, prompt
-hashes, guard identities and recipe/fixture/lockfile/catalogue source hashes.
+hashes, guard identities and recipe/fixture/lockfile/catalogue source hashes,
+including shared preparation and private refinement orchestration. A receipt
+identity regression checks those services are present.
 They omit prompts, unsent draft prose and credentials. A case enters the receipt
 only after its state, single provider call/usage attempt, no message/ticket writes,
 private input cleanup and no external Laravel HTTP assertions pass. Filtered or

@@ -114,19 +114,16 @@ test('the current guarded Assist recipes qualify each synthetic case without sid
         'refinement_guard' => app(DraftRefinementSafetyGuard::class)->identity()];
 })->with(assistRuntimeEvaluationCases());
 
-afterAll(function (): void {
-    $destination = getenv('WAYFINDR_ASSIST_QUALIFICATION_OUTPUT');
-    if (! is_string($destination) || $destination === '') {
-        return;
-    }
-    $cases = $GLOBALS['assist_runtime_qualification'] ?? [];
-    ksort($cases);
+/** Admission/readback orchestration is part of the tested recipe, not just its prompt. */
+function assistRuntimeEvaluationSources(): array
+{
     $sources = [];
     foreach (['ai-assist-runtime-evaluation.json', 'ai-assist-preparation.php', 'draft-refinement.php'] as $file) {
         $sources[$file] = hash_file('sha256', __DIR__.'/../Fixtures/'.$file);
     }
     $sources['AiAssistRuntimeEvaluationTest.php'] = hash_file('sha256', __FILE__);
-    foreach (['composer.lock', 'app/Support/Ai/ConversationReplyDraftPromptBuilder.php',
+    foreach (['app/Support/Ai/Preparation/AiAssistPreparation.php', 'app/Support/Ai/Refinement/DraftRefinements.php',
+        'composer.lock', 'app/Support/Ai/ConversationReplyDraftPromptBuilder.php',
         'app/Support/Ai/ConversationTextContextSelector.php', 'app/Support/Ai/AiContextSanitizer.php',
         'app/Support/Ai/Grounding/ConversationGroundingSelector.php', 'app/Support/Ai/Grounding/GroundingSourceReference.php',
         'app/Support/Ai/Grounding/ConversationGroundedReplyGuard.php', 'app/Support/Ai/Grounding/ConversationGroundedReplyOutputParser.php',
@@ -135,9 +132,32 @@ afterAll(function (): void {
         'app/Jobs/GenerateConversationDraftRefinement.php', 'lang/en/ai_assist.php', 'lang/de/ai_assist.php', 'lang/it/ai_assist.php'] as $file) {
         $sources[$file] = hash_file('sha256', dirname(__DIR__, 2).'/'.$file);
     }
+
+    return $sources;
+}
+
+test('runtime qualification identity includes shared and private orchestration', function (): void {
+    $sources = assistRuntimeEvaluationSources();
+    foreach (['app/Support/Ai/Preparation/AiAssistPreparation.php', 'app/Support/Ai/Refinement/DraftRefinements.php'] as $file) {
+        expect($sources)->toHaveKey($file)
+            ->and($sources[$file])->toBe(hash_file('sha256', dirname(__DIR__, 2).'/'.$file));
+    }
+    $GLOBALS['assist_runtime_identity_qualified'] = true;
+});
+
+afterAll(function (): void {
+    $destination = getenv('WAYFINDR_ASSIST_QUALIFICATION_OUTPUT');
+    if (! is_string($destination) || $destination === '') {
+        return;
+    }
+    $cases = $GLOBALS['assist_runtime_qualification'] ?? [];
+    ksort($cases);
+    $sources = assistRuntimeEvaluationSources();
     $report = ['schema' => 1, 'synthetic_only' => true, 'live_provider_quality' => false, 'php' => PHP_VERSION,
         'suite_identity' => hash('sha256', json_encode($sources, JSON_THROW_ON_ERROR)), 'source_hashes' => $sources,
-        'complete' => count($cases) === count(assistRuntimeEvaluationCases()), 'expected_cases' => count(assistRuntimeEvaluationCases()), 'cases' => $cases];
+        'identity_contract_passed' => $GLOBALS['assist_runtime_identity_qualified'] ?? false,
+        'complete' => ($GLOBALS['assist_runtime_identity_qualified'] ?? false) && count($cases) === count(assistRuntimeEvaluationCases()),
+        'expected_cases' => count(assistRuntimeEvaluationCases()), 'cases' => $cases];
     if (file_put_contents($destination, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n", LOCK_EX) === false) {
         throw new RuntimeException('Could not write the requested qualification receipt.');
     }

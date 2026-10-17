@@ -24,7 +24,7 @@
     "apps/server/resources/views/agent/conversations/partials/draft-refinement-script.blade.php": "7a838bc853973ab5e4aa1dd11f0704a498cb7958eb332ae2364981073007c19a",
     "apps/server/tests/BrowserScripts/draft-refinement.test.cjs": "fddff47a6c614673f7693bbb3973963f1c1e1f95b5d1813380b74a6c5cd5fb9c",
     "apps/server/tests/Feature/AiAssistPanelIntegrationTest.php": "faf2f32ab365490fccd8c06c5ac8c065edf97ba08635867ad98e23c85d91c6f3",
-    "apps/server/tests/Feature/AiAssistRuntimeEvaluationTest.php": "0b8a867d311e2ac3e9a9dc2f076240f23b2424c92dc7a0955613c5d0c1c39ed0",
+    "apps/server/tests/Feature/AiAssistRuntimeEvaluationTest.php": "199884405b5298616631ff53322454026fb03940efe7613f5d86916d27c74a4b",
     "apps/server/tests/Feature/AiAssistUpgradeContainmentTest.php": "11e9f8c100b20d8fedc3d658b8950c3e0584a0f2e355b9ec35cd603494d3de66",
     "apps/server/tests/Fixtures/ai-assist-runtime-evaluation.json": "4b32ddae97a355524c9e2dba88cdbe021ca98c561b355f91fd85aa669748b7b9",
     "scripts/probes/ai-assist-feedback-layout.js": "ac6525af6dd42456819908f2c72026549e8f9b754eccdf988e0ab16048daa08e"
@@ -36,17 +36,17 @@
     "report": {
       "tool": "pest",
       "result": "failed",
-      "tests": 6956,
-      "passed": 6886,
-      "assertions": 79574,
-      "duration_ms": 198143,
+      "tests": 6957,
+      "passed": 6887,
+      "assertions": 79578,
+      "duration_ms": 185312,
       "failed": 3,
       "errors": 7,
       "skipped": 60
     },
     "exact_existing_bootstrap_baseline": true,
     "source_unchanged_during_run": true,
-    "log_sha256": "63a7eeccbfcec8d6d33a3283a10f5e0590c39b248e2bef0b80ec30fa909b432a",
+    "log_sha256": "01eda75c0c913f8b4f2bd869bf7c9dda137b67b7c8c3088b6ebabba07321f0af",
     "baseline_cases": [
       {
         "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_different_requests_or_changed_request_data_cannot_reuse_a_committed_bootstrap",
@@ -149,20 +149,20 @@
       "tests/Unit/GroundingSourceReferenceTest.php",
       "tests/Unit/GuardedAccountAiConnectionProbeTest.php"
     ],
-    "runtime_suite_identity": "a7d4a7e076fb66f838364b23784f657d71473e87e68e3f713e0025593ff7c151",
-    "stage": "Before final feedback layout and secure-browser copy; affected suites rerun separately",
-    "disposable_target_verified": true
+    "stage": "Historical scoped run before feedback/browser copy and receipt orchestration fix; current affected suites and runtime receipts rerun separately",
+    "disposable_target_verified": true,
+    "historical_runtime_suite_identity": "a7d4a7e076fb66f838364b23784f657d71473e87e68e3f713e0025593ff7c151"
   },
   "final_sqlite_focused": {
     "report": {
       "tool": "pest",
       "result": "passed",
-      "tests": 82,
-      "passed": 82,
-      "assertions": 1625,
-      "duration_ms": 3926
+      "tests": 83,
+      "passed": 83,
+      "assertions": 1629,
+      "duration_ms": 3753
     },
-    "runtime_suite_identity": "a02c563e991856293f67f38f9093c12f570f790320eb417278de59c9493ac13c",
+    "runtime_suite_identity": "d53fd9dba5e790a555e915810647ff919b8440d0b30b8393c4df63a38e56f92b",
     "files": [
       "AiAssistRuntimeEvaluationTest",
       "AiAssistUpgradeContainmentTest",
@@ -188,16 +188,17 @@
     "intended_php_assertion_failures": 5,
     "browser_variants": 1,
     "native_layout_variants": 1,
-    "live_source_unchanged": true
+    "live_source_unchanged": true,
+    "identity_contract_variants": 1
   },
   "final_postgresql_affected": {
     "report": {
       "tool": "pest",
       "result": "passed",
-      "tests": 131,
-      "passed": 131,
-      "assertions": 2101,
-      "duration_ms": 58453
+      "tests": 132,
+      "passed": 132,
+      "assertions": 2105,
+      "duration_ms": 59394
     },
     "files": [
       "tests/Feature/AiAssistRuntimeEvaluationTest.php",
@@ -208,8 +209,13 @@
       "tests/Feature/AssistFeedbackTest.php"
     ],
     "exit_code": 0,
-    "log_sha256": "de2ce6a133cffa6cfcf871db88dcf8853cd9834d211dcc143c182b11380b84f5",
-    "runtime_suite_identity": "a02c563e991856293f67f38f9093c12f570f790320eb417278de59c9493ac13c",
+    "log_sha256": "f714dc90d4b6fdb573688d57c80bd5c52f8b3ad181218fd77e4cc608704ccf85",
+    "runtime_suite_identity": "d53fd9dba5e790a555e915810647ff919b8440d0b30b8393c4df63a38e56f92b",
     "disposable_target_verified": true
+  },
+  "filtered_receipt_contract": {
+    "runtime_cases": 25,
+    "identity_contract_passed": false,
+    "complete": false
   }
 }

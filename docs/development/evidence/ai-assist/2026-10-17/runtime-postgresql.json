@@ -3,12 +3,14 @@
   "synthetic_only": true,
   "live_provider_quality": false,
   "php": "8.5.10",
-  "suite_identity": "a02c563e991856293f67f38f9093c12f570f790320eb417278de59c9493ac13c",
+  "suite_identity": "d53fd9dba5e790a555e915810647ff919b8440d0b30b8393c4df63a38e56f92b",
   "source_hashes": {
     "ai-assist-runtime-evaluation.json": "4b32ddae97a355524c9e2dba88cdbe021ca98c561b355f91fd85aa669748b7b9",
     "ai-assist-preparation.php": "618c2eaf9e22e47be53afd8e8aa37ad86b17509c08b376695238a38ebf775033",
     "draft-refinement.php": "f409be93c9570488b97eeb9ca386a4913d733edf7b3b4d3f373a437b9118d614",
-    "AiAssistRuntimeEvaluationTest.php": "0b8a867d311e2ac3e9a9dc2f076240f23b2424c92dc7a0955613c5d0c1c39ed0",
+    "AiAssistRuntimeEvaluationTest.php": "199884405b5298616631ff53322454026fb03940efe7613f5d86916d27c74a4b",
+    "app/Support/Ai/Preparation/AiAssistPreparation.php": "050292172d8271dcd98dea8317cdb13a8f2a97ae2f3f4bd0a27621eba93f294c",
+    "app/Support/Ai/Refinement/DraftRefinements.php": "f7aca431c69b90eda08b2791a96752968902f51e6332eba4d3a7f75436128c42",
     "composer.lock": "34c3c29f894a9a66416da5bc5840ecd04668174058dea2b7dcce3fd6938c60fe",
     "app/Support/Ai/ConversationReplyDraftPromptBuilder.php": "589957f4d1bdf4c6738875a321be9f4d3b211cc9b37b6c9db4ccec9a2ef9603b",
     "app/Support/Ai/ConversationTextContextSelector.php": "3a63557670ebb2c5664283e302f127d6b7f608e0da8674f88f5ccbbbb215c8f6",
@@ -26,6 +28,7 @@
     "lang/de/ai_assist.php": "98cb4c800d8f3e34bdba944f73f15ed55c4b2b2128e7e083ad1d220c9c673d1d",
     "lang/it/ai_assist.php": "6054244b291202875303768eff843658fd488c4f8dc1ff78961f63d1e353fa15"
   },
+  "identity_contract_passed": true,
   "complete": true,
   "expected_cases": 25,
   "cases": {
