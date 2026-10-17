@@ -45,7 +45,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
             if ($conversation === null) {
                 throw new AiNetworkException('access_revoked');
             }
-            $input = ['event' => $payload['operation'] === 'assessment' ? 'assessment' : 'viewed', 'generation' => $payload['generation'], ...$payload['feedback']];
+            $input = ['event' => in_array($payload['operation'], ['assessment', 'used'], true) ? $payload['operation'] : 'viewed', 'generation' => $payload['generation'], ...$payload['feedback']];
             // Two different explicit first assessments deliberately conflict at revision zero.
             if ($payload['operation'] === 'assessment' && ($payload['feedback']['usefulness'] ?? '') === 'not_useful') {
                 $input['usefulness'] = 'not_useful';

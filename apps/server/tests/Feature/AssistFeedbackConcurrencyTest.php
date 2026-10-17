@@ -2,8 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Jobs\GenerateConversationDraftRefinement;
+use App\Models\Account;
 use App\Models\AiAssistFeedback;
+use App\Models\ConversationDraftRefinement;
+use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\Observability\AssistFeedback;
+use App\Support\Ai\Refinement\DraftRefinements;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +17,7 @@ use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../Fixtures/ai-assist-preparation.php';
+require_once __DIR__.'/../Fixtures/draft-refinement.php';
 
 trait GuardsAssistFeedbackRaceDatabase
 {
@@ -45,15 +51,9 @@ function assistFeedbackRace(array $world, string $operation): array
     $children = [];
     try {
         $gate->beginTransaction();
-        if (true) {
-            expect($gate->query("SELECT scope_key FROM ai_usage_scopes WHERE scope_key = 'installation' FOR UPDATE")->fetchColumn())->toBe('installation');
-        } else {
-            $table = (new $world['class'])->getTable();
-            expect(in_array($table, ['conversation_copilot_summaries', 'conversation_copilot_reply_drafts', 'conversation_copilot_knowledge_suggestions', 'conversation_copilot_ticket_suggestions'], true))->toBeTrue();
-            $query = $gate->prepare('SELECT generation FROM '.$table.' WHERE conversation_id = ? FOR UPDATE');
-            $query->execute([$world['conversation']->id]);
-            expect($query->fetchColumn())->not->toBeFalse();
-        }
+        $query = $gate->prepare('SELECT id FROM accounts WHERE id = ? FOR UPDATE');
+        $query->execute([$world['account']->id]);
+        expect((int) $query->fetchColumn())->toBe($world['account']->id);
         $environment = ['APP_ENV' => 'testing', 'APP_KEY' => config('app.key'), 'APP_URL' => 'http://localhost:8000',
             'DB_CONNECTION' => 'pgsql', 'DB_URL' => '', 'DB_HOST' => '127.0.0.1', 'DB_PORT' => (string) $connection['port'],
             'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'], 'DB_PASSWORD' => $connection['password'],
@@ -160,3 +160,83 @@ test('late independently blocked feedback cannot recreate erased or superseded w
     $results = assistFeedbackRace($w, $operation);
     expect(array_column($results, 'accepted'))->toBe([false, false])->and(AiAssistFeedback::query()->count())->toBe(0);
 })->with(['erase', 'supersede']);
+
+test('feedback completes independently of held installation and unrelated account locks', function (string $purpose): void {
+    $private = str_starts_with($purpose, 'private');
+    $w = assistPreparationWorld($private ? 'conversation_reply_draft' : $purpose, $private ? 'manual' : 'prepare');
+    $operation = 'viewed';
+    $feedback = [];
+    if ($private) {
+        $service = app(DraftRefinements::class);
+        $input = refinementLifecycleInput();
+        $grant = $service->authorize($w['agent'], $w['conversation'], $input->draftRevision);
+        $service->request($w['agent'], $w['conversation'], $input, $grant['generation']);
+        $row = ConversationDraftRefinement::query()->sole();
+        app()->instance(AgentCopilotProvider::class, refinementLifecycleProvider());
+        app()->call([new GenerateConversationDraftRefinement($row->id, $row->generation), 'handle']);
+        $w['owner'] = $w['agent'];
+        $w['purpose'] = AssistFeedback::PRIVATE_PURPOSE;
+        $generation = $row->generation;
+        if ($purpose === 'private_applied') {
+            app(AssistFeedback::class)->record($w['owner'], $w['conversation'], $w['purpose'], ['event' => 'viewed', 'generation' => $generation]);
+            $applied = $service->show($w['owner'], $w['conversation'], $generation, $input->draftRevision, true);
+            $operation = 'used';
+            $feedback = ['receipt' => $applied['feedback_receipt']];
+        }
+    } else {
+        assistPreparationEnsure($w);
+        assistPreparationRun($w);
+        $generation = $w['class']::query()->sole()->generation;
+    }
+    $unrelated = Account::factory()->create();
+    $scopes = DB::table('ai_usage_scopes')->orderBy('scope_key')->get()->toJson();
+    $connection = DB::connection()->getConfig();
+    $gate = new PDO('pgsql:host=127.0.0.1;connect_timeout=2;port='.$connection['port'].';dbname='.$connection['database'], $connection['username'], $connection['password']);
+    $environment = ['APP_ENV' => 'testing', 'APP_KEY' => config('app.key'), 'APP_URL' => 'http://localhost:8000',
+        'DB_CONNECTION' => 'pgsql', 'DB_URL' => '', 'DB_HOST' => '127.0.0.1', 'DB_PORT' => (string) $connection['port'],
+        'DB_DATABASE' => $connection['database'], 'DB_USERNAME' => $connection['username'], 'DB_PASSWORD' => $connection['password'],
+        'MAIL_MAILER' => 'array', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'QUEUE_CONNECTION' => 'database',
+        'BROADCAST_CONNECTION' => 'null', 'PULSE_ENABLED' => 'false', 'TELESCOPE_ENABLED' => 'false', 'NIGHTWATCH_ENABLED' => 'false'];
+    $payload = ['operation' => $operation, 'actor_id' => $w['owner']->id, 'conversation_id' => $w['conversation']->id,
+        'purpose' => $w['purpose'], 'generation' => $generation, 'feedback' => $feedback,
+        'limits' => config('wayfindr.ai.usage'), 'now' => $w['clock']->time->toIso8601String()];
+    $inputStream = new InputStream;
+    $process = new Process([PHP_BINARY, base_path('tests/Fixtures/assist-feedback-race.php')], base_path(),
+        $environment + ['WAYFINDR_AI_PREPARATION_RACE_PAYLOAD' => json_encode($payload, JSON_THROW_ON_ERROR)], $inputStream, 20);
+    try {
+        $gate->beginTransaction();
+        expect($gate->query("SELECT scope_key FROM ai_usage_scopes WHERE scope_key = 'installation' FOR UPDATE")->fetchColumn())->toBe('installation');
+        $lock = $gate->prepare('SELECT id FROM accounts WHERE id = ? FOR UPDATE');
+        $lock->execute([$unrelated->id]);
+        expect((int) $lock->fetchColumn())->toBe($unrelated->id);
+        $process->start();
+        $deadline = microtime(true) + 6;
+        do {
+            $ready = json_decode(explode("\n", $process->getOutput())[0], true);
+            if (($ready['ready'] ?? false) === true) {
+                break;
+            }
+            usleep(10000);
+        } while (microtime(true) < $deadline);
+        expect($ready['ready'] ?? false)->toBeTrue('The independent worker must reach the start barrier.');
+        $inputStream->write("go\n");
+        $inputStream->close();
+        $deadline = microtime(true) + 4;
+        while ($process->isRunning() && microtime(true) < $deadline) {
+            usleep(10000);
+        }
+        expect($process->isRunning())->toBeFalse('Feedback must finish while unrelated account and installation locks remain held.');
+        $lines = explode("\n", trim($process->getOutput()));
+        $result = json_decode(end($lines), true, 32, JSON_THROW_ON_ERROR);
+        expect($result)->toBe(['ok' => true, 'accepted' => true])->and($process->getExitCode())->toBe(0);
+        expect(AiAssistFeedback::query()->count())->toBe(1)
+            ->and(AiAssistFeedback::query()->sole()->used_at !== null)->toBe($operation === 'used')
+            ->and(DB::table('ai_usage_scopes')->orderBy('scope_key')->get()->toJson())->toBe($scopes);
+    } finally {
+        if ($gate->inTransaction()) {
+            $gate->rollBack();
+        }
+        $inputStream->close();
+        $process->stop(0.1);
+    }
+})->with(['conversation_summary', 'conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion', 'private_ready', 'private_applied']);

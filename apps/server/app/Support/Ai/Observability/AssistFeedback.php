@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Ai\Observability;
 
+use App\Models\Account;
 use App\Models\AiAssistFeedback;
 use App\Models\Article;
 use App\Models\Conversation;
@@ -16,9 +17,9 @@ use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
 use App\Support\Ai\Refinement\DraftRefinements;
 use App\Support\Ai\Usage\AiUsageClock;
-use App\Support\Ai\Usage\AiUsageLedger;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Throwable;
 
@@ -29,7 +30,7 @@ final readonly class AssistFeedback
 
     public const INSERTABLE_PURPOSES = ['conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion', self::PRIVATE_PURPOSE];
 
-    public function __construct(private AiUsageLedger $ledger, private AiUsageClock $clock) {}
+    public function __construct(private AiUsageClock $clock) {}
 
     /** Issued only by an already fresh Use/Apply boundary; contains no support text. */
     public function receipt(User $actor, Conversation $conversation, string $purpose, string $generation, ?int $expiry = null): string
@@ -53,7 +54,11 @@ final readonly class AssistFeedback
             throw new AiNetworkException('execution_identity_invalid');
         }
 
-        return $this->ledger->withAccountUsageLock((int) $actor->account_id, function () use ($actor, $hint, $purpose, $input): array {
+        return DB::transaction(function () use ($actor, $hint, $purpose, $input): array {
+            // Observations fence account lifecycle without acquiring installation usage locks.
+            if (Account::query()->whereKey($actor->account_id)->lockForUpdate()->first() === null) {
+                throw new AiNetworkException('access_revoked');
+            }
             $actor = User::query()->whereKey($actor->id)->where('account_id', $actor->account_id)->lockForUpdate()->first();
             $conversation = Conversation::query()->with('site')->whereKey($hint->id)->lockForUpdate()->first();
             if ($actor === null || $actor->isDeactivated() || $conversation === null || (int) $conversation->site?->account_id !== (int) $actor->account_id
@@ -73,7 +78,7 @@ final readonly class AssistFeedback
                 if ($event === 'viewed' && $row->status !== 'ready') {
                     throw new AiNetworkException('context_changed');
                 }
-                if ($row->status === 'ready' && app(DraftRefinements::class)->show($actor, $conversation, $generation, $row->draft_revision)['state'] !== 'ready') {
+                if ($row->status === 'ready' && ! app(DraftRefinements::class)->previewIsCurrent($row)) {
                     throw new AiNetworkException('context_changed');
                 }
             } else {

@@ -366,6 +366,12 @@ final readonly class DraftRefinements
         return $deleted;
     }
 
+    /** Read-only feedback check; caller holds the owning account/actor/parent/slot locks. */
+    public function previewIsCurrent(#[SensitiveParameter] ConversationDraftRefinement $row): bool
+    {
+        return $row->status === 'ready' && $this->current($row, $row->draft_revision);
+    }
+
     private function current(#[SensitiveParameter] ConversationDraftRefinement $row, string $revision): bool
     {
         return $row->expires_at?->isAfter($this->clock->now()) === true && $row->draft_revision === $revision

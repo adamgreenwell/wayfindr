@@ -132,8 +132,12 @@ JSON only: generation UUID and viewed/used/rejected/assessment event; used addit
 requires its opaque receipt; assessment additionally requires usefulness, correction
 and expected_revision. Tasks are summary/reply/knowledge/ticket/refinement. Extra
 fields, arbitrary text, prefetch/prerender intents, unknown enums, stale generations,
-revoked/cross-site actors and invalid receipts are refused. Limits and account/actor/
-parent locks precede the unique feedback row. Identical retries do not add observations.
+revoked/cross-site actors and invalid receipts are refused. Request bounds and
+account/actor/parent locks precede the unique feedback row. Observations never acquire
+the installation usage lock or change usage counters. A ready private preview uses a
+read-only freshness check under its owning locks, without withdrawing work or acquiring
+usage locks. Identical retries do not add observations; unrelated accounts proceed
+independently.
 
 Fresh Use/Apply responses issue a content-free authenticated encrypted receipt bound
 to account, site, conversation, actor, purpose, generation and keyed current source
