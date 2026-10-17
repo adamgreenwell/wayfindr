@@ -124,6 +124,8 @@
                 @enderror
             </div>
 
+            @include('agent.conversations.partials.draft-refinement')
+
             <div class="field reply-attachments-field">
                 <input
                     class="reply-file-input"
@@ -196,6 +198,7 @@
 @include('agent.conversations.partials.assist-rail-styles')
 @include('agent.conversations.partials.assist-rail-script')
 @include('agent.conversations.partials.assist-draft-review-script')
+@include('agent.conversations.partials.draft-refinement-script')
 @if ($copilotSummaryAvailable)
     @include('agent.conversations.partials.copilot-summary-script')
 @endif
