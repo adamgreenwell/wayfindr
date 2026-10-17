@@ -312,3 +312,25 @@ test('localized grounded presentation labels guidance limitations sources and di
         ->assertSee('task=reply', false)->assertSee('Exact human draft.')
         ->assertSee('target="_blank"', false)->assertDontSee('server-only article mapping');
 })->with(['en', 'de', 'it']);
+
+test('short visitor requests keep their language for attribution and safe clarification', function (string $locale, string $question, string $passage, bool $hasSource): void {
+    $world = groundedReplyWorld($passage);
+    $world['conversation']->update(['subject' => $question]);
+    $world['message']->update(['body' => $question]);
+    $world['article']->update(['title' => $question]);
+    if (! $hasSource) {
+        $world['article']->delete();
+    }
+    assistPreparationEnsure($world, 'initial');
+    assistPreparationRun($world);
+    $state = app(AiAssistPreparation::class)->read($world['agent'], $world['conversation'], $world['purpose']);
+    expect($state['state'])->toBe('ready')
+        ->and($state['output']['grounding']['decision'])->toBe($hasSource ? 'supported' : 'insufficient')
+        ->and($state['output']['text'])->toBe($hasSource
+            ? trans('ai_assist.grounding.attribution', [], $locale)."\n\n".$passage
+            : trans('ai_assist.grounding.clarifying_reply', [], $locale));
+})->with([
+    ['de', 'Wie lange gilt die Rückgabe?', 'Die Rückgabe ist innerhalb von 14 Tagen möglich.'],
+    ['it', 'Quanto dura il reso?', 'Il reso è possibile entro 14 giorni.'],
+    ['en', 'How long do returns take?', 'Returns are accepted within 14 days.'],
+])->with([true, false]);

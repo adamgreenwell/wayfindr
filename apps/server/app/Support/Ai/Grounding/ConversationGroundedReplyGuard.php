@@ -150,7 +150,7 @@ final class ConversationGroundedReplyGuard
         $input = json_decode($context->prompt->input, true, 12, JSON_THROW_ON_ERROR);
         $messages = $input['conversation']['messages'] ?? [];
         $text = implode(' ', array_column(array_filter($messages, fn ($message) => ($message['role'] ?? '') === 'visitor'), 'body'));
-        if (mb_strlen($text) < 40) {
+        if (trim($text) === '') {
             return 'en';
         }
         $locale = (string) (new Language(['en', 'de', 'it']))->detect(mb_substr($text, -4000));
