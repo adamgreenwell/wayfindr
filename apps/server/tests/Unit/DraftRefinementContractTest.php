@@ -60,12 +60,28 @@ test('private refinement objects refuse serialization and redact normal debug ou
 })->with(['input', 'context', 'proposal']);
 
 test('a refinement preserves the exact original in process and returns candidate whitespace unchanged', function (): void {
-    $original = "  Original draft.\nSecond line.  ";
+    $original = "\u{00A0}  Original draft.\nSecond line.  \u{2003}";
     $input = new DraftRefinementInput($original, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify);
-    $candidate = "  Candidate <literal> words.\nSecond line.  ";
+    $candidate = "\u{00A0}  Candidate <literal> words.\nSecond line.  \u{2003}";
     $proposal = (new DraftRefinementOutputParser)->parse(refinementContractOutput(['candidate' => $candidate]), []);
     expect($input->draft())->toBe($original)->and($proposal->previewData()['candidate'])->toBe($candidate);
 });
+
+test('refinement rejects Unicode whitespace alone in drafts candidates and limitations', function (string $blank): void {
+    expect(fn () => new DraftRefinementInput($blank, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify))
+        ->toThrow(InvalidArgumentException::class);
+    $parser = new DraftRefinementOutputParser;
+    expect($parser->parse(refinementContractOutput(['candidate' => $blank]), []))->toBeNull()
+        ->and($parser->parse(refinementContractOutput(['limitation' => $blank]), []))->toBeNull();
+})->with([
+    'nonbreaking space' => "\u{00A0}",
+    'em space' => "\u{2003}",
+    'narrow nonbreaking space' => "\u{202F}",
+    'ideographic space' => "\u{3000}",
+    'line and paragraph separators' => "\u{2028}\u{2029}",
+    'next line' => "\u{0085}",
+    'mixed whitespace' => " \t\n\r\u{00A0}\u{1680}\u{2000}\u{200A}\u{202F}\u{205F}\u{3000}",
+]);
 
 test('refinement proposals accept only supplied opaque citation references', function (): void {
     $sources = refinementContractSources();

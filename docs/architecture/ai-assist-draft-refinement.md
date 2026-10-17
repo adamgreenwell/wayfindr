@@ -105,7 +105,9 @@ submitted provider prompt or a shared cache entry.
 {"candidate":"An editable private rewrite.","citations":[],"limitation":null}
 ```
 
-Candidate text is nonblank UTF-8 within the real 4,000-character composer limit;
+Draft and output text must contain a character beyond Unicode whitespace; valid
+text retains its exact surrounding spaces and line breaks. Candidate text is
+nonblank UTF-8 within the real 4,000-character composer limit;
 whitespace is retained exactly for later review. Citations are unique refs from
 the exact supplied selection, empty when none are used. A limitation is null or
 a nonblank bounded explanation. Malformed/duplicate keys, escaped duplicate keys,
