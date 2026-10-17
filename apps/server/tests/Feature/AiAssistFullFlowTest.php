@@ -239,16 +239,23 @@ test('disabled processing and exhausted allowance preserve ordinary support with
 
 test('a failed queue admission is terminal on unchanged opens and never blocks a manual reply', function (): void {
     $w = assistFullFlowWorld();
-    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('Synthetic queue outage.'));
+    $dispatcher = Bus::getFacadeRoot();
+    $assistDispatches = 0;
+    Bus::shouldReceive('dispatch')->andReturnUsing(function ($job) use ($dispatcher, &$assistDispatches) {
+        if ($job instanceof GenerateConversationCopilotReplyDraft) {
+            $assistDispatches++;
+            throw new RuntimeException('Synthetic Assist queue outage.');
+        }
+
+        return $dispatcher->dispatch($job);
+    });
     $this->actingAs($w['agent'])->postJson(assistFullFlowRoute($w, 'store'), ['action' => 'open', 'workspace' => 'conversation'])
         ->assertOk()->assertJsonPath('state', 'unavailable')->assertJsonPath('queued', false);
     $this->postJson(assistFullFlowRoute($w, 'store'), ['action' => 'open', 'workspace' => 'conversation'])
         ->assertOk()->assertJsonPath('state', 'unavailable')->assertJsonPath('queued', false);
     expect(DB::table('ai_usage_attempts')->sole()->state)->toBe('cancelled');
-    // The ordinary message path may dispatch its own non-AI notifications.
-    Bus::clearResolvedInstance('bus');
-    app()->forgetInstance('bus');
+    // Keep the AI dispatch fault active while ordinary notifications remain available.
     $this->post(route('dashboard.conversations.messages.store', $w['conversation']->support_code), ['body' => 'Manual reply during queue outage.'])->assertRedirect();
-    expect($w['conversation']->messages()->count())->toBe(2);
+    expect($w['conversation']->messages()->count())->toBe(2)->and($assistDispatches)->toBe(1);
     Http::assertNothingSent();
 });

@@ -7,6 +7,11 @@ remain authoritative. Source integration, human UAT, provider quality and releas
 approval are separate gates. This first slice does not close #1176 or authorize
 release, deployment, live-provider testing or production activation.
 
+The usage foundation/integrations are merged, but #1174 deliberately remains
+Open / In Progress until its full integrated acceptance is audited. Its open
+checkboxes are part of the predecessor audit below, not implicitly satisfied by
+this first slice. The other nine predecessor issues are closed.
+
 ## Evidence rules
 
 For every run retain: Git commit; test command and exit status; PHP/Node/browser
