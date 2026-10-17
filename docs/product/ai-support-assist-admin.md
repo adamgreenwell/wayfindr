@@ -78,8 +78,10 @@ presentation and future passage retrieval/transmission while transcript-only
 help can continue. On explicitly discloses bounded published same-account
 passage sharing. Site switches do not create site-owned articles or knowledge
 isolation. Legacy local article lookup does not establish provider passage
-consent. Current reply/ticket prompts remain transcript-only; grounded replies
-and refinement are later slices.
+consent. Grounded replies and private refinement now use the permitted bounded
+published excerpts; ticket suggestions remain transcript-only. See the
+[grounding contract](../architecture/ai-assist-grounded-drafts.md) and
+[refinement contract](../architecture/ai-assist-draft-refinement.md).
 
 Opaque policy revisions are independent of connection test receipts. Every
 policy edit invalidates prior queued work, provider admission, late publication,

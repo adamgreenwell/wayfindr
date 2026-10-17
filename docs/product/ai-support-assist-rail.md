@@ -89,8 +89,9 @@ keyboard-focusable scroll regions so long drafts can be reviewed in Safari.
 Arbitrary original/candidate text uses unknown language metadata, and the rail
 follows reduced-motion preferences.
 
-The #1171 panel completion merged in #1191. Grounded reply completion merged in #1193; private refinement completion is
-tracked in #1173 until its completion pull request merges.
+The #1171 panel completion merged in #1191. Grounded reply completion merged in
+#1193; private refinement completion merged in #1195. Whole-flow acceptance is
+tracked in the [#1176 qualification record](ai-support-assist-qualification.md).
 
 ## Verification
 
