@@ -336,7 +336,9 @@ admission and fencing. Every external attempt carrying visitor-derived text,
 including grounded generation and agent-owned refinement, must register an
 erasure-visible in-flight claim with bounded start/terminal timing before
 transmission. New call paths/stores must join erasure admission, not merely the
-late-write check: the existing eraser knows only the current four copilot stores.
+late-write check. Private refinement adds a separate metadata send-claim table
+that survives cancellation, supersession and owning-agent deletion; the eraser
+checks it under the shared account lock alongside the four copilot stores.
 Queued work cannot run after erasure, and late completion cannot recreate
 content. This contract introduces no longer retention window
 than the parent support record. Content-free audits follow their documented

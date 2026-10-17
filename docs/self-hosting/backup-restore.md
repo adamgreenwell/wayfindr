@@ -119,6 +119,11 @@ those, the row itself goes.
    UPDATE users SET two_factor_secret = NULL,
                     two_factor_recovery_codes = NULL,
                     two_factor_confirmed_at = NULL;
+   UPDATE conversation_draft_refinements SET input = NULL,
+                                             scope = NULL,
+                                             preview = NULL,
+                                             status = 'failed',
+                                             failure_code = 'key_lost';
    UPDATE external_issue_provider_connections SET credentials = NULL;
    UPDATE sites SET identity_secret = NULL,
                     identity_secret_last_four = NULL,
@@ -142,6 +147,11 @@ those, the row itself goes.
    go with the encrypted secret because they describe an enrolment that no
    longer exists, not because they throw. The identity and AI connection flags,
    revisions and test receipts likewise reset alongside their ciphertext.
+
+   Private refinement input, scope and preview are disposable. Clearing them
+   with a failed status prevents a pending job from reading lost-key ciphertext.
+   Keep metadata send claims until their bounded uncertainty window ends; they
+   still protect visitor erasure after a worker interruption.
 
    Keep the `account_ai_connections` rows disabled with
    `uses_installation_default = FALSE`. Deleting them would restore eligibility

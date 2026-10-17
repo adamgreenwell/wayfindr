@@ -820,6 +820,11 @@ return [
                     'value' => '{1} Binnen :count Stunde gelöscht|[2,*] Binnen :count Stunden gelöscht',
                     'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen zuzüglich des stündlichen Abstands, denn ein Datensatz, der eine Minute nach einem Durchlauf fällig wird, wartet auf den nächsten.',
                 ],
+                'private_refinements' => [
+                    'label' => 'Private KI-Überarbeitungen',
+                    'value' => '15 Minuten gültig; minütliche Bereinigung',
+                    'description' => 'Der geplante Befehl wayfindr:prune-draft-refinements löscht abgelaufene private Eingaben, Quellen und Vorschauen jede Minute. Nach 15 Minuten sind die Inhalte nicht mehr nutzbar; die Löschung benötigt den Scheduler. Versandnachweise bleiben nach Abbruch oder Benutzerlöschung bis zum Ende des begrenzten Unsicherheitsfensters von 180 Sekunden bestehen.',
+                ],
                 'api_receipts' => [
                     'label' => 'API-Schreibbelege',
                     'value' => '{1} Nach :count Stunde gelöscht|[2,*] Nach :count Stunden gelöscht',

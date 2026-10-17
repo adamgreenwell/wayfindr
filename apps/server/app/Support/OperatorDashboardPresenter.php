@@ -292,6 +292,7 @@ final class OperatorDashboardPresenter
             'Visitors who never made contact' => 'presence_visitors',
             'Proactive message delivery evidence' => 'proactive_deliveries',
             'Abandoned and failed uploads' => 'abandoned_uploads',
+            'Private AI refinements' => 'private_refinements',
             'API write receipts' => 'api_receipts',
             'Automatic deletion' => 'automatic_deletion',
             default => null,
@@ -313,6 +314,7 @@ final class OperatorDashboardPresenter
             'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
             'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three PLUS the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
+            'private_refinements' => 'The scheduled wayfindr:prune-draft-refinements command deletes expired private input, source scope and previews every minute. Content is unusable after 15 minutes; physical deletion requires the scheduler. Metadata send claims survive cancellation and user deletion until the bounded 180-second uncertainty window ends.',
             'api_receipts' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
             'automatic_deletion' => 'Removing or exporting the records of one person on request is still manual: there is no in-product control for it, for any class. That is separate from the scheduled deletions listed above, which do run. Explain the difference before real support traffic.',
         };
@@ -325,6 +327,7 @@ final class OperatorDashboardPresenter
                     'application_records' => 'Manual lifecycle',
                     'logs_backups' => 'Infrastructure lifecycle',
                     'proactive_deliveries' => 'Deleted after 90 days',
+                    'private_refinements' => '15-minute validity; minute cleanup',
                     'automatic_deletion' => 'The classes listed above',
                 },
                 "operator.dashboard.retention.items.{$key}.value",

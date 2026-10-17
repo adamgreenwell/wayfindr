@@ -613,3 +613,16 @@ The owner settled the four open questions on 2026-09-30, each as recommended:
 2. **Permission:** a new `handle_data_requests`, not `manage_contacts` (§5).
 3. **Restore:** re-application is built (§8), not only documented.
 4. **Export:** contact notes are included (§7).
+
+## Private draft refinement integration (#1173)
+
+Private encrypted input/preview and its separate metadata send claims cascade with
+conversation erasure. They are deliberately excluded from visitor export: unsent
+agent drafts and private scope proofs are not visitor records. A claim is committed
+under the existing installation/account usage locks before provider code and is
+checked by erasure under the account lock. Cancellation, supersession and owning
+user deletion cannot remove a live claim; duplicate workers cannot clear another
+worker's claim. Returned calls remove their own claim; interruption retains the
+existing 180-second uncertainty window. Minute cleanup removes expired private
+content and only aged claims. This preserves the distinction between deleting
+local data and recalling data already transmitted to a configured processor.

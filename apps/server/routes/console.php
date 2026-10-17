@@ -130,3 +130,6 @@ Schedule::command('wayfindr:prune-presence-visitors')
 Schedule::command('wayfindr:prune-proactive-message-deliveries')
     ->daily()
     ->description('Delete proactive-message delivery evidence past its bounded retention window.');
+
+Schedule::command('wayfindr:prune-draft-refinements')->everyMinute()->withoutOverlapping()
+    ->description('Remove private input and previews after their fixed 15-minute expiry.');

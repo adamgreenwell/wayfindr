@@ -828,6 +828,11 @@ return [
                     'value' => '{1} Eliminati entro :count ora|[2,*] Eliminati entro :count ore',
                     'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments viene eseguito ogni ora per eliminare i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio. Le finestre sono tre, non una: un caricamento non riuscito viene rimosso al passaggio successivo a prescindere dall’età, uno in sospeso una volta superato WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS e un oggetto di archiviazione privo di record dopo WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Il valore accanto a questa riga è la più lunga delle tre più l’intervallo orario, perché un record che diventa idoneo un minuto dopo un passaggio attende quello successivo.',
                 ],
+                'private_refinements' => [
+                    'label' => 'Revisioni AI private',
+                    'value' => 'Validità di 15 minuti; pulizia ogni minuto',
+                    'description' => 'Il comando pianificato wayfindr:prune-draft-refinements elimina ogni minuto input, fonti e anteprime private scadute. I contenuti non sono utilizzabili dopo 15 minuti; la cancellazione richiede lo scheduler. I metadati di invio restano dopo annullamento o eliminazione dell’utente fino al termine della finestra di incertezza limitata a 180 secondi.',
+                ],
                 'api_receipts' => [
                     'label' => 'Ricevute di scrittura API',
                     'value' => '{1} Eliminate dopo :count ora|[2,*] Eliminate dopo :count ore',
