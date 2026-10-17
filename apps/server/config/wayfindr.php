@@ -22,6 +22,12 @@ return [
         // ceilings and the adapter's output bound is enforced. Account values
         // can only narrow these limits; existing manual installation work is
         // not silently enrolled in this new admission path.
+        // Zero disables pruning; operators choose a justified retention window.
+        'observability' => [
+            'feedback_retention_days' => env('WAYFINDR_AI_FEEDBACK_RETENTION_DAYS', 0),
+            'audit_retention_days' => env('WAYFINDR_AI_AUDIT_RETENTION_DAYS', 0),
+            'usage_retention_days' => env('WAYFINDR_AI_USAGE_RETENTION_DAYS', 0),
+        ],
         'usage' => [
             'daily_requests' => env('WAYFINDR_AI_DAILY_REQUESTS', 0),
             'daily_tokens' => env('WAYFINDR_AI_DAILY_TOKENS', 0),
@@ -126,6 +132,11 @@ return [
                     (int) env('WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS', 1),
                 ) + 1).' hours',
                 'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three PLUS the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
+            ],
+            [
+                'label' => 'AI Assist observation metadata',
+                'value' => 'Operator configured; disabled at zero',
+                'description' => 'The scheduled wayfindr:prune-assist-observability command prunes configured feedback, Assist lifecycle audits and terminal usage metadata hourly in batches of 500. Zero disables each policy; usage requires at least 32 days. Active transport, concurrency and retry holds and current-day budgets are preserved. Backups and processor retention remain operator-owned.',
             ],
             [
                 'label' => 'Private AI refinements',

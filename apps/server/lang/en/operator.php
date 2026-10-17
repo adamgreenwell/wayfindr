@@ -820,6 +820,11 @@ return [
                     'value' => '{1} Deleted within :count hour|[2,*] Deleted within :count hours',
                     'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a failed upload goes on the next pass whatever its age, a pending one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three plus the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
                 ],
+                'assist_observability' => [
+                    'label' => 'AI Assist observation metadata',
+                    'value' => 'Operator configured; disabled at zero',
+                    'description' => 'The scheduled wayfindr:prune-assist-observability command prunes configured feedback, Assist lifecycle audits and terminal usage metadata hourly in batches of 500. Zero disables each policy; usage requires at least 32 days. Active transport, concurrency and retry holds and current-day budgets are preserved. Backups and processor retention remain operator-owned.',
+                ],
                 'private_refinements' => [
                     'label' => 'Private AI refinements',
                     'value' => '15-minute validity; minute cleanup',

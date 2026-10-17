@@ -9,6 +9,7 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Models\AiAssistFeedback;
 use App\Models\AiAssistPreparationReceipt;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
@@ -57,6 +58,7 @@ function exportFixture(): array
     $fixtures++;
     $agent = User::factory()->for($f['account'])->create(['id' => 987660 - $fixtures, 'name' => "Agent Sam Rivers {$fixtures}", 'email' => "sam.rivers.{$fixtures}@agents.test"]);
     $message = ConversationMessage::query()->where('conversation_id', $f['conversation']->id)->firstOrFail();
+    AiAssistFeedback::query()->forceCreate(['account_id' => $f['account']->id, 'site_id' => $f['site']->id, 'conversation_id' => $f['conversation']->id, 'user_id' => $agent->id, 'source_revision' => str_repeat('a', 64), 'purpose' => 'conversation_reply_draft', 'generation' => (string) Str::uuid(), 'viewed_at' => now(), 'used_at' => now(), 'usefulness' => 'useful', 'correction' => 'minor', 'revision' => 1]);
     // Sent and scanned, as the download path requires before serving it.
     ConversationMessageAttachment::query()->whereKey($f['attachment']->id)->update(['status' => ConversationMessageAttachment::STATUS_READY]);
 

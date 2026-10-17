@@ -75,6 +75,7 @@ final class VisitorEraser
      * @var array<string, array{erasure: string, export: string}>
      */
     public const COVERAGE = [
+        'ai_assist_feedback' => ['erasure' => 'deleted by cascade from the conversation, site, account or owning agent', 'export' => 'conversations/*.json#ai_assist_feedback'],
         'conversation_draft_refinements' => [
             'erasure' => 'deleted by cascade from the conversation; also expires after 15 minutes and cascades on owning agent/account deletion',
             'export' => 'not exported: private unsent agent input, source proofs and unaccepted preview are transient composer work, never a visitor support record',

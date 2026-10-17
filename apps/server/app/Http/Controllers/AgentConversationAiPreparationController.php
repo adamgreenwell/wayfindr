@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Article;
 use App\Models\Conversation;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\AssistFeedback;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
 use App\Support\Conversations\ConversationReturnPath;
@@ -48,8 +49,12 @@ final class AgentConversationAiPreparationController extends Controller
         abort_unless($request->expectsJson(), 406);
         $input = $request->validate(['generation' => ['required', 'uuid']]);
 
-        return $this->json(fn () => app(AiAssistPreparation::class)->use($request->user(),
-            $this->conversation($request, $supportCode), self::TASKS[$task], $input['generation']));
+        return $this->json(function () use ($request, $supportCode, $task, $input): array {
+            $conversation = $this->conversation($request, $supportCode);
+            $state = app(AiAssistPreparation::class)->use($request->user(), $conversation, self::TASKS[$task], $input['generation']);
+
+            return $task === 'summary' ? $state : $state + ['feedback_receipt' => app(AssistFeedback::class)->receipt($request->user(), $conversation, self::TASKS[$task], $input['generation'])];
+        });
     }
 
     /** Native Manual forms join the same coordinator, preserving return context. */
@@ -107,7 +112,7 @@ final class AgentConversationAiPreparationController extends Controller
                 $output = ['article_id' => $article['id'], 'article_revision' => $article['revision'], 'text' => $article['snippet']];
             }
 
-            return ['generation' => $state['generation'], 'policy_revision' => $state['policy_revision'], ...$output];
+            return ['generation' => $state['generation'], 'policy_revision' => $state['policy_revision'], 'feedback_receipt' => app(AssistFeedback::class)->receipt($request->user(), $conversation, $purpose, $state['generation']), ...$output];
         });
     }
 

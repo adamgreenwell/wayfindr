@@ -34,6 +34,7 @@ function accountSidebarDestinations(): array
     return [
         'dashboard.account.show',
         'dashboard.account.ai-assist.show',
+        'dashboard.account.ai-assist.report',
         'dashboard.account.team.show',
         'dashboard.account.roles.index',
         'dashboard.account.security.show',
@@ -60,6 +61,7 @@ function accountSidebarCurrentEntries(): array
     return [
         'dashboard.account.show' => 'Overview',
         'dashboard.account.ai-assist.show' => 'AI Assist',
+        'dashboard.account.ai-assist.report' => 'AI Assist evidence',
         'dashboard.account.team.show' => 'Team',
         'dashboard.account.roles.index' => 'Roles',
         'dashboard.account.security.show' => 'Security',
@@ -286,11 +288,11 @@ test('the sidebar renders in the reader\'s language', function (string $locale, 
 })->with([
     'German' => ['de', 'Kontobereiche',
         ['Konto', 'Support-Inhalte', 'Arbeitsabläufe', 'Verbindungen', 'Aufsicht'],
-        ['Übersicht', 'Team', 'Rollen', 'Sicherheit', 'Artikel', 'Antwortvorlagen', 'Ticket-Labels', 'Besucherattribute', 'Automatisierungen', 'SLA-Richtlinien', 'Integrationen', 'KI-Assistenz', 'API und Webhooks', 'Audit-Protokoll', 'Betreiberzugriff'],
+        ['Übersicht', 'Team', 'Rollen', 'Sicherheit', 'Artikel', 'Antwortvorlagen', 'Ticket-Labels', 'Besucherattribute', 'Automatisierungen', 'SLA-Richtlinien', 'Integrationen', 'KI-Assistenz', 'API und Webhooks', 'KI-Assistenz: Nachweise', 'Audit-Protokoll', 'Betreiberzugriff'],
     ],
     'Italian' => ['it', 'Sezioni dell’account',
         ['Account', 'Contenuti di supporto', 'Flussi di lavoro', 'Connessioni', 'Supervisione'],
-        ['Panoramica', 'Team', 'Ruoli', 'Sicurezza', 'Articoli', 'Modelli di risposta', 'Etichette dei ticket', 'Attributi dei visitatori', 'Automazioni', 'Criteri SLA', 'Integrazioni', 'Assistente IA', 'API e webhook', 'Registro di audit', 'Accesso del gestore'],
+        ['Panoramica', 'Team', 'Ruoli', 'Sicurezza', 'Articoli', 'Modelli di risposta', 'Etichette dei ticket', 'Attributi dei visitatori', 'Automazioni', 'Criteri SLA', 'Integrazioni', 'Assistente IA', 'API e webhook', 'Evidenze AI Assist', 'Registro di audit', 'Accesso del gestore'],
     ],
 ]);
 

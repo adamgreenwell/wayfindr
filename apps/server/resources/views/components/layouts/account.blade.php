@@ -60,13 +60,14 @@
                 // Readable by every member; the page itself decides what a
                 // viewer without ManageIntegrations may change.
                 ['label' => __('account_shell.sections.integrations'), 'href' => route('dashboard.account.integrations'), 'visible' => $accountMember, 'active' => request()->routeIs('dashboard.account.integrations')],
-                ['label' => __('account_shell.sections.ai_assist'), 'href' => route('dashboard.account.ai-assist.show'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageAiConnections), 'active' => request()->routeIs('dashboard.account.ai-assist.*')],
+                ['label' => __('account_shell.sections.ai_assist'), 'href' => route('dashboard.account.ai-assist.show'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageAiConnections), 'active' => request()->routeIs('dashboard.account.ai-assist.*') && !request()->routeIs('dashboard.account.ai-assist.report')],
                 ['label' => __('account_shell.sections.api'), 'href' => route('dashboard.account.api-tokens.index'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageIntegrations), 'active' => request()->routeIs('dashboard.account.api-tokens.*')],
             ],
         ],
         [
             'label' => __('account_shell.groups.oversight'),
             'sections' => [
+                ['label' => __('assist_observability.report.heading'), 'href' => route('dashboard.account.ai-assist.report'), 'visible' => $accountCan(\App\Enums\AccountPermission::ViewAudit), 'active' => request()->routeIs('dashboard.account.ai-assist.report')],
                 ['label' => __('account_shell.sections.audit'), 'href' => route('dashboard.account.audit.index'), 'visible' => $accountCan(\App\Enums\AccountPermission::ViewAudit), 'active' => request()->routeIs('dashboard.account.audit.*')],
                 ['label' => __('account_shell.sections.operator_access'), 'href' => route('dashboard.account.break-glass.index'), 'visible' => $accountCan(\App\Enums\AccountPermission::ManageOperatorAccess), 'active' => request()->routeIs('dashboard.account.break-glass.*')],
             ],

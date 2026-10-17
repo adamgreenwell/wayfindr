@@ -820,6 +820,11 @@ return [
                     'value' => '{1} Binnen :count Stunde gelöscht|[2,*] Binnen :count Stunden gelöscht',
                     'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen zuzüglich des stündlichen Abstands, denn ein Datensatz, der eine Minute nach einem Durchlauf fällig wird, wartet auf den nächsten.',
                 ],
+                'assist_observability' => [
+                    'label' => 'Beobachtungsmetadaten der KI-Assistenz',
+                    'value' => 'Betreiberkonfiguration; bei null deaktiviert',
+                    'description' => 'Der geplante Befehl wayfindr:prune-assist-observability bereinigt konfigurierte Rückmeldungen, Assistenz-Audits und abgeschlossene Verbrauchsmetadaten stündlich in Gruppen von 500. Null deaktiviert die jeweilige Richtlinie; Verbrauch erfordert mindestens 32 Tage. Aktive Übertragungs-, Parallelitäts- und Wiederholungsreservierungen sowie Tagesbudgets bleiben erhalten. Backups und Aufbewahrung beim Verarbeiter bleiben Betreiberaufgabe.',
+                ],
                 'private_refinements' => [
                     'label' => 'Private KI-Überarbeitungen',
                     'value' => '15 Minuten gültig; minütliche Bereinigung',

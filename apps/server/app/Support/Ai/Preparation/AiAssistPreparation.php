@@ -15,12 +15,14 @@ use App\Models\Conversation;
 use App\Models\ConversationCopilotReplyDraft;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotConnectionResolver;
+use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\ConversationAssistPresentation;
 use App\Support\Ai\ConversationTextContextSelector;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Grounding\ConversationGroundedReplyPresentation;
 use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Ai\Usage\AiUsagePolicy;
@@ -118,6 +120,8 @@ final readonly class AiAssistPreparation
                         // Same-key explicit replacement lets reserveFor retire
                         // its unsent hold without inventing a fresh cooldown.
                         $artifact->forceFill(['status' => 'failed'])->save();
+                        $event = ['conversation_summary' => 'ai_summary', 'conversation_reply_draft' => 'ai_reply_draft', 'conversation_knowledge_suggestion' => 'ai_knowledge_suggestion', 'conversation_ticket_suggestion' => 'ai_ticket_suggestion'][$purpose];
+                        app(SharedAssistAudit::class)->record($artifact, 'conversation.'.$event.'.failed', ['failure_code' => 'superseded']);
                         $this->syncTerminal($artifact);
                         $artifact->refresh();
                     }
@@ -162,11 +166,7 @@ final readonly class AiAssistPreparation
                     'conversation_knowledge_suggestion' => ['ai_knowledge_suggestion', 'suggestion_id'],
                     'conversation_ticket_suggestion' => ['ai_ticket_suggestion', 'suggestion_id'],
                 };
-                $requestedAudit = AuditEvent::query()->create(['account_id' => $identity->accountId, 'site_id' => $identity->siteId,
-                    'actor_type' => $actor->getMorphClass(), 'actor_id' => $actor->id,
-                    'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id,
-                    'action' => 'conversation.'.$event.'.requested',
-                    'metadata' => [$artifactKey => $artifact->id, 'generation' => $artifact->generation, 'connection_revision' => $artifact->connection_revision], 'occurred_at' => $now]);
+                $requestedAudit = app(SharedAssistAudit::class)->record($artifact, 'conversation.'.$event.'.requested', ['source_revision' => $identity->sourceRevision], connection: $connection);
 
                 try {
                     // The artifact and usage hold commit together, before enqueue.
@@ -299,7 +299,7 @@ final readonly class AiAssistPreparation
     }
 
     /** Called inside publication's usage transaction; late generations cannot withdraw a replacement. */
-    public function withdrawPublication(Model $artifact, string $code = 'context_changed'): void
+    public function withdrawPublication(Model $artifact, string $code = 'context_changed', #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
         $purpose = array_search($artifact::class, AiSupportUsage::ARTIFACTS, true);
         if ($purpose === false) {
@@ -311,6 +311,8 @@ final readonly class AiAssistPreparation
                 'source_context_fingerprint' => null, ...array_fill_keys(self::OUTPUT[$purpose], null),
             ]);
         if ($changed === 1) {
+            $event = ['conversation_summary' => 'ai_summary', 'conversation_reply_draft' => 'ai_reply_draft', 'conversation_knowledge_suggestion' => 'ai_knowledge_suggestion', 'conversation_ticket_suggestion' => 'ai_ticket_suggestion'][$purpose];
+            app(SharedAssistAudit::class)->record($artifact, 'conversation.'.$event.'.failed', ['failure_code' => $code], result: $result);
             $this->syncTerminal($artifact);
         }
     }
@@ -318,13 +320,16 @@ final readonly class AiAssistPreparation
     /** Keep legacy event names and only the admitted generation's sanitized metadata. */
     private function auditFailure(AuditEvent $requested, string $code): void
     {
-        $requested = $requested->fresh() ?? $requested;
-        AuditEvent::query()->create([
-            ...$requested->only(['account_id', 'site_id', 'actor_type', 'actor_id', 'subject_type', 'subject_id']),
-            'action' => Str::beforeLast($requested->action, '.').'.failed',
-            'metadata' => [...$requested->metadata, 'failure_code' => $code],
-            'occurred_at' => $this->clock->now(),
-        ]);
+        $fresh = $requested->fresh();
+        if ($fresh === null || ($fresh->metadata['erased'] ?? false)) {
+            return;
+        }
+        $purpose = $fresh->metadata['purpose'] ?? null;
+        $class = AiSupportUsage::ARTIFACTS[$purpose] ?? null;
+        $artifact = $class === null ? null : $class::query()->where('conversation_id', $fresh->subject_id)->where('generation', $fresh->metadata['generation'] ?? '')->first();
+        if ($artifact !== null) {
+            app(SharedAssistAudit::class)->record($artifact, Str::beforeLast($fresh->action, '.').'.failed', ['failure_code' => $code]);
+        }
     }
 
     private function receipt(AiAssistPreparationIdentity $identity): Builder

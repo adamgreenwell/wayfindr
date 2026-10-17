@@ -61,7 +61,7 @@
         record.body.dispatchEvent(new Event('input', {bubbles:true}));
         record.body.focus();
         announce(record.copy.used);
-        active.adapter.onApplied?.();
+        active.adapter.onApplied?.(active.feedbackReceipt);
     };
     const apply = async record => {
         const active = record.active;
@@ -75,6 +75,7 @@
             if (!authorityCurrent(record, active)) { invalidate(record); return; }
             if (!draftCurrent(record, active)) { invalidate(record, false); return; }
             if (!authorized(active, value) || candidateText(active, value.text) !== active.candidate) { invalidate(record); return; }
+            active.feedbackReceipt = value.feedbackReceipt;
             commit(record, active);
         } catch (error) {
             if (record.active === active) {
@@ -137,7 +138,7 @@
             if (!authorityCurrent(record, active)) { invalidate(record); return; }
             if (!draftCurrent(record, active)) { invalidate(record, false); return; }
             if (!authorized(active, fresh)) { invalidate(record); return; }
-            active.candidate = candidateText(active, fresh.text);
+            active.candidate = candidateText(active, fresh.text); active.feedbackReceipt = fresh.feedbackReceipt;
             if (!preview) { commit(record, active); return; }
             active.stage = 'preview'; active.adapter.onPreview?.(fresh);
             if (record.active !== active) return;
@@ -149,6 +150,7 @@
             }
             (record.heading || record.apply).focus();
             if (adapter.forcePreview) record.region.scrollIntoView?.({block:'nearest'});
+            active.adapter.onDisplayed?.();
         } catch (error) {
             if (record.active === active) { invalidate(record, true, record.copy.unavailable || ''); adapter.onUnavailable?.(); }
         } finally { active.busy = false; controls(record); }

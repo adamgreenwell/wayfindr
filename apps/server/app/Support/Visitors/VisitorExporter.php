@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Visitors;
 
 use App\Enums\PlatformRole;
+use App\Models\AiAssistFeedback;
 use App\Models\AiAssistPreparationReceipt;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
@@ -157,6 +158,7 @@ final class VisitorExporter
      * @var array<string, array<string, true|string>>
      */
     public const COLUMNS = [
+        'ai_assist_feedback' => ['id' => true, 'account_id' => true, 'site_id' => true, 'conversation_id' => true, 'user_id' => self::ROLE, 'purpose' => true, 'source_revision' => 'keyed source freshness proof, not visitor content', 'generation' => true, 'viewed_at' => true, 'used_at' => true, 'rejected_at' => true, 'usefulness' => true, 'correction' => true, 'revision' => true, 'created_at' => true, 'updated_at' => true],
         'visitors' => [
             'id' => true, 'site_id' => true, 'external_id' => true, 'anonymous_id' => true, 'name' => true, 'email' => true,
             'metadata' => true, 'last_seen_at' => true, 'created_at' => true, 'updated_at' => true,
@@ -301,6 +303,7 @@ final class VisitorExporter
         'conversation_message_attachments' => ['uploaded_by', 'file'],
         'cobrowse_sessions' => ['requested_by'],
         'ai_assist_preparation_receipts' => ['requested_by'],
+        'ai_assist_feedback' => ['viewer'],
         'conversation_copilot_summaries' => ['requested_by'],
         'conversation_copilot_reply_drafts' => ['requested_by'],
         'conversation_copilot_ticket_suggestions' => ['requested_by'],
@@ -579,6 +582,7 @@ final class VisitorExporter
                     ),
                     'ratings' => $this->rows(ConversationRating::query()->where('conversation_id', $id), 'conversation_ratings'),
                     'cobrowse_sessions' => $this->rows(CobrowseSession::query()->where('conversation_id', $id), 'cobrowse_sessions', $this->requestedBy(...)),
+                    'ai_assist_feedback' => $this->rows(AiAssistFeedback::query()->where('conversation_id', $id), 'ai_assist_feedback', fn ($feedback, array $row): array => [...$row, 'viewer' => $this->userRole($feedback->user_id)]),
                     'ai_preparation_receipts' => $this->rows(AiAssistPreparationReceipt::query()->where('conversation_id', $id), 'ai_assist_preparation_receipts', $this->requestedBy(...)),
                     'copilot_summaries' => $this->rows(ConversationCopilotSummary::query()->where('conversation_id', $id), 'conversation_copilot_summaries', $this->requestedBy(...)),
                     'copilot_reply_drafts' => $this->rows(ConversationCopilotReplyDraft::query()->where('conversation_id', $id), 'conversation_copilot_reply_drafts', $this->requestedBy(...)),

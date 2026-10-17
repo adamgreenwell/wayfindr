@@ -109,4 +109,5 @@
         <p class="field-help">{{ __($assistLegacyCopy.'.privacy') }}</p>
         <p class="field-help">{{ __('ai_assist.preparation.privacy') }}</p>
     @endif
+    @include('agent.conversations.partials.assist-feedback', ['feedbackTask' => $assistTask])
 </section>

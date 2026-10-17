@@ -23,6 +23,8 @@ use App\Http\Controllers\AgentAlertRealtimeReceiptController;
 use App\Http\Controllers\AgentAlertReconciliationController;
 use App\Http\Controllers\AgentAlertSoundGateController;
 use App\Http\Controllers\AgentArticleController;
+use App\Http\Controllers\AgentAssistFeedbackController;
+use App\Http\Controllers\AgentAssistReportController;
 use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
 use App\Http\Controllers\AgentAutomationRuleController;
@@ -171,6 +173,7 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/ai-assist/report', [AgentAssistReportController::class, 'show'])->middleware('throttle:12,1,ai-assist-report:')->name('dashboard.account.ai-assist.report');
     Route::get('/dashboard/account/ai-assist', [AgentAccountAiAssistController::class, 'show'])
         ->name('dashboard.account.ai-assist.show');
     foreach (['propose', 'test', 'discover', 'activate', 'enabled', 'disconnect', 'discard'] as $action) {
@@ -457,6 +460,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:ai-assist-status')->name('dashboard.conversations.assist.show');
     Route::post('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'store'])
         ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1,ai-assist-ensure:')->name('dashboard.conversations.assist.store');
+
+    Route::post('/dashboard/conversations/{supportCode}/assist-feedback/{task}', [AgentAssistFeedbackController::class, 'store'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket', 'refinement'])->middleware('throttle:120,1,ai-assist-feedback:')->name('dashboard.conversations.assist.feedback');
 
     Route::get('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'show'])
         ->middleware('throttle:60,1,ai-assist-read:')

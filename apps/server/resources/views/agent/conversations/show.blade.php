@@ -2375,6 +2375,7 @@
         </script>
     @endif
 
+    @include('agent.conversations.partials.assist-feedback-script')
     @include('agent.conversations.partials.ai-assist-script')
 
     @if ($copilotTicketSuggestionAvailable)

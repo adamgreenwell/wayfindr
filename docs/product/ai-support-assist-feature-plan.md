@@ -336,3 +336,14 @@ latency, failures, usage and customer outcomes. A connectivity probe, synthetic
 evaluation, screenshot, or merged PR does not establish deployed model quality.
 Release, deployment, live-provider testing and production activation require
 their own authorized steps.
+
+
+## Observability completion (#1175)
+
+The private audit foundation is merged through #1196 (`e84e1879`). The completion
+branch `feat/1175-ai-assist-feedback` adds shared audit provenance, explicit visible/
+inserted/rejected observations, versioned assessments, useful-draft/correction coverage,
+bounded site-scoped reports, visitor export/deletion and opt-in metadata retention.
+Qualification and review remain separate gates; #1175 stays In Progress until its
+completion PR merges. Provider quality/assistive-technology acceptance and rollout
+remain #1176. See [observability contract](../architecture/ai-assist-observability.md).

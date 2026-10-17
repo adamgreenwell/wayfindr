@@ -14,6 +14,7 @@ use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\AssistFeedback;
 use App\Support\Ai\Observability\DraftRefinementAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
@@ -172,6 +173,7 @@ final readonly class DraftRefinements
                     fn (array $source): bool => in_array($source['ref'], $row->preview['citations'] ?? [], true)));
                 if ($apply) {
                     $this->withdraw($row, 'applied');
+                    $receipt['feedback_receipt'] = app(AssistFeedback::class)->receipt($actor, $conversation, 'conversation_draft_refinement', $generation, $row->expires_at->getTimestamp());
                 }
             }
 
@@ -362,6 +364,12 @@ final readonly class DraftRefinements
         }
 
         return $deleted;
+    }
+
+    /** Read-only feedback check; caller holds the owning account/actor/parent/slot locks. */
+    public function previewIsCurrent(#[SensitiveParameter] ConversationDraftRefinement $row): bool
+    {
+        return $row->status === 'ready' && $this->current($row, $row->draft_revision);
     }
 
     private function current(#[SensitiveParameter] ConversationDraftRefinement $row, string $revision): bool

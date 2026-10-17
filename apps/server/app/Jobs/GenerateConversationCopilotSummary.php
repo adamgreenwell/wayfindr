@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\Account;
-use App\Models\AuditEvent;
 use App\Models\ConversationCopilotSummary;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
+use App\Support\Ai\Usage\AiUsageLedger;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -70,7 +72,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
         if (! $this->policyIsCurrent($summary)) {
             $this->cancelBeforeProvider($summary);
-            $this->recordFailure($summary, 'policy_changed');
+            $this->recordFailure($summary, 'policy_changed', $result);
 
             return;
         }
@@ -83,7 +85,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
         // leave this installation.
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('view', $conversation)) {
             $this->cancelBeforeProvider($summary);
-            $this->recordFailure($summary, 'access_revoked');
+            $this->recordFailure($summary, 'access_revoked', $result);
 
             return;
         }
@@ -93,7 +95,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
             if ($context === null) {
                 $this->cancelBeforeProvider($summary);
-                $this->recordFailure($summary, 'no_messages');
+                $this->recordFailure($summary, 'no_messages', $result);
 
                 return;
             }
@@ -136,7 +138,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
             if (! Gate::forUser($requester)->allows('view', $conversation)) {
                 $this->cancelBeforeProvider($summary);
-                $this->recordFailure($summary, 'access_revoked');
+                $this->recordFailure($summary, 'access_revoked', $result);
 
                 return;
             }
@@ -144,14 +146,14 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $summary->connection_revision !== $connection->revision) {
                 $this->cancelBeforeProvider($summary);
-                $this->recordFailure($summary, 'connection_changed');
+                $this->recordFailure($summary, 'connection_changed', $result);
 
                 return;
             }
 
             if (! $this->policyIsCurrent($summary)) {
                 $this->cancelBeforeProvider($summary);
-                $this->recordFailure($summary, 'policy_changed');
+                $this->recordFailure($summary, 'policy_changed', $result);
 
                 return;
             }
@@ -161,7 +163,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
             if ($output === '') {
                 $result->settle('invalid_output');
-                $this->recordFailure($summary, 'empty_output');
+                $this->recordFailure($summary, 'empty_output', $result);
 
                 return;
             }
@@ -185,7 +187,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 }
 
                 if (! $this->policyIsCurrent($summary)) {
-                    $this->recordFailure($summary, 'policy_changed');
+                    $this->recordFailure($summary, 'policy_changed', $result);
 
                     return;
                 }
@@ -193,13 +195,13 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 $conversation = $summary->conversation;
                 $requester = $summary->requestedBy;
                 if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('view', $conversation)) {
-                    $this->recordFailure($summary, 'access_revoked');
+                    $this->recordFailure($summary, 'access_revoked', $result);
 
                     return;
                 }
 
                 if (! $connections->isCurrent($accountId, $summary->connection_revision)) {
-                    $this->recordFailure($summary, 'connection_changed');
+                    $this->recordFailure($summary, 'connection_changed', $result);
 
                     return;
                 }
@@ -229,7 +231,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                         'model' => mb_substr($result->model, 0, 255),
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
-                    ]);
+                    ], $result);
                 }
             }));
         } catch (Throwable $exception) {
@@ -251,7 +253,7 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
             $code = is_string($summary->preparation_fingerprint) && $exception instanceof AiNetworkException
                 && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
                 ? $exception->reason : 'provider';
-            $this->recordFailure($summary, $code);
+            $this->recordFailure($summary, $code, $result);
         }
     }
 
@@ -298,9 +300,9 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
         }
     }
 
-    private function recordFailure(ConversationCopilotSummary $summary, string $code): void
+    private function recordFailure(ConversationCopilotSummary $summary, string $code, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        DB::transaction(function () use ($code, $summary): void {
+        app(AiUsageLedger::class)->withAccountUsageLock((int) $summary->conversation?->site?->account_id, function () use ($code, $summary, $result): void {
             $updated = ConversationCopilotSummary::query()
                 ->whereKey($summary->id)
                 ->where('generation', $this->generation)
@@ -318,35 +320,14 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 app(AiAssistPreparation::class)->syncTerminal($summary);
                 $this->audit($summary, 'conversation.ai_summary.failed', [
                     'failure_code' => $code,
-                ]);
+                ], $result);
             }
         });
     }
 
     /** @param  array<string, int|string|null>  $metadata */
-    private function audit(ConversationCopilotSummary $summary, string $action, array $metadata): void
+    private function audit(#[\SensitiveParameter] ConversationCopilotSummary $summary, string $action, #[\SensitiveParameter] array $metadata, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        $conversation = $summary->conversation;
-
-        if ($conversation === null) {
-            return;
-        }
-
-        AuditEvent::query()->create([
-            'account_id' => $conversation->site?->account_id,
-            'site_id' => $conversation->site_id,
-            'actor_type' => $summary->requestedBy?->getMorphClass(),
-            'actor_id' => $summary->requested_by_id,
-            'subject_type' => $conversation->getMorphClass(),
-            'subject_id' => $conversation->id,
-            'action' => $action,
-            'metadata' => [
-                'summary_id' => $summary->id,
-                'generation' => $this->generation,
-                'connection_revision' => $summary->connection_revision,
-                ...$metadata,
-            ],
-            'occurred_at' => AiSupportUsage::lifecycleNow($summary),
-        ]);
+        app(SharedAssistAudit::class)->record($summary, $action, $metadata, result: $result);
     }
 }
