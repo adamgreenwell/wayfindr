@@ -70,6 +70,8 @@ test('the localized panel integrates source inspection disclosures and one AI li
     expect($connectionLinks)->toBe($manager ? 1 : 0)
         ->and(DB::table('ai_usage_attempts')->count())->toBe($before)
         ->and($provider->calls)->toBe(1);
+    $refinementCopy = json_decode($xpath->query('//*[@data-draft-refinement]')->item(0)->getAttribute('data-copy'), true, 8, JSON_THROW_ON_ERROR);
+    expect($refinementCopy['browser_unavailable'])->toBe(__('ai_assist.refinement.browser_unavailable'));
     $response->assertSee(__('ai_assist.rail.how'))->assertSee(__('ai_assist.rail.refinement'))->assertSee('synthetic-A')
         ->assertDontSee('synthetic-not-a-secret')->assertDontSee('models.example.test');
     Queue::assertNothingPushed();

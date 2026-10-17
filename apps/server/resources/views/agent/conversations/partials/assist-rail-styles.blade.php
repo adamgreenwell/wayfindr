@@ -48,6 +48,11 @@
     }
     .conversation-assist-section .section-header { padding: 0; border: 0; }
     .conversation-assist-rail .button { border-radius: 0; }
+    .assist-feedback-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+    .assist-feedback-controls > .field { margin: 0; min-width: 0; }
+    .assist-feedback-controls label { display: grid; gap: 6px; margin: 0; }
+    .assist-feedback-controls select { min-width: 0; max-width: 100%; border-radius: 0; padding: 8px; font-size: .875rem; }
+    .assist-feedback-controls > button { justify-self: start; max-width: 100%; white-space: normal; text-align: start; }
     .conversation-assist-rail [data-assist-section="reply"] [data-ai-use],
     .conversation-assist-rail [data-assist-section="reply"] [data-copilot-reply-draft-use] {
         background: var(--text);

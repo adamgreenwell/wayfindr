@@ -303,6 +303,7 @@ return [
         'preview' => 'Preview refinement',
         'cancel' => 'Cancel refinement',
         'preparing' => 'Preparing your private preview. Your draft is unchanged.',
+        'browser_unavailable' => 'Private previews are not supported in this browser context. Use an up-to-date browser over HTTPS. Your draft is unchanged.',
         'unavailable' => 'Refinement is unavailable or was withheld. Your draft is unchanged.',
         'stale' => 'Your draft, sources or connection changed, or the preview expired. Your current text is preserved; start a new refinement.',
         'cancelled' => 'Refinement cancelled. Your draft is unchanged.',

@@ -9,13 +9,13 @@ const {JSDOM} = createRequire(path.join(root, 'packages/widget-js/package.json')
 const original = '  It may take 3 days.\nExact <original> & spacing.  ';
 const candidate = '  It might take 3 days.\n<literal> proposal.  ';
 const generation = '22222222-2222-4222-8222-222222222222';
-const copy = {preparing:'Preparing private preview.',stale:'Changed; current text preserved.',cancelled:'Cancelled; draft preserved.',unavailable:'Unavailable; draft preserved.',applied:'Applied; Send is separate.',cooldown:'Wait before retrying.',review_help:'Review facts before Apply.',sources:'Published guidance used'};
+const copy = {preparing:'Preparing private preview.',stale:'Changed; current text preserved.',cancelled:'Cancelled; draft preserved.',unavailable:'Unavailable; draft preserved.',browser_unavailable:'Use an up-to-date browser over HTTPS. Draft preserved.',applied:'Applied; Send is separate.',cooldown:'Wait before retrying.',review_help:'Review facts before Apply.',sources:'Published guidance used'};
 const reviewCopy = {previewed:'Preview ready.',used:'Inserted.',cancelled:'Preview cancelled.',invalid:'Changed; start a new preview.',unavailable:'Preview unavailable.'};
 const attr = value => JSON.stringify(value).replaceAll('&','&amp;').replaceAll('"','&quot;');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const script = name => fs.readFileSync(path.join(partials,name+'.blade.php'),'utf8').replace(/<\/?script>/g,'');
 
-async function fixture(t, {available=true, sources=[]}={}) {
+async function fixture(t, {available=true, sources=[], uuidAvailable=true}={}) {
   const dom = new JSDOM(`<main data-workspace><div data-reply-shell>
     <form data-reply-composer><input name="_token" value="synthetic-csrf"><textarea data-reply-body lang="de"></textarea>
     <select data-template-picker><option value="">Custom</option><option value="chosen" selected>Chosen template</option></select>
@@ -32,7 +32,7 @@ async function fixture(t, {available=true, sources=[]}={}) {
   const {window} = dom, requests=[], timers=[], announcements=[], feedbackUses=[], feedbackViews=[]; window.wayfindrAssistFeedback={used:(...args)=>feedbackUses.push(args),viewed:(...args)=>feedbackViews.push(args)};
   let time=0, uuid=0, sends=0, storageWrites=0;
   Object.defineProperty(window.performance,'now',{value:()=>time});
-  Object.defineProperty(window.crypto,'randomUUID',{value:()=>`11111111-1111-4111-8111-${String(++uuid).padStart(12,'0')}`});
+  Object.defineProperty(window.crypto,'randomUUID',{value:uuidAvailable?()=>`11111111-1111-4111-8111-${String(++uuid).padStart(12,'0')}`:undefined});
   window.setTimeout=(fn,delay)=>{const timer={id:timers.length+1,fn,delay,cleared:false};timers.push(timer);return timer.id;};
   window.clearTimeout=id=>{const timer=timers.find(timer=>timer.id===id);if(timer)timer.cleared=true;};
   window.Storage.prototype.setItem=()=>{storageWrites++;throw new Error('Private text must not enter browser storage.');};
@@ -63,6 +63,18 @@ async function fixture(t, {available=true, sources=[]}={}) {
     advance(ms){time+=ms;}
   };
 }
+
+test('unsupported browser contexts explain disabled Preview while preserving the unsent draft and ordinary Send',async t=>{
+  const f=await fixture(t,{uuidAvailable:false});
+  assert.equal(f.buttons.request.disabled,true);
+  assert.equal(f.status.textContent,copy.browser_unavailable);
+  f.edit('A different unsent human draft.');f.buttons.request.click();
+  assert.equal(f.body.value,'A different unsent human draft.');
+  assert.equal(f.status.textContent,copy.browser_unavailable);
+  assert.equal(f.requests.length,0);assert.equal(f.sends(),0);assert.equal(f.storageWrites(),0);
+  assert.equal(f.shell.querySelector('[data-reply-submit]').disabled,false);
+  assert.equal(f.announcements.length,0,'Initial unavailability must not add live-region chatter.');
+});
 
 test('opening the conversation sends no unsent text; explicit Preview sends only its bounded operation payload',async t=>{
   const f=await fixture(t);assert.equal(f.requests.length,0);await f.grant();
