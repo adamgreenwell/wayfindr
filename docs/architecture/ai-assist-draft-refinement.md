@@ -219,6 +219,16 @@ submission, offline/reconnect and navigation withdraw stale work. Status polling
 continues while the preview is visible. A monotonic client timer cannot extend
 server expiry. No background completion inserts text; ordinary Send stays separate.
 
+## Content-free lifecycle audits
+
+The first [#1175 audit slice](ai-assist-observability.md) records admitted private
+work through explicit content-free state events. The metadata uses opaque model/route
+identities and reported token counts, never input, preview, passages or raw errors.
+Apply authorization is not a measured Use. Metadata-only grants and polls are not
+work/adoption events. Existing account/site audit visibility, visitor export and
+erasure scrubbing apply. Expiry auditing/deletion processes at most 500 private slots
+per run; fixed expiry and the separate send-claim uncertainty window remain unchanged.
+
 ## Operations, migration and rollback
 
 From `apps/server`, the owned disposable fixture verified:
