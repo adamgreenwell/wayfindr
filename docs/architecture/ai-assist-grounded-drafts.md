@@ -2,9 +2,10 @@
 
 The [#1172](https://github.com/adamgreenwell/wayfindr/issues/1172) selection/parser
 foundation merged in [#1192](https://github.com/adamgreenwell/wayfindr/pull/1192).
-The completion branch integrates it with private reply preparation. This describes
+Completion merged in [#1193](https://github.com/adamgreenwell/wayfindr/pull/1193),
+integrating it with private reply preparation. This describes
 development source, not a released build or a current-model quality qualification.
-Refinement generation remains #1173.
+Refinement generation remains [#1173](ai-assist-draft-refinement.md).
 
 ## Consent and bounded selection
 
