@@ -107,9 +107,11 @@ submitted provider prompt or a shared cache entry.
 
 Draft and output text must contain a character beyond Unicode whitespace; valid
 text retains its exact surrounding spaces and line breaks. Unicode control
-characters are refused except for tabs, carriage returns and line feeds. Candidate text is
-nonblank UTF-8 within the real 4,000-character composer limit;
-whitespace is retained exactly for later review. Citations are unique refs from
+characters are refused except for tabs, carriage returns and line feeds.
+Candidate text is nonblank UTF-8 within the real 4,000-character composer limit;
+whitespace is retained exactly for later review. The 64 KiB JSON envelope admits
+fully escaped supplementary characters in both the candidate and 1,000-character
+limitation while bounding parsing work. Citations are unique refs from
 the exact supplied selection, empty when none are used. A limitation is null or
 a nonblank bounded explanation. Malformed/duplicate keys, escaped duplicate keys,
 extra fields, invented refs/URLs, invalid types and oversized envelopes/candidates

@@ -13,7 +13,8 @@ use stdClass;
 /** Strict shape and known-source membership; semantic preservation needs separate validation. */
 final class DraftRefinementOutputParser
 {
-    private const MAX_BYTES = 32768;
+    /** 5,000 characters at 12 bytes per escaped surrogate pair, plus keys and citations. */
+    private const MAX_BYTES = 65536;
 
     public function parse(#[SensitiveParameter] string $output, #[SensitiveParameter] array $suppliedSources): ?DraftRefinementProposal
     {

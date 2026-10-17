@@ -125,7 +125,7 @@ test('refinement output rejects duplicate escaped keys and nonobjects without tr
     '{"candidate":"A","candi\u0064ate":"B","citations":[],"limitation":null}',
     '{"candidate":"A","citations":[],"limitation":null,"limitation":"Hidden"}',
     "```json\n{\"candidate\":\"A\",\"citations\":[],\"limitation\":null}\n```",
-    str_repeat(' ', 32769).'{"candidate":"A","citations":[],"limitation":null}',
+    str_repeat(' ', 65537).'{"candidate":"A","citations":[],"limitation":null}',
 ]);
 
 test('refinement parsing retains the real composer boundary for multibyte text', function (): void {
@@ -133,6 +133,19 @@ test('refinement parsing retains the real composer boundary for multibyte text',
     $parser = new DraftRefinementOutputParser;
     expect($parser->parse(refinementContractOutput(['candidate' => $candidate]), [])->previewData()['candidate'])->toBe($candidate)
         ->and($parser->parse(refinementContractOutput(['candidate' => $candidate.'界']), []))->toBeNull();
+});
+
+test('refinement parsing admits the maximum JSON escaped supplementary text envelope', function (): void {
+    $candidate = str_repeat("\u{1F30A}", 4000);
+    $limitation = str_repeat("\u{1F4AC}", 1000);
+    $sources = array_map(fn (string $suffix): array => array_replace(refinementContractSources()[0], ['ref' => 'src-'.str_repeat($suffix, 24)]), ['a', 'b', 'c']);
+    $citations = array_column($sources, 'ref');
+    $output = refinementContractOutput(compact('candidate', 'citations', 'limitation'));
+    $parser = new DraftRefinementOutputParser;
+    expect(strlen($output))->toBeGreaterThan(32768)->toBeLessThanOrEqual(65536)
+        ->and($parser->parse($output, $sources)?->previewData())->toBe(compact('candidate', 'citations', 'limitation'))
+        ->and($parser->parse(refinementContractOutput(['candidate' => $candidate."\u{1F30A}"]), []))->toBeNull()
+        ->and($parser->parse(refinementContractOutput(['limitation' => $limitation."\u{1F4AC}"]), []))->toBeNull();
 });
 
 test('refinement parsing fails closed for malformed server source mappings', function (string $change): void {
