@@ -8,10 +8,11 @@ and the integrated #1174 acceptance audit. The accompanying
 guards and actual observed outcomes. Tester: Codex, 2026-10-17.
 
 All accounts, support text and providers were synthetic. No live model, production
-data, release, deployment or pilot was exercised. Human screen-reader and physical
-small-device acceptance is **pending**; Adam has agreed to perform it but has not
-yet supplied a result. Keep #1176 open until that evidence and candidate review/CI
-are complete. A real deployed upgrade also remains an operator acceptance step.
+data, release, deployment or pilot was exercised. Adam reports no accessibility
+or screen-reader failures using built-in macOS VoiceOver in the [human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703).
+Browser/OS/VoiceOver versions are unspecified. A physical small-device result is
+not yet identified; keep #1176 open until its device gate and completion merge.
+A real deployed upgrade also remains an operator acceptance step.
 
 ## Candidate changes
 
@@ -117,8 +118,10 @@ The temporary certificate was scoped to that preview; system trust was unchanged
 
 The selected screenshots show the corrected desktop controls and narrow German
 dark composer. Machine receipts retain dimensions/preferences and observed checks;
-they are not design mocks or a release certificate. Real screen-reader announcements,
-physical-device behavior and localized human comprehension await Adam's report.
+they are not design mocks or a release certificate. Adam subsequently reports
+accessibility/screen-reader acceptance using macOS VoiceOver. This is a human-reported pass, without a detailed spoken-announcement
+transcript or named browser/version. Physical-device behavior and localized human
+comprehension are not inferred from the browser captures.
 
 ## Predecessor acceptance audit
 
@@ -129,7 +132,7 @@ physical-device behavior and localized human comprehension await Adam's report.
 | #1168 providers | `AgentCopilotProviderTest`, `GuardedAccountAiConnectionProbeTest`; guarded routes/receipts and no hidden fallback |
 | #1169 administration | `AgentAccountAiAssistTest`, policy/UI/permission tests; native grouped setup and admin state checks |
 | #1170 lifecycle | Preparation lifecycle/identity/consent/audit/throttle suites, true concurrency, source-revision and containment tests |
-| #1171 rail | Rail/panel/source inspection suites, browser scripts, native six-state/responsive/keyboard evidence; human accessibility still pending |
+| #1171 rail | Rail/panel/source inspection suites, browser scripts, native six-state/responsive/keyboard evidence; human macOS VoiceOver pass linked above |
 | #1172 grounding | Grounded reply integration/selector/parser/reference suites and current eleven-case runtime reply evaluation |
 | #1173 refinement | Context/lifecycle/audit/safety/true concurrency suites, fourteen-case runtime evaluation and browser edit preservation |
 | #1174 usage | Complete ten-criterion mapping below |
@@ -151,8 +154,19 @@ physical-device behavior and localized human comprehension await Adam's report.
 | Fake races/revision/reset/timeout/partial usage | The PostgreSQL scoped/race runs; synthetic runtime/containment additions; no live calls |
 
 These mappings establish candidate evidence. #1174 remains open until candidate
-review/CI and merge; #1176 additionally requires the missing human results.
+review/CI and merge; #1176 additionally requires its physical-device result.
 Pilot thresholds and containment/recovery are in the
 [qualification guide](../product/ai-support-assist-qualification.md). Pilot owner,
 cohort and provider are intentionally unassigned until a separately authorized
 pilot; no processing has been activated by this qualification record.
+
+## Review and CI follow-up
+
+The runtime/UI candidate `f430c7e6c63d698394a842cf612c597b61dd91cb` passed all
+five [CI lanes](https://github.com/adamgreenwell/wayfindr/actions/runs/39064378209):
+SQLite 6,893 passed / 79,704 assertions (57 skipped, 7 deprecated), PostgreSQL
+6,943 passed / 80,311 assertions (7 skipped, 7 deprecated), widget/assets,
+repository contracts and self-hosting contracts. Both recipe-identity P2 findings
+are fixed and resolved. Later documentation-only receipts do not change the
+1,111-file runtime identity; final PR checks and merge state remain recorded in
+[#1199](https://github.com/adamgreenwell/wayfindr/pull/1199).

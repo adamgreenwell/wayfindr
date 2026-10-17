@@ -13,8 +13,10 @@ describes upgrade defaults, explicit consent and scoped management. The unified 
 foundation merged in #1194; its runtime and composer completion merged
 as #1195 after clean review and all five CI jobs passed. The #1175 audit/feedback/retention completion merged in #1197. The first #1176
 qualification slice merged in #1198 (`5954d0cf`); its completion candidate is on
-`feat/1176-ai-assist-qualification-completion`. Human screen-reader/device
-acceptance and candidate review/CI remain open.
+`feat/1176-ai-assist-qualification-completion`. Adam reports a macOS VoiceOver
+accessibility/screen-reader pass. Physical-device
+acceptance and completion merge remain open; final review/CI state is tracked in
+[#1199](https://github.com/adamgreenwell/wayfindr/pull/1199).
 The #1170 implementation, merged in [#1189](https://github.com/adamgreenwell/wayfindr/pull/1189), adds [shared preparation admission, terminal receipts, worker fencing and visible-open integration](../architecture/ai-assist-preparation-lifecycle.md), including Manual compatibility, deliberate ticket Apply, and renewed account/site approval before earlier Prepare choices can process automatically. The [#1171 rail integration](ai-support-assist-rail.md) adds the selected collapsible layout, guarded existing-draft previews, authorized source inspection, processor/context disclosure and consolidated freshness/announcements. Its foundation merged in #1190 and completion merged in #1191 after the Safari keyboard review correction, clean review and all five CI checks. The [#1172 grounding foundation](../architecture/ai-assist-grounded-drafts.md) merged in #1192 with bounded local passage selection, signed source revalidation and strict proposal/citation parsing. Completion merged in [#1193](https://github.com/adamgreenwell/wayfindr/pull/1193) after clean review and all five CI checks. It adds consented passage sharing, conservative complete-sentence evidence validation, shared worker/cache/display/Use fences and collapsible citations. Unsupported or conflicting guidance becomes a safe clarification. The [#1173 private refinement](../architecture/ai-assist-draft-refinement.md) foundation merged in #1194. Completion adds encrypted expiring owner-bound storage, guarded usage/transport, erasure-visible send admission, ID-only jobs, JSON routes and explicit clarify/shorten/tone/translate Preview/Apply/Cancel beside the composer. Exact original/edit-revision checks preserve intervening edits, policy/source changes withdraw visible previews, and ordinary Send stays separate. Completion merged in [#1195](https://github.com/adamgreenwell/wayfindr/pull/1195) after clean review and all five CI checks. The first [#1175 audit slice](../architecture/ai-assist-observability.md) adds content-free private lifecycle events with bounded expiry work and defines distinct feedback/measurement semantics. Feedback collection, shared-task audit parity, reports and retention controls merged through #1197. Real model quality and rollout remain separate qualification.
 The [behavior and data contract](ai-support-assist-contract.md) defines
 the requirements for this private, human-reviewed Assist layer. This feature
@@ -328,8 +330,10 @@ pilot decision criteria and containment/recovery procedure for #1176. Its human
 UAT and provider-quality gates remain open until executed under current identities.
 The [2026-10-17 candidate evidence](../development/ai-assist-qualification-2026-10-17.md)
 records runtime evaluations, PostgreSQL races, upgrade/containment rehearsals and
-native UI checks. Human screen-reader/physical-device results are still pending;
-the pilot profile is proposed and inactive.
+native UI checks. Adam's macOS VoiceOver pass is recorded in the
+[human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703);
+a physical-device result is not yet identified. The pilot profile is proposed and
+inactive.
 
 Use fake providers and synthetic source material for automated coverage. Verify
 the complete agent journey, connection editing and testing, multiple accounts in
@@ -355,5 +359,5 @@ The private audit foundation merged through #1196 (`e84e1879`). Completion merge
 in #1197 (`f08740c4`), adding shared audit provenance, explicit visible/
 inserted/rejected observations, versioned assessments, useful-draft/correction coverage,
 bounded site-scoped reports, visitor export/deletion and opt-in metadata retention.
-Issue #1175 is closed. Provider quality/assistive-technology acceptance and rollout
-remain #1176. See [observability contract](../architecture/ai-assist-observability.md).
+Issue #1175 is closed. #1176 records the synthetic qualification and human UAT;
+live provider quality and rollout retain their separate authorization gates. See [observability contract](../architecture/ai-assist-observability.md).

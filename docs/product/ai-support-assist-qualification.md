@@ -6,7 +6,9 @@ and [ADR 0004](../decisions/0004-ai-as-assistive-product-and-development-layer.m
 remain authoritative. Source integration, human UAT, provider quality and release
 approval are separate gates. The completion candidate is recorded in the
 [2026-10-17 evidence bundle](../development/ai-assist-qualification-2026-10-17.md).
-Human screen-reader and physical-device results remain pending. This record does
+Adam reports a macOS VoiceOver accessibility/screen-reader pass in the
+[human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703).
+Browser/version and a physical-device result remain unspecified. This record does
 not authorize release, deployment, live-provider testing or production activation.
 
 The usage foundation/integrations and first qualification slice (#1198) are
@@ -91,9 +93,12 @@ then repeat critical controls/state announcements in German and Italian. Cover
 light/dark, reduced motion, desktop and a 390-pixel-wide viewport; include a real
 small device before device acceptance. A scripted DOM assertion or screenshot
 does not count as screen-reader acceptance. The completion record separates executed HTTP, runtime, native browser and schema
-rehearsals from these human scripts. Screen-reader announcements and a real small
-device remain **unexecuted** until Adam supplies their receipts. Historical screen
-checks do not fill those gaps. Private refinement requires a modern secure browser
+rehearsals from these human scripts. Adam reports no accessibility/screen-reader
+failures using macOS VoiceOver.
+Detailed spoken announcements, browser/version, localized human comprehension
+and a real small-device result are not inferred from that report. Historical
+screen checks do not fill missing device evidence. Private refinement requires a
+modern secure browser
 context (HTTPS); unsupported contexts explain disabled Preview and preserve manual
 Send. Use a disposable HTTPS environment for the complete human journey.
 
@@ -208,7 +213,8 @@ reviewed pilot's deployed configuration and representative human assessments.
 
 The completion candidate includes current runtime evaluations, schema-upgrade/
 containment rehearsals, predecessor acceptance mapping, native browser evidence
-and the inactive pilot profile above. Remaining #1176 gates are actual human
-screen-reader/small-device results and final candidate review/CI/merge. A deployed
+and the inactive pilot profile above. Remaining #1176 gates are the physical
+small-device result and final candidate
+review/CI/merge; the human macOS VoiceOver pass is recorded above. A deployed
 upgrade, live-provider quality, pilot approval and rollout remain separately
 authorized operator evidence. This is not a completed release certificate.
