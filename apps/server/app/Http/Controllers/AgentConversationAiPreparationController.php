@@ -53,7 +53,7 @@ final class AgentConversationAiPreparationController extends Controller
             $conversation = $this->conversation($request, $supportCode);
             $state = app(AiAssistPreparation::class)->use($request->user(), $conversation, self::TASKS[$task], $input['generation']);
 
-            return $state + ['feedback_receipt' => app(AssistFeedback::class)->receipt($request->user(), $conversation, self::TASKS[$task], $input['generation'])];
+            return $task === 'summary' ? $state : $state + ['feedback_receipt' => app(AssistFeedback::class)->receipt($request->user(), $conversation, self::TASKS[$task], $input['generation'])];
         });
     }
 

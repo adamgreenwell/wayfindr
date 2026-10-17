@@ -1,10 +1,12 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Jobs\GenerateConversationCopilotSummary;
 use App\Jobs\GenerateConversationDraftRefinement;
 use App\Models\AiAssistFeedback;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\ConversationCopilotSummary;
 use App\Models\ConversationDraftRefinement;
 use App\Models\Site;
 use App\Models\User;
@@ -51,18 +53,22 @@ function feedbackReceipt(array $w, ?User $actor = null): string
 $purposes = ['conversation_summary', 'conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion'];
 test('ready polling and authorization do not invent feedback; viewer retries remain distinct', function (string $purpose): void {
     $w = feedbackReady($purpose);
-    $receipt = feedbackReceipt($w);
+    $receipt = $purpose === 'conversation_summary' ? null : feedbackReceipt($w);
     expect(AiAssistFeedback::query()->count())->toBe(0);
     for ($i = 0; $i < 3; $i++) {
         feedbackRecord($w, 'viewed');
     }
     feedbackRecord($w, 'viewed', actor: $w['agent']);
-    feedbackRecord($w, 'used', ['receipt' => $receipt]);
-    feedbackRecord($w, 'used', ['receipt' => $receipt]);
+    if ($receipt !== null) {
+        feedbackRecord($w, 'used', ['receipt' => $receipt]);
+        feedbackRecord($w, 'used', ['receipt' => $receipt]);
+    } else {
+        expect(fn () => feedbackRecord($w, 'used', ['receipt' => 'no-summary-insertion']))->toThrow(AiNetworkException::class);
+    }
     feedbackRecord($w, 'rejected');
     expect(AiAssistFeedback::query()->count())->toBe(2);
     $owner = AiAssistFeedback::query()->where('user_id', $w['owner']->id)->sole();
-    expect($owner->viewed_at)->not->toBeNull()->and($owner->used_at)->not->toBeNull()->and($owner->rejected_at)->not->toBeNull()->and($owner->usefulness)->toBeNull();
+    expect($owner->viewed_at)->not->toBeNull()->and($owner->used_at !== null)->toBe($purpose !== 'conversation_summary')->and($owner->rejected_at)->not->toBeNull()->and($owner->usefulness)->toBeNull();
     expect(AiAssistFeedback::query()->where('user_id', $w['agent']->id)->sole()->used_at)->toBeNull();
 })->with($purposes);
 
@@ -302,4 +308,43 @@ test('absent reported token counts stay unknown rather than a measured zero', fu
     $report = app(AssistReport::class)->read($w['owner']);
     expect($report['usage']['reported_input_tokens'])->toBeNull()->and($report['usage']['reported_output_tokens'])->toBeNull()
         ->and($report['usage']['reported_input_samples'])->toBe(0);
+});
+
+test('insertion rates exclude summary views and summary-only reports are not applicable', function (): void {
+    $w = feedbackReady();
+    feedbackRecord($w, 'viewed');
+    feedbackRecord($w, 'used', ['receipt' => feedbackReceipt($w)]);
+    $summary = [...$w, 'purpose' => 'conversation_summary', 'class' => ConversationCopilotSummary::class, 'job' => GenerateConversationCopilotSummary::class];
+    assistPreparationEnsure($summary, 'initial');
+    assistPreparationRun($summary);
+    $summary['generation'] = $summary['class']::query()->sole()->generation;
+    feedbackRecord($summary, 'viewed');
+    feedbackRecord($summary, 'viewed', actor: $w['agent']);
+    $all = app(AssistReport::class)->read($w['owner']);
+    expect($all['feedback']['viewed'])->toBe(3)->and($all['feedback']['use_rate'])->toBe(['numerator' => 1, 'denominator' => 1, 'rate' => 1]);
+    $onlySummary = app(AssistReport::class)->read($w['owner'], 7, 'summary');
+    expect($onlySummary['feedback']['use_rate']['rate'])->toBeNull()->and($onlySummary['feedback']['use_rate'])->toHaveKey('applicable', false);
+    $this->actingAs($w['owner'])->get(route('dashboard.account.ai-assist.report', ['task' => 'summary']))->assertOk()->assertSee('Not applicable');
+});
+
+test('summaries cannot mint or consume insertion receipts', function (): void {
+    $w = feedbackReady('conversation_summary');
+    feedbackRecord($w, 'viewed');
+    $this->actingAs($w['owner'])->getJson(route('dashboard.conversations.assist.use', ['supportCode' => $w['conversation']->support_code, 'task' => 'summary', 'generation' => $w['generation']]))->assertOk()->assertJsonMissingPath('feedback_receipt');
+    expect(fn () => feedbackRecord($w, 'used', ['receipt' => 'opaque-invalid-for-summary']))->toThrow(AiNetworkException::class);
+    expect(fn () => feedbackReceipt($w))->toThrow(AiNetworkException::class);
+    $this->actingAs($w['owner'])->postJson(route('dashboard.conversations.assist.feedback', ['supportCode' => $w['conversation']->support_code, 'task' => 'summary']), feedbackInput($w, 'used', ['receipt' => 'opaque-invalid-for-summary']))->assertUnprocessable();
+    expect(AiAssistFeedback::query()->sole()->used_at)->toBeNull();
+});
+
+test('empty article matches are admitted work but never a viewed or used suggestion', function (): void {
+    $w = assistPreparationWorld('conversation_knowledge_suggestion');
+    $w['article']->update(['title' => 'Synthetic gardening guide', 'body' => 'Synthetic gardening information.']);
+    assistPreparationEnsure($w);
+    assistPreparationRun($w);
+    $w['generation'] = $w['class']::query()->sole()->generation;
+    $state = app(AiAssistPreparation::class)->read($w['owner'], $w['conversation'], $w['purpose']);
+    expect($state['output']['articles'])->toBe([])->and($state['state'])->toBe('ready');
+    expect(fn () => feedbackRecord($w, 'viewed'))->toThrow(AiNetworkException::class);
+    expect(AiAssistFeedback::query()->count())->toBe(0);
 });

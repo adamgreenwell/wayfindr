@@ -42,12 +42,14 @@ final readonly class AssistReport
         }
         $ratio = static fn (int $n, int $d): array => ['numerator' => $n, 'denominator' => $d, 'rate' => $d === 0 ? null : $n / $d];
         $viewed = $rows->whereNotNull('viewed_at')->count();
-        $used = $rows->whereNotNull('used_at')->count();
+        $insertable = $rows->whereIn('purpose', AssistFeedback::INSERTABLE_PURPOSES);
+        $insertableViewed = $insertable->whereNotNull('viewed_at')->count();
+        $used = $insertable->whereNotNull('used_at')->count();
         $rejected = $rows->whereNotNull('rejected_at')->count();
         $assessed = $rows->whereIn('usefulness', ['useful', 'not_useful'])->count();
         $qualityResponses = $rows->whereIn('usefulness', ['useful', 'not_useful', 'unsure'])->count();
         $draftRows = $rows->whereIn('purpose', ['conversation_reply_draft', AssistFeedback::PRIVATE_PURPOSE]);
-        $corrections = $rows->whereNotNull('used_at')->whereIn('correction', ['none', 'minor', 'material']);
+        $corrections = $insertable->whereNotNull('used_at')->whereIn('correction', ['none', 'minor', 'material']);
         $generations = $audit->filter(fn ($row) => is_string($row->metadata['generation'] ?? null) && ! ($row->metadata['erased'] ?? false))->groupBy(fn ($row) => ($row->metadata['purpose'] ?? 'unknown').':'.$row->metadata['generation']);
         $work = $generations->map(function ($events): array {
             $last = $events->last();
@@ -63,7 +65,7 @@ final readonly class AssistReport
         }
         $elapsed = $work->pluck('elapsed_ms')->filter(fn ($ms) => is_int($ms))->values();
         $cohortIds = $rows->whereNotNull('viewed_at')->pluck('conversation_id')->unique()->values();
-        $usedIds = $rows->whereNotNull('used_at')->pluck('conversation_id')->unique()->values();
+        $usedIds = $insertable->whereNotNull('used_at')->pluck('conversation_id')->unique()->values();
         $outcome = static function ($ids) use ($since, $until, $ratio): array {
             $closed = 0;
             $rated = 0;
@@ -83,8 +85,8 @@ final readonly class AssistReport
         };
 
         return ['complete' => true, 'days' => $days, 'task' => $task, 'since' => $since->toIso8601String(), 'until' => $until->toIso8601String(),
-            'feedback' => ['identities' => $rows->count(), 'viewed' => $viewed, 'used' => $used, 'rejected' => $rejected, 'used_without_view' => $rows->whereNotNull('used_at')->whereNull('viewed_at')->count(),
-                'use_rate' => $ratio($rows->whereNotNull('viewed_at')->whereNotNull('used_at')->count(), $viewed),
+            'feedback' => ['identities' => $rows->count(), 'viewed' => $viewed, 'used' => $used, 'rejected' => $rejected, 'insertable_viewed' => $insertableViewed, 'used_without_view' => $insertable->whereNotNull('used_at')->whereNull('viewed_at')->count(),
+                'use_rate' => $task === 'summary' ? ['numerator' => 0, 'denominator' => 0, 'rate' => null, 'applicable' => false] : $ratio($insertable->whereNotNull('viewed_at')->whereNotNull('used_at')->count(), $insertableViewed),
                 'reject_rate' => $ratio($rows->whereNotNull('viewed_at')->whereNotNull('rejected_at')->count(), $viewed),
                 'draft_useful_rate' => $ratio($draftRows->where('usefulness', 'useful')->count(), $draftRows->whereIn('usefulness', ['useful', 'not_useful'])->count()),
                 'draft_assessment_coverage' => $ratio($draftRows->whereIn('usefulness', ['useful', 'not_useful', 'unsure'])->count(), $draftRows->whereNotNull('viewed_at')->count()),

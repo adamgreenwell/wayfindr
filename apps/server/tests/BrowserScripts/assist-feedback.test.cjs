@@ -7,8 +7,8 @@ const root=path.resolve(__dirname,'../../../..');
 const {JSDOM}=createRequire(path.join(root,'packages/widget-js/package.json'))('jsdom');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const generation='11111111-1111-4111-8111-111111111111';
-async function fixture(t,{hidden=false,closed=false,deny=false,belowFold=false}={}) {
- const markup=`<main data-tab-panel ${hidden?'hidden':''}><div data-reply-shell><details data-assist-rail ${closed?'':'open'}><summary>Assist</summary><section data-ai-assist data-task="reply" data-state="ready" data-generation="${generation}" data-initial="{}"><div data-ai-output>Human-reviewed synthetic suggestion</div><div data-assist-feedback data-feedback-url="/feedback" data-feedback-copy='{"choose":"Choose first","saved":"Saved","unavailable":"Unavailable"}'><div data-feedback-controls hidden><button type="button" data-feedback-reject>Reject</button><select data-feedback-usefulness><option value=""></option><option value="useful">Useful</option><option value="not_useful">Not useful</option><option value="unsure">Unsure</option></select><label data-feedback-correction-label hidden><select data-feedback-correction><option value="unassessed">Unknown</option><option value="none">None</option><option value="minor">Minor</option><option value="material">Material</option></select></label><button type="button" data-feedback-save>Save</button></div><p data-feedback-status></p></div></section></details></div></main>`;
+async function fixture(t,{hidden=false,closed=false,deny=false,belowFold=false,task='reply',hasArticle=false}={}) {
+ const markup=`<main data-tab-panel ${hidden?'hidden':''}><div data-reply-shell><details data-assist-rail ${closed?'':'open'}><summary>Assist</summary><section data-ai-assist data-task="${task}" data-state="ready" data-generation="${generation}" data-initial="{}"><div data-ai-output>Human-reviewed synthetic suggestion${hasArticle?'<button data-ai-use>Insert excerpt</button>':''}</div><div data-assist-feedback data-feedback-url="/feedback" data-feedback-copy='{"choose":"Choose first","saved":"Saved","unavailable":"Unavailable"}'><div data-feedback-controls hidden><button type="button" data-feedback-reject>Reject</button><select data-feedback-usefulness><option value=""></option><option value="useful">Useful</option><option value="not_useful">Not useful</option><option value="unsure">Unsure</option></select><label data-feedback-correction-label hidden><select data-feedback-correction><option value="unassessed">Unknown</option><option value="none">None</option><option value="minor">Minor</option><option value="material">Material</option></select></label><button type="button" data-feedback-save>Save</button></div><p data-feedback-status></p></div></section></details></div></main>`;
  const dom=new JSDOM(markup,{url:'https://support.example.test/conversation',runScripts:'outside-only',pretendToBeVisual:true});t.after(()=>dom.window.close());
  const {window}=dom;const requests=[],timers=[];let revision=0,used=false,rejected=false;
  window.Element.prototype.getBoundingClientRect=function(){return {top:belowFold?10000:10,bottom:belowFold?10020:30,left:0,right:200,width:200,height:20};};
@@ -50,4 +50,9 @@ test('suggestions below the viewport remain unviewed until they actually enter v
 
 test('assessment controls remain usable after viewed output scrolls above the viewport',async t=>{
  const f=await fixture(t);f.offScreen();f.timers[0]();await flush();assert.equal(f.panel.querySelector('[data-feedback-controls]').hidden,false);assert.equal(f.requests.length,1);
+});
+
+test('empty article matches do not report a view while an actual article suggestion does',async t=>{
+ const empty=await fixture(t,{task:'knowledge'});assert.equal(empty.requests.length,0);
+ const article=await fixture(t,{task:'knowledge',hasArticle:true});assert.equal(article.requests.length,1);assert.equal(article.requests[0].event,'viewed');
 });

@@ -27,11 +27,17 @@ final readonly class AssistFeedback
 {
     public const PRIVATE_PURPOSE = 'conversation_draft_refinement';
 
+    public const INSERTABLE_PURPOSES = ['conversation_reply_draft', 'conversation_knowledge_suggestion', 'conversation_ticket_suggestion', self::PRIVATE_PURPOSE];
+
     public function __construct(private AiUsageLedger $ledger, private AiUsageClock $clock) {}
 
     /** Issued only by an already fresh Use/Apply boundary; contains no support text. */
     public function receipt(User $actor, Conversation $conversation, string $purpose, string $generation, ?int $expiry = null): string
     {
+        if (! in_array($purpose, self::INSERTABLE_PURPOSES, true)) {
+            throw new AiNetworkException('execution_identity_invalid');
+        }
+
         return Crypt::encryptString(json_encode(['v' => 1, 'account' => (int) $actor->account_id, 'site' => (int) $conversation->site_id,
             'conversation' => (int) $conversation->id, 'actor' => (int) $actor->id, 'purpose' => $purpose, 'generation' => $generation, 'source' => $this->source($conversation),
             'expires' => min($expiry ?? PHP_INT_MAX, $this->clock->now()->getTimestamp() + 60)], JSON_THROW_ON_ERROR));
@@ -41,6 +47,10 @@ final readonly class AssistFeedback
     {
         if (! $actor->account_id) {
             throw new AiNetworkException('access_revoked');
+        }
+
+        if ($input['event'] === 'used' && ! in_array($purpose, self::INSERTABLE_PURPOSES, true)) {
+            throw new AiNetworkException('execution_identity_invalid');
         }
 
         return $this->ledger->withAccountUsageLock((int) $actor->account_id, function () use ($actor, $hint, $purpose, $input): array {
@@ -72,7 +82,7 @@ final readonly class AssistFeedback
                 } catch (AuthorizationException) {
                     throw new AiNetworkException('access_revoked');
                 }
-                if (! $state['can_use'] || $state['generation'] !== $generation) {
+                if (! $state['can_use'] || $state['generation'] !== $generation || ($purpose === 'conversation_knowledge_suggestion' && ($state['output']['articles'] ?? []) === [])) {
                     throw new AiNetworkException('context_changed');
                 }
             }

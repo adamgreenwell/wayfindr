@@ -34,6 +34,7 @@ final class AgentAssistFeedbackController extends Controller
             $input['expected_revision'] = (int) $input['expected_revision'];
         }
         abort_unless($request->user()?->account_id, 404);
+        abort_if($task === 'summary' && $input['event'] === 'used', 422);
         $conversation = Conversation::query()->where('support_code', $supportCode)->firstOrFail();
         $purpose = $task === 'refinement' ? AssistFeedback::PRIVATE_PURPOSE : AgentConversationAiPreparationController::TASKS[$task];
         try {

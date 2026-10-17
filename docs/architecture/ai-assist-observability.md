@@ -97,6 +97,10 @@ feedback admission. Erasure/supersession and duplicate delivery must be tested u
 independent transactions, including completion after deletion.
 
 Reports show distinct viewed/used/rejected counts and explicit numerators/denominators.
+Insertion adoption includes only viewed reply/article/ticket/private-refinement outputs.
+Summary views remain exposure/quality signals and never dilute insertion adoption; a
+summary-only insertion rate is not applicable. Empty article matches are admitted work
+but have no suggestion to view, use or reject. Summary insertion receipts are refused.
 Use and reject can both occur for the same generation; their percentages need not sum
 to 100. A zero denominator yields no rate, not zero percent. Bound report windows and
 queries, enforce current visible-site scope, and disclose missing observations rather
@@ -216,6 +220,7 @@ php artisan wayfindr:prune-assist-observability --dry-run
 ```
 
 Set the environment variables through the installation's normal environment/config-cache
-workflow; self-hosted containers already load the shared runtime env_file. Run the real
+workflow; self-hosted containers already load the shared runtime env_file. Both the committed
+environment example and installer generator include the same disabled defaults. Run the real
 command only after choosing and reviewing the intended policy. This feature does not
 activate a processor, deploy, release, or impose a retention policy on existing operators.

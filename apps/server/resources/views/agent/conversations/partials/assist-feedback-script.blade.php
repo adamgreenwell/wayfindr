@@ -84,7 +84,7 @@
         let state; try { state = JSON.parse(panel.dataset.initial); } catch (_) {}
         const generation = panel.dataset.generation || state?.generation;
         const output = panel.querySelector('[data-ai-output]');
-        if (panel.dataset.state === 'ready' && output?.textContent.trim()) {
+        if (panel.dataset.state === 'ready' && output?.textContent.trim() && (panel.dataset.task !== 'knowledge' || output.querySelector('[data-ai-use]'))) {
             if (visible(output)) viewed(panel, generation, output);
             else { const record = mount(panel); if (record) record.root.querySelector('[data-feedback-controls]').hidden = record.generation !== generation; }
         } else { const record = mount(panel); if (record) record.root.querySelector('[data-feedback-controls]').hidden = true; }
