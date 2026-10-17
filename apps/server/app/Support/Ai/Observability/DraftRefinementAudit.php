@@ -71,6 +71,7 @@ final readonly class DraftRefinementAudit
         }
         $route = is_array($route) ? $route : [];
         $operation = $row->operation;
+        $reported = $result?->isGuarded() === true ? $result : null;
         AuditEvent::query()->create(['account_id' => $row->account_id, 'site_id' => $conversation->site_id,
             'actor_type' => $actor->getMorphClass(), 'actor_id' => $actor->id,
             'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id, 'action' => $action,
@@ -84,7 +85,7 @@ final readonly class DraftRefinementAudit
                 'model_tag' => $this->digest($route['model_tag'] ?? null), 'route_tag' => $this->digest($route['route_tag'] ?? null),
                 'elapsed_ms' => $this->duration($row->requested_at, $this->clock->now()),
                 'queue_ms' => $this->duration($row->requested_at, $row->started_at),
-                'reported_input_tokens' => $this->tokens($result?->promptTokens), 'reported_output_tokens' => $this->tokens($result?->completionTokens),
+                'reported_input_tokens' => $this->tokens($reported?->promptTokens), 'reported_output_tokens' => $this->tokens($reported?->completionTokens),
                 'failure_code' => $reason === null ? null : (in_array($reason, self::REASONS, true) ? $reason : 'other')],
             'occurred_at' => $this->clock->now()]);
     }

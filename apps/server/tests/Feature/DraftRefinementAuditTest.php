@@ -262,3 +262,30 @@ test('per-run expiry work is bounded and content-free grants do not inflate life
     expect($s->cleanup())->toBe(1)->and(ConversationDraftRefinement::query()->count())->toBe(0);
     expect(refinementAuditEvents()->pluck('metadata.state')->all())->toBe(['requested', 'expired']);
 });
+
+test('rejected or stale guarded responses retain reported usage in their terminal audit', function (string $outcome): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $r = app(DraftRefinements::class)->request($w['agent'], $w['conversation'], refinementLifecycleInput());
+    $provider = match ($outcome) {
+        'parse' => refinementLifecycleProvider(output: fn () => 'PRIVATE-MALFORMED-RESPONSE'),
+        'safety' => refinementLifecycleProvider(output: fn () => '{"candidate":"It takes 5 days.","citations":[],"limitation":null}'),
+        'stale' => refinementLifecycleProvider(fn () => $w['article']->update(['body' => 'Changed before publication.'])),
+    };
+    refinementAuditRun($r, $provider);
+    $event = refinementAuditEvents()->last();
+    expect($event->metadata['state'])->toBe($outcome === 'stale' ? 'stale' : 'failed')
+        ->and($event->metadata['reported_input_tokens'])->toBe(3)->and($event->metadata['reported_output_tokens'])->toBe(4);
+    $attempt = DB::table('ai_usage_attempts')->where('attempt_id', $r['generation'])->sole();
+    expect((int) $attempt->reported_input_tokens)->toBe(3)->and((int) $attempt->reported_output_tokens)->toBe(4);
+    expect(json_encode($event->metadata))->not->toContain('PRIVATE-MALFORMED', 'It takes 5 days', 'Changed before publication');
+})->with(['parse', 'safety', 'stale']);
+
+test('unguarded response claims remain unknown and never copy response text into failure audit', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $s = app(DraftRefinements::class);
+    $r = $s->request($w['agent'], $w['conversation'], refinementLifecycleInput());
+    $row = ConversationDraftRefinement::query()->sole();
+    $s->fail((int) $row->id, $r['generation'], 'invalid_output', new AgentCopilotResult('PRIVATE-UNGUARDED-TEXT', 'PRIVATE-PROVIDER', 'PRIVATE-MODEL', 3, 4));
+    expect(refinementAuditEvents()->last()->metadata)->toMatchArray(['reported_input_tokens' => null, 'reported_output_tokens' => null]);
+    expect(json_encode(refinementAuditEvents()->pluck('metadata')))->not->toContain('PRIVATE-UNGUARDED', 'PRIVATE-PROVIDER', 'PRIVATE-MODEL');
+});

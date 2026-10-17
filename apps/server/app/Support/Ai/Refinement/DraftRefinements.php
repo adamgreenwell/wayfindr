@@ -300,7 +300,7 @@ final readonly class DraftRefinements
             if ($row === null || ! $this->current($row, $row->draft_revision) || ! $result->isGuarded()
                 || ! DB::table('ai_usage_attempts')->where('attempt_id', $generation)->whereIn('state', ['dispatched', 'unknown'])->whereNotNull('dispatch_nonce')->exists()) {
                 if ($row !== null) {
-                    $this->withdraw($row, 'stale', 'context_changed');
+                    $this->withdraw($row, 'stale', 'context_changed', $result);
                 }
                 $result->settle('invalid_output');
 
@@ -310,7 +310,7 @@ final readonly class DraftRefinements
                 'completed_at' => $this->clock->now(), 'failure_code' => null])->save();
             // Recheck both sides of publication, under the same lock as settlement.
             if (! $this->current($row->fresh(['conversation.site', 'requestedBy']), $row->draft_revision)) {
-                $this->withdraw($row, 'stale', 'context_changed');
+                $this->withdraw($row, 'stale', 'context_changed', $result);
                 $result->settle('invalid_output');
             } else {
                 $result->settle('completed');
@@ -319,15 +319,15 @@ final readonly class DraftRefinements
         });
     }
 
-    public function fail(int $id, string $generation, string $code): void
+    public function fail(int $id, string $generation, string $code, #[SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
         $hint = ConversationDraftRefinement::query()->find($id);
         if ($hint !== null) {
-            $this->locked((int) $hint->account_id, function () use ($id, $generation, $code): void {
+            $this->locked((int) $hint->account_id, function () use ($id, $generation, $code, $result): void {
                 $row = ConversationDraftRefinement::query()->whereKey($id)->where('generation', $generation)
                     ->whereIn('status', ['pending', 'running', 'ready'])->lockForUpdate()->first();
                 if ($row !== null) {
-                    $this->withdraw($row, 'failed', $code);
+                    $this->withdraw($row, 'failed', $code, $result);
                 }
             });
         }
@@ -387,9 +387,9 @@ final readonly class DraftRefinements
             ->where('conversation_id', $conversation->id)->where('generation', $generation)->lockForUpdate()->first();
     }
 
-    private function withdraw(#[SensitiveParameter] ConversationDraftRefinement $row, string $status, ?string $code = null): void
+    private function withdraw(#[SensitiveParameter] ConversationDraftRefinement $row, string $status, ?string $code = null, #[SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        app(DraftRefinementAudit::class)->record($row, $status, $code);
+        app(DraftRefinementAudit::class)->record($row, $status, $code, $result);
         if ($row->operation !== []) {
             $this->ledger->cancelReserved($row->generation, 'cancelled');
         }

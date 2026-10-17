@@ -57,7 +57,7 @@ final class GenerateConversationDraftRefinement implements ShouldBeUnique, Shoul
             $proposal = app(DraftRefinementOutputParser::class)->parse($result->text, $context->providerSources());
             if ($proposal === null || ! app(DraftRefinementSafetyGuard::class)->permits($context, $proposal)) {
                 $result->settle('invalid_output');
-                $refinements->fail($this->refinementId, $this->generation, 'invalid_output');
+                $refinements->fail($this->refinementId, $this->generation, 'invalid_output', $result);
 
                 return;
             }
@@ -71,7 +71,7 @@ final class GenerateConversationDraftRefinement implements ShouldBeUnique, Shoul
             $reason = $exception instanceof AiNetworkException && in_array($exception->reason,
                 ['connection_changed', 'access_revoked', 'context_changed', 'usage_token_limit', 'usage_request_limit', 'usage_concurrency_limit'], true)
                 ? $exception->reason : 'provider_failed';
-            $refinements->fail($this->refinementId, $this->generation, $reason);
+            $refinements->fail($this->refinementId, $this->generation, $reason, $result);
         } finally {
             if ($claimed) {
                 // A returned result proves a response. A thrown post-dispatch request may still

@@ -31,7 +31,10 @@ it is not a copied transcript or a public content digest.
 Elapsed time includes queue/review time at the recorded transition, not just model
 latency. Millisecond fields derive from second-resolution lifecycle timestamps;
 they do not establish subsecond precision. Unknown, negative or out-of-bound timing/token values remain null. Zero means
-an observed zero. No prompts, raw or scrubbed original, preview, article passages,
+an observed zero. Available guarded-response counts survive parsing/safety rejection
+and stale publication; missing or unguarded response claims remain unknown. Reports
+must group usage by generation rather than sum lifecycle events as separate calls.
+No prompts, raw or scrubbed original, preview, article passages,
 credentials, raw exceptions or free-text feedback enter these events.
 
 Writes share the existing installation/account/private-row lock order and transaction
