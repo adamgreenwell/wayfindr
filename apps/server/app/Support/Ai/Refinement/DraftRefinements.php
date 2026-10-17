@@ -59,8 +59,16 @@ final readonly class DraftRefinements
             if ($connection === null) {
                 throw new AiNetworkException('connection_changed');
             }
-            $row = $previous ?? new ConversationDraftRefinement;
             $prompt = $context->providerPrompt();
+            // Bound the nested wire JSON (including configured body metadata) before persistence.
+            // The fixed SDK wrappers fit within 5 KiB; transport still validates the actual body.
+            $wireBound = strlen(json_encode([$prompt->instructions, $prompt->input, $connection->model, $connection->openRouterProvider],
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) + 5120;
+            if ($wireBound > 65536) {
+                throw new AiNetworkException('context_unavailable');
+            }
+            $bound = $wireBound + 1024;
+            $row = $previous ?? new ConversationDraftRefinement;
             $row->forceFill(['account_id' => $actor->account_id, 'conversation_id' => $conversation->id, 'requested_by_id' => $actor->id,
                 'generation' => (string) Str::uuid(), 'draft_revision' => $input->draftRevision, 'operation' => $input->operation(),
                 'connection_revision' => $scope['connection_revision'], 'policy_revision' => $scope['policy_revision'],
@@ -70,7 +78,6 @@ final readonly class DraftRefinements
                 'requested_at' => CarbonImmutable::createFromTimestampUTC($scope['created_at']), 'expires_at' => CarbonImmutable::createFromTimestampUTC($scope['expires_at']),
                 'started_at' => null, 'completed_at' => null])->save();
             $row->load('conversation.site');
-            $bound = min(66560, strlen(json_encode([$prompt->instructions, $prompt->input], JSON_THROW_ON_ERROR)) + 5120);
             $output = min(2048, app(AiUsagePolicy::class)->forConnection($connection)->maxOutputTokens);
             $reservation = $this->ledger->reserve($connection, ConversationDraftRefinementPromptBuilder::PURPOSE,
                 $row->generation, $bound, $output, $row->work_fingerprint, (int) $actor->id,

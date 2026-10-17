@@ -142,7 +142,13 @@ browser storage, draft history, shared result or visitor-export field is added.
 Admission takes the existing installation → account usage locks, then actor,
 conversation and private row locks. It fresh-checks reply authority, effective
 policy, connection, erasure state and signed dependencies, reserves one bounded
-ledger attempt and queues only private row ID/generation. A 60-second owner/slot
+ledger attempt and queues only private row ID/generation. Before saving input or reserving usage,
+it bounds the nested UTF-8 wire representation of instructions/input and configured
+model/upstream metadata with 5 KiB for fixed SDK wrappers. An upper bound above
+65,536 bytes refuses capture; the reservation adds the final 1,024-byte usage
+guard headroom rather than clamping an oversized input into an accepted hold.
+Actual merged SDK JSON is still checked at transport. Character limits never
+override the byte cap; a fitting multibyte original stays complete. A 60-second owner/slot
 cooldown and ledger provider retry deadline prevent new UUIDs or private-data
 cleanup from evading cooldowns. Usage budgets and concurrency still apply.
 

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 use App\Jobs\GenerateConversationDraftRefinement;
 use App\Models\ConversationDraftRefinement;
+use App\Models\ConversationMessage;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\Execution\AiGuardedTransportFactory;
 use App\Support\Ai\Execution\AiRequestAuthority;
+use App\Support\Ai\Gateway\AiRequestProtocol;
 use App\Support\Ai\Network\AiDnsResolver;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Network\AiNetworkPolicy;
+use App\Support\Ai\Refinement\ConversationDraftRefinementPromptBuilder;
 use App\Support\Ai\Refinement\DraftRefinements;
 use App\Support\Ai\Usage\AiUsageLedger;
 use App\Support\Visitors\VisitorEraser;
@@ -399,3 +403,36 @@ test('the real Laravel SDK adapter runs private work only through a reserved sco
     }
     Http::assertNothingSent();
 })->with([[false, false], [true, false], [false, true]]);
+
+test('wire oversized multibyte context is refused before private persistence reservation or queueing', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $w['message']->update(['body' => str_repeat('😀', 4000)]);
+    for ($index = 0; $index < 3; $index++) {
+        ConversationMessage::factory()->for($w['conversation'])->create(['body' => str_repeat('😀', 4000)]);
+    }
+    $w['policy']->forceFill(['relevant_articles' => false, 'article_context_consent' => false, 'revision' => (string) Str::uuid()])->save();
+    $input = refinementLifecycleInput(str_repeat('😀', 2000));
+    $context = app(ConversationDraftRefinementPromptBuilder::class)->build($w['agent'], $w['conversation'], $input);
+    $prompt = $context->providerPrompt();
+    expect(mb_strlen($prompt->input))->toBeLessThanOrEqual(20000);
+    $connection = app(AgentCopilotConnectionResolver::class)->forAccount($w['account']->id);
+    $body = ['model' => $connection->model, 'messages' => [
+        ['role' => 'system', 'content' => $prompt->instructions], ['role' => 'user', 'content' => $prompt->input],
+    ], 'max_tokens' => 2048];
+    // The protocol independently confirms the actual wire representation cannot be sent.
+    expect(fn () => AiRequestProtocol::request($connection, 2048, 'POST', 'chat/completions', ['json' => $body]))
+        ->toThrow(AiNetworkException::class);
+    expect(fn () => app(DraftRefinements::class)->request($w['agent'], $w['conversation'], $input))->toThrow(AiNetworkException::class);
+    expect(ConversationDraftRefinement::query()->count())->toBe(0)->and(DB::table('ai_usage_attempts')->count())->toBe(0);
+    Queue::assertNotPushed(GenerateConversationDraftRefinement::class);
+});
+
+test('a maximum multibyte original that fits the wire remains capturable without truncation', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $draft = str_repeat('😀', 4000);
+    $receipt = app(DraftRefinements::class)->request($w['agent'], $w['conversation'], refinementLifecycleInput($draft));
+    $row = ConversationDraftRefinement::query()->sole();
+    expect($receipt['state'])->toBe('pending')->and(json_decode($row->input['input'], true)['draft'])->toBe($draft)
+        ->and(DB::table('ai_usage_attempts')->sole()->input_token_bound)->toBeLessThanOrEqual(66560);
+    Queue::assertPushed(GenerateConversationDraftRefinement::class);
+});
