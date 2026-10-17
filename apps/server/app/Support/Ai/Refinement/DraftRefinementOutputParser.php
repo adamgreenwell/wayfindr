@@ -54,7 +54,7 @@ final class DraftRefinementOutputParser
 
     private function text(mixed $value, int $maximum): bool
     {
-        return is_string($value) && mb_check_encoding($value, 'UTF-8') && preg_match('/[^\s\p{Z}]/u', $value) === 1 && mb_strlen($value) <= $maximum
+        return is_string($value) && mb_check_encoding($value, 'UTF-8') && preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', $value) === 1 && mb_strlen($value) <= $maximum
             && preg_match('/(?![\t\r\n])\p{Cc}/u', $value) !== 1;
     }
 

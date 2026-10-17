@@ -105,6 +105,35 @@ test('refinement rejects C1 controls in drafts candidates and limitations', func
     'embedded application command' => "Draft\u{009F} text.",
 ]);
 
+test('refinement rejects invisible format and mark only text', function (string $text): void {
+    expect(fn () => new DraftRefinementInput($text, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify))
+        ->toThrow(InvalidArgumentException::class);
+    $parser = new DraftRefinementOutputParser;
+    expect($parser->parse(refinementContractOutput(['candidate' => $text]), []))->toBeNull()
+        ->and($parser->parse(refinementContractOutput(['limitation' => $text]), []))->toBeNull();
+})->with([
+    'zero width space' => "\u{200B}",
+    'byte order mark' => "\u{FEFF}",
+    'soft hyphen' => "\u{00AD}",
+    'word joiner' => "\u{2060}",
+    'joiners alone' => "\u{200C}\u{200D}",
+    'variation selector alone' => "\u{FE0F}",
+    'combining accent alone' => "\u{0301}",
+    'mixed invisible text' => " \t\u{00A0}\u{200B}\u{FEFF}\u{2060}\u{FE0F}\u{0301}\r\n",
+]);
+
+test('refinement preserves format characters and combining marks in real text', function (string $text): void {
+    $input = new DraftRefinementInput($text, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify);
+    $proposal = (new DraftRefinementOutputParser)->parse(refinementContractOutput(['candidate' => $text, 'limitation' => $text]), []);
+    expect($input->draft())->toBe($text)
+        ->and($proposal?->previewData()['candidate'])->toBe($text)
+        ->and($proposal?->previewData()['limitation'])->toBe($text);
+})->with([
+    'Persian nonjoiner' => "می\u{200C}خواهم",
+    'emoji joiner and variation selector' => "\u{1F3C4}\u{200D}\u{2640}\u{FE0F}",
+    'decomposed accent' => "Cafe\u{0301}",
+]);
+
 test('refinement output rejects malformed shape fabricated citations and oversized candidates', function (array $changes): void {
     expect((new DraftRefinementOutputParser)->parse(refinementContractOutput($changes), refinementContractSources()))->toBeNull();
 })->with([

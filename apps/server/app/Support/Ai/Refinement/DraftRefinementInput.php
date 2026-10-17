@@ -26,7 +26,7 @@ final readonly class DraftRefinementInput implements JsonSerializable
         public ?string $tone = null,
         public ?string $language = null,
     ) {
-        if (strlen($draft) > 16000 || ! mb_check_encoding($draft, 'UTF-8') || preg_match('/[^\s\p{Z}]/u', $draft) !== 1
+        if (strlen($draft) > 16000 || ! mb_check_encoding($draft, 'UTF-8') || preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', $draft) !== 1
             || mb_strlen($draft) > self::MAX_CHARACTERS || preg_match('/(?![\t\r\n])\p{Cc}/u', $draft) === 1
             || ! Str::isUuid($draftRevision)) {
             throw new InvalidArgumentException('Invalid private refinement input.');

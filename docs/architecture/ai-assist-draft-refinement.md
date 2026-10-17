@@ -105,8 +105,10 @@ submitted provider prompt or a shared cache entry.
 {"candidate":"An editable private rewrite.","citations":[],"limitation":null}
 ```
 
-Draft and output text must contain a character beyond Unicode whitespace; valid
-text retains its exact surrounding spaces and line breaks. Unicode control
+Draft and output text must contain a Unicode letter, number, punctuation mark or
+symbol. Whitespace, format characters or combining marks alone are refused;
+joiners and combining marks in real text, surrounding spaces and line breaks
+are retained exactly. Unicode control
 characters are refused except for tabs, carriage returns and line feeds.
 Candidate text is nonblank UTF-8 within the real 4,000-character composer limit;
 whitespace is retained exactly for later review. The 64 KiB JSON envelope admits
