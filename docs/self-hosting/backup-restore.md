@@ -104,9 +104,8 @@ screens, those are authenticated HTTP routes, maintenance mode blocks them — a
 lifting maintenance first leaves agents unable to sign in at all, because
 reading their encrypted two-factor secret throws.
 
-**Clearing is not one operation.** Twelve columns across nine tables use
-Laravel's `encrypted` cast, and they do not all clear the same way, because five
-of them are `NOT NULL`. Setting those to `''` does not help either — the cast
+**Clearing is not one operation.** Columns using Laravel's `encrypted` cast
+do not all clear the same way: some are `NOT NULL`. Setting those to `''` does not help either — the cast
 still tries to decrypt an empty string and still throws `DecryptException`. For
 those, the row itself goes.
 
