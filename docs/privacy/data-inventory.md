@@ -127,7 +127,11 @@ long or indefinite retention windows.
 
 Explicit Preview can send the bounded, scrubbed unsent draft and permitted minimum
 context to the configured processor. Automatic preparation never receives composer
-text. `conversation_draft_refinements` retains one owner/account/conversation-bound
+text. Before sending a draft, the browser obtains a content-free, expiring
+`authorized` generation using only a UUID revision. Lost authorization replies
+leave metadata only; cancellation of a known handle also fences capture replies
+that arrive after navigation. A cancelled, deleted or superseded handle cannot
+recreate work. `conversation_draft_refinements` retains one owner/account/conversation-bound
 slot, with encrypted scrubbed prompt, encrypted scope/source proofs and encrypted
 candidate. The raw original stays in the owning browser's memory. Input clears on
 Ready and every terminal/cancel path; scope/preview clear on failure, stale, Cancel

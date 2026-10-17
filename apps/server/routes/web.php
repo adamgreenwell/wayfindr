@@ -464,6 +464,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'store'])
         ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-summary.store');
+    Route::post('/dashboard/conversations/{supportCode}/draft-refinement/authorize', [AgentConversationDraftRefinementController::class, 'authorize'])
+        ->middleware('throttle:6,1,ai-refinement-authorize:')->name('dashboard.conversations.draft-refinement.authorize');
     Route::get('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'show'])
         ->middleware('throttle:120,1,ai-refinement-read:')->name('dashboard.conversations.draft-refinement.show');
     Route::post('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'store'])

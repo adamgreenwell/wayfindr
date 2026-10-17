@@ -148,15 +148,22 @@
             sync(); if (requestButton.disabled) return;
             // Any previous shared preview is withdrawn before capturing this exact draft.
             window.wayfindrAssistDraftReview.cancel(shell);
-            const capture = {original:body.value, revision, generation:null, previewing:false, expires:now() + 900000};
+            const operation = {action:action.value, tone:action.value === 'tone' ? tone.value : null, language:action.value === 'translate' ? language.value : null};
+            const capture = {original:body.value, revision, operation, generation:null, previewing:false, expires:now() + 900000};
             active = capture; message(copy.preparing); sync();
             expiryTimer = window.setTimeout(() => { if (active === capture) clear(copy.stale); }, 900000);
             try {
-                const value = await post(panel.dataset.requestUrl, {refinement_draft:capture.original, draft_revision:capture.revision,
-                    action:action.value, tone:action.value === 'tone' ? tone.value : null, language:action.value === 'translate' ? language.value : null});
-                if (typeof value.generation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value.generation)
-                    || value.draft_revision !== capture.revision || !['pending','running'].includes(value.state)) throw new Error('unavailable');
-                capture.generation = value.generation;
+                // Only identifiers leave until a cancellable server grant has been acknowledged.
+                const grant = await post(panel.dataset.authorizeUrl, {draft_revision:capture.revision});
+                if (typeof grant.generation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(grant.generation)
+                    || grant.draft_revision !== capture.revision || grant.state !== 'authorized'
+                    || !Number.isInteger(grant.ttl_seconds) || grant.ttl_seconds <= 0 || grant.ttl_seconds > 900) throw new Error('unavailable');
+                capture.generation = grant.generation;
+                if (!matchesDraft(capture)) { cancelRemote(capture); if (active === capture) clear(copy.stale, true, false); return; }
+                const value = await post(panel.dataset.requestUrl, {generation:capture.generation, refinement_draft:capture.original,
+                    draft_revision:capture.revision, ...capture.operation});
+                if (value.generation !== capture.generation || value.draft_revision !== capture.revision
+                    || !['pending','running'].includes(value.state)) throw new Error('unavailable');
                 if (!matchesDraft(capture)) { cancelRemote(capture); if (active === capture) clear(copy.stale, true, false); return; }
                 await poll(capture);
             } catch (error) { if (active === capture) clear(error.message === 'cooldown' ? copy.cooldown : copy.unavailable); }

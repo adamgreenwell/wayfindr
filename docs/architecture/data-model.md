@@ -221,7 +221,9 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 
 - `conversation_draft_refinements`: one private slot per owning agent/conversation,
   scoped to its account, with encrypted scrubbed input, scope/source proofs and
-  candidate. Raw original text is never stored. Input clears on Ready/terminal;
+  candidate. A content-free `authorized` slot grants the browser a cancellation
+  handle before draft capture; it has an empty operation, no payload/reservation
+  and can be consumed once. Raw original text is never stored. Input clears on Ready/terminal;
   scope/preview clear on Cancel/failure/stale/Apply. Fixed 15-minute validity and
   minute cleanup bound retention. Account/conversation/user deletion cascades;
   site/visitor erasure reaches it through conversation deletion. Excluded from

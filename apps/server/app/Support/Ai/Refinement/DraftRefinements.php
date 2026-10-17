@@ -14,6 +14,7 @@ use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Ai\Usage\AiUsageLedger;
@@ -32,27 +33,62 @@ final readonly class DraftRefinements
     public function __construct(private AiUsageLedger $ledger, private AiUsageClock $clock,
         private ConversationDraftRefinementPromptBuilder $builder, private AgentCopilotConnectionResolver $connections) {}
 
-    public function request(User $actor, Conversation $conversation, #[SensitiveParameter] DraftRefinementInput $input): array
+    /** Allocate a cancellable, content-free slot before the browser sends unsent text. */
+    public function authorize(User $actor, Conversation $conversation, string $revision): array
     {
-        $row = $this->locked((int) $actor->account_id, function () use ($actor, $conversation, $input): ConversationDraftRefinement {
-            User::query()->whereKey($actor->id)->where('account_id', $actor->account_id)->lockForUpdate()->firstOrFail();
-            Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
-            $context = $this->builder->build($actor, $conversation, $input);
-            $scope = $context->sourceSnapshot();
+        if (! Str::isUuid($revision)) {
+            throw new AiNetworkException('execution_identity_invalid');
+        }
+
+        return $this->locked((int) $actor->account_id, function () use ($actor, $conversation, $revision): array {
+            $actor = User::query()->whereKey($actor->id)->where('account_id', $actor->account_id)->lockForUpdate()->firstOrFail();
+            $conversation = Conversation::query()->with('site')->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
+            $policy = app(AiAssistPolicyResolver::class)->forConversation($conversation);
+            $connection = $this->connections->forAccount((int) $actor->account_id);
+            if ($actor->isDeactivated() || ! Gate::forUser($actor)->allows('reply', $conversation)
+                || ! $policy->allows(ConversationDraftRefinementPromptBuilder::PURPOSE) || $connection === null) {
+                throw new AiNetworkException('access_revoked');
+            }
             $previous = ConversationDraftRefinement::query()->where('conversation_id', $conversation->id)
                 ->where('requested_by_id', $actor->id)->lockForUpdate()->first();
-            $retry = $previous?->requested_at?->addSeconds(60);
-            // Cooldown metadata outlives erased transient input, and cannot be bypassed with a new draft UUID.
-            $providerRetry = DB::table('ai_usage_attempts')->where('account_id', $actor->account_id)->where('requester_id', $actor->id)
-                ->where('purpose', ConversationDraftRefinementPromptBuilder::PURPOSE)
-                ->where('connection_revision', $scope['connection_revision'])->max('retry_not_before');
-            if ($providerRetry !== null) {
-                $retry = $retry === null ? CarbonImmutable::parse($providerRetry, 'UTC') : $retry->max(CarbonImmutable::parse($providerRetry, 'UTC'));
+            $this->assertRetryAllowed($previous, (int) $actor->account_id, (int) $actor->id, $connection->revision);
+            if ($previous !== null && $previous->operation !== []) {
+                $this->ledger->cancelReserved($previous->generation, 'superseded');
             }
-            if ($retry !== null && $this->clock->now()->lessThan($retry)) {
-                throw new AiNetworkException('usage_retry_cooldown', retryAfterSeconds: max(1, $retry->getTimestamp() - $this->clock->now()->getTimestamp()));
+            $row = $previous ?? new ConversationDraftRefinement;
+            $row->forceFill(['account_id' => $actor->account_id, 'conversation_id' => $conversation->id, 'requested_by_id' => $actor->id,
+                'generation' => (string) Str::uuid(), 'draft_revision' => $revision, 'operation' => [], 'status' => 'authorized',
+                'connection_revision' => $connection->revision, 'policy_revision' => $policy->revisionFor(ConversationDraftRefinementPromptBuilder::PURPOSE),
+                'work_fingerprint' => '', 'input' => null, 'scope' => null, 'preview' => null, 'failure_code' => null,
+                'requested_at' => $this->clock->now(), 'expires_at' => $this->clock->now()->addSeconds(900),
+                'started_at' => null, 'completed_at' => null])->save();
+
+            return $this->receipt($row);
+        });
+    }
+
+    public function request(User $actor, Conversation $conversation, #[SensitiveParameter] DraftRefinementInput $input, ?string $captureGeneration = null): array
+    {
+        $row = $this->locked((int) $actor->account_id, function () use ($actor, $conversation, $input, $captureGeneration): ConversationDraftRefinement {
+            User::query()->whereKey($actor->id)->where('account_id', $actor->account_id)->lockForUpdate()->firstOrFail();
+            Conversation::query()->whereKey($conversation->id)->lockForUpdate()->firstOrFail();
+            $previous = ConversationDraftRefinement::query()->where('conversation_id', $conversation->id)
+                ->where('requested_by_id', $actor->id)->lockForUpdate()->first();
+            // HTTP capture can only consume the exact live grant. Deleted, cancelled, expired
+            // or superseded grants never recreate work, even after a late request arrives.
+            if ($captureGeneration !== null && ($previous === null || $previous->generation !== $captureGeneration
+                || $previous->status !== 'authorized' || $previous->draft_revision !== $input->draftRevision
+                || ! $previous->expires_at->isAfter($this->clock->now()))) {
+                throw new AiNetworkException('execution_superseded');
             }
-            if ($previous !== null) {
+            $context = $this->builder->build($actor, $conversation, $input);
+            $scope = $context->sourceSnapshot();
+            if ($captureGeneration !== null && ($previous->connection_revision !== $scope['connection_revision']
+                || $previous->policy_revision !== $scope['policy_revision'])) {
+                throw new AiNetworkException('context_changed');
+            }
+            $this->assertRetryAllowed($previous, (int) $actor->account_id, (int) $actor->id, $scope['connection_revision']);
+            if ($previous !== null && $previous->operation !== []) {
                 $this->ledger->cancelReserved($previous->generation, 'superseded');
             }
             $connection = $this->connections->forAccount((int) $actor->account_id);
@@ -70,7 +106,7 @@ final readonly class DraftRefinements
             $bound = $wireBound + 1024;
             $row = $previous ?? new ConversationDraftRefinement;
             $row->forceFill(['account_id' => $actor->account_id, 'conversation_id' => $conversation->id, 'requested_by_id' => $actor->id,
-                'generation' => (string) Str::uuid(), 'draft_revision' => $input->draftRevision, 'operation' => $input->operation(),
+                'generation' => $captureGeneration ?? (string) Str::uuid(), 'draft_revision' => $input->draftRevision, 'operation' => $input->operation(),
                 'connection_revision' => $scope['connection_revision'], 'policy_revision' => $scope['policy_revision'],
                 'work_fingerprint' => hash_hmac('sha256', json_encode(['private-refinement-v1', $scope], JSON_THROW_ON_ERROR), (string) config('app.key')),
                 'status' => 'pending', 'input' => ['instructions' => $prompt->instructions, 'input' => $prompt->input],
@@ -318,7 +354,9 @@ final readonly class DraftRefinements
 
     private function withdraw(#[SensitiveParameter] ConversationDraftRefinement $row, string $status, ?string $code = null): void
     {
-        $this->ledger->cancelReserved($row->generation, 'cancelled');
+        if ($row->operation !== []) {
+            $this->ledger->cancelReserved($row->generation, 'cancelled');
+        }
         $row->forceFill(['status' => $status, 'input' => null, 'scope' => null, 'preview' => null,
             'failure_code' => $code, 'completed_at' => $this->clock->now()])->save();
     }
@@ -328,6 +366,20 @@ final readonly class DraftRefinements
         return ['generation' => $row->generation, 'draft_revision' => $row->draft_revision,
             'policy_revision' => $row->policy_revision, 'state' => $row->status, 'expires_at' => $row->expires_at->getTimestamp(),
             'failure_code' => $row->failure_code, 'ttl_seconds' => max(0, $row->expires_at->getTimestamp() - $this->clock->now()->getTimestamp()), 'preview' => null, 'sources' => []];
+    }
+
+    private function assertRetryAllowed(?ConversationDraftRefinement $previous, int $accountId, int $actorId, string $connectionRevision): void
+    {
+        // Allocating/cancelling a content-free grant consumes no attempt and cannot reset a captured cooldown.
+        $retry = ($previous?->operation ?? []) === [] ? null : $previous?->requested_at?->addSeconds(60);
+        $providerRetry = DB::table('ai_usage_attempts')->where('account_id', $accountId)->where('requester_id', $actorId)
+            ->where('purpose', ConversationDraftRefinementPromptBuilder::PURPOSE)->where('connection_revision', $connectionRevision)->max('retry_not_before');
+        if ($providerRetry !== null) {
+            $retry = $retry === null ? CarbonImmutable::parse($providerRetry, 'UTC') : $retry->max(CarbonImmutable::parse($providerRetry, 'UTC'));
+        }
+        if ($retry !== null && $this->clock->now()->lessThan($retry)) {
+            throw new AiNetworkException('usage_retry_cooldown', retryAfterSeconds: max(1, $retry->getTimestamp() - $this->clock->now()->getTimestamp()));
+        }
     }
 
     private function locked(int $accountId, Closure $operation): mixed

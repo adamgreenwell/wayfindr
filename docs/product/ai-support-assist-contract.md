@@ -145,7 +145,9 @@ Work is shared only when all of the following match:
 
 A requester ID is retained server-side for authorization and audit; it is not a
 reason to duplicate equivalent shared work. A different allowed input partition
-must not reuse a broader viewer's answer. Personalized draft refinement uses the
+must not reuse a broader viewer's answer. Personalized draft refinement first obtains a content-free cancellation handle
+before explicit capture sends unsent text; a lost handle acknowledgement cannot
+queue draft work. HTTP capture consumes that exact live grant once. It uses the
 agent's current draft revision, is partitioned by the owning agent and draft,
 and never overwrites shared conversation output.
 

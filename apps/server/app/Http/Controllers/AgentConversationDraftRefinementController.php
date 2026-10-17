@@ -20,18 +20,31 @@ use Throwable;
 /** JSON only: never redirect with old input or put unsent text in a URL/session. */
 final class AgentConversationDraftRefinementController extends Controller
 {
+    public function authorize(Request $request, string $supportCode, DraftRefinements $refinements): JsonResponse
+    {
+        return $this->run($request, $supportCode, function (Conversation $conversation) use ($request, $refinements): array {
+            $data = $this->json($request, ['draft_revision']);
+            if (! is_string($data['draft_revision'] ?? null) || ! Str::isUuid($data['draft_revision'])) {
+                throw new InvalidArgumentException;
+            }
+
+            return $refinements->authorize($request->user(), $conversation, $data['draft_revision']);
+        }, 201);
+    }
+
     public function store(Request $request, string $supportCode, DraftRefinements $refinements): JsonResponse
     {
         return $this->run($request, $supportCode, function (Conversation $conversation) use ($request, $refinements): array {
-            $data = $this->json($request, ['refinement_draft', 'draft_revision', 'action', 'tone', 'language']);
-            if (! is_string($data['refinement_draft'] ?? null) || ! is_string($data['draft_revision'] ?? null)
+            $data = $this->json($request, ['generation', 'refinement_draft', 'draft_revision', 'action', 'tone', 'language']);
+            if (! is_string($data['generation'] ?? null) || ! Str::isUuid($data['generation'])
+                || ! is_string($data['refinement_draft'] ?? null) || ! is_string($data['draft_revision'] ?? null)
                 || ! is_string($data['action'] ?? null) || ($action = DraftRefinementAction::tryFrom($data['action'])) === null
                 || (isset($data['tone']) && ! is_string($data['tone'])) || (isset($data['language']) && ! is_string($data['language']))) {
                 throw new InvalidArgumentException;
             }
             $input = new DraftRefinementInput($data['refinement_draft'], $data['draft_revision'], $action, $data['tone'] ?? null, $data['language'] ?? null);
 
-            return $refinements->request($request->user(), $conversation, $input);
+            return $refinements->request($request->user(), $conversation, $input, $data['generation']);
         }, 202);
     }
 

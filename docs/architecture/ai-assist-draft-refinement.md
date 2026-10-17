@@ -173,12 +173,32 @@ already sent to a processor. See ADR 0026 and the privacy inventory.
 ## HTTP and composer boundaries
 
 Authenticated JSON-only routes under the conversation support code provide
-POST capture, GET status, POST Apply and POST Cancel. Mutations use normal web
-CSRF protection. Capture is throttled separately from status/actions and ordinary
-Send. Responses and errors use `no-store, private`. The controller reads bounded
+POST authorize, POST capture, GET status, POST Apply and POST Cancel. Mutations use normal web
+CSRF protection. Authorization and capture each have a separate six-per-minute
+throttle; status/actions and ordinary Send remain independent. Responses and errors use `no-store, private`. The controller reads bounded
 raw JSON to preserve exact whitespace and never flashes private draft input into
 old input/session history. Status/Apply/Cancel accept opaque generation and draft
 revision only; no client-supplied prompt or candidate is trusted.
+
+On explicit Preview, the browser first posts only its UUID draft revision to
+`authorize`. This creates a content-free `authorized` slot with an opaque generation,
+current policy/connection revisions, an empty operation and a 15-minute expiry.
+It performs no prompt construction, transcript/article retrieval, usage reservation
+or queue dispatch. Only after acknowledging that handle and rechecking the exact
+live composer may the browser post draft text and operation to capture. Capture
+consumes the exact owning, unexpired grant once, checks its revision and current
+policy/connection, and transitions the same generation to pending. Unknown,
+cancelled, deleted or superseded grants never recreate work.
+
+The known handle lets hidden/navigation/Cancel paths send identifier-only keepalive
+cancellation before capture acknowledges. If the authorization response itself is
+lost or the document is destroyed beforehand, no draft has left the browser and
+only expiring metadata remains. Both capture and cancellation serialize under the
+account lock, so cancellation before capture refuses it; cancellation after capture
+withdraws queued content. Already dispatched requests retain the bounded send-claim
+window. Metadata-only grants reserve no usage and cannot reset an earlier captured
+60-second cooldown or the ledger's provider retry deadline. The internal trusted
+service retains its one-shot admission path; HTTP capture always requires a grant.
 
 Status and Apply fresh-check the owning agent's reply authority, active generation,
 revision, fixed expiry, policy/connection/source proofs and guard identity under

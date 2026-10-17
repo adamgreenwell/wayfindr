@@ -3,6 +3,7 @@
     $refinementAllowed = $copilotPolicy?->allows('conversation_draft_refinement') === true && $refinementProcessor !== null;
 @endphp
 <section class="draft-refinement-controls" data-draft-refinement data-available="{{ $refinementAllowed ? 'true' : 'false' }}"
+    data-authorize-url="{{ route('dashboard.conversations.draft-refinement.authorize', $conversation->support_code) }}"
     data-request-url="{{ route('dashboard.conversations.draft-refinement.store', $conversation->support_code) }}"
     data-status-url="{{ route('dashboard.conversations.draft-refinement.show', $conversation->support_code) }}"
     data-apply-url="{{ route('dashboard.conversations.draft-refinement.apply', $conversation->support_code) }}"

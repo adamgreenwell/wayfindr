@@ -196,7 +196,10 @@ test('HTTP capture preserves exact spaces and never flashes invalid private inpu
     $w = assistPreparationWorld('conversation_reply_draft', 'manual');
     $url = route('dashboard.conversations.draft-refinement.store', $w['conversation']->support_code);
     $draft = "  It may take 3 days.\r\n\t ";
-    $this->actingAs($w['agent'])->postJson($url, ['refinement_draft' => $draft, 'draft_revision' => (string) Str::uuid(), 'action' => 'clarify'])
+    $revision = (string) Str::uuid();
+    $grant = $this->actingAs($w['agent'])->postJson(route('dashboard.conversations.draft-refinement.authorize', $w['conversation']->support_code), ['draft_revision' => $revision])
+        ->assertCreated()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('state', 'authorized')->json();
+    $this->postJson($url, ['generation' => $grant['generation'], 'refinement_draft' => $draft, 'draft_revision' => $revision, 'action' => 'clarify'])
         ->assertStatus(202)->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('preview', null);
     expect(json_decode(ConversationDraftRefinement::query()->sole()->input['input'], true)['draft'])->toBe($draft);
     $this->postJson($url, ['refinement_draft' => 'SYNTHETIC-PRIVATE-INVALID', 'draft_revision' => 'bad', 'action' => 'clarify'])
@@ -435,4 +438,68 @@ test('a maximum multibyte original that fits the wire remains capturable without
     expect($receipt['state'])->toBe('pending')->and(json_decode($row->input['input'], true)['draft'])->toBe($draft)
         ->and(DB::table('ai_usage_attempts')->sole()->input_token_bound)->toBeLessThanOrEqual(66560);
     Queue::assertPushed(GenerateConversationDraftRefinement::class);
+});
+
+test('a metadata grant contains no input reserves no usage and captures exactly once using its known generation', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $s = app(DraftRefinements::class);
+    $input = refinementLifecycleInput();
+    $grant = $s->authorize($w['agent'], $w['conversation'], $input->draftRevision);
+    $row = ConversationDraftRefinement::query()->sole();
+    expect($grant['state'])->toBe('authorized')->and($row->input)->toBeNull()->and($row->scope)->toBeNull()
+        ->and($row->preview)->toBeNull()->and($row->operation)->toBe([])
+        ->and(DB::table('ai_usage_attempts')->count())->toBe(0);
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+    $captured = $s->request($w['agent'], $w['conversation'], $input, $grant['generation']);
+    expect($captured['generation'])->toBe($grant['generation'])->and($captured['state'])->toBe('pending');
+    expect(fn () => $s->request($w['agent'], $w['conversation'], $input, $grant['generation']))->toThrow(AiNetworkException::class);
+    Queue::assertPushed(GenerateConversationDraftRefinement::class, 1);
+    expect(DB::table('ai_usage_attempts')->count())->toBe(1);
+});
+
+test('late capture never recreates a cancelled deleted expired superseded or foreign metadata grant', function (string $change): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $s = app(DraftRefinements::class);
+    $input = refinementLifecycleInput();
+    $grant = $s->authorize($w['agent'], $w['conversation'], $input->draftRevision);
+    $actor = $w['agent'];
+    match ($change) {
+        'cancelled' => $s->cancel($actor, $w['conversation'], $grant['generation']),
+        'deleted' => ConversationDraftRefinement::query()->delete(),
+        'expired' => assistPreparationAdvance($w, 900),
+        'superseded' => $s->authorize($actor, $w['conversation'], $input->draftRevision),
+        'foreign' => $actor = $w['owner'],
+        'revision' => $input = refinementLifecycleInput(),
+        'policy' => $w['policy']->forceFill(['revision' => (string) Str::uuid()])->save(),
+        'connection' => $w['connection']->forceFill(['active_revision' => (string) Str::uuid()])->save(),
+    };
+    expect(fn () => $s->request($actor, $w['conversation'], $input, $grant['generation']))->toThrow(AiNetworkException::class);
+    expect(DB::table('ai_usage_attempts')->count())->toBe(0)
+        ->and(ConversationDraftRefinement::query()->whereNotNull('input')->count())->toBe(0);
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+})->with(['cancelled', 'deleted', 'expired', 'superseded', 'foreign', 'revision', 'policy', 'connection']);
+
+test('capture before cancel is cleared and cannot dispatch while capture cooldown survives new grant requests', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $s = app(DraftRefinements::class);
+    $input = refinementLifecycleInput();
+    $grant = $s->authorize($w['agent'], $w['conversation'], $input->draftRevision);
+    $s->request($w['agent'], $w['conversation'], $input, $grant['generation']);
+    $s->cancel($w['agent'], $w['conversation'], $grant['generation']);
+    expect(refinementLifecycleRun($grant)->calls)->toBe(0);
+    expect(fn () => $s->authorize($w['agent'], $w['conversation'], (string) Str::uuid()))->toThrow(AiNetworkException::class);
+    expect(ConversationDraftRefinement::query()->sole()->input)->toBeNull();
+});
+
+test('HTTP capture requires a preauthorized handle and authorizing rejects private text without flashing it', function (): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $url = route('dashboard.conversations.draft-refinement.store', $w['conversation']->support_code);
+    $payload = ['refinement_draft' => 'SYNTHETIC-UNGRANTED-PRIVATE', 'draft_revision' => (string) Str::uuid(), 'action' => 'clarify'];
+    $this->actingAs($w['agent'])->postJson($url, $payload)->assertUnprocessable()->assertDontSee('SYNTHETIC-UNGRANTED-PRIVATE');
+    $this->postJson($url, $payload + ['generation' => (string) Str::uuid()])->assertStatus(409);
+    $this->postJson(route('dashboard.conversations.draft-refinement.authorize', $w['conversation']->support_code), $payload)->assertUnprocessable();
+    expect(ConversationDraftRefinement::query()->count())->toBe(0)->and(session()->getOldInput())->toBe([]);
+    Queue::assertNothingPushed();
 });
