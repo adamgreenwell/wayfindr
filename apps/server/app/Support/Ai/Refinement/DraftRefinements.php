@@ -14,6 +14,7 @@ use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Execution\AiExecutionContext;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\DraftRefinementAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\ResolvedAgentCopilotConnection;
 use App\Support\Ai\Usage\AiUsageClock;
@@ -54,6 +55,9 @@ final readonly class DraftRefinements
             $this->assertRetryAllowed($previous, (int) $actor->account_id, (int) $actor->id, $connection->revision);
             if ($previous !== null && $previous->operation !== []) {
                 $this->ledger->cancelReserved($previous->generation, 'superseded');
+                if (in_array($previous->status, ['pending', 'running', 'ready'], true)) {
+                    app(DraftRefinementAudit::class)->record($previous, 'superseded');
+                }
             }
             $row = $previous ?? new ConversationDraftRefinement;
             $row->forceFill(['account_id' => $actor->account_id, 'conversation_id' => $conversation->id, 'requested_by_id' => $actor->id,
@@ -90,6 +94,9 @@ final readonly class DraftRefinements
             $this->assertRetryAllowed($previous, (int) $actor->account_id, (int) $actor->id, $scope['connection_revision']);
             if ($previous !== null && $previous->operation !== []) {
                 $this->ledger->cancelReserved($previous->generation, 'superseded');
+                if (in_array($previous->status, ['pending', 'running', 'ready'], true)) {
+                    app(DraftRefinementAudit::class)->record($previous, 'superseded');
+                }
             }
             $connection = $this->connections->forAccount((int) $actor->account_id);
             if ($connection === null) {
@@ -110,7 +117,8 @@ final readonly class DraftRefinements
                 'connection_revision' => $scope['connection_revision'], 'policy_revision' => $scope['policy_revision'],
                 'work_fingerprint' => hash_hmac('sha256', json_encode(['private-refinement-v1', $scope], JSON_THROW_ON_ERROR), (string) config('app.key')),
                 'status' => 'pending', 'input' => ['instructions' => $prompt->instructions, 'input' => $prompt->input],
-                'scope' => ['snapshot' => $scope, 'sources' => $context->providerSources(), 'guard_identity' => app(DraftRefinementSafetyGuard::class)->identity()], 'preview' => null, 'failure_code' => null,
+                'scope' => ['snapshot' => $scope, 'sources' => $context->providerSources(), 'guard_identity' => app(DraftRefinementSafetyGuard::class)->identity(),
+                    'audit_route' => app(DraftRefinementAudit::class)->route($connection)], 'preview' => null, 'failure_code' => null,
                 'requested_at' => CarbonImmutable::createFromTimestampUTC($scope['created_at']), 'expires_at' => CarbonImmutable::createFromTimestampUTC($scope['expires_at']),
                 'started_at' => null, 'completed_at' => null])->save();
             $row->load('conversation.site');
@@ -121,6 +129,7 @@ final readonly class DraftRefinements
             if ($reservation->attemptId !== $row->generation || $reservation->state !== 'reserved') {
                 throw new AiNetworkException('usage_attempt_reused');
             }
+            app(DraftRefinementAudit::class)->record($row, 'requested');
 
             return $row;
         });
@@ -174,7 +183,7 @@ final readonly class DraftRefinements
     {
         $this->locked((int) $actor->account_id, function () use ($actor, $conversation, $generation): void {
             $row = $this->owned($actor, $conversation, $generation);
-            if ($row !== null) {
+            if ($row !== null && in_array($row->status, ['authorized', 'pending', 'running', 'ready'], true)) {
                 $this->withdraw($row, 'cancelled');
             }
         });
@@ -206,6 +215,7 @@ final readonly class DraftRefinements
             $row->forceFill(['status' => 'running', 'started_at' => $this->clock->now()])->save();
             DB::table('conversation_draft_refinement_sends')->insert(['account_id' => $row->account_id,
                 'conversation_id' => $row->conversation_id, 'generation' => $generation, 'started_at' => $this->clock->now()]);
+            app(DraftRefinementAudit::class)->record($row, 'started');
 
             return $row;
         });
@@ -304,6 +314,7 @@ final readonly class DraftRefinements
                 $result->settle('invalid_output');
             } else {
                 $result->settle('completed');
+                app(DraftRefinementAudit::class)->record($row, 'ready', result: $result);
             }
         });
     }
@@ -326,7 +337,31 @@ final readonly class DraftRefinements
     {
         DB::table('conversation_draft_refinement_sends')->where('started_at', '<=', $this->clock->now()->subSeconds(180))->delete();
 
-        return ConversationDraftRefinement::query()->where('expires_at', '<=', $this->clock->now())->delete();
+        // Bound per-minute audit/delete work; ciphertext remains unusable at fixed expiry.
+        $deleted = 0;
+        $hints = ConversationDraftRefinement::query()->where('expires_at', '<=', $this->clock->now())->orderBy('id')->limit(500)->get(['id', 'account_id']);
+        foreach ($hints as $hint) {
+            try {
+                $deleted += $this->locked((int) $hint->account_id, function () use ($hint): int {
+                    $row = ConversationDraftRefinement::query()->whereKey($hint->id)->where('expires_at', '<=', $this->clock->now())->lockForUpdate()->first();
+                    if ($row === null) {
+                        return 0;
+                    }
+                    if (in_array($row->status, ['pending', 'running', 'ready'], true)) {
+                        app(DraftRefinementAudit::class)->record($row, 'expired');
+                    }
+
+                    return $row->delete() ? 1 : 0;
+                });
+            } catch (AiNetworkException $exception) {
+                // A concurrently erased parent already removed the slot; never recreate it.
+                if (ConversationDraftRefinement::query()->whereKey($hint->id)->exists()) {
+                    throw $exception;
+                }
+            }
+        }
+
+        return $deleted;
     }
 
     private function current(#[SensitiveParameter] ConversationDraftRefinement $row, string $revision): bool
@@ -354,6 +389,7 @@ final readonly class DraftRefinements
 
     private function withdraw(#[SensitiveParameter] ConversationDraftRefinement $row, string $status, ?string $code = null): void
     {
+        app(DraftRefinementAudit::class)->record($row, $status, $code);
         if ($row->operation !== []) {
             $this->ledger->cancelReserved($row->generation, 'cancelled');
         }
