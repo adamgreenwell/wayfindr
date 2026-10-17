@@ -60,9 +60,9 @@ test('private refinement objects refuse serialization and redact normal debug ou
 })->with(['input', 'context', 'proposal']);
 
 test('a refinement preserves the exact original in process and returns candidate whitespace unchanged', function (): void {
-    $original = "\u{00A0}  Original draft.\nSecond line.  \u{2003}";
+    $original = "\u{00A0}\t  Original draft.\r\nSecond line.  \u{2003}";
     $input = new DraftRefinementInput($original, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify);
-    $candidate = "\u{00A0}  Candidate <literal> words.\nSecond line.  \u{2003}";
+    $candidate = "\u{00A0}\t  Candidate <literal> words.\r\nSecond line.  \u{2003}";
     $proposal = (new DraftRefinementOutputParser)->parse(refinementContractOutput(['candidate' => $candidate]), []);
     expect($input->draft())->toBe($original)->and($proposal->previewData()['candidate'])->toBe($candidate);
 });
@@ -88,6 +88,22 @@ test('refinement proposals accept only supplied opaque citation references', fun
     $proposal = (new DraftRefinementOutputParser)->parse(refinementContractOutput(['citations' => [$sources[0]['ref']], 'limitation' => 'Check applicability before use.']), $sources);
     expect($proposal->previewData())->toBe(['candidate' => 'Review the checkout steps.', 'citations' => [$sources[0]['ref']], 'limitation' => 'Check applicability before use.']);
 });
+
+test('refinement rejects C1 controls in drafts candidates and limitations', function (string $text): void {
+    expect(fn () => new DraftRefinementInput($text, '11111111-1111-4111-8111-111111111111', DraftRefinementAction::Clarify))
+        ->toThrow(InvalidArgumentException::class);
+    $parser = new DraftRefinementOutputParser;
+    expect($parser->parse(refinementContractOutput(['candidate' => $text]), []))->toBeNull()
+        ->and($parser->parse(refinementContractOutput(['limitation' => $text]), []))->toBeNull();
+})->with([
+    'padding control' => "\u{0080}",
+    'control sequence introducer' => "\u{009B}",
+    'application program command' => "\u{009F}",
+    'embedded padding control' => "Draft\u{0080} text.",
+    'embedded next line' => "Draft\u{0085} text.",
+    'embedded control sequence' => "Draft\u{009B} text.",
+    'embedded application command' => "Draft\u{009F} text.",
+]);
 
 test('refinement output rejects malformed shape fabricated citations and oversized candidates', function (array $changes): void {
     expect((new DraftRefinementOutputParser)->parse(refinementContractOutput($changes), refinementContractSources()))->toBeNull();

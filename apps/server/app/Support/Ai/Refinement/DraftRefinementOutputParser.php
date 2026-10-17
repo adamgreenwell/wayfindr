@@ -54,7 +54,7 @@ final class DraftRefinementOutputParser
     private function text(mixed $value, int $maximum): bool
     {
         return is_string($value) && mb_check_encoding($value, 'UTF-8') && preg_match('/[^\s\p{Z}]/u', $value) === 1 && mb_strlen($value) <= $maximum
-            && preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', $value) !== 1;
+            && preg_match('/(?![\t\r\n])\p{Cc}/u', $value) !== 1;
     }
 
     /** json_decode otherwise accepts a repeated root key, including escaped spellings. */
