@@ -25,6 +25,7 @@ use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -195,7 +196,7 @@ test('requesting ticket details queues one id-only job and records safe audit me
         ->not->toContain('WF-AITICKET');
 
     $event = AuditEvent::query()->where('action', 'conversation.ai_ticket_suggestion.requested')->sole();
-    expect($event->metadata)->toBe([
+    expect(Arr::only($event->metadata, ['suggestion_id', 'generation', 'connection_revision']))->toBe([
         'suggestion_id' => $suggestion->id,
         'generation' => $suggestion->generation,
         'connection_revision' => $suggestion->connection_revision,

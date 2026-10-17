@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\Account;
-use App\Models\AuditEvent;
 use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\TicketLabel;
 use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\ConversationTicketSuggestionOutputParser;
 use App\Support\Ai\ConversationTicketSuggestionPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
 use App\Support\Ai\Network\AiNetworkException;
+use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
+use App\Support\Ai\Usage\AiUsageLedger;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -71,7 +73,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
         if (! $this->policyIsCurrent($suggestion)) {
             $this->cancelBeforeProvider($suggestion);
-            $this->recordFailure($suggestion, 'policy_changed');
+            $this->recordFailure($suggestion, 'policy_changed', $result);
 
             return;
         }
@@ -81,14 +83,14 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
         if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('createTicket', $conversation)) {
             $this->cancelBeforeProvider($suggestion);
-            $this->recordFailure($suggestion, 'access_revoked');
+            $this->recordFailure($suggestion, 'access_revoked', $result);
 
             return;
         }
 
         if ($conversation->tickets()->exists()) {
             $this->cancelBeforeProvider($suggestion);
-            $this->recordFailure($suggestion, 'ticket_exists');
+            $this->recordFailure($suggestion, 'ticket_exists', $result);
 
             return;
         }
@@ -98,7 +100,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
             if ($context === null) {
                 $this->cancelBeforeProvider($suggestion);
-                $this->recordFailure($suggestion, 'no_messages');
+                $this->recordFailure($suggestion, 'no_messages', $result);
 
                 return;
             }
@@ -135,14 +137,14 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
             if (! Gate::forUser($requester)->allows('createTicket', $conversation)) {
                 $this->cancelBeforeProvider($suggestion);
-                $this->recordFailure($suggestion, 'access_revoked');
+                $this->recordFailure($suggestion, 'access_revoked', $result);
 
                 return;
             }
 
             if ($conversation->tickets()->exists()) {
                 $this->cancelBeforeProvider($suggestion);
-                $this->recordFailure($suggestion, 'ticket_exists');
+                $this->recordFailure($suggestion, 'ticket_exists', $result);
 
                 return;
             }
@@ -150,14 +152,14 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             $connection = $connections->forAccount((int) $conversation->site->account_id);
             if ($connection === null || $suggestion->connection_revision !== $connection->revision) {
                 $this->cancelBeforeProvider($suggestion);
-                $this->recordFailure($suggestion, 'connection_changed');
+                $this->recordFailure($suggestion, 'connection_changed', $result);
 
                 return;
             }
 
             if (! $this->policyIsCurrent($suggestion)) {
                 $this->cancelBeforeProvider($suggestion);
-                $this->recordFailure($suggestion, 'policy_changed');
+                $this->recordFailure($suggestion, 'policy_changed', $result);
 
                 return;
             }
@@ -167,7 +169,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
 
             if ($output === null) {
                 $result->settle('invalid_output');
-                $this->recordFailure($suggestion, 'invalid_output');
+                $this->recordFailure($suggestion, 'invalid_output', $result);
 
                 return;
             }
@@ -203,7 +205,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 }
 
                 if (! $this->policyIsCurrent($suggestion)) {
-                    $this->recordFailure($suggestion, 'policy_changed');
+                    $this->recordFailure($suggestion, 'policy_changed', $result);
 
                     return;
                 }
@@ -211,19 +213,19 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 $conversation = $suggestion->conversation;
                 $requester = $suggestion->requestedBy;
                 if ($conversation === null || $requester === null || ! Gate::forUser($requester)->allows('createTicket', $conversation)) {
-                    $this->recordFailure($suggestion, 'access_revoked');
+                    $this->recordFailure($suggestion, 'access_revoked', $result);
 
                     return;
                 }
 
                 if (! $connections->isCurrent($accountId, $suggestion->connection_revision)) {
-                    $this->recordFailure($suggestion, 'connection_changed');
+                    $this->recordFailure($suggestion, 'connection_changed', $result);
 
                     return;
                 }
 
                 if ($conversation->tickets()->exists()) {
-                    $this->recordFailure($suggestion, 'ticket_exists');
+                    $this->recordFailure($suggestion, 'ticket_exists', $result);
 
                     return;
                 }
@@ -256,7 +258,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                         'model' => mb_substr($result->model, 0, 255),
                         'prompt_tokens' => $result->promptTokens === null ? null : max(0, $result->promptTokens),
                         'completion_tokens' => $result->completionTokens === null ? null : max(0, $result->completionTokens),
-                    ]);
+                    ], $result);
                 }
             }));
         } catch (Throwable $exception) {
@@ -276,7 +278,7 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
             $code = is_string($suggestion->preparation_fingerprint) && $exception instanceof AiNetworkException
                 && in_array($exception->reason, ['connection_changed', 'policy_changed', 'access_revoked', 'context_changed', 'ticket_exists'], true)
                 ? $exception->reason : 'provider';
-            $this->recordFailure($suggestion, $code);
+            $this->recordFailure($suggestion, $code, $result);
         }
     }
 
@@ -323,9 +325,9 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
         }
     }
 
-    private function recordFailure(ConversationCopilotTicketSuggestion $suggestion, string $code): void
+    private function recordFailure(ConversationCopilotTicketSuggestion $suggestion, string $code, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        DB::transaction(function () use ($code, $suggestion): void {
+        app(AiUsageLedger::class)->withAccountUsageLock((int) $suggestion->conversation?->site?->account_id, function () use ($code, $suggestion, $result): void {
             $updated = ConversationCopilotTicketSuggestion::query()
                 ->whereKey($suggestion->id)
                 ->where('generation', $this->generation)
@@ -343,35 +345,14 @@ final class GenerateConversationCopilotTicketSuggestion implements ShouldBeUniqu
                 app(AiAssistPreparation::class)->syncTerminal($suggestion);
                 $this->audit($suggestion, 'conversation.ai_ticket_suggestion.failed', [
                     'failure_code' => $code,
-                ]);
+                ], $result);
             }
         });
     }
 
     /** @param  array<string, int|string|null>  $metadata */
-    private function audit(ConversationCopilotTicketSuggestion $suggestion, string $action, array $metadata): void
+    private function audit(#[\SensitiveParameter] ConversationCopilotTicketSuggestion $suggestion, string $action, #[\SensitiveParameter] array $metadata, #[\SensitiveParameter] ?AgentCopilotResult $result = null): void
     {
-        $conversation = $suggestion->conversation;
-
-        if ($conversation === null) {
-            return;
-        }
-
-        AuditEvent::query()->create([
-            'account_id' => $conversation->site?->account_id,
-            'site_id' => $conversation->site_id,
-            'actor_type' => $suggestion->requestedBy?->getMorphClass(),
-            'actor_id' => $suggestion->requested_by_id,
-            'subject_type' => $conversation->getMorphClass(),
-            'subject_id' => $conversation->id,
-            'action' => $action,
-            'metadata' => [
-                'suggestion_id' => $suggestion->id,
-                'generation' => $this->generation,
-                'connection_revision' => $suggestion->connection_revision,
-                ...$metadata,
-            ],
-            'occurred_at' => AiSupportUsage::lifecycleNow($suggestion),
-        ]);
+        app(SharedAssistAudit::class)->record($suggestion, $action, $metadata, result: $result);
     }
 }

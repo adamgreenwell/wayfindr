@@ -471,6 +471,38 @@ final readonly class AiUsageLedger
         }, 1);
     }
 
+    /** Retention never releases holds, resets current budgets, or retires a live retry. */
+    public function pruneHistory(int $days, int $limit = 500, bool $dryRun = false): int
+    {
+        if ($days < 32 || $days > 3650 || $limit < 1 || $limit > 500) {
+            throw new \InvalidArgumentException;
+        }
+        $now = $this->clock->now();
+        $query = DB::table('ai_usage_attempts')->whereIn('state', ['completed', 'failed', 'cancelled', 'expired', 'unknown'])
+            ->where('concurrency_held', false)->where('terminal_at', '<', $now->subDays($days))
+            ->where(fn ($q) => $q->whereNull('retry_not_before')->orWhere('retry_not_before', '<=', $now))
+            ->where(fn ($q) => $q->whereNull('dispatch_expires_at')->orWhere('dispatch_expires_at', '<=', $now));
+        $count = 0;
+        foreach ((clone $query)->orderBy('id')->limit($limit)->get(['id', 'account_id']) as $hint) {
+            if ($dryRun) {
+                $count++;
+
+                continue;
+            }
+            $count += $this->locked((int) $hint->account_id, fn () => (clone $query)->where('id', $hint->id)->delete());
+        }
+        if (! $dryRun) {
+            DB::transaction(function () use ($days, $now, $limit): void {
+                DB::table('ai_usage_scopes')->where('scope_key', 'installation')->lockForUpdate()->first();
+                $ids = DB::table('ai_usage_periods')->where('period_day', '<', $now->subDays($days)->toDateString())
+                    ->where('held_requests', 0)->where('held_tokens', 0)->orderBy('id')->limit($limit)->pluck('id');
+                DB::table('ai_usage_periods')->whereIn('id', $ids)->delete();
+            });
+        }
+
+        return $count;
+    }
+
     public function summary(int $accountId): array
     {
         return $this->locked($accountId, function (?Account $account, CarbonImmutable $now) use ($accountId): array {
