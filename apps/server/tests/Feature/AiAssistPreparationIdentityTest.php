@@ -237,7 +237,7 @@ test('knowledge catalogue changes bind published same-account content only', fun
         'delete' => $world['article']->delete(),
     };
     expect(preparationIdentity($world, 'conversation_knowledge_suggestion')->matches($first))->toBeFalse()
-        ->and(preparationIdentity($world, 'conversation_reply_draft')->matches($reply))->toBeTrue('Current transcript-only reply preparation must not retrieve or depend on a knowledge catalogue.');
+        ->and(preparationIdentity($world, 'conversation_reply_draft')->matches($reply))->toBeFalse('Consented grounded reply preparation must bind the published account catalogue.');
 })->with(['edit', 'publish', 'unpublish', 'delete']);
 
 test('ticket labels and current conversion eligibility have their own boundaries', function (): void {

@@ -9,60 +9,45 @@ reply draft, suggested knowledge snippets, and suggested ticket details during
 conversation-to-ticket conversion. It does not add autonomous replies or
 customer-facing AI.
 
-## Option 1 Assist — backend foundation
+## Option 1 Assist — development source status
 
-The selected [AI Support Assist contract](../product/ai-support-assist-contract.md)
-defines the account connection and automatic-preparation requirements. The
-[account-connection backend foundation](../product/ai-support-assist-account-connections.md)
-adds encrypted proposed/active storage, permission checks and per-call connection
-resolution to the source. Account-owned outbound calls remain unavailable until
-guarded SDK/probe integration and usage admission are implemented. The
-[provider policy/transport foundation](../product/ai-support-assist-provider-policy.md)
-defines the new destination boundary; it activates no account calls. The account
-screen and automatic preparation are still pending. The remaining sections describe the existing
-operator-configured, on-demand copilot and its explicit installation-default path.
+This section describes current feature development. Use the documentation at your
+installed release tag for operator behavior; the installation-default manual
+copilot sections below retain their existing configuration guidance.
 
-Option 1 uses a collapsible right Assist rail with stacked summary, suggested
-reply, and sources beside the ordinary transcript/composer. Its account screen
-uses one grouped connection form with installation/own connection radio choices,
-write-only credentials, and separate behavior/task/site/usage controls below.
-Off belongs to behavior/site policy, not a third connection-source tab. No saved
-operator key is copied into an account or revealed in the browser.
+The [AI Support Assist contract](../product/ai-support-assist-contract.md) now has
+account connections, guarded transport/usage, [administration](../product/ai-support-assist-admin.md),
+[shared preparation](../architecture/ai-assist-preparation-lifecycle.md) and the
+[conversation rail](../product/ai-support-assist-rail.md) merged in source. The
+account screen groups installation/own connection choices, write-only credentials,
+separate proposed/tested/active revisions and behavior/task/site/usage controls.
+Automatic preparation requires renewed explicit account/site approval; upgrades
+preserve Manual behavior. A provider probe proves one synthetic request, not
+retention, quality or permission to process support data.
 
-The backend lifecycle keeps proposed, tested, and active revisions separate.
-The default account probe is unavailable until endpoint policy is implemented. A synthetic probe tests the exact proposed revision; changing its
-provider, model, endpoint, or key invalidates that test. Saving activates the
-reviewed tested revision, while automatic preparation requires separate explicit
-account/site enablement. Pending tests cannot duplicate probes, and upgrades
-must preserve existing manual behavior without silently starting provider calls.
-Account destinations remain subject to operator network policy.
+The #1172 selection/parser foundation merged in #1192. Its completion branch adds
+[grounded private replies](../architecture/ai-assist-grounded-drafts.md): Relevant
+articles On permits bounded scrubbed selected published same-account passages
+within the combined transcript/context ceiling. Off performs no reply article
+retrieval and keeps transcript-only help. The independent knowledge-search task
+still sends transcript text and ranks returned search phrases locally. Articles
+are account-owned; site controls do not isolate knowledge into site collections.
 
-"Private" means hidden from the visitor, not local processing. Grounded drafts
-introduce a new data-boundary change: only bounded relevant passages from allowed
-published same-account articles, plus minimum transcript context, may reach the
-configured processor through the scrubber. Explicit draft refinement may also
-send the current bounded, scrubbed unsent composer text and validated refinement
-options; automatic preparation never sends that draft. The agent data-use
-disclosure must state this before refinement. Today's knowledge suggestions send
-bounded transcript context, receive validated search phrases, and rank articles
-locally, as documented below; attachments and cobrowse snapshots remain excluded.
+Private means hidden from visitors, not local processing. Grounded replies copy
+validated complete supplied sentences with published-guidance attribution or use
+a safe clarification for unsupported/conflicting guidance. Source/access/policy
+changes withdraw the entire draft. Inspecting sources is read-only; inserting
+requires explicit fresh authorization, preserves edits and never sends.
+Refinement generation remains #1173: its future explicit action may send bounded
+scrubbed composer text, while automatic preparation never does. Attachments and
+cobrowse snapshots remain excluded. No live provider is activated by this source
+work; deployment and current-model evaluation are separate qualification.
 
-Future execution, read/display, and insertion paths must recheck the requesting
-agent's account/site and support-operation authority. Changed, unpublished,
-deleted, or inaccessible sources must withhold affected output from use until
-current authorized context is established. Insertions remain explicit, preserve
-agent edits, and never send or submit support-record changes. These planned
-requirements preserve ADR 0004's autonomous-reply deferral. Recording them does
-not run provider tests or activate the planned runtime.
-
-Changing site-level behavior, tasks, context or enablement requires current
-access to each affected site as well as account connection-management authority.
-This applies to bulk changes and delayed work; account management does not
-grant access to other sites.
-Activating, replacing or re-enabling the shared account connection also requires
-access to every affected enabled site. Recheck the current site set under the
-account lock at activation; proposed edits/probes cannot reroute inaccessible
-sites. Disabling or disconnecting remains available.
+Changing site behavior/tasks/context/enablement requires both account management
+authority and access to each affected site. Activation/replacement/re-enablement
+of a shared account connection rechecks every affected enabled site under the
+account lock. Account management grants no access to other sites. Disabling and
+disconnecting remain available, and destinations obey operator network policy.
 
 ## Configure it in the operator console
 

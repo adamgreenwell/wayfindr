@@ -157,7 +157,7 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `site_ai_assist_policies`: one site policy with an account link, deleted with
   its site/account. Modes/tasks/context intersect the account policy; sites added
   after explicit opt-in have no row and resolve Off until deliberately enabled.
-  Site consent gates future same-account published context, without claiming
+  Site consent gates same-account published context, without claiming
   article ownership or site isolation. UUID revisions prevent policy ABA reuse.
   Both tables carry nullable UUID `preparation_consent_revision`. Prepare is
   effective only when this approval matches the current policy revision at both
@@ -222,8 +222,14 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly
-  reused, and the stored text only ever fills an empty composer — nothing in
-  this table can send a message to a visitor.
+  reused. Explicit insertion fills an empty composer or uses a freshly authorized
+  Preview/Apply replacement that preserves concurrent edits; it never sends.
+  Nullable `grounding` JSON holds bounded scrubbed supplied passages, signed
+  source proofs, validated proposal metadata and prompt/scorer identities for
+  consented grounded replies. Historical plaintext rows remain NULL. Reset and
+  failure clear both draft and grounding; deletion cascades with the conversation.
+  Visitor export includes the editable draft and excludes server-only source
+  mapping/proofs and validation metadata. See [grounding](ai-assist-grounded-drafts.md).
 - `conversation_copilot_ticket_suggestions`: a suggested title and priority for
   a conversation that has no ticket yet; applying one prefills the ticket form
   rather than creating a ticket. The model never names a label — `label_ids`

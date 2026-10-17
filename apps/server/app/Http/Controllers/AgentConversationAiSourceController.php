@@ -27,7 +27,7 @@ final class AgentConversationAiSourceController extends Controller
     public function show(Request $request, string $supportCode, string $article, AgentCopilotConnectionResolver $connections,
         AiAssistPolicyResolver $policies, KnowledgeArticleSuggestionMatcher $matcher): Response
     {
-        $input = $request->validate(['generation' => ['required', 'uuid'], 'article_revision' => ['required', 'regex:/\A[a-f0-9]{64}\z/']]);
+        $input = $request->validate(['generation' => ['required', 'uuid'], 'article_revision' => ['required', 'regex:/\A[a-f0-9]{64}\z/'], 'task' => ['nullable', 'in:reply,knowledge']]);
         $actor = User::query()->findOrFail($request->user()->id);
         abort_unless($actor->account_id && ! $actor->isDeactivated(), 404);
 
@@ -37,7 +37,10 @@ final class AgentConversationAiSourceController extends Controller
             $conversation = Conversation::query()->with('site.account')->where('support_code', $supportCode)
                 ->whereHas('site', fn ($query) => $query->where('account_id', $actor->account_id))->lockForUpdate()->firstOrFail();
             abort_unless(Gate::forUser($actor)->allows('reply', $conversation), 404);
-            $suggestion = $conversation->copilotKnowledgeSuggestion()->lockForUpdate()->first();
+            $reply = ($input['task'] ?? 'knowledge') === 'reply';
+            $purpose = $reply ? 'conversation_reply_draft' : self::PURPOSE;
+            $suggestion = $reply ? $conversation->copilotReplyDraft()->lockForUpdate()->first()
+                : $conversation->copilotKnowledgeSuggestion()->lockForUpdate()->first();
             abort_unless($suggestion !== null, 404);
             try {
                 $policy = $policies->forConversation($conversation);
@@ -45,9 +48,20 @@ final class AgentConversationAiSourceController extends Controller
             } catch (Throwable) {
                 abort(404);
             }
-            abort_unless($policy->allows(self::PURPOSE) && $current !== null, 404);
+            abort_unless($policy->allows($purpose) && (! $reply || $policy->articleContextAllowed) && $current !== null, 404);
             $source = Article::query()->where('account_id', $actor->account_id)->whereKey((int) $article)->published()->lockForUpdate()->firstOrFail();
-            if ($policy->explicit || $suggestion->preparation_fingerprint !== null) {
+            if ($reply) {
+                try {
+                    $state = app(AiAssistPreparation::class)->read($actor, $conversation, $purpose);
+                } catch (Throwable) {
+                    abort(404);
+                }
+                $selected = collect($state['output']['grounding']['sources'] ?? [])->firstWhere('id', (int) $article);
+                abort_unless($selected !== null, 404);
+                abort_unless(($state['output_generation'] ?? null) === $input['generation']
+                    && hash_equals($selected['revision'], $input['article_revision'])
+                    && hash_equals(KnowledgeArticleSuggestionMatcher::revision($source, ''), $input['article_revision']), 409);
+            } elseif ($policy->explicit || $suggestion->preparation_fingerprint !== null) {
                 try {
                     $state = app(AiAssistPreparation::class)->read($actor, $conversation, self::PURPOSE);
                 } catch (Throwable) {
@@ -69,9 +83,11 @@ final class AgentConversationAiSourceController extends Controller
                 abort_unless(hash_equals(KnowledgeArticleSuggestionMatcher::revision($selected['article'], $selected['snippet']), $input['article_revision']), 409);
             }
             // Bind the exact locked full source rendered below, including edits outside its excerpt.
-            $presented = $matcher->present($conversation->site->account, [(int) $source->id])->first();
-            abort_unless($presented !== null
-                && hash_equals(KnowledgeArticleSuggestionMatcher::revision($source, $presented['snippet']), $input['article_revision']), 409);
+            if (! $reply) {
+                $presented = $matcher->present($conversation->site->account, [(int) $source->id])->first();
+                abort_unless($presented !== null
+                    && hash_equals(KnowledgeArticleSuggestionMatcher::revision($source, $presented['snippet']), $input['article_revision']), 409);
+            }
 
             return response()->view('agent.conversations.assist-source', [
                 'conversation' => $conversation, 'sourceTitle' => $source->title, 'blocks' => $source->blocks(),

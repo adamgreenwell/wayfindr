@@ -70,7 +70,9 @@
                         <p class="field-help">{{ __('ai_assist.rail.processor_unavailable') }}</p>
                     @endif
                     <p class="field-help">{{ __('ai_assist.rail.context') }}</p>
-                    <p class="field-help">{{ __('ai_assist.rail.articles_local') }}</p>
+                    @if ($railProcessor !== null)
+                        <p class="field-help">{{ __('ai_assist.grounding.'.($railProcessor['article_context_allowed'] ? 'disclosure_on' : 'disclosure_off')) }}</p>
+                    @endif
                     <p class="field-help">{{ __('ai_assist.rail.refinement') }}</p>
                     @if (request()->user()->hasAccountPermission(\App\Enums\AccountPermission::ManageAiConnections))
                         <p><a href="{{ route('dashboard.account.ai-assist.show') }}">{{ __('ai_assist.rail.manage_connection') }}</a></p>

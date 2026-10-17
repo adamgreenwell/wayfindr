@@ -11,6 +11,8 @@ use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\ConversationReplyDraftPromptBuilder;
 use App\Support\Ai\Execution\AiSupportUsage;
+use App\Support\Ai\Grounding\ConversationGroundedReplyGuard;
+use App\Support\Ai\Grounding\ConversationGroundingSelector;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use App\Support\Ai\Preparation\AiAssistPreparation;
@@ -86,7 +88,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
         }
 
         try {
-            $context = $promptBuilder->build($conversation);
+            $context = $promptBuilder->build($conversation, $requester);
 
             if ($context === null) {
                 $this->cancelBeforeProvider($draft);
@@ -150,7 +152,25 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
             }
             $sourceFingerprint = AiSupportUsage::sourceFingerprint($draft, $context->prompt);
             $result = $provider->generate($context->prompt->withExecution($connection, app(AiSupportUsage::class)->contextFor($draft)));
-            $output = mb_substr(trim($result->text), 0, 6_000);
+            $grounding = null;
+            if ($context->groundingEnabled) {
+                $proposal = app(ConversationGroundedReplyGuard::class)->propose($result->text, $context);
+                if ($proposal === null) {
+                    $result->settle('invalid_output');
+                    $this->recordFailure($draft, 'invalid_output');
+
+                    return;
+                }
+                $output = $proposal->reply;
+                $grounding = ['version' => ConversationGroundedReplyGuard::VERSION,
+                    'sources' => $context->groundingSources, 'snapshot' => $context->groundingSnapshot,
+                    'proposal' => ['decision' => $proposal->decision, 'citations' => $proposal->citations,
+                        'limitation' => $proposal->limitation, 'missing_information' => $proposal->missingInformation],
+                    'prompt_identity' => hash('sha256', $context->prompt->instructions),
+                    'scorer_identity' => app(ConversationGroundedReplyGuard::class)->identity()];
+            } else {
+                $output = mb_substr(trim($result->text), 0, 6_000);
+            }
 
             if ($output === '') {
                 $result->settle('invalid_output');
@@ -159,7 +179,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 return;
             }
 
-            app(AiSupportUsage::class)->publish($draft, $result, fn () => DB::transaction(function () use ($context, $draft, $output, $result, $connections, $sourceFingerprint): void {
+            app(AiSupportUsage::class)->publish($draft, $result, fn () => DB::transaction(function () use ($context, $draft, $output, $result, $connections, $sourceFingerprint, $grounding): void {
                 $accountId = (int) $draft->conversation->site->account_id;
                 if (! Account::query()->whereKey($accountId)->lockForUpdate()->first()) {
                     return;
@@ -197,6 +217,13 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                     return;
                 }
 
+                if ($grounding !== null && ! app(ConversationGroundingSelector::class)->payloadStillCurrent(
+                    $requester, $conversation, $context->groundingSnapshot, $context->groundingSources)) {
+                    $this->recordFailure($draft, 'context_changed');
+
+                    return;
+                }
+
                 $updated = ConversationCopilotReplyDraft::query()
                     ->whereKey($draft->id)
                     ->where('generation', $this->generation)
@@ -204,6 +231,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                     ->update([
                         'status' => ConversationCopilotReplyDraft::STATUS_READY,
                         'draft' => $output,
+                        'grounding' => $grounding,
                         'source_context_fingerprint' => $sourceFingerprint,
                         'source_last_message_id' => $context->lastMessageId,
                         'source_message_count' => $context->messageCount,
@@ -301,6 +329,7 @@ final class GenerateConversationCopilotReplyDraft implements ShouldBeUnique, Sho
                 ])
                 ->update([
                     'status' => ConversationCopilotReplyDraft::STATUS_FAILED,
+                    'draft' => null, 'grounding' => null,
                     'failure_code' => $code,
                     'completed_at' => AiSupportUsage::lifecycleNow($draft),
                 ]);

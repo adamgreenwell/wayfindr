@@ -64,6 +64,8 @@
     .assist-draft-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 200px; overflow: auto; padding: 8px; border: var(--wf-border) solid var(--border); }
     .assist-draft-review h4 { margin: 12px 0 4px; font-size: .875rem; }
     .assist-draft-review [data-assist-review-apply] { background: var(--text); color: var(--surface); border-color: var(--text); }
+    .assist-grounding-sources blockquote { margin: 8px 0; padding-inline-start: 8px; border-inline-start: 2px solid var(--border); }
+    .assist-grounding-sources > summary { cursor: pointer; color: var(--muted); }
     .assist-freshness { font-size: .75rem; color: var(--muted); }
     .assist-freshness a { display: block; }
     @media (prefers-reduced-motion: reduce) { .conversation-assist-rail *, .conversation-assist-rail *::before, .conversation-assist-rail *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

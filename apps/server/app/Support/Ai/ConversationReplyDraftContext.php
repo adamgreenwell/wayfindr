@@ -12,5 +12,8 @@ final readonly class ConversationReplyDraftContext
         public int $lastMessageId,
         public ?string $sourceRevision = null,
         public array $sourceSnapshot = [],
+        public bool $groundingEnabled = false,
+        public array $groundingSources = [],
+        public array $groundingSnapshot = [],
     ) {}
 }

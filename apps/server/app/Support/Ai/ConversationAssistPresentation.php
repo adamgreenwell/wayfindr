@@ -12,7 +12,7 @@ use Throwable;
 /** Read-only presentation scalars. Never serialize a resolved connection or its configuration. */
 final readonly class ConversationAssistPresentation
 {
-    /** @return array{provider: string, model: string, source: string, upstream: ?string, max_characters: int}|null */
+    /** @return array{provider: string, model: string, source: string, upstream: ?string, max_characters: int, article_context_allowed: bool}|null */
     public function processor(Conversation $conversation): ?array
     {
         try {
@@ -28,7 +28,7 @@ final readonly class ConversationAssistPresentation
 
             return ['provider' => $connection->provider, 'model' => $connection->model, 'source' => $connection->source,
                 'upstream' => $connection->provider === 'openrouter' && $connection->openRouterProvider !== '' ? $connection->openRouterProvider : null,
-                'max_characters' => min(20000, $policy->maxContextCharacters)];
+                'max_characters' => min(20000, $policy->maxContextCharacters), 'article_context_allowed' => $policy->articleContextAllowed];
         } catch (Throwable) {
             return null;
         }

@@ -21,8 +21,8 @@ afterEach(fn () => Carbon::setTestNow());
 test('selected processor presentation whitelists scalars without endpoint credentials or revisions', function (): void {
     $world = assistPreparationWorld();
     $processor = app(ConversationAssistPresentation::class)->processor($world['conversation']);
-    expect(array_keys($processor))->toBe(['provider', 'model', 'source', 'upstream', 'max_characters'])
-        ->and($processor)->toBe(['provider' => 'openai-compatible', 'model' => 'synthetic-A', 'source' => 'account', 'upstream' => null, 'max_characters' => 20000]);
+    expect(array_keys($processor))->toBe(['provider', 'model', 'source', 'upstream', 'max_characters', 'article_context_allowed'])
+        ->and($processor)->toBe(['provider' => 'openai-compatible', 'model' => 'synthetic-A', 'source' => 'account', 'upstream' => null, 'max_characters' => 20000, 'article_context_allowed' => true]);
     $serialized = json_encode($processor, JSON_THROW_ON_ERROR);
     expect($serialized)->not->toContain('synthetic-not-a-secret', 'models.example.test', 'revision', 'account_id', 'has_api_key');
     Queue::assertNothingPushed();

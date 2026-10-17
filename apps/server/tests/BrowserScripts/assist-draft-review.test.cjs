@@ -11,7 +11,7 @@ const original = '  Human draft.\nExact <original> & spacing.  ';
 const candidate = 'Fresh server-approved text.';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const attr = value => JSON.stringify(value).replaceAll('&','&amp;').replaceAll('"','&quot;');
-const copy = {source_new_tab:'Opens in a new tab',states:{ready:'Ready',stale:'Stale',unavailable:'Unavailable'},use:'Insert',use_article:'Insert excerpt',refresh:'Refresh',retry:'Retry',cooldown:'Wait',used:'Added',blocked:'Edits preserved'};
+const copy = {grounding:{heading:'Published guidance used',sources:'Published sources',transcript:'Article guidance is separate from conversation facts',supported:'Check applicability',missing:'Information to clarify'},source_new_tab:'Opens in a new tab',states:{ready:'Ready',stale:'Stale',unavailable:'Unavailable'},use:'Insert',use_article:'Insert excerpt',refresh:'Refresh',retry:'Retry',cooldown:'Wait',used:'Added',blocked:'Edits preserved'};
 const reviewCopy = {heading:'Review replacement',original:'Original',candidate:'Suggested',apply:'Apply',cancel:'Cancel',invalid:'Changed. Start a new preview.',unavailable:'Unavailable.',previewed:'Preview ready.',used:'Inserted.',cancelled:'Canceled.'};
 const ready = task => ({mode:'manual',state:'ready',generation,policy_revision:'policy',source_position:12,source_url:'/dashboard/conversations/WF-TEST#conversation-message-12',source_ordinal:1,source_message_count:1,output_generation:generation,can_use:true,can_prepare:true,retry_after:0,
   output:task==='reply'?{text:candidate}:{articles:[{id:42,revision,title:'Account <article>',snippet:candidate,source_url:'/dashboard/articles/42'}]}});
@@ -125,4 +125,24 @@ for(const source of ['https://outside.example/article','javascript:alert(1)','ht
 test('source inspection opens a labelled independent tab while the unsent composer remains in place',async t=>{
   const f=await fixture(t,'prepared','knowledge');const link=f.panel().querySelector('[data-ai-output] a');
   assert.equal(link.target,'_blank','Source inspection must preserve the original conversation document and draft');assert.equal(link.rel,'noopener');assert.match(link.getAttribute('aria-label'),/Opens in a new tab/);assert.equal(f.body.value,original);assert.equal(f.sends(),0);
+});
+
+test('grounded reply citations are collapsed safe text links without copying guidance into the composer',async t=>{
+  const f=await fixture(t);
+  const grounding={decision:'supported',limitation:null,missing_information:[],sources:[{ref:'src-'+ 'a'.repeat(24),id:42,revision,title:'Guide <img src=x onerror=alert(1)>',snippet:'Published <script>untrusted()</script> guidance.',source_url:'/dashboard/conversations/WF-TEST/assist/sources/42?task=reply'}]};
+  const next=f.replace({output:{text:candidate,grounding}});f.timers.forEach(fn=>fn());await flush();
+  const region=next.querySelector('[data-ai-grounding]'),details=region.querySelector('details'),link=details.querySelector('a');
+  assert.equal(details.open,false);assert.equal(details.querySelector('summary').textContent,'Published sources');
+  assert.equal(link.target,'_blank');assert.equal(link.rel,'noopener');assert.equal(link.querySelector('img'),null);
+  assert.equal(details.querySelector('blockquote').textContent,grounding.sources[0].snippet);assert.equal(details.querySelector('script'),null);
+  assert.equal(f.body.value,original);assert.equal(f.sends(),0);
+});
+
+test('a rejected grounded Apply withdraws the whole candidate and its citation while preserving exact human text',async t=>{
+  const f=await fixture(t);const grounding={decision:'supported',limitation:null,missing_information:[],sources:[{ref:'src-'+ 'a'.repeat(24),id:42,revision,title:'Current account guidance',snippet:'Current passage.',source_url:'/authorized-source'}]};
+  f.replace({output:{text:candidate,grounding}});f.timers.forEach(fn=>fn());await flush();await f.preview();
+  assert.ok(f.panel().querySelector('[data-ai-grounding]'));f.apply.click();
+  f.respond(f.uses().at(-1),{...ready('reply'),state:'unavailable',output:null,can_use:false},409);await flush();
+  assert.equal(f.body.value,original);assert.equal(f.sends(),0);assert.equal(f.region.querySelector('[data-assist-review-candidate]').textContent,'');
+  assert.equal(f.panel().querySelector('[data-ai-output]').textContent,'');assert.equal(f.panel().querySelector('[data-ai-grounding]'),null);
 });
