@@ -71,8 +71,10 @@ and refinement actions remain the separate #1172/#1173 slices.
 One polite AI live region outside the disclosure announces meaningful task and
 preview changes. Initial content and repeated identical polls stay silent.
 Background completion never moves focus; intentional Preview, Apply and Cancel
-have predictable keyboard focus. Arbitrary original/candidate text uses unknown
-language metadata, and the rail follows reduced-motion preferences.
+have predictable keyboard focus. Original and candidate text are named,
+keyboard-focusable scroll regions so long drafts can be reviewed in Safari.
+Arbitrary original/candidate text uses unknown language metadata, and the rail
+follows reduced-motion preferences.
 
 The remaining implementation is delivered in the follow-up feature branch after
 #1190; #1171 stays open until that follow-up pull request is merged.

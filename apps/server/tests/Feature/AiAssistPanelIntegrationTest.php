@@ -59,6 +59,13 @@ test('the localized panel integrates source inspection disclosures and one AI li
         ->and($source->getAttribute('aria-label'))->toContain(__('ai_assist.rail.source_new_tab'))
         ->and($xpath->query('//*[@data-assist-review-original and @lang=""]')->length)->toBe(1, 'Unknown-language preview text must not inherit the dashboard locale.')
         ->and($xpath->query('//*[@data-assist-review-candidate and @lang=""]')->length)->toBe(1);
+    foreach (['original', 'candidate'] as $part) {
+        $region = $xpath->query('//*[@data-assist-review-'.$part.']')->item(0);
+        expect($region->getAttribute('tabindex'))->toBe('0', 'Long review text must be keyboard scrollable.')
+            ->and($region->getAttribute('role'))->toBe('region');
+        $label = $xpath->query('//*[@id="'.$region->getAttribute('aria-labelledby').'"]');
+        expect($label->length)->toBe(1)->and(trim($label->item(0)->textContent))->not->toBe('');
+    }
     $connectionLinks = $xpath->query('//details[@data-assist-rail]//a[@href="'.route('dashboard.account.ai-assist.show').'"]')->length;
     expect($connectionLinks)->toBe($manager ? 1 : 0)
         ->and(DB::table('ai_usage_attempts')->count())->toBe($before)

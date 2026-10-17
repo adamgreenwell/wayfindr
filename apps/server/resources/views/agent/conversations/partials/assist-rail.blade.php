@@ -42,8 +42,8 @@
             @endforeach
             <section class="conversation-assist-section assist-draft-review" data-assist-draft-review data-copy="{{ json_encode(__('ai_assist.rail.review'), JSON_THROW_ON_ERROR) }}" aria-labelledby="assist-review-heading" hidden>
                 <h3 id="assist-review-heading" tabindex="-1" data-assist-review-heading>{{ __('ai_assist.rail.review.heading') }}</h3>
-                <h4>{{ __('ai_assist.rail.review.original') }}</h4><pre data-assist-review-original lang=""></pre>
-                <h4>{{ __('ai_assist.rail.review.candidate') }}</h4><pre data-assist-review-candidate lang=""></pre>
+                <h4 id="assist-review-original-heading">{{ __('ai_assist.rail.review.original') }}</h4><pre data-assist-review-original lang="" tabindex="0" role="region" aria-labelledby="assist-review-original-heading"></pre>
+                <h4 id="assist-review-candidate-heading">{{ __('ai_assist.rail.review.candidate') }}</h4><pre data-assist-review-candidate lang="" tabindex="0" role="region" aria-labelledby="assist-review-candidate-heading"></pre>
                 <p class="field-help" data-assist-review-status></p>
                 <div class="section-actions">
                     <button type="button" class="button" data-assist-review-apply>{{ __('ai_assist.rail.review.apply') }}</button>
