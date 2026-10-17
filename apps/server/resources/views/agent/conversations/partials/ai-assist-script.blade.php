@@ -32,7 +32,7 @@
             const shell = panel.closest('[data-reply-shell]');
             const selected = value => articleId === null ? null : value?.output?.articles?.find(article => article.id === articleId);
             const describe = (value, currentPanel = null) => ({
-                canUse:value?.state === 'ready' && value.can_use === true && (articleId === null || !!selected(value)),
+                feedbackReceipt:value?.feedback_receipt, canUse:value?.state === 'ready' && value.can_use === true && (articleId === null || !!selected(value)),
                 generation:value?.generation, policyRevision:value?.policy_revision,
                 sourcePosition:value?.source_position, outputGeneration:value?.output_generation || value?.generation,
                 articleId, articleRevision:selected(value)?.revision || '',
@@ -55,7 +55,7 @@
                     if (!response.ok) throw new Error('Unavailable');
                     return describe(await response.json());
                 },
-                onApplied:() => { const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"]`); if (currentPanel && data(currentPanel)) setMessage(currentPanel, data(currentPanel).copy.used); },
+                onApplied:receipt => { window.wayfindrAssistFeedback?.used(panel, generation, receipt); const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"]`); if (currentPanel && data(currentPanel)) setMessage(currentPanel, data(currentPanel).copy.used); },
                 onUnavailable:() => {
                     const currentPanel = shell?.querySelector(`[data-ai-assist][data-task="${task}"]`), currentEntry = currentPanel && data(currentPanel);
                     if (currentEntry && currentEntry.value.generation === generation) {
@@ -109,6 +109,7 @@
                 body.value = text.trim(); body.setAttribute('lang', '');
                 body.dispatchEvent(new Event('input', {bubbles:true})); body.focus();
             }
+            window.wayfindrAssistFeedback?.used(panel, generation, current.feedback_receipt);
             setMessage(panel, entry.copy.used);
         } catch (error) {
             entry.value = {...state, state:'stale', can_use:false}; render(panel);

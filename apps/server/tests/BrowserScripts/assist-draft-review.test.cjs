@@ -14,7 +14,7 @@ const attr = value => JSON.stringify(value).replaceAll('&','&amp;').replaceAll('
 const copy = {grounding:{heading:'Published guidance used',sources:'Published sources',transcript:'Article guidance is separate from conversation facts',supported:'Check applicability',missing:'Information to clarify'},source_new_tab:'Opens in a new tab',states:{ready:'Ready',stale:'Stale',unavailable:'Unavailable'},use:'Insert',use_article:'Insert excerpt',refresh:'Refresh',retry:'Retry',cooldown:'Wait',used:'Added',blocked:'Edits preserved'};
 const reviewCopy = {heading:'Review replacement',original:'Original',candidate:'Suggested',apply:'Apply',cancel:'Cancel',invalid:'Changed. Start a new preview.',unavailable:'Unavailable.',previewed:'Preview ready.',used:'Inserted.',cancelled:'Canceled.'};
 const ready = task => ({mode:'manual',state:'ready',generation,policy_revision:'policy',source_position:12,source_url:'/dashboard/conversations/WF-TEST#conversation-message-12',source_ordinal:1,source_message_count:1,output_generation:generation,can_use:true,can_prepare:true,retry_after:0,
-  output:task==='reply'?{text:candidate}:{articles:[{id:42,revision,title:'Account <article>',snippet:candidate,source_url:'/dashboard/articles/42'}]}});
+  feedback_receipt:'synthetic-use-receipt', output:task==='reply'?{text:candidate}:{articles:[{id:42,revision,title:'Account <article>',snippet:candidate,source_url:'/dashboard/articles/42'}]}});
 const script = name => fs.readFileSync(path.join(partials,name),'utf8').replace(/<\/?script>/g,'').replace(/@json\(__\('([^']+)'\)\)/g,(_,key)=>JSON.stringify(key));
 function markup(kind,task,state=ready(task)) {
   if(kind==='prepared') return `<section data-ai-assist data-task="${task}" data-workspace="conversation" data-mode="manual" data-status-url="/status" data-use-url="/use" data-ensure-url="/prepare" data-initial="${attr(state)}" data-copy="${attr(copy)}"><p data-ai-message></p><div data-ai-output></div><p data-ai-cooldown></p><form data-ai-form><input name="_token" value="synthetic"><button data-ai-prepare>Refresh</button></form></section>`;
@@ -26,7 +26,7 @@ async function fixture(t,kind='prepared',task='reply',options={}) {
   const region=options.noRegion?'':`<section data-assist-draft-review data-copy="${attr(reviewCopy)}" hidden><h3 data-assist-review-heading tabindex="-1">Review</h3><pre data-assist-review-original></pre><pre data-assist-review-candidate></pre><p data-assist-review-status></p><button type="button" data-assist-review-apply>Apply</button><button type="button" data-assist-review-cancel>Cancel</button></section>`;
   const dom=new JSDOM(`<div data-tab-panel="conversation"><div data-reply-shell><form data-reply-composer><textarea data-reply-body lang="de"></textarea><select data-template-picker><option value="">Custom</option><option value="chosen" selected>Chosen template</option></select><p data-reply-status></p><button type="submit" data-reply-submit>Send</button></form><details data-assist-rail open><summary>Assist</summary><section data-assist-section="${task}">${markup(kind,task)}</section>${region}</details></div></div>`,{url:'https://support.example.test/dashboard/conversations/WF-TEST',runScripts:'outside-only',pretendToBeVisual:true});
   t.after(()=>dom.window.close());
-  const {window}=dom,requests=[],timers=[],announcements=[],taskEvents=[];let sends=0;
+  const {window}=dom,requests=[],timers=[],announcements=[],taskEvents=[];let sends=0; const confirmedUses=[]; window.wayfindrAssistFeedback={used:(...args)=>confirmedUses.push(args)};
   window.setTimeout=fn=>timers.push(fn);window.setInterval=fn=>timers.push(fn);
   window.fetch=(url,options)=>new Promise(resolve=>requests.push({url:String(url),options,resolve}));
   window.addEventListener('wayfindr:assist-action',event=>announcements.push(event.detail.message));
@@ -41,7 +41,7 @@ async function fixture(t,kind='prepared',task='reply',options={}) {
   const button=()=>panel()?.querySelector(kind==='prepared'?'[data-ai-use]':`[data-copilot-${task==='reply'?'reply-draft-use':'knowledge-use'}]`);
   const uses=()=>requests.filter(r=>r.url.startsWith('/use?'));
   const payload=()=>kind==='prepared'?ready(task):{generation,policy_revision:'policy',text:candidate,...(task==='knowledge'?{article_id:42}:{})};
-  return {window,shell,body,panel,button,requests,timers,announcements,taskEvents,respond,uses,payload,sends:()=>sends,
+  return {window,shell,body,panel,button,requests,timers,announcements,taskEvents,respond,uses,payload,confirmedUses:()=>confirmedUses,sends:()=>sends,
     region:shell.querySelector('[data-assist-draft-review]'),apply:shell.querySelector('[data-assist-review-apply]'),cancel:shell.querySelector('[data-assist-review-cancel]'),
     edit(value){body.value=value;body.dispatchEvent(new window.Event('input',{bubbles:true}));},
     async preview(){button().click();respond(uses().at(-1),payload());await flush();},
@@ -145,4 +145,11 @@ test('a rejected grounded Apply withdraws the whole candidate and its citation w
   f.respond(f.uses().at(-1),{...ready('reply'),state:'unavailable',output:null,can_use:false},409);await flush();
   assert.equal(f.body.value,original);assert.equal(f.sends(),0);assert.equal(f.region.querySelector('[data-assist-review-candidate]').textContent,'');
   assert.equal(f.panel().querySelector('[data-ai-output]').textContent,'');assert.equal(f.panel().querySelector('[data-ai-grounding]'),null);
+});
+
+test('prepared insertion feedback follows the final guard and carries the latest authorization receipt',async t=>{
+ const f=await fixture(t,'prepared','reply');await f.preview();assert.equal(f.confirmedUses().length,0,'Preview authorization is not insertion');
+ f.apply.click();f.body.value='Newer human edit';f.body.dispatchEvent(new f.window.Event('input',{bubbles:true}));f.respond(f.uses().at(-1),f.payload());await flush();assert.equal(f.confirmedUses().length,0,'Late Apply after editing must not count as use');
+ f.cancel.click();await f.preview();f.apply.click();const payload=f.payload();payload.feedback_receipt='latest-apply-receipt';f.respond(f.uses().at(-1),payload);await flush();
+ assert.equal(f.confirmedUses().length,1);assert.equal(f.confirmedUses()[0][2],'latest-apply-receipt');assert.equal(f.sends(),0);
 });
