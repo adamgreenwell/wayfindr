@@ -397,6 +397,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `break_glass_grants`: scoped, reasoned, time-bound, read-only platform
   operator access grants for support events.
 - `audit_events`: append-style records for important user, visitor, or system actions.
+  Private AI refinement lifecycle events use a closed content-free envelope with
+  opaque route/model identities, coarse timings and nullable reported usage;
+  existing account/site visibility, visitor export and erasure scrubbing apply.
+  See [AI Assist observability](ai-assist-observability.md).
   Managed-update events are an optional global mirror of the authoritative host
   journal, with null account/site ownership and a nullable unique
   `managed_update_event_key` binding installation, operation and host revision.

@@ -315,7 +315,7 @@ migration specification or a claim that new tables already exist.
 | Preparation/generation | Opaque work/generation IDs, local scope, requester, capability, fingerprint/revisions, state, usage reservation and bounded timing. | Queue carries IDs/revision references, not transcript, source passages or credentials. |
 | Suggestion | Bounded text or validated fields, local source IDs/revisions, included source position and provenance. | Support content, visible only within current authority; not public widget data or content-free metadata. |
 | Refinement input/preview | Owning agent, parent conversation, draft revision, bounded scrubbed input/candidate text and source references. | Private transient storage; encrypted input if queued, queue IDs only, Apply/Cancel, never a shared result or draft archive. |
-| Audit and feedback | Account/site/actor and work IDs, event/reason code, revisions, route/model, timing and reported tokens; viewed/used/rejected outcome. | No prompts, output bodies, original/edited draft bodies, credentials, raw transcripts or free-text feedback. |
+| Audit and feedback | Account/site/actor and work IDs, event/reason code, revisions, opaque model/route identities, timing and reported tokens; viewed/used/rejected outcome. | No prompts, output bodies, original/edited draft bodies, credentials, raw transcripts or free-text feedback. |
 
 Keep only the latest suggestion per capability and equivalent-authority
 partition, plus at most one preceding authorized output during refresh/failure.
@@ -394,3 +394,8 @@ isolation; budget exhaustion/unknown usage; stale draft/form preservation; and
 export/erasure races. Qualify both Option 1 screens and every state with keyboard,
 screen-reader, responsive, theme and locale checks. Passing a probe, fixture or
 mock review does not establish deployed model quality.
+
+The [audit and feedback implementation contract](../architecture/ai-assist-observability.md)
+distinguishes admitted lifecycle state from actual visibility/insertion, usefulness
+assessments and explicit correction effort. The initial #1175 slice covers private
+lifecycle audits; feedback/reporting/retention integration remains in progress.
