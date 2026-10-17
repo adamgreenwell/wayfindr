@@ -50,12 +50,18 @@
                 if (input.event === 'viewed') {
                     record.root.querySelector('[data-feedback-usefulness]').value = value.usefulness || '';
                     record.root.querySelector('[data-feedback-correction]').value = value.correction || 'unassessed';
+                    record.status('');
                 }
                 record.revision = value.revision; record.used = value.used; record.viewed = value.viewed;
                 record.root.querySelector('[data-feedback-correction-label]').hidden = !value.used;
                 record.root.querySelector('[data-feedback-reject]').disabled = value.rejected;
                 if (input.event === 'assessment' || input.event === 'rejected') record.status(record.copy.saved);
-            } catch (_) { if (record.generation === generation) record.status(record.copy.unavailable); }
+            } catch (_) {
+                if (record.generation === generation) {
+                    if (input.event === 'viewed' && record.viewAttempt === generation) record.viewAttempt = null;
+                    record.status(record.copy.unavailable);
+                }
+            }
         });
     };
     const identify = (record, generation) => {

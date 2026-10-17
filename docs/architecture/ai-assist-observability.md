@@ -147,7 +147,11 @@ all later observations. No feedback protocol records Send or captures an edit hi
 
 The visible workspace reports one view per displayed generation; collapsed rails,
 hidden workspaces, output below the viewport, polling and preparation do not report
-views. A displayed output must intersect the viewport; scrolling can reveal it later. Explicit rejection
+views. A displayed output must intersect the viewport; scrolling can reveal it later.
+A failed view request may retry on a later visibility scan while that output remains
+visible; the unique observation stays idempotent, including an uncertain prior delivery.
+Successful views are not replayed. Explicit assessments and rejections require another
+deliberate action after failure. Explicit rejection
 and assessment controls are separate from Cancel. A missing answer is unknown;
 `unsure` and `unassessed` remain distinct. An assessment requires a recorded view,
 and assessed correction effort requires a recorded use. An identical assessment retry
