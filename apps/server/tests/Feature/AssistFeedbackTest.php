@@ -10,7 +10,9 @@ use App\Models\ConversationCopilotSummary;
 use App\Models\ConversationDraftRefinement;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\AgentCopilotResult;
 use App\Support\Ai\Network\AiNetworkException;
 use App\Support\Ai\Observability\AssistFeedback;
 use App\Support\Ai\Observability\AssistReport;
@@ -348,3 +350,35 @@ test('empty article matches are admitted work but never a viewed or used suggest
     expect(fn () => feedbackRecord($w, 'viewed'))->toThrow(AiNetworkException::class);
     expect(AiAssistFeedback::query()->count())->toBe(0);
 });
+
+test('refinement quota refusals are separated from other admitted failures', function (string $code): void {
+    $w = assistPreparationWorld('conversation_reply_draft', 'manual');
+    $s = app(DraftRefinements::class);
+    $input = refinementLifecycleInput();
+    $grant = $s->authorize($w['agent'], $w['conversation'], $input->draftRevision);
+    $s->request($w['agent'], $w['conversation'], $input, $grant['generation']);
+    $row = ConversationDraftRefinement::query()->sole();
+    app()->instance(AgentCopilotProvider::class, new class($code) implements AgentCopilotProvider
+    {
+        public function __construct(private string $code) {}
+
+        public function probe(): AgentCopilotResult
+        {
+            throw new LogicException('Synthetic fixture never probes.');
+        }
+
+        public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
+        {
+            throw new AiNetworkException($this->code);
+        }
+    });
+    app()->call([new GenerateConversationDraftRefinement($row->id, $row->generation), 'handle']);
+    $event = AuditEvent::query()->where('action', 'conversation.ai_draft_refinement.failed')->sole();
+    expect($event->metadata['failure_code'])->toBe($code);
+    $refused = str_starts_with($code, 'usage_');
+    foreach (['all', 'refinement'] as $task) {
+        $report = app(AssistReport::class)->read($w['owner'], 7, $task);
+        expect($report['work']['refused_admission'])->toBe($refused ? 1 : 0)->and($report['work']['failed'])->toBe($refused ? 0 : 1);
+    }
+    expect(Illuminate\Support\Facades\DB::table('conversation_draft_refinement_sends')->count())->toBe(0);
+})->with(['usage_request_limit', 'usage_token_limit', 'usage_concurrency_limit', 'provider_failed']);

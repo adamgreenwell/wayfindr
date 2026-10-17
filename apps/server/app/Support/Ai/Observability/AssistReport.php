@@ -22,6 +22,8 @@ final readonly class AssistReport
 {
     public const MAX_ROWS = 10000;
 
+    private const REFUSAL_CODES = ['usage', 'usage_request_limit', 'usage_token_limit', 'usage_concurrency_limit'];
+
     public function read(User $hint, int $days = 7, string $task = 'all'): array
     {
         $actor = User::query()->find($hint->id);
@@ -93,8 +95,8 @@ final readonly class AssistReport
                 'useful_rate' => $ratio($rows->where('usefulness', 'useful')->count(), $assessed), 'assessment_coverage' => $ratio($qualityResponses, $viewed),
                 'definite_assessments' => $assessed, 'unsure' => $rows->where('usefulness', 'unsure')->count(),
                 'material_correction_rate' => $ratio($corrections->where('correction', 'material')->count(), $corrections->count()), 'correction_coverage' => $ratio($corrections->count(), $used)],
-            'work' => ['generations' => $work->count(), 'refused_admission' => $work->where('failure_code', 'usage')->count(),
-                'failed' => $work->where('state', 'failed')->where('failure_code', '!=', 'usage')->count(),
+            'work' => ['generations' => $work->count(), 'refused_admission' => $work->whereIn('failure_code', self::REFUSAL_CODES)->count(),
+                'failed' => $work->where('state', 'failed')->whereNotIn('failure_code', self::REFUSAL_CODES)->count(),
                 'states' => $work->countBy('state')->all(), 'elapsed_samples' => $elapsed->count(), 'server_elapsed_mean_ms' => $elapsed->isEmpty() ? null : $elapsed->avg()],
             'usage' => ['observed_attempts' => $attempts->count(), 'unknown_transport' => $attempts->where('state', 'unknown')->count(),
                 'missing_attempt_records' => $work->pluck('generation')->unique()->diff($attempts->pluck('attempt_id'))->count(),

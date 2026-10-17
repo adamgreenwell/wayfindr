@@ -119,7 +119,9 @@ The four shared tasks retain their legacy requested/generated/failed action name
 and add started. Their explicit envelope includes purpose, policy and connection
 revisions, keyed work/source identities, configured closed provider and opaque route
 and model tags, coarse server timings, nullable guarded/ledger reported counts and
-closed failure codes. Admission refusal (`usage`) stays distinct from admitted failure.
+closed failure codes. Admission refusals (`usage`, `usage_request_limit`, `usage_token_limit` and
+`usage_concurrency_limit`) stay distinct from other admitted failures, including
+private refinements refused during final dispatch admission.
 A fresh exact-generation parent/actor lookup and the account lifecycle lock prevent
 late erased or replaced workers from appending history. Historical records are not
 backfilled with invented provenance. Existing support suggestion content remains in
@@ -166,7 +168,9 @@ if either feedback or lifecycle input exceeds 10,000 rows; it shows an incomplet
 message instead of partial rates. Query chunk sizes are bounded at 500.
 
 Work counts group lifecycle observations by generation and use the latest retained
-state within the window. Elapsed samples use bounded observed lifecycle durations,
+state within the window. Counts cover recorded generations: private refusals before
+reservation create no admitted-work event and cannot be inferred as additional
+refusals from this report. The UI names this recorded-admission coverage explicitly. Elapsed samples use bounded observed lifecycle durations,
 including queue/review; they are not model/UI latency or subsecond measurements.
 Reported tokens and charged/held bounds come from distinct visible usage attempts,
 never a sum of repeated lifecycle events or account totals from hidden sites. Missing
