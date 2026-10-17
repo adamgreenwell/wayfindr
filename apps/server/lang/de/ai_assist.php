@@ -303,6 +303,7 @@ return [
         'preview' => 'Überarbeitung als Vorschau',
         'cancel' => 'Überarbeitung abbrechen',
         'preparing' => 'Ihre private Vorschau wird vorbereitet. Ihr Entwurf bleibt unverändert.',
+        'browser_unavailable' => 'Private Vorschauen werden in diesem Browserkontext nicht unterstützt. Verwenden Sie einen aktuellen Browser über HTTPS. Ihr Entwurf bleibt unverändert.',
         'unavailable' => 'Die Überarbeitung ist nicht verfügbar oder wurde zurückgehalten. Ihr Entwurf bleibt unverändert.',
         'stale' => 'Ihr Entwurf, die Quellen oder die Verbindung haben sich geändert, oder die Vorschau ist abgelaufen. Ihr aktueller Text bleibt erhalten; starten Sie eine neue Überarbeitung.',
         'cancelled' => 'Überarbeitung abgebrochen. Ihr Entwurf bleibt unverändert.',

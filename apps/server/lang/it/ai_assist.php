@@ -303,6 +303,7 @@ return [
         'preview' => 'Anteprima della revisione',
         'cancel' => 'Annulla revisione',
         'preparing' => 'Preparazione dell’anteprima privata. La bozza non cambia.',
+        'browser_unavailable' => 'Le anteprime private non sono supportate in questo contesto del browser. È necessario un browser aggiornato tramite HTTPS. La bozza non cambia.',
         'unavailable' => 'La revisione non è disponibile o è stata trattenuta. La bozza non cambia.',
         'stale' => 'La bozza, le fonti o la connessione sono cambiate, oppure l’anteprima è scaduta. Il testo corrente è al sicuro; avvia una nuova revisione.',
         'cancelled' => 'Revisione annullata. La bozza non cambia.',

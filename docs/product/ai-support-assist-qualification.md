@@ -4,13 +4,19 @@ This is the working qualification record for [#1176](https://github.com/adamgree
 following slices #1166–#1175. The [behavior contract](ai-support-assist-contract.md)
 and [ADR 0004](../decisions/0004-ai-as-assistive-product-and-development-layer.md)
 remain authoritative. Source integration, human UAT, provider quality and release
-approval are separate gates. This first slice does not close #1176 or authorize
-release, deployment, live-provider testing or production activation.
+approval are separate gates. The completion candidate is recorded in the
+[2026-10-17 evidence bundle](../development/ai-assist-qualification-2026-10-17.md).
+Adam reports a macOS VoiceOver accessibility/screen-reader pass in the
+[human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703).
+Adam also confirms [real phone/tablet checks passed](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6243045464).
+Device model and browser/OS/screen-reader versions remain unspecified. This record does
+not authorize release, deployment, live-provider testing or production activation.
 
-The usage foundation/integrations are merged, but #1174 deliberately remains
-Open / In Progress until its full integrated acceptance is audited. Its open
-checkboxes are part of the predecessor audit below, not implicitly satisfied by
-this first slice. The other nine predecessor issues are closed.
+The usage foundation/integrations and first qualification slice (#1198) are
+merged. The completion record maps all ten #1174 criteria to integrated evidence;
+#1174 remains Open / In Progress until candidate review/CI and merge. The other
+nine predecessor issues are closed. Human VoiceOver and real small-device passes
+are recorded above; final closure follows completion merge and acceptance audit.
 
 ## Evidence rules
 
@@ -88,8 +94,15 @@ OS and screen-reader versions and actual device used. Execute in English first,
 then repeat critical controls/state announcements in German and Italian. Cover
 light/dark, reduced motion, desktop and a 390-pixel-wide viewport; include a real
 small device before device acceptance. A scripted DOM assertion or screenshot
-does not count as screen-reader acceptance. The following scripts are **unexecuted
-for this qualification slice**; historical screen checks do not fill their receipts.
+does not count as screen-reader acceptance. The completion record separates executed HTTP, runtime, native browser and schema
+rehearsals from these human scripts. Adam reports no accessibility/screen-reader
+failures using macOS VoiceOver.
+Adam separately confirms real phone/tablet checks passed. Detailed spoken
+announcements, browser/version, localized human comprehension and a full device
+matrix are not inferred from those reports. Private refinement requires a
+modern secure browser
+context (HTTPS); unsupported contexts explain disabled Preview and preserve manual
+Send. Use a disposable HTTPS environment for the complete human journey.
 
 | ID / priority / persona | Preconditions and steps | Observable expected result and evidence |
 | --- | --- | --- |
@@ -110,6 +123,40 @@ responsive matrix UAT-07–08. Missing environment controls, devices or assistiv
 technology leave the corresponding cases blocked and #1176 open.
 
 ## Pilot decision record
+
+The following is a concrete **proposed, inactive** first pilot profile. Approve
+these thresholds and fill the owner/cohort/provider identities before separately
+authorizing any live calls. It is planning evidence, not an installation default:
+
+- One named accountable owner; at most two consented sites and five responding
+  agents; 14 calendar days, extended only to reach the minimum sample. Start in
+  Manual, then separately approve Prepare after reviewing the first 20 drafts.
+- At least 100 viewed reply/refinement opportunities, 50 assessed drafts, 30
+  assessed insertions and 20 closed conversations with outcome review. Split
+  reply/refinement and EN/DE/IT results; do not pool a failing language/task into
+  an overall pass. Report sparse strata as insufficient evidence.
+- Useful-draft rate at least 70%, with at least 70% assessment coverage of viewed
+  opportunities. Material corrections at most 10% of assessed insertions, with
+  at least 80% correction-assessment coverage. Owner reviews all reported material
+  corrections and a random 20% of other assessed drafts; any fabricated action,
+  secret disclosure or unsupported consequential claim triggers containment.
+- Browser time-to-visible p95 at most 15 seconds over at least 50 completed
+  generations; terminal provider/system failures at most 5% of admitted attempts.
+  Report server elapsed time separately. Budget refusals and unknown dispatch
+  are separate rates; unexplained unknown dispatch holds expansion.
+- Owner approves a numeric daily request/token cap within installation ceilings
+  before activation. No overspend, repeated undisclosed dispatch or unexplained
+  holds beyond documented expiry. Report conservative debits versus provider
+  billing separately; investigate any mismatch before expanding.
+- Review every sampled close for reopening/unresolved follow-up within seven
+  days; report ratings with coverage. Hold expansion if unresolved/reopened share
+  exceeds the same cohort pre-pilot baseline by more than five percentage points,
+  or any reviewed Assist error causes a harmful customer outcome. Without a
+  comparable baseline or adequate samples, outcome benefit remains unknown.
+
+These are proposed go/hold criteria, not measured results or a causal experiment.
+A pilot owner may revise them **before** collecting results, with a dated decision.
+
 
 Before an authorized pilot, name its owner, cohort/sites, time window, reviewed
 provider/model/route and numeric go/hold thresholds. Agree minimum sample counts
@@ -166,8 +213,10 @@ reviewed pilot's deployed configuration and representative human assessments.
   [audit, feedback, reports and retention](../architecture/ai-assist-observability.md),
   [privacy inventory](../privacy/data-inventory.md).
 
-Remaining #1176 work: execute and record the complete human UAT/upgrade/containment
-matrix; assemble current exact-identity runtime grounding/refinement evaluations;
-audit each predecessor's acceptance against the final candidate; and fill the
-pilot decision record. Live-provider evidence and rollout remain separately
-authorized. This document is a runnable checklist, not a completed release certificate.
+The completion candidate includes current runtime evaluations, schema-upgrade/
+containment rehearsals, predecessor acceptance mapping, native browser evidence
+and the inactive pilot profile above. Human macOS VoiceOver and real small-device
+passes are recorded above. Final candidate review/CI/merge and acceptance audit
+complete the source-delivery gates. A deployed
+upgrade, live-provider quality, pilot approval and rollout remain separately
+authorized operator evidence. This is not a completed release certificate.

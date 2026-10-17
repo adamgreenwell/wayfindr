@@ -26,6 +26,7 @@
             if (value && announce) window.dispatchEvent(new CustomEvent('wayfindr:assist-action', {detail:{message:value}}));
         };
         const sync = () => {
+            if (panel.dataset.available === 'true' && !revision && status.textContent !== copy.browser_unavailable) message(copy.browser_unavailable, false);
             bool(requestButton, 'disabled', panel.dataset.available !== 'true' || !revision || !usable() || active !== null
                 || !/[\p{L}\p{N}\p{P}\p{S}]/u.test(body.value) || /(?![\t\r\n])\p{Cc}|\p{Cs}/u.test(body.value)
                 || Array.from(body.value).length > 4000 || now() < cooldown);

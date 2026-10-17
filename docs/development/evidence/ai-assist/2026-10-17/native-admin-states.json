@@ -1,0 +1,34 @@
+{
+  "owned_record_projections": true,
+  "actual_save_test_enable_journey_separate": true,
+  "states": [
+    {
+      "state": "ready",
+      "credentialBlank": true,
+      "testDisabled": false,
+      "saveDisabled": false,
+      "staleEditRefused": true
+    },
+    {
+      "state": "preparing",
+      "credentialBlank": true,
+      "testDisabled": true,
+      "saveDisabled": true,
+      "staleEditRefused": false
+    },
+    {
+      "state": "unavailable",
+      "credentialBlank": true,
+      "testDisabled": false,
+      "saveDisabled": true,
+      "staleEditRefused": false
+    },
+    {
+      "state": "untested",
+      "credentialBlank": true,
+      "testDisabled": false,
+      "saveDisabled": true,
+      "staleEditRefused": false
+    }
+  ]
+}

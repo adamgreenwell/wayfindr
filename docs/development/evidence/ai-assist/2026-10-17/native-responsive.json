@@ -1,0 +1,137 @@
+{
+  "browser": "155.0.8059.80",
+  "matrix": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "en",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "en",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "en",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "en",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "de",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "de",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "de",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "de",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "it",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "it",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "reducedMotion": true,
+      "locale": "it",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "reducedMotion": true,
+      "locale": "it",
+      "overflow": false,
+      "composerEmpty": true,
+      "sendReachable": true,
+      "liveRegions": 1,
+      "transcriptDominates": true
+    }
+  ]
+}
