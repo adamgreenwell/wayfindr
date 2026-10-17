@@ -37,16 +37,29 @@
     const send = (record, input) => {
         const generation = record.generation;
         record.queue = record.queue.then(async () => {
+            let retryable = true, timeout = null;
             try {
+                let signal;
+                if (input.event === 'used') {
+                    const pending = record.pendingUse;
+                    if (!pending || pending.generation !== generation || pending.receipt !== input.receipt) return;
+                    if (performance.now() >= pending.deadline) { discardUse(record); return; }
+                    pending.controller = new AbortController(); signal = pending.controller.signal;
+                    timeout = window.setTimeout(() => pending.controller.abort(), pending.deadline - performance.now());
+                }
                 const payload = {...input, generation};
                 if (input.event === 'assessment') payload.expected_revision = record.revision;
                 const response = await fetch(record.root.dataset.feedbackUrl, {method:'POST', credentials:'same-origin', cache:'no-store',
                     headers:{'Accept':'application/json','Content-Type':'application/json','X-Requested-With':'XMLHttpRequest',
                         'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content || record.panel.closest('form')?.querySelector('[name="_token"]')?.value || document.querySelector('input[name="_token"]')?.value || ''},
-                    body:JSON.stringify(payload)});
-                if (!response.ok) throw new Error('unavailable');
+                    body:JSON.stringify(payload), signal});
+                if (!response.ok) {
+                    retryable = response.status === 429 || response.status >= 500;
+                    throw new Error('unavailable');
+                }
                 const value = await response.json();
                 if (record.generation !== generation) return;
+                if (input.event === 'used' && record.pendingUse?.receipt === input.receipt) discardUse(record);
                 if (input.event === 'viewed') {
                     record.root.querySelector('[data-feedback-usefulness]').value = value.usefulness || '';
                     record.root.querySelector('[data-feedback-correction]').value = value.correction || 'unassessed';
@@ -59,14 +72,21 @@
             } catch (_) {
                 if (record.generation === generation) {
                     if (input.event === 'viewed' && record.viewAttempt === generation) record.viewAttempt = null;
+                    if (input.event === 'used' && record.pendingUse?.receipt === input.receipt) {
+                        if (retryable && performance.now() < record.pendingUse.deadline) {
+                            record.pendingUse.attempting = false; record.pendingUse.nextAttempt = performance.now() + 2000;
+                        } else discardUse(record);
+                    }
                     record.status(record.copy.unavailable);
                 }
-            }
+            } finally { if (timeout !== null) window.clearTimeout(timeout); }
         });
     };
+    const discardUse = record => { record.pendingUse?.controller?.abort(); record.pendingUse = null; };
     const identify = (record, generation) => {
         if (record.generation === generation) return;
         record.generation = generation; record.revision = 0; record.used = false; record.viewed = false;
+        discardUse(record);
         record.root.querySelector('[data-feedback-controls]').hidden = false;
         record.root.querySelector('[data-feedback-correction-label]').hidden = true;
         record.root.querySelector('[data-feedback-reject]').disabled = false;
@@ -82,9 +102,19 @@
         if (record.viewAttempt === generation) return;
         record.viewAttempt = generation; send(record, {event:'viewed'});
     };
+    const retryUse = record => {
+        const pending = record.pendingUse; if (!pending) return;
+        if (pending.generation !== record.generation || performance.now() >= pending.deadline) { discardUse(record); return; }
+        if (pending.attempting || performance.now() < pending.nextAttempt || document.visibilityState !== 'visible' || document.prerendering === true) return;
+        pending.attempting = true; send(record, {event:'used', receipt:pending.receipt});
+    };
     const used = (panel, generation, receipt) => {
         const record = mount(panel); if (!record || typeof receipt !== 'string' || !generation) return;
-        identify(record, generation); send(record, {event:'used', receipt});
+        identify(record, generation); if (record.used) return;
+        if (!record.pendingUse || record.pendingUse.receipt !== receipt) {
+            record.pendingUse = {generation, receipt, deadline:performance.now() + 60000, nextAttempt:performance.now(), attempting:false};
+        }
+        retryUse(record);
     };
     const scan = () => { document.querySelectorAll('[data-ai-assist]').forEach(panel => {
         let state; try { state = JSON.parse(panel.dataset.initial); } catch (_) {}
@@ -96,7 +126,8 @@
         } else { const record = mount(panel); if (record) record.root.querySelector('[data-feedback-controls]').hidden = true; }
     });
         mounted.forEach(record => {
-            if (!record.root.isConnected) { mounted.delete(record); return; }
+            if (!record.root.isConnected) { discardUse(record); mounted.delete(record); return; }
+            retryUse(record);
             if (record.panel.matches('[data-draft-refinement]') && record.pendingView) {
                 const {generation, target} = record.pendingView; viewed(record.panel, generation, target);
             }
@@ -110,6 +141,7 @@
     window.addEventListener('wayfindr:tab-shown', scan);
     window.addEventListener('scroll', scan, {passive:true});
     window.addEventListener('resize', scan);
+    window.addEventListener('pagehide', () => mounted.forEach(discardUse));
     window.setInterval(scan, 2000); scan();
 })();
 </script>

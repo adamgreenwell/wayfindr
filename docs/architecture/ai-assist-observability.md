@@ -138,12 +138,19 @@ parent locks precede the unique feedback row. Identical retries do not add obser
 Fresh Use/Apply responses issue a content-free authenticated encrypted receipt bound
 to account, site, conversation, actor, purpose, generation and keyed current source
 identity. It expires after at most 60 seconds, and no later than private draft expiry.
-The receipt is never stored. A client must confirm insertion after the final local
+The receipt is never persisted. A client must confirm insertion after the final local
 guard; server authorization alone leaves used unknown. Private views require a ready,
 current owning draft; use requires the applied state and current receipt. Private
 assessment additionally checks the retained keyed source proof after payload clearing.
 No other agent can report on that private draft, and supersession/expiry/erasure fence
 all later observations. No feedback protocol records Send or captures an edit history.
+After confirmed local insertion, an uncertain acknowledgement may retry the same
+receipt no more often than every two seconds, for at most 60 seconds. The client keeps
+it only in memory, aborts at that deadline, and discards it on acknowledgement,
+definitive refusal, generation change or page navigation. The server always enforces
+the receipt's actual expiry, including an earlier private-draft deadline. Queued
+observations recheck their deadline before dispatch; assessments and rejections never
+replay automatically. A missing acknowledgement after this window remains unknown.
 
 The visible workspace reports one view per displayed generation; collapsed rails,
 hidden workspaces, output below the viewport, polling and preparation do not report
