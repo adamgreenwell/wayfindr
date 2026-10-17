@@ -14,8 +14,8 @@ foundation merged in #1194; its runtime and composer completion merged
 as #1195 after clean review and all five CI jobs passed. The #1175 audit/feedback/retention completion merged in #1197. The first #1176
 qualification slice merged in #1198 (`5954d0cf`); its completion candidate is on
 `feat/1176-ai-assist-qualification-completion`. Adam reports a macOS VoiceOver
-accessibility/screen-reader pass. Physical-device
-acceptance and completion merge remain open; final review/CI state is tracked in
+accessibility/screen-reader pass and explicitly confirms real phone/tablet checks
+passed. Completion merge remains open; final review/CI state is tracked in
 [#1199](https://github.com/adamgreenwell/wayfindr/pull/1199).
 The #1170 implementation, merged in [#1189](https://github.com/adamgreenwell/wayfindr/pull/1189), adds [shared preparation admission, terminal receipts, worker fencing and visible-open integration](../architecture/ai-assist-preparation-lifecycle.md), including Manual compatibility, deliberate ticket Apply, and renewed account/site approval before earlier Prepare choices can process automatically. The [#1171 rail integration](ai-support-assist-rail.md) adds the selected collapsible layout, guarded existing-draft previews, authorized source inspection, processor/context disclosure and consolidated freshness/announcements. Its foundation merged in #1190 and completion merged in #1191 after the Safari keyboard review correction, clean review and all five CI checks. The [#1172 grounding foundation](../architecture/ai-assist-grounded-drafts.md) merged in #1192 with bounded local passage selection, signed source revalidation and strict proposal/citation parsing. Completion merged in [#1193](https://github.com/adamgreenwell/wayfindr/pull/1193) after clean review and all five CI checks. It adds consented passage sharing, conservative complete-sentence evidence validation, shared worker/cache/display/Use fences and collapsible citations. Unsupported or conflicting guidance becomes a safe clarification. The [#1173 private refinement](../architecture/ai-assist-draft-refinement.md) foundation merged in #1194. Completion adds encrypted expiring owner-bound storage, guarded usage/transport, erasure-visible send admission, ID-only jobs, JSON routes and explicit clarify/shorten/tone/translate Preview/Apply/Cancel beside the composer. Exact original/edit-revision checks preserve intervening edits, policy/source changes withdraw visible previews, and ordinary Send stays separate. Completion merged in [#1195](https://github.com/adamgreenwell/wayfindr/pull/1195) after clean review and all five CI checks. The first [#1175 audit slice](../architecture/ai-assist-observability.md) adds content-free private lifecycle events with bounded expiry work and defines distinct feedback/measurement semantics. Feedback collection, shared-task audit parity, reports and retention controls merged through #1197. Real model quality and rollout remain separate qualification.
 The [behavior and data contract](ai-support-assist-contract.md) defines
@@ -332,8 +332,9 @@ The [2026-10-17 candidate evidence](../development/ai-assist-qualification-2026-
 records runtime evaluations, PostgreSQL races, upgrade/containment rehearsals and
 native UI checks. Adam's macOS VoiceOver pass is recorded in the
 [human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703);
-a physical-device result is not yet identified. The pilot profile is proposed and
-inactive.
+the [real phone/tablet pass](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6243045464)
+is recorded separately. Device/browser/version details are unspecified. The pilot
+profile is proposed and inactive.
 
 Use fake providers and synthetic source material for automated coverage. Verify
 the complete agent journey, connection editing and testing, multiple accounts in

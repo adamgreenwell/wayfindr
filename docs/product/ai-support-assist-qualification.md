@@ -8,13 +8,15 @@ approval are separate gates. The completion candidate is recorded in the
 [2026-10-17 evidence bundle](../development/ai-assist-qualification-2026-10-17.md).
 Adam reports a macOS VoiceOver accessibility/screen-reader pass in the
 [human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703).
-Browser/version and a physical-device result remain unspecified. This record does
+Adam also confirms [real phone/tablet checks passed](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6243045464).
+Device model and browser/OS/screen-reader versions remain unspecified. This record does
 not authorize release, deployment, live-provider testing or production activation.
 
 The usage foundation/integrations and first qualification slice (#1198) are
 merged. The completion record maps all ten #1174 criteria to integrated evidence;
 #1174 remains Open / In Progress until candidate review/CI and merge. The other
-nine predecessor issues are closed. #1176 additionally requires human acceptance.
+nine predecessor issues are closed. Human VoiceOver and real small-device passes
+are recorded above; final closure follows completion merge and acceptance audit.
 
 ## Evidence rules
 
@@ -95,9 +97,9 @@ small device before device acceptance. A scripted DOM assertion or screenshot
 does not count as screen-reader acceptance. The completion record separates executed HTTP, runtime, native browser and schema
 rehearsals from these human scripts. Adam reports no accessibility/screen-reader
 failures using macOS VoiceOver.
-Detailed spoken announcements, browser/version, localized human comprehension
-and a real small-device result are not inferred from that report. Historical
-screen checks do not fill missing device evidence. Private refinement requires a
+Adam separately confirms real phone/tablet checks passed. Detailed spoken
+announcements, browser/version, localized human comprehension and a full device
+matrix are not inferred from those reports. Private refinement requires a
 modern secure browser
 context (HTTPS); unsupported contexts explain disabled Preview and preserve manual
 Send. Use a disposable HTTPS environment for the complete human journey.
@@ -213,8 +215,8 @@ reviewed pilot's deployed configuration and representative human assessments.
 
 The completion candidate includes current runtime evaluations, schema-upgrade/
 containment rehearsals, predecessor acceptance mapping, native browser evidence
-and the inactive pilot profile above. Remaining #1176 gates are the physical
-small-device result and final candidate
-review/CI/merge; the human macOS VoiceOver pass is recorded above. A deployed
+and the inactive pilot profile above. Human macOS VoiceOver and real small-device
+passes are recorded above. Final candidate review/CI/merge and acceptance audit
+complete the source-delivery gates. A deployed
 upgrade, live-provider quality, pilot approval and rollout remain separately
 authorized operator evidence. This is not a completed release certificate.

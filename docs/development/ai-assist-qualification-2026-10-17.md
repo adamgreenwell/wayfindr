@@ -10,9 +10,10 @@ guards and actual observed outcomes. Tester: Codex, 2026-10-17.
 All accounts, support text and providers were synthetic. No live model, production
 data, release, deployment or pilot was exercised. Adam reports no accessibility
 or screen-reader failures using built-in macOS VoiceOver in the [human receipt](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703).
-Browser/OS/VoiceOver versions are unspecified. A physical small-device result is
-not yet identified; keep #1176 open until its device gate and completion merge.
-A real deployed upgrade also remains an operator acceptance step.
+Adam also explicitly confirms [real phone/tablet checks passed](https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6243045464).
+Device model, browser/OS/VoiceOver versions are unspecified. Human gates are
+reported passed; issue closure follows completion merge and the acceptance audit.
+A real deployed upgrade remains an operator acceptance step.
 
 ## Candidate changes
 
@@ -120,8 +121,11 @@ The selected screenshots show the corrected desktop controls and narrow German
 dark composer. Machine receipts retain dimensions/preferences and observed checks;
 they are not design mocks or a release certificate. Adam subsequently reports
 accessibility/screen-reader acceptance using macOS VoiceOver. This is a human-reported pass, without a detailed spoken-announcement
-transcript or named browser/version. Physical-device behavior and localized human
-comprehension are not inferred from the browser captures.
+transcript or named browser/version. Adam separately confirms a real phone/tablet
+pass. Localized human comprehension and a complete device matrix are not inferred
+from these reports. See the [human receipt](evidence/ai-assist/2026-10-17/human-acceptance.json);
+`verification.json` preserves the earlier automated capture with human gates still
+pending at that time.
 
 ## Predecessor acceptance audit
 
@@ -153,8 +157,9 @@ comprehension are not inferred from the browser captures.
 | Content-free observed usage/failures | `AssistFeedbackTest`, preparation/private audits, retention; configured model identity and bounded reports |
 | Fake races/revision/reset/timeout/partial usage | The PostgreSQL scoped/race runs; synthetic runtime/containment additions; no live calls |
 
-These mappings establish candidate evidence. #1174 remains open until candidate
-review/CI and merge; #1176 additionally requires its physical-device result.
+These mappings establish integrated acceptance evidence. Human macOS VoiceOver
+and real small-device passes are recorded above. #1174 and #1176 close after
+final candidate review/CI, completion merge and the GitHub acceptance audit.
 Pilot thresholds and containment/recovery are in the
 [qualification guide](../product/ai-support-assist-qualification.md). Pilot owner,
 cohort and provider are intentionally unassigned until a separately authorized
