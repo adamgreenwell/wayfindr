@@ -1,0 +1,58 @@
+{
+  "variants": [
+    {
+      "variant": "reply-injection",
+      "test": "AiAssistRuntimeEvaluationTest.php",
+      "filter": "reply-source-injection",
+      "failures": [
+        {
+          "test": "P\\Tests\\Feature\\AiAssistRuntimeEvaluationTest::__pest_evaluable_the_current_guarded_Assist_recipes_qualify_each_synthetic_case_without_side_effects with data set \"dataset \"reply-source-injection\"\"",
+          "message": "reply-source-injection grounding decision\nFailed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'insufficient'\n+'supported'"
+        }
+      ]
+    },
+    {
+      "variant": "refinement-action",
+      "test": "AiAssistRuntimeEvaluationTest.php",
+      "filter": "refine-unsupported-action",
+      "failures": [
+        {
+          "test": "P\\Tests\\Feature\\AiAssistRuntimeEvaluationTest::__pest_evaluable_the_current_guarded_Assist_recipes_qualify_each_synthetic_case_without_side_effects with data set \"dataset \"refine-unsupported-action\"\"",
+          "message": "Failed asserting that Array &0 [\n    'candidate' => 'Your checkout refund has been processed.',\n    'citations' => Array &1 [],\n    'limitation' => null,\n] is null."
+        }
+      ]
+    },
+    {
+      "variant": "upgrade-opt-in",
+      "test": "AiAssistUpgradeContainmentTest.php",
+      "filter": "upgrading the pre-Assist",
+      "failures": [
+        {
+          "test": "P\\Tests\\Feature\\AiAssistUpgradeContainmentTest::__pest_evaluable_upgrading_the_pre_Assist_schema_preserves_operator_Manual_support_and_never_backfills_automatic_consent",
+          "message": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'manual'\n+'prepare'"
+        }
+      ]
+    },
+    {
+      "variant": "containment-charge",
+      "test": "AiAssistUpgradeContainmentTest.php",
+      "filter": "in-flight",
+      "failures": [
+        {
+          "test": "P\\Tests\\Feature\\AiAssistUpgradeContainmentTest::__pest_evaluable_account_containment_fences_pending_and_in_flight_shared_work_while_preserving_support_and_usage_responsibility with data set \"dataset \"in-flight\" / dataset \"disable\"\"",
+          "message": "Failed asserting that 0 is identical to 7."
+        },
+        {
+          "test": "P\\Tests\\Feature\\AiAssistUpgradeContainmentTest::__pest_evaluable_account_containment_fences_pending_and_in_flight_shared_work_while_preserving_support_and_usage_responsibility with data set \"dataset \"in-flight\" / dataset \"disconnect\"\"",
+          "message": "Failed asserting that 0 is identical to 7."
+        }
+      ]
+    },
+    {
+      "variant": "missing-browser-explanation",
+      "expected_assertion": "status text equals browser_unavailable",
+      "failed": 1
+    }
+  ],
+  "live_source_unchanged": true
+}
