@@ -84,10 +84,11 @@
             return value;
         };
         const poll = async capture => {
+            if (capture.applying) return;
             if (!matchesDraft(capture)) { if (active === capture) clear(copy.stale); return; }
             try {
                 const value = await read(capture);
-                if (active !== capture) return;
+                if (active !== capture || capture.applying) return;
                 if (!matchesDraft(capture)) { clear(copy.stale); return; }
                 if (!Number.isInteger(value.ttl_seconds) || value.ttl_seconds <= 0 || value.ttl_seconds > 900) { clear(copy.stale); return; }
                 capture.expires = Math.min(capture.expires, now() + value.ttl_seconds * 1000);
@@ -108,6 +109,11 @@
                 await window.wayfindrAssistDraftReview.offer({shell, task:'refinement', forcePreview:true, preserveWhitespace:true,
                     readCurrent:identity,
                     fetchAuthorized:async stage => {
+                        if (stage === 'apply') {
+                            capture.applying = true;
+                            if (timer !== null) window.clearTimeout(timer);
+                            timer = null;
+                        }
                         const fresh = stage === 'apply'
                             ? await post(panel.dataset.applyUrl, {generation:capture.generation, draft_revision:capture.revision}) : await read(capture);
                         if (!matchesDraft(capture) || fresh.state !== 'ready' || fresh.generation !== capture.generation
@@ -136,7 +142,7 @@
                     onApplied:() => { message(copy.applied, false); sync(); }
                 });
                 if (active === capture) timer = window.setTimeout(() => void poll(capture), 2000);
-            } catch (error) { if (active === capture) clear(copy.unavailable); }
+            } catch (error) { if (active === capture && !capture.applying) clear(copy.unavailable); }
         };
         requestButton.addEventListener('click', async () => {
             sync(); if (requestButton.disabled) return;

@@ -159,3 +159,14 @@ test('callbacks after the final Apply assignment can make later edits without be
   const f=await fixture(t);await f.preview();f.shell.querySelector('[data-template-picker]').addEventListener('change',()=>{f.body.value='A later programmatic edit.';});
   f.buttons.apply.click();f.respond(f.byPath('/refine/apply')[0],f.ready());await flush();assert.equal(f.body.value,'A later programmatic edit.');assert.equal(f.sends(),0);
 });
+
+for (const result of ['consumed', 'read-failed']) test(`an already-running status poll (${result}) cannot revoke an authorized Apply`,async t=>{
+  const f=await fixture(t);await f.preview();await f.tick();
+  const poll=f.byPath('/refine/status').at(-1);f.buttons.apply.click();
+  const apply=f.byPath('/refine/apply').at(-1);
+  assert.equal(f.timers.filter(timer=>!timer.cleared&&timer.delay===2000).length,0,'Apply pauses future polls.');
+  f.respond(poll,f.ready({state:'applied',preview:null,sources:[]}),result==='read-failed'?503:200);await flush();
+  f.respond(apply,f.ready());await flush();
+  assert.equal(f.body.value,candidate,'The authorized Apply must survive the consumed or failed status receipt.');
+  assert.equal(f.region.hidden,true);assert.equal(f.sends(),0);
+});
