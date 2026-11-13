@@ -146,6 +146,7 @@ test('the starter template names the one agent and asks about them separately', 
   assert.equal(post.body.template, 'starter');
   assert.equal(post.body.template_version, 1);
   assert.equal(post.body.agent, 'agent-ref-ada');
+  assert.equal(post.body.agent_name, 'Ada Agent');
   assert.equal(post.body.agent_score, 'bad');
 });
 

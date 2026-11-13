@@ -57,6 +57,8 @@ class ConversationRatingController extends Controller
             // The handle of the agent the question named, and the answer to it.
             // A null score with a handle is "skipped", which is absent data.
             'agent' => ['nullable', 'string', 'max:64'],
+            // The name the question showed, verified against the handle.
+            'agent_name' => ['nullable', 'string', 'max:255'],
             'agent_score' => ['nullable', 'string', 'max:16'],
         ]);
 
@@ -132,7 +134,7 @@ class ConversationRatingController extends Controller
             $validated['comment'] = null;
         }
 
-        [$agentId, $agentName, $agentScore] = $this->agentAnswer($conversation, $episode, $template, $validated);
+        [$agentId, $agentName, $agentScore, $ratedAgentId] = $this->agentAnswer($conversation, $episode, $template, $validated);
 
         $comment = trim((string) ($validated['comment'] ?? ''));
         $existed = $conversation->ratings()->where('episode_event_id', $episode->id)->exists();
@@ -159,7 +161,7 @@ class ConversationRatingController extends Controller
                 'scale' => $template->isCustom() ? $template->scale() : null,
                 'agent_user_id' => $agentId,
                 'agent_name' => $agentName,
-                'rated_agent_id' => $agentId,
+                'rated_agent_id' => $ratedAgentId,
                 'agent_score' => $agentScore,
                 'rated_at' => now()->toDateTimeString(),
                 'created_at' => now()->toDateTimeString(),
@@ -186,7 +188,7 @@ class ConversationRatingController extends Controller
      * the visitor saw -- never to whoever is assigned, or clicked Close.
      *
      * @param  array<string, mixed>  $validated
-     * @return array{0: int|null, 1: string|null, 2: string|null}
+     * @return array{0: int|null, 1: string|null, 2: string|null, 3: int|null} [live account id, shown name, score, stable agent id]
      */
     private function agentAnswer(Conversation $conversation, AuditEvent $episode, RatingTemplate $template, array $validated): array
     {
@@ -200,28 +202,27 @@ class ConversationRatingController extends Controller
                 ]);
             }
 
-            return [null, null, null];
+            return [null, null, null, null];
         }
 
         $agentId = $template->asksAboutAgent() ? $conversation->ratingEpisodeAgentId($episode) : null;
+        $shownName = $validated['agent_name'] ?? null;
 
-        if ($agentId === null || ! hash_equals(Conversation::ratingAgentToken($episode, $agentId), $handle)) {
+        if ($agentId === null
+            || $shownName === null
+            || ! hash_equals(Conversation::ratingAgentToken($episode, $agentId, $shownName), $handle)) {
             throw ValidationException::withMessages([
                 'agent' => 'That is not the person who helped with this conversation.',
             ]);
         }
 
-        $agent = User::query()->find($agentId);
+        // The name the visitor saw, not whatever the account is called now: a
+        // rename between the prompt and the answer must not attach the score
+        // to a name the visitor never read. Verified by the handle, so it is
+        // the name the server issued. An account deleted since keeps the
+        // answer too -- the id clears, the name stays, as for a later deletion.
+        $agentStillExists = User::query()->whereKey($agentId)->exists();
 
-        // The right person, whose account has been deleted since the prompt
-        // was shown. There is no name left to snapshot, so the agent answer is
-        // dropped and the overall answer and comment are kept: refusing the
-        // whole response would lose what the visitor said about everything
-        // else, with no way to send it again for this close (#1206).
-        if ($agent === null) {
-            return [null, null, null];
-        }
-
-        return [$agent->id, $agent->name, $score];
+        return [$agentStillExists ? $agentId : null, $shownName, $score, $agentId];
     }
 }

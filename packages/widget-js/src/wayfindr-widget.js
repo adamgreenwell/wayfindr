@@ -1502,6 +1502,9 @@
           template: shown && shown.template ? shown.template.key : null,
           template_version: shown && shown.template ? shown.template.version : null,
           agent: shown && shown.agent ? shown.agent.ref : null,
+          // The name the question showed; the server accepts it only with the
+          // handle it issued alongside it.
+          agent_name: shown && shown.agent ? shown.agent.name : null,
           agent_score: shown && shown.agent ? shown.agentScore : null,
         });
       },

@@ -422,7 +422,7 @@ class ConversationMessageController extends Controller
         $agent = $close === null ? null : $conversation->ratingEpisodeAgent($close);
 
         return $agent === null ? null : [
-            'ref' => Conversation::ratingAgentToken($close, $agent),
+            'ref' => Conversation::ratingAgentToken($close, $agent, $agent->name),
             // The name the visitor already saw on this agent's messages.
             'name' => $agent->name,
         ];

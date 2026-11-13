@@ -139,11 +139,14 @@ The agent and the template are **snapshotted onto the response** when it is
 written: the agent's user id and the display name the visitor was shown, and
 the template key and version. Reassigning the conversation, renaming the agent,
 or switching the site back to the single question later moves none of it. If the
-agent's account is deleted, the id is cleared and the name stays. If it is
-deleted while a prompt naming them is still open, the overall answer and comment
-are kept and the agent answer is dropped — there is no name left to record it
-against, and refusing the whole response would lose everything else the visitor
-said.
+agent's account is deleted, the id is cleared and the name stays.
+
+The name recorded is **the name the visitor was shown**, not whatever the
+account is called when the answer arrives. The prompt carries a handle the
+server signed over the close, the agent and that name, and the answer is
+accepted only with the name it was issued with. So an agent renamed — or deleted
+— between the prompt and the answer is still recorded under the name the
+visitor read, and a forged handle or name is refused.
 
 The widget shows the template and agent it received with the prompt and sends
 them back with the answer. The server recomputes the qualifying agent for that
