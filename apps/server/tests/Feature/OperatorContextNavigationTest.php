@@ -24,8 +24,14 @@ test('operator pages render inside the application shell', function (): void {
         ->get('/operator')
         ->assertOk()
         ->assertSee('class="wf-rail"', false)
-        ->assertSee('aria-label="Primary navigation"', false)
-        ->assertSee('aria-label="Breadcrumb"', false);
+        ->assertSee('aria-label="Breadcrumb"', false)
+        // One sidebar that changes with where you are: inside the console the
+        // rail holds the console's sections, and leads back out of it.
+        ->assertSeeInOrder([
+            'class="wf-context-back" href="'.route('dashboard').'"',
+            'aria-label="Operator sections"',
+        ], false)
+        ->assertDontSee('aria-label="Primary navigation"', false);
 });
 
 test('every operator section is reachable from every other one', function (): void {

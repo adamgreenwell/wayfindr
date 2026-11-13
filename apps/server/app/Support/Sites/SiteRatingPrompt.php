@@ -9,30 +9,36 @@ use App\Models\Site;
  *
  * Off unless an operator turns it on. A question nobody chose to ask is an
  * interruption, and the answer to an unasked question is worth nothing anyway.
+ *
+ * Which questions it asks is the template: the single overall question by
+ * default, or the starter template that also asks about the agent (#1156).
  */
 final class SiteRatingPrompt
 {
     private function __construct(
         public readonly bool $enabled,
         public readonly ?string $intro,
+        public readonly RatingTemplate $template,
     ) {}
 
     public static function for(Site $site): self
     {
         $config = is_array($site->settings['rating'] ?? null) ? $site->settings['rating'] : [];
         $intro = is_string($config['intro'] ?? null) ? trim($config['intro']) : '';
+        $template = is_string($config['template'] ?? null) ? $config['template'] : RatingTemplate::OVERALL;
 
         return new self(
             ($config['enabled'] ?? false) === true,
             $intro === '' ? null : mb_substr($intro, 0, 160),
+            RatingTemplate::current($template, $site),
         );
     }
 
     /**
-     * @return array{asks: bool, intro: string|null}
+     * @return array{asks: bool, intro: string|null, template: array<string, mixed>}
      */
     public function toPayload(): array
     {
-        return ['asks' => $this->enabled, 'intro' => $this->intro];
+        return ['asks' => $this->enabled, 'intro' => $this->intro, 'template' => $this->template->toPayload()];
     }
 }

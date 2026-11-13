@@ -367,11 +367,11 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
     $pattern = "/'((?:[a-z]+_)*(?:assignee|agent|requester|approver|author|operator|issuer|actor|user)(?:_id|_name)|requester|author|[a-z_]*_by(?:_user)?(?:_id|_name)?)'\\s*(?:=>|\\]\\s*=(?!=))/";
     $columns = [
         'assignee_id', 'assigned_agent_id', 'author_id', 'approver_id', 'uploaded_by_id', 'undone_by_user_id',
-        'requester_id', 'actor_id',
+        'requester_id', 'actor_id', 'agent_user_id', 'agent_name', 'rated_agent_id',
     ];
     $reviewed = [
         'agent_id' => 'log context, form fields and realtime session payloads: never stored where the export reads',
-        'agent_name' => 'the first-run setup form that creates the first agent',
+        'agent_name' => 'the first-run setup form that creates the first agent; as a rating snapshot column it is replaced by a role',
         'triggered_by_id' => 'backup and restore runs, which are about the installation',
         'satisfied_by' => 'upgrade requirements, which are about the installation',
         'created_by_id' => 'API tokens and webhook endpoints, which the export does not read',
@@ -383,6 +383,7 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
         'ended_by' => 'a label built for the widget when it asks, never stored',
         'requested_by' => 'what the widget is told about a cobrowse request when it asks, never stored',
         'confirmed_by' => 'operator readiness confirmations, which are about the installation',
+        'published_by_id' => 'a site\'s rating template versions: site configuration the export does not read',
         'confirmed_by_id' => 'operator readiness confirmations, which are about the installation',
         'user_id' => 'read states, SLA alert deliveries and OIDC identities, which the export does not read, and the login session',
     ];

@@ -214,6 +214,86 @@ class Conversation extends Model
         return $episode !== null && ! $this->ratings()->where('episode_event_id', $episode->id)->exists();
     }
 
+    /**
+     * The one person who helped in the stretch of work `$close` ended, or null.
+     *
+     * The episode runs from the PREVIOUS CLOSE -- or the conversation's
+     * creation if there is none -- up to and including this close. Bounded by
+     * the close rather than the reopen, because a reply that reopens a closed
+     * conversation is written before the reopen is recorded: bounded by the
+     * reopen, that reply could fall outside the very episode it started, and
+     * the person who started it would vanish from the count (#1206).
+     *
+     * Both bounds are inclusive. Timestamps have second resolution, so a
+     * message in the same second as a close cannot be placed on one side of it
+     * with certainty; counting it in both keeps the error in the safe
+     * direction. An extra person makes "two people helped", which asks nothing,
+     * where a missing one could leave somebody else named for help they did not
+     * give alone.
+     *
+     * A qualifying agent is a dashboard user who sent the visitor a message in
+     * the episode; conversations carry no private notes, so every such message
+     * was seen. Exactly one qualifies, or nobody is named. Assignment and who
+     * clicked Close say nothing about who helped, so neither is consulted
+     * (docs/product/satisfaction.md).
+     */
+    public function ratingEpisodeAgentId(AuditEvent $close): ?int
+    {
+        $previousClose = AuditEvent::query()
+            ->where('subject_type', $this->getMorphClass())
+            ->where('subject_id', $this->id)
+            ->where('action', ConversationLifecycleLog::CLOSED)
+            ->where('id', '!=', $close->id)
+            ->where(function ($query) use ($close): void {
+                $query->where('occurred_at', '<', $close->occurred_at)
+                    ->orWhere(fn ($same) => $same->where('occurred_at', $close->occurred_at)->where('id', '<', $close->id));
+            })
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $senders = $this->messages()
+            ->where('sender_type', User::class)
+            ->whereNotNull('sender_id')
+            ->when($previousClose !== null, fn ($query) => $query->where('created_at', '>=', $previousClose->occurred_at))
+            ->where('created_at', '<=', $close->occurred_at)
+            ->distinct()
+            ->limit(2)
+            ->pluck('sender_id');
+
+        return $senders->count() === 1 ? (int) $senders->first() : null;
+    }
+
+    /**
+     * The account behind {@see self::ratingEpisodeAgentId()}, or null -- also
+     * null when that person's account has since been deleted.
+     */
+    public function ratingEpisodeAgent(AuditEvent $close): ?User
+    {
+        $id = $this->ratingEpisodeAgentId($close);
+
+        return $id === null ? null : User::query()->find($id);
+    }
+
+    /**
+     * An opaque handle for the agent a prompt names, bound to its close and to
+     * the name it was shown with.
+     *
+     * The widget sends it back with the name, and the server accepts the name
+     * only if the handle matches -- so the response records the person and the
+     * name the visitor actually saw, even if the agent is renamed or their
+     * account deleted between the prompt and the answer (#1206). Keyed with
+     * the application key: the close and agent ids are small integers, so an
+     * unkeyed hash could be recomputed for any name a visitor chose to plant
+     * in the reports.
+     */
+    public static function ratingAgentToken(AuditEvent $close, User|int $agent, string $shownName): string
+    {
+        $id = $agent instanceof User ? $agent->id : $agent;
+
+        return substr(hash_hmac('sha256', 'rating-agent:'.$close->id.':'.$id.':'.$shownName, (string) config('app.key')), 0, 32);
+    }
+
     public function ratings(): HasMany
     {
         return $this->hasMany(ConversationRating::class);

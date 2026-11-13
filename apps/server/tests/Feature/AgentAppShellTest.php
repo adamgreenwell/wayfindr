@@ -141,8 +141,10 @@ test('agent pages render the shared page header component', function (): void {
         ->get(route('dashboard.sites.show', $site))
         ->assertOk()
         ->assertSee('page-header', false)
-        ->assertSee('page-header__back', false)
-        ->assertSee('Back to sites')
+        // The way back to the sites directory is the rail's now; a second one
+        // in the page body is the duplicate the contextual rail removed.
+        ->assertDontSee('class="page-header__back"', false)
+        ->assertSee('class="wf-context-back" href="'.route('dashboard.sites.index').'"', false)
         ->assertSee('Acme Docs');
 });
 

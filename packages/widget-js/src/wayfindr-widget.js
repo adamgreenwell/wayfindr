@@ -112,6 +112,10 @@
       'rating.send': 'Send',
       'rating.thanks': 'Thank you — that helps.',
       'rating.failed': 'That could not be sent.',
+      'rating.overall': 'How was your overall support experience?',
+      'rating.agent': 'How was the help you received from {name}?',
+      'rating.notApplicable': 'Not applicable',
+      'rating.skip': 'Skip',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Please check the details above.',
       'intake.required': 'Please fill in the required fields.',
@@ -216,6 +220,10 @@
       'rating.send': 'Senden',
       'rating.thanks': 'Vielen Dank — das hilft uns.',
       'rating.failed': 'Das konnte nicht gesendet werden.',
+      'rating.overall': 'Wie war Ihre Support-Erfahrung insgesamt?',
+      'rating.agent': 'Wie war die Hilfe von {name}?',
+      'rating.notApplicable': 'Trifft nicht zu',
+      'rating.skip': 'Überspringen',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
       'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
@@ -1477,7 +1485,7 @@
           site_public_key: sitePublicKey,
         }));
       },
-      rateConversation: function (supportCode, score, comment, episode) {
+      rateConversation: function (supportCode, score, comment, episode, shown) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/rating', {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
@@ -1488,6 +1496,16 @@
           // conversation has since been reopened and closed again, rather than
           // attributing an answer about finished work to newer work.
           episode: episode,
+          // What the visitor was SHOWN (#1156): the template, and the agent
+          // the second question named. The answer is stored against these, so
+          // a settings change while the prompt was open cannot reinterpret it.
+          template: shown && shown.template ? shown.template.key : null,
+          template_version: shown && shown.template ? shown.template.version : null,
+          agent: shown && shown.agent ? shown.agent.ref : null,
+          // The name the question showed; the server accepts it only with the
+          // handle it issued alongside it.
+          agent_name: shown && shown.agent ? shown.agent.name : null,
+          agent_score: shown && shown.agent ? shown.agentScore : null,
         });
       },
       searchArticles: function (query) {
@@ -1859,9 +1877,19 @@
       '      <button class="wayfindr-widget__rating-score" type="button" data-score="ok"></button>',
       '      <button class="wayfindr-widget__rating-score" type="button" data-score="bad"></button>',
       '    </div>',
+      '    <fieldset class="wayfindr-widget__rating-agent" hidden>',
+      '      <legend class="wayfindr-widget__rating-agent-question"></legend>',
+      '      <div class="wayfindr-widget__rating-scores">',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="good"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="ok"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="bad"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="not_applicable"></button>',
+      '      </div>',
+      '    </fieldset>',
       '    <label class="wayfindr-widget__rating-label" for="' + escapeHtml(ratingId) + '"></label>',
       '    <textarea class="wayfindr-widget__rating-comment" id="' + escapeHtml(ratingId) + '" rows="2" maxlength="1000"></textarea>',
       '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
+      '    <button class="wayfindr-widget__rating-skip" type="button"></button>',
       '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
       '  </form>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
@@ -1929,6 +1957,13 @@
     var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
     var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
     var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    var ratingAgentBlock = rootEl.querySelector('.wayfindr-widget__rating-agent');
+    var ratingAgentQuestion = rootEl.querySelector('.wayfindr-widget__rating-agent-question');
+    var ratingSkip = rootEl.querySelector('.wayfindr-widget__rating-skip');
+    // The overall answers come first in the form, the agent's inside its own
+    // fieldset; both are rebuilt from the template's scale (#1157).
+    var ratingScores = rating.querySelector('.wayfindr-widget__rating-scores');
+    var ratingAgentScores = ratingAgentBlock.querySelector('.wayfindr-widget__rating-scores');
     // The window that owns this document, not the ambient global: a test
     // harness (and an embed inside an iframe) hands the widget a document whose
     // view is not the one this script happens to be running in.
@@ -1973,6 +2008,26 @@
     // outstanding at once: a stale one for a close that has since been
     // superseded, and the live one for the close now on screen.
     var ratingInFlight = null;
+    // The agent the second question names for the close on screen, or null.
+    // Captured when the close is first seen and kept for it, so a later poll
+    // cannot change who an open prompt is about (#1156).
+    var ratingAgent = null;
+    var ratingAgentScore = null;
+    // The template the prompt on screen was first shown with, for the same
+    // reason the agent is captured: a bootstrap refresh -- minimise and reopen
+    // after an operator changed the site's template -- must not change what an
+    // open survey asks, hide an answer already chosen, or send the response
+    // under a template the visitor never saw (#1206).
+    var ratingShownTemplate = null;
+    // A skipped close is remembered by its opaque token in this browser, so
+    // the prompt stays hidden across reloads -- and a NEW close, with a new
+    // token, is asked about afresh. Skipping records nothing on the server.
+    var ratingSkipStorage = resolveStorageOption(options);
+    var ratingSkipKey = 'wayfindr:' + options.sitePublicKey + ':rating-skipped';
+    // Also held here, so Skip works for this widget session where storage is
+    // unavailable or refuses the write -- otherwise the next poll would bring
+    // the skipped survey straight back.
+    var ratingSkippedEpisode = null;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -2231,6 +2286,13 @@
       if (conversation && typeof conversation.rating_episode === 'string' && conversation.rating_episode !== ratingEpisode) {
         ratingEpisode = conversation.rating_episode;
         ratingScore = null;
+        ratingAgentScore = null;
+        ratingShownTemplate = null;
+        ratingAgent = conversation.rating_agent
+          && typeof conversation.rating_agent.ref === 'string'
+          && typeof conversation.rating_agent.name === 'string'
+          ? { ref: conversation.rating_agent.ref, name: conversation.rating_agent.name }
+          : null;
         ratingComment.value = '';
         ratingStatus.hidden = true;
         ratingStatus.textContent = '';
@@ -5442,7 +5504,8 @@
       var shouldAsk = Boolean(ratingConfig && ratingConfig.asks)
         && supportCode !== null
         && conversationStatus === 'closed'
-        && ! ratingAnswered;
+        && ! ratingAnswered
+        && ! ratingIsSkipped();
 
       rating.hidden = ! shouldAsk;
 
@@ -5450,12 +5513,47 @@
         return;
       }
 
-      ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
-      ratingLabel.textContent = t('rating.comment');
+      // Fixed the first time this close's prompt is drawn.
+      if (ratingShownTemplate === null) {
+        ratingShownTemplate = ratingConfig.template || { key: 'overall', version: 1 };
+      }
+
+      var asksAgent = ratingAsksAgent();
+      var definition = ratingDefinition();
+      var scores = definition && Array.isArray(definition.scores) ? definition.scores : ['good', 'ok', 'bad'];
+      var asksComment = definition ? definition.comment !== null : true;
+
+      syncRatingChoices(ratingScores, 'wayfindr-widget__rating-score', 'data-score', scores);
+      syncRatingChoices(ratingAgentScores, 'wayfindr-widget__rating-agent-score', 'data-agent-score', scores.concat(['not_applicable']));
+
+      // A site's own template asks its own question; the operator's intro line
+      // belongs to the built-in ones.
+      ratingIntro.textContent = definition
+        ? ratingText(definition.overall)
+        : (ratingConfig.intro || t(ratingTemplateKey() === 'starter' ? 'rating.overall' : 'rating.intro'));
+      ratingLabel.textContent = definition && definition.comment ? ratingText(definition.comment) : t('rating.comment');
+      ratingLabel.hidden = ! asksComment;
+      ratingComment.hidden = ! asksComment;
       ratingSend.textContent = t('rating.send');
+      ratingSkip.textContent = t('rating.skip');
+
+      // The agent's name is the one the visitor saw on their messages, and is
+      // set as text, never markup. Replaced literally, so a name that happens
+      // to contain braces is not read as another placeholder.
+      ratingAgentBlock.hidden = ! asksAgent;
+      ratingAgentQuestion.textContent = ! asksAgent
+        ? ''
+        : (definition ? ratingText(definition.agent).split('{name}').join(ratingAgent.name) : t('rating.agent', { name: ratingAgent.name }));
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-agent-score'), function (button) {
+        var value = button.getAttribute('data-agent-score');
+
+        button.textContent = ratingChoiceLabel(value);
+        button.setAttribute('aria-pressed', value === ratingAgentScore ? 'true' : 'false');
+      });
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
-        button.textContent = t('rating.' + button.getAttribute('data-score'));
+        button.textContent = ratingChoiceLabel(button.getAttribute('data-score'));
         button.setAttribute('aria-pressed', button.getAttribute('data-score') === ratingScore ? 'true' : 'false');
       });
 
@@ -5475,17 +5573,137 @@
 
       ratingSend.disabled = busy || ratingScore === null;
       ratingComment.disabled = busy;
+      ratingSkip.disabled = busy;
 
-      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score, .wayfindr-widget__rating-agent-score'), function (button) {
         button.disabled = busy;
       });
     }
 
-    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
-      button.addEventListener('click', function () {
-        ratingScore = button.getAttribute('data-score');
-        renderRatingPrompt();
+    function ratingIsSkipped() {
+      return ratingEpisode !== null
+        && (ratingSkippedEpisode === ratingEpisode || storageGet(ratingSkipStorage, ratingSkipKey) === ratingEpisode);
+    }
+
+    function ratingTemplateKey() {
+      var template = ratingShownTemplate || (ratingConfig && ratingConfig.template);
+
+      return template ? template.key : 'overall';
+    }
+
+    // A site's own published template (#1157), or null for the built-ins.
+    // Read from the template the prompt was shown with, so a bootstrap
+    // refresh cannot swap the wording or scale of an open survey.
+    function ratingDefinition() {
+      var template = ratingShownTemplate || (ratingConfig && ratingConfig.template);
+
+      return template && template.definition ? template.definition : null;
+    }
+
+    // Only when the template this widget was given asks about the agent AND
+    // the server named exactly one for this close.
+    function ratingAsksAgent() {
+      var definition = ratingDefinition();
+      var asks = definition ? definition.agent !== null : ratingTemplateKey() === 'starter';
+
+      return asks && ratingAgent !== null;
+    }
+
+    // Site-written wording in the visitor's own language where the site wrote
+    // one, else English. Asked of the visitor's preference rather than the
+    // catalogue, which may not cover a language the site did write.
+    function ratingText(texts) {
+      if (!texts || typeof texts !== 'object') {
+        return '';
+      }
+
+      // The same order the widget's own language follows -- host page, then
+      // the visitor's browser, then the site default -- but matched against
+      // the languages the SITE wrote, which can include one the widget's
+      // catalogue does not carry.
+      var candidates = [localePreferences.requested]
+        .concat(localePreferences.navigatorLanguages || [])
+        .concat([localePreferences.siteDefault]);
+
+      for (var index = 0; index < candidates.length; index++) {
+        var language = candidates[index] ? baseLanguage(candidates[index]) : '';
+
+        if (language && typeof texts[language] === 'string' && texts[language]) {
+          return texts[language];
+        }
+      }
+
+      return typeof texts.en === 'string' ? texts.en : '';
+    }
+
+    function ratingChoiceLabel(choice) {
+      var definition = ratingDefinition();
+      var custom = definition && definition.labels ? ratingText(definition.labels[choice]) : '';
+
+      if (custom) {
+        return custom;
+      }
+
+      return choice === 'not_applicable' ? t('rating.notApplicable') : t('rating.' + choice);
+    }
+
+    // Rebuild a row of answer buttons when the scale it should offer changes.
+    function syncRatingChoices(container, className, attribute, choices) {
+      var current = [].map.call(container.querySelectorAll('.' + className), function (button) {
+        return button.getAttribute(attribute);
       });
+
+      if (current.join('|') === choices.join('|')) {
+        return;
+      }
+
+      container.textContent = '';
+      choices.forEach(function (choice) {
+        var button = rootEl.ownerDocument.createElement('button');
+
+        button.type = 'button';
+        button.className = className;
+        button.setAttribute(attribute, choice);
+        container.appendChild(button);
+      });
+    }
+
+    // Delegated, because a custom template's scale rebuilds these buttons and
+    // a listener bound to the old ones would quietly stop answering.
+    ratingAgentScores.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.wayfindr-widget__rating-agent-score') : null;
+
+      if (!button || button.disabled) {
+        return;
+      }
+
+      var value = button.getAttribute('data-agent-score');
+
+      // Pressing the chosen answer again clears it: the agent question is
+      // optional, and an accidental press must not become a score.
+      ratingAgentScore = ratingAgentScore === value ? null : value;
+      renderRatingPrompt();
+    });
+
+    ratingSkip.addEventListener('click', function () {
+      if (ratingEpisode === null || ratingInFlight === ratingEpisode) {
+        return;
+      }
+
+      ratingSkippedEpisode = ratingEpisode;
+      storageSet(ratingSkipStorage, ratingSkipKey, ratingEpisode);
+      rating.hidden = true;
+    });
+
+    ratingScores.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.wayfindr-widget__rating-score') : null;
+
+      if (!button || button.disabled) {
+        return;
+      }
+
+      ratingScore = button.getAttribute('data-score');
+      renderRatingPrompt();
     });
 
     rating.addEventListener('submit', function (event) {
@@ -5516,7 +5734,13 @@
       ratingInFlight = submittedEpisode;
       applyRatingFormState();
 
-      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
+      var definitionShown = ratingDefinition();
+
+      client.rateConversation(supportCode, ratingScore, definitionShown && definitionShown.comment === null ? '' : ratingComment.value.trim(), submittedEpisode, {
+        template: ratingShownTemplate || (ratingConfig && ratingConfig.template) || null,
+        agent: ratingAsksAgent() ? ratingAgent : null,
+        agentScore: ratingAsksAgent() ? ratingAgentScore : null,
+      }).then(function () {
         // Says nothing when the close it answered is no longer the one on
         // screen. Thanking the visitor beside a fresh, unanswered question
         // reads as an acknowledgement OF that question -- the same reason the
@@ -6684,7 +6908,35 @@
       asks: prompt.asks === true,
       // Operator copy: shown as typed, escaped, never interpreted.
       intro: typeof prompt.intro === 'string' && prompt.intro.trim() ? prompt.intro.trim() : null,
+      // Which questions to ask. Absent from an older server: the single one.
+      template: prompt.template && typeof prompt.template.key === 'string' && typeof prompt.template.version === 'number'
+        ? {
+          key: prompt.template.key,
+          version: prompt.template.version,
+          // A site's own template (#1157): its wording, labels and scale.
+          definition: ratingDefinitionFrom(prompt.template.definition),
+        }
+        : null,
     } : null;
+  }
+
+  function ratingDefinitionFrom(value) {
+    if (!value || typeof value !== 'object' || !Array.isArray(value.scores) || value.scores.length === 0) {
+      return null;
+    }
+
+    var texts = function (map) {
+      return map && typeof map === 'object' ? map : null;
+    };
+
+    return {
+      scale: value.scale === 'five' ? 'five' : 'three',
+      scores: value.scores.filter(function (score) { return typeof score === 'string'; }),
+      overall: texts(value.overall) || {},
+      agent: texts(value.agent),
+      comment: texts(value.comment),
+      labels: texts(value.labels) || {},
+    };
   }
 
   function siteHasArticles(result) {
@@ -8695,7 +8947,7 @@
     style.textContent = [
       // wayfindr:tokens:start
       // Generated from packages/design-tokens/tokens.json by scripts/generate-design-tokens.php. Do not edit by hand -- run `make design-tokens`.
-      '.wayfindr-widget{--wf-paper:#F1F1EE;--wf-surface:#FFFFFF;--wf-surface-2:#E9E9E4;--wf-ink:#16181A;--wf-ink-invert:var(--wf-brand-ink-configured,#F1F1EE);--wf-muted:#63676A;--wf-rule:#DCDCD6;--wf-rule-firm:#C4C4BD;--wf-brand:var(--wf-brand-configured,#0D6F68);--wf-signal-rest:#8C9194;--wf-signal-go:#1E7A4C;--wf-signal-hold:#C98A06;--wf-signal-stop:#C3352B;--wf-site-red:#C3352B;--wf-site-blue:#2D4EA2;--wf-site-ochre:#C98A06;--wf-site-pine:#1E7A4C;--wf-site-violet:#6B4E9B;--wf-site-rust:#B5542A;--wf-font-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--wf-font-cond:"IBM Plex Sans Condensed","IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--wf-font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;--wf-text-display:2.05rem;--wf-text-title:1.3rem;--wf-text-body:0.97rem;--wf-text-ui:0.875rem;--wf-text-label:0.75rem;--wf-text-code:0.86rem;--wf-space-1:4px;--wf-space-2:8px;--wf-space-3:12px;--wf-space-4:16px;--wf-space-5:24px;--wf-space-6:32px;--wf-space-7:48px;--wf-radius:2px;--wf-radius-full:999px;--wf-border:1px;--wf-rail:3px;--wf-row-min:34px}',
+      '.wayfindr-widget{--wf-paper:#F1F1EE;--wf-surface:#FFFFFF;--wf-surface-2:#E9E9E4;--wf-ink:#16181A;--wf-ink-invert:var(--wf-brand-ink-configured,#F1F1EE);--wf-muted:#63676A;--wf-rule:#DCDCD6;--wf-rule-firm:#C4C4BD;--wf-brand:var(--wf-brand-configured,#0D6F68);--wf-signal-rest:#8C9194;--wf-signal-go:#1E7A4C;--wf-signal-hold:#C98A06;--wf-signal-stop:#C3352B;--wf-site-red:#C3352B;--wf-site-blue:#2D4EA2;--wf-site-ochre:#C98A06;--wf-site-pine:#1E7A4C;--wf-site-violet:#6B4E9B;--wf-site-rust:#B5542A;--wf-font-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--wf-font-cond:"IBM Plex Sans Condensed","IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--wf-font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;--wf-text-display:1.75rem;--wf-text-title:1.125rem;--wf-text-body:0.97rem;--wf-text-ui:0.875rem;--wf-text-small:0.8125rem;--wf-text-label:0.75rem;--wf-text-micro:0.6875rem;--wf-text-code:0.86rem;--wf-space-1:4px;--wf-space-2:8px;--wf-space-3:12px;--wf-space-4:16px;--wf-space-5:24px;--wf-space-6:32px;--wf-space-7:48px;--wf-radius:2px;--wf-radius-full:999px;--wf-border:1px;--wf-rail:3px;--wf-row-min:34px}',
       '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
       '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
@@ -8755,9 +9007,20 @@
       // not a message in the transcript.
       '.wayfindr-widget__rating{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
       '.wayfindr-widget__rating-intro{margin:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
-      '.wayfindr-widget__rating-scores{display:flex;gap:8px}',
-      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:0;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
+      // Answers size to their own labels (a site's custom label can be up to
+      // 40 characters): short ones share a row, a long one takes a row of
+      // its own and wraps inside the button rather than overflowing it.
+      '.wayfindr-widget__rating-scores{display:flex;flex-wrap:wrap;gap:8px}',
+      '.wayfindr-widget__rating-score{flex:1 1 auto;min-width:56px;max-width:100%;overflow-wrap:anywhere;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-agent{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}',
+      '.wayfindr-widget__rating-agent-question{margin:0;padding:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
+      // Four answers on a narrow phone wrap rather than squeezing a label
+      // below its readable width.
+      '.wayfindr-widget__rating-agent .wayfindr-widget__rating-scores{flex-wrap:wrap}',
+      '.wayfindr-widget__rating-agent-score{flex:1 1 auto;min-width:72px;max-width:100%;overflow-wrap:anywhere;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1.2 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-agent-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-agent-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
       // The chosen answer has to be visible without colour alone carrying it,
       // so the border thickens as well as changing hue.
       '.wayfindr-widget__rating-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
@@ -8766,6 +9029,8 @@
       '.wayfindr-widget__rating-send{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-send:hover:not(:disabled){border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-send:disabled{opacity:0.55;cursor:default}',
+      '.wayfindr-widget__rating-skip{justify-self:start;min-height:34px;border:0;background:none;color:var(--wf-muted);cursor:pointer;padding:0 4px;font:13px/1 var(--wf-font-sans);text-decoration:underline}',
+      '.wayfindr-widget__rating-skip:disabled{opacity:0.55;cursor:default}',
       '.wayfindr-widget__rating-status{margin:0;color:color-mix(in srgb, var(--wf-signal-stop) 80%, var(--wf-ink));font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
@@ -8859,7 +9124,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__close{min-width:44px;min-height:44px}.wayfindr-widget__attach-chip-remove{min-width:44px;min-height:44px;flex-shrink:0}.wayfindr-widget__intake input,.wayfindr-widget__help-input,.wayfindr-widget__intake-submit,.wayfindr-widget__rating-score,.wayfindr-widget__rating-send,.wayfindr-widget__send,.wayfindr-widget__attach,.wayfindr-widget__refresh{min-height:44px}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__close{min-width:44px;min-height:44px}.wayfindr-widget__attach-chip-remove{min-width:44px;min-height:44px;flex-shrink:0}.wayfindr-widget__intake input,.wayfindr-widget__help-input,.wayfindr-widget__intake-submit,.wayfindr-widget__rating-score,.wayfindr-widget__rating-agent-score,.wayfindr-widget__rating-skip,.wayfindr-widget__rating-send,.wayfindr-widget__send,.wayfindr-widget__attach,.wayfindr-widget__refresh{min-height:44px}}',
     ].join('');
 
     doc.head.appendChild(style);
