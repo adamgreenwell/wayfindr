@@ -296,15 +296,18 @@ final class SupportReport
                 ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
                 ->whereNotNull('agent_name')
                 ->whereNull('template_version_id')
-                ->selectRaw('agent_user_id, agent_name, agent_score, count(*) as aggregate, max(rated_at) as latest')
-                ->groupBy('agent_user_id', 'agent_name', 'agent_score')
+                // Grouped on the snapshot id, which no deletion clears: two
+                // deleted agents who shared a name stay two rows, and one agent
+                // renamed between answers stays one.
+                ->selectRaw('rated_agent_id, agent_user_id, agent_name, agent_score, count(*) as aggregate, max(rated_at) as latest')
+                ->groupBy('rated_agent_id', 'agent_user_id', 'agent_name', 'agent_score')
                 ->orderByDesc('latest')
                 ->get();
 
             $agents = [];
 
             foreach ($rows as $row) {
-                $key = $row->agent_user_id !== null ? 'user:'.$row->agent_user_id : 'name:'.$row->agent_name;
+                $key = $row->rated_agent_id !== null ? 'agent:'.$row->rated_agent_id : 'name:'.$row->agent_name;
                 // The newest snapshot names the row: ordered by latest answer.
                 $agents[$key] ??= [
                     'agent_user_id' => $row->agent_user_id === null ? null : (int) $row->agent_user_id,

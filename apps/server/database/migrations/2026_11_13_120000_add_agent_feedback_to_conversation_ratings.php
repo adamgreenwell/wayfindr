@@ -28,21 +28,26 @@ return new class extends Migration
             $table->foreignId('agent_user_id')->nullable()->after('template_version')
                 ->constrained('users')->nullOnDelete();
             $table->string('agent_name')->nullable()->after('agent_user_id');
+            // The same id, but NOT a foreign key, so it survives the account's
+            // deletion. Reports group on it: clearing agent_user_id would
+            // otherwise merge two deleted agents who shared a name, and split
+            // one agent who was renamed between answers.
+            $table->unsignedBigInteger('rated_agent_id')->nullable()->after('agent_name');
 
             // good / ok / bad / not_applicable. Null is "skipped", which is
             // absent data -- never a zero and never counted as answered.
             $table->string('agent_score', 16)->nullable()->after('agent_name');
 
-            $table->index(['agent_user_id', 'episode_closed_at']);
+            $table->index(['rated_agent_id', 'episode_closed_at']);
         });
     }
 
     public function down(): void
     {
         Schema::table('conversation_ratings', function (Blueprint $table): void {
-            $table->dropIndex(['agent_user_id', 'episode_closed_at']);
+            $table->dropIndex(['rated_agent_id', 'episode_closed_at']);
             $table->dropConstrainedForeignId('agent_user_id');
-            $table->dropColumn(['template_key', 'template_version', 'agent_name', 'agent_score']);
+            $table->dropColumn(['template_key', 'template_version', 'agent_name', 'rated_agent_id', 'agent_score']);
         });
     }
 };
