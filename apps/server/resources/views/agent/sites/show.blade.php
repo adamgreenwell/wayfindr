@@ -1000,16 +1000,40 @@
                             @foreach (\App\Support\Sites\RatingTemplate::keys() as $templateKey)
                                 <label for="rating_template_{{ $templateKey }}">
                                     <input type="radio" id="rating_template_{{ $templateKey }}" name="rating_template" value="{{ $templateKey }}"
+                                        @disabled($templateKey === 'custom' && $latestRatingTemplate === null)
                                         @checked(old('rating_template', $ratingPrompt->template->key) === $templateKey)>
-                                    {{ __('site_settings.rating.templates.'.$templateKey.'.label') }}
+                                    @if ($templateKey === 'custom' && $latestRatingTemplate !== null)
+                                        {{ __('site_settings.rating.templates.custom.label_version', ['version' => $latestRatingTemplate->version]) }}
+                                    @else
+                                        {{ __('site_settings.rating.templates.'.$templateKey.'.label') }}
+                                    @endif
                                 </label>
                                 {{-- The preview is the questions themselves, so what an admin
                                      picks is what a visitor will read. --}}
-                                <ul class="field-help" data-rating-template-preview="{{ $templateKey }}">
-                                    @foreach (__('site_settings.rating.templates.'.$templateKey.'.questions') as $question)
-                                        <li>{{ $question }}</li>
-                                    @endforeach
-                                </ul>
+                                @if ($templateKey === 'custom')
+                                    @if ($latestRatingTemplate === null)
+                                        <p class="field-help">{{ __('site_settings.rating.templates.custom.none') }}</p>
+                                    @else
+                                        <ul class="field-help" data-rating-template-preview="custom" lang="en">
+                                            <li>{{ $latestRatingTemplate->definition()->text('overall') }}</li>
+                                            @if ($latestRatingTemplate->definition()->asksAboutAgent())
+                                                <li>{{ $latestRatingTemplate->definition()->text('agent') }}</li>
+                                            @endif
+                                            @if ($latestRatingTemplate->definition()->asksForComment())
+                                                <li>{{ $latestRatingTemplate->definition()->text('comment') }}</li>
+                                            @endif
+                                        </ul>
+                                    @endif
+                                    <p class="field-help">
+                                        <a class="text-link" href="{{ route('dashboard.sites.rating-template.edit', $site) }}">{{ __('site_settings.rating.templates.custom.edit') }}</a>
+                                    </p>
+                                @else
+                                    <ul class="field-help" data-rating-template-preview="{{ $templateKey }}">
+                                        @foreach (__('site_settings.rating.templates.'.$templateKey.'.questions') as $question)
+                                            <li>{{ $question }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
                             @endforeach
                             <p class="field-help">{{ __('site_settings.rating.template_help') }}</p>
                             @error('rating_template')
