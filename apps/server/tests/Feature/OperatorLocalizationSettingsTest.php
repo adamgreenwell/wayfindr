@@ -536,3 +536,19 @@ test('the operator console raises language and region too, not just the checklis
         ->assertSee('Language and region')
         ->assertDontSee('Nobody has confirmed that this is right.');
 });
+
+test('an alias install default stays selected on a host without aliases', function (): void {
+    DashboardTimezone::fakePlatform(DateTimeZone::listIdentifiers());
+
+    try {
+        app(OperatorSettings::class)->set('localization.timezone', 'US/Eastern');
+        app(OperatorSettings::class)->set('localization.language', 'en');
+
+        $this->actingAs(localizationOperator())
+            ->get(route('operator.settings.localization.edit'))
+            ->assertOk()
+            ->assertSee('value="America/New_York" selected', escape: false);
+    } finally {
+        DashboardTimezone::fakePlatform(null);
+    }
+});

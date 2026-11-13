@@ -36,7 +36,7 @@
                     @foreach ($timezoneChoices as $region => $identifiers)
                         <optgroup lang="" label="{{ $region }}">
                             @foreach ($identifiers as $identifier)
-                                <option lang="" value="{{ $identifier }}" @selected(old('timezone', $timezone) === $identifier)>{{ $identifier }}</option>
+                                <option lang="" value="{{ $identifier }}" @selected(\App\Support\DashboardTimezone::normalise(old('timezone', $timezone)) === $identifier)>{{ $identifier }}</option>
                             @endforeach
                         </optgroup>
                     @endforeach

@@ -79,7 +79,7 @@
                     @foreach (\App\Support\DashboardTimezone::choices(old('timezone', $agent->timezone)) as $region => $zones)
                         <optgroup label="{{ $region }}">
                             @foreach ($zones as $zone)
-                                <option value="{{ $zone }}" @selected(old('timezone', $agent->timezone) === $zone)>{{ $zone }}</option>
+                                <option value="{{ $zone }}" @selected(\App\Support\DashboardTimezone::normalise(old('timezone', $agent->timezone)) === $zone)>{{ $zone }}</option>
                             @endforeach
                         </optgroup>
                     @endforeach

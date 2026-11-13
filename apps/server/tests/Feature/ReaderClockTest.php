@@ -455,3 +455,39 @@ it('translates the month rather than reordering it, which is why isoFormat', fun
     expect(ReaderClock::date($at))->toBe('24 ago 2026')
         ->and(CarbonImmutable::instance($at)->locale('it')->translatedFormat('M j, Y'))->toBe('ago 24, 2026');
 });
+
+/**
+ * Where the host's tzdata ships no aliases (#1204), a stored alias has to come
+ * back selected as its canonical zone. Otherwise the form shows "follow the
+ * install" selected, and saving an unrelated change clears the agent's clock.
+ * The platform is faked so this holds on every runner, not only alias-less ones.
+ */
+it('keeps an alias selected through the profile form on a host without aliases', function () {
+    DashboardTimezone::fakePlatform(DateTimeZone::listIdentifiers());
+
+    try {
+        $agent = User::factory()->for(Account::factory())->create(['timezone' => 'US/Eastern']);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.profile.show'))
+            ->assertOk()
+            ->assertSee('value="America/New_York" selected', escape: false)
+            ->assertDontSee('value="" selected', escape: false);
+
+        // The form submits what it shows selected.
+        $this->actingAs($agent)
+            ->put(route('dashboard.profile.update'), ['name' => 'Renamed', 'timezone' => 'America/New_York'])
+            ->assertSessionHasNoErrors();
+
+        expect($agent->fresh()->timezone)->toBe('America/New_York');
+
+        // And a client still holding the alias is accepted and mapped.
+        $this->actingAs($agent)
+            ->put(route('dashboard.profile.update'), ['name' => 'Renamed', 'timezone' => 'US/Eastern'])
+            ->assertSessionHasNoErrors();
+
+        expect($agent->fresh()->timezone)->toBe('America/New_York');
+    } finally {
+        DashboardTimezone::fakePlatform(null);
+    }
+});

@@ -143,7 +143,25 @@ final class DashboardTimezone
      */
     private static function platformIdentifiers(): array
     {
-        return DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+        return self::$platform ?? DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+    }
+
+    /** @var list<string>|null */
+    private static ?array $platform = null;
+
+    /**
+     * Stand in for the host's zone database, or null to use the real one.
+     *
+     * Tests only. Whether aliases resolve depends on how the host's PHP was
+     * built (#1204), so a test that relied on the machine it ran on would
+     * prove the alias-less path only on some runners and pass vacuously on
+     * the rest.
+     *
+     * @param  list<string>|null  $identifiers
+     */
+    public static function fakePlatform(?array $identifiers): void
+    {
+        self::$platform = $identifiers;
     }
 
     /**
