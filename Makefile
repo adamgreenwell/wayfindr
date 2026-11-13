@@ -104,7 +104,7 @@ host-updater-test: managed-update-qualification-test
 	python3 scripts/test-managed-upgrade-entrypoint.py
 
 self-host-test: php-version-test host-release-manifest-test host-updater-test
-	bash -n scripts/self-host/install.sh scripts/test-self-host-upgrade.sh scripts/smoke/upgrade-preflight.sh scripts/test-host-release-manifest.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
+	bash -n scripts/self-host/install.sh scripts/test-self-host-upgrade.sh scripts/smoke/upgrade-preflight.sh scripts/test-host-release-manifest.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh scripts/test-forge-shared-storage-link.sh
 	scripts/test-disposable-vm-evidence-runner.sh
 	scripts/test-self-host-env-generator.sh
 	scripts/test-self-host-install-args.sh
@@ -114,6 +114,7 @@ self-host-test: php-version-test host-release-manifest-test host-updater-test
 	scripts/test-self-host-release-resolution.sh
 	scripts/test-self-host-upgrade.sh
 	scripts/smoke/upgrade-preflight.sh
+	scripts/test-forge-shared-storage-link.sh
 	scripts/test-widget-bundle.sh
 
 public-artifact-install-test:
