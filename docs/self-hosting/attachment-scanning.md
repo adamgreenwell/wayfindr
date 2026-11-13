@@ -35,12 +35,19 @@ on Debian/Ubuntu) or a container (e.g. the `clamav/clamav` image). Keep its
 signature database current with `freshclam` (the ClamAV packages run it for
 you). `clamd` listens on a TCP port (default `3310`) or a unix socket.
 
-> **Memory matters.** clamd loads its full signature database into RAM —
-> expect **~1 GB+ resident** just for the daemon. On a 1 GB host it will be
-> pushed into swap, scans will crawl, and the OOM killer may take it down.
-> Budget **2 GB+ of headroom** for the box (alongside PHP, the database, Redis,
-> and Reverb), or run clamd on a neighboring host over TCP. If the box is too
-> small, the honest choice is the no-scanner default, not a swapping scanner.
+> **Memory matters.** [ClamAV recommends at least 3 GiB of RAM, preferably
+> 4 GiB](https://docs.clamav.net/manual/Installing/Docker.html), for the scanner.
+> Signature reloads can briefly hold two engines in memory; `freshclam` also
+> needs memory to validate downloaded databases. Budget the application's PHP,
+> database, Redis and Reverb memory separately. Measure both scans and signature
+> reloads under load before choosing a host or container memory limit.
+
+> **Protect the socket.** A Unix socket with restricted ownership and permissions
+> is the simplest local connection. [Raw clamd TCP provides neither encryption
+> nor authentication](https://docs.clamav.net/manual/Usage/ClamdProtocol.html).
+> Keep it within a trusted, restricted network; use authenticated, encrypted
+> transport between hosts. Never publish port `3310` to untrusted networks.
+> Restrict access to daemon administration commands as well as file scanning.
 
 > **systemd socket-activation gotchas (Debian/Ubuntu).** The package ships a
 > `clamav-daemon.socket` unit that accepts connections *even while the daemon
@@ -62,7 +69,7 @@ WAYFINDR_ATTACHMENT_SCANNER=clamav
 WAYFINDR_CLAMAV_SOCKET=tcp://127.0.0.1:3310
 
 # Optional:
-WAYFINDR_ATTACHMENT_SCANNER_TIMEOUT=30      # per-scan timeout, seconds
+WAYFINDR_ATTACHMENT_SCANNER_TIMEOUT=30      # whole scan budget, seconds
 WAYFINDR_ATTACHMENT_SCANNER_FAIL_CLOSED=true
 ```
 
@@ -72,7 +79,20 @@ Run `php artisan config:cache` after changing these on a cached-config install.
 
 Scanning is **synchronous**: an upload is scanned before its bytes are stored,
 so the visitor or agent gets immediate feedback and an infected file never
-reaches the disk.
+reaches permanent attachment storage. PHP's temporary upload file already
+exists when scanning starts.
+
+Socket connection, streaming and verdict operations share one monotonic timeout
+budget. The connection also has a five-second cap, shortened when less scan time
+remains. PHP cannot interrupt hostname resolution or a stalled local file read;
+either can overrun that budget. Use a Unix socket or numeric IP endpoint and keep
+temporary uploads on local storage when predictable request timing matters.
+Only one complete NUL-framed verdict is accepted: `stream: OK`, or an infected
+verdict with a bounded signature token. Truncated replies, extra or contradictory
+records, oversized responses and unreadable files count as scanner unavailable.
+A valid early infected verdict still rejects the upload, including a peer reset
+after that complete infected frame arrives while upload bytes remain unread.
+An early clean verdict cannot approve a file whose transmission did not finish.
 
 - **Clean** → the upload is accepted as normal.
 - **Infected** → the upload is **rejected** ("This file was rejected by a
@@ -97,3 +117,12 @@ reflects the live state:
 - **Needs attention** — a scanner is configured but `clamd` is **unreachable**.
   With fail-closed (the default) that means uploads are being rejected until it
   recovers, so this is worth fixing promptly.
+
+Readiness uses a bounded `PING`/`PONG` exchange. It confirms protocol response,
+not signature freshness, a successful file scan, or complete scan coverage.
+Monitor `freshclam` updates and the daemon's loaded database version separately,
+and exercise clean and harmless antivirus test files during deployment checks.
+
+Scanning applies to **new uploads**. Enabling it does not retroactively scan
+existing attachments or rescan files restored from backups. Decide how those
+files will be reviewed before describing an installation as fully scanned.
