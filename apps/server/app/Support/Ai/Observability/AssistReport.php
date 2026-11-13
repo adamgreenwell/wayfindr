@@ -75,7 +75,10 @@ final readonly class AssistReport
             foreach ($ids->chunk(500) as $chunk) {
                 // Recorded close events establish closure, not a successful resolution.
                 $closed += AuditEvent::query()->where('subject_type', (new Conversation)->getMorphClass())->whereIn('subject_id', $chunk)->where('action', ConversationLifecycleLog::CLOSED)->whereBetween('occurred_at', [$since, $until])->distinct()->count('subject_id');
-                $ratings = ConversationRating::query()->whereIn('conversation_id', $chunk)->whereBetween('rated_at', [$since, $until]);
+                // The built-in question only. A site's own template is a different
+                // question, possibly on five stars, and folding it into these
+                // good/ok/bad buckets would corrupt the outcome measure (#1157).
+                $ratings = ConversationRating::query()->whereIn('conversation_id', $chunk)->whereBetween('rated_at', [$since, $until])->whereNull('template_version_id');
                 $rated += (clone $ratings)->distinct()->count('conversation_id');
                 foreach ($scores as $score => $count) {
                     $scores[$score] += (clone $ratings)->where('score', $score)->count();
