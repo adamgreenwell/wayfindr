@@ -266,6 +266,65 @@ final class SupportReport
     }
 
     /**
+     * What visitors said about the agent who helped them, one row per agent.
+     *
+     * A separate question from overall satisfaction and never folded into it
+     * (#1156). `applicable` is how many responses were asked about this agent;
+     * `answered` counts good, ok and bad only. Not applicable and skipped are
+     * shown as counts and contribute no score -- neither is a zero.
+     *
+     * Grouped by the snapshotted agent, so a later reassignment or rename moves
+     * nothing. A deleted account keeps its rows under the name the visitor saw.
+     *
+     * @return list<array{agent_user_id: int|null, name: string, good: int, ok: int, bad: int, not_applicable: int, skipped: int, applicable: int, answered: int, positive: float|null}>
+     */
+    public function agentSatisfaction(): array
+    {
+        return $this->once('agent-satisfaction', function (): array {
+            if ($this->scope->isEmpty()) {
+                return [];
+            }
+
+            $rows = ConversationRating::query()
+                ->whereIn('site_id', $this->scope->countableSiteIds())
+                ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
+                ->whereNotNull('agent_name')
+                ->selectRaw('agent_user_id, agent_name, agent_score, count(*) as aggregate, max(rated_at) as latest')
+                ->groupBy('agent_user_id', 'agent_name', 'agent_score')
+                ->orderByDesc('latest')
+                ->get();
+
+            $agents = [];
+
+            foreach ($rows as $row) {
+                $key = $row->agent_user_id !== null ? 'user:'.$row->agent_user_id : 'name:'.$row->agent_name;
+                // The newest snapshot names the row: ordered by latest answer.
+                $agents[$key] ??= [
+                    'agent_user_id' => $row->agent_user_id === null ? null : (int) $row->agent_user_id,
+                    'name' => (string) $row->agent_name,
+                    'good' => 0, 'ok' => 0, 'bad' => 0, 'not_applicable' => 0, 'skipped' => 0,
+                ];
+
+                $bucket = $row->agent_score === null ? 'skipped' : (string) $row->agent_score;
+
+                if (in_array($bucket, ['good', 'ok', 'bad', 'not_applicable', 'skipped'], true)) {
+                    $agents[$key][$bucket] += (int) $row->aggregate;
+                }
+            }
+
+            return array_values(array_map(function (array $agent): array {
+                $agent['answered'] = $agent['good'] + $agent['ok'] + $agent['bad'];
+                $agent['applicable'] = $agent['answered'] + $agent['not_applicable'] + $agent['skipped'];
+                $agent['positive'] = $agent['answered'] === 0
+                    ? null
+                    : round(($agent['good'] / $agent['answered']) * 100, 1);
+
+                return $agent;
+            }, $agents));
+        });
+    }
+
+    /**
      * What people actually said, most recent first.
      *
      * The score says whether it went badly; only this says why. Collecting a
@@ -276,7 +335,7 @@ final class SupportReport
      * audit page follows: a subject is visitor-authored text, a support code is
      * a reference by construction.
      *
-     * @return list<array{score: string, comment: string, support_code: string, rated_at: CarbonImmutable}>
+     * @return list<array{score: string, comment: string, support_code: string, rated_at: CarbonImmutable, agent_name: string|null, agent_score: string|null}>
      */
     public function comments(int $limit = 25): array
     {
@@ -297,6 +356,8 @@ final class SupportReport
                     'conversation_ratings.score',
                     'conversation_ratings.comment',
                     'conversation_ratings.rated_at',
+                    'conversation_ratings.agent_name',
+                    'conversation_ratings.agent_score',
                     'conversations.support_code',
                 ])
                 ->map(fn (ConversationRating $rating): array => [
@@ -304,6 +365,9 @@ final class SupportReport
                     'comment' => (string) $rating->comment,
                     'support_code' => (string) $rating->support_code,
                     'rated_at' => CarbonImmutable::parse($rating->rated_at),
+                    // Shown beside the comment, never merged into its score.
+                    'agent_name' => $rating->agent_name === null ? null : (string) $rating->agent_name,
+                    'agent_score' => $rating->agent_score === null ? null : (string) $rating->agent_score,
                 ])
                 ->all();
         });

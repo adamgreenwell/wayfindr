@@ -198,7 +198,8 @@ final class VisitorExporter
         ],
         'conversation_ratings' => [
             'id' => true, 'conversation_id' => true, 'site_id' => true, 'score' => true, 'comment' => true, 'rated_at' => true,
-            'episode_closed_at' => true, 'episode_event_id' => true, 'created_at' => true, 'updated_at' => true,
+            'episode_closed_at' => true, 'episode_event_id' => true, 'template_key' => true, 'template_version' => true,
+            'agent_user_id' => self::ROLE, 'agent_name' => self::ROLE, 'agent_score' => true, 'created_at' => true, 'updated_at' => true,
         ],
         'cobrowse_sessions' => [
             'id' => true, 'conversation_id' => true, 'site_id' => true, 'visitor_id' => true, 'requested_by_id' => self::ROLE,

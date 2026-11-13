@@ -1000,6 +1000,28 @@
                             </p>
                         </div>
 
+                        <fieldset class="field">
+                            <legend>{{ __('site_settings.rating.template') }}</legend>
+                            @foreach (\App\Support\Sites\RatingTemplate::keys() as $templateKey)
+                                <label for="rating_template_{{ $templateKey }}">
+                                    <input type="radio" id="rating_template_{{ $templateKey }}" name="rating_template" value="{{ $templateKey }}"
+                                        @checked(old('rating_template', $ratingPrompt->template->key) === $templateKey)>
+                                    {{ __('site_settings.rating.templates.'.$templateKey.'.label') }}
+                                </label>
+                                {{-- The preview is the questions themselves, so what an admin
+                                     picks is what a visitor will read. --}}
+                                <ul class="field-help" data-rating-template-preview="{{ $templateKey }}">
+                                    @foreach (__('site_settings.rating.templates.'.$templateKey.'.questions') as $question)
+                                        <li>{{ $question }}</li>
+                                    @endforeach
+                                </ul>
+                            @endforeach
+                            <p class="field-help">{{ __('site_settings.rating.template_help') }}</p>
+                            @error('rating_template')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </fieldset>
+
                         <div class="field">
                             <label for="rating_intro">{{ __('site_settings.rating.intro') }}</label>
                             <input type="text" id="rating_intro" name="rating_intro" maxlength="160"

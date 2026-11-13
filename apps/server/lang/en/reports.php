@@ -187,11 +187,27 @@ return [
         'small_sample' => 'Few enough answers that one more would move the percentage noticeably. Read it as a direction rather than a measurement.',
     ],
 
+    'agent_satisfaction' => [
+        'heading' => 'The agent who helped',
+        'lede' => 'A separate question from the figure above, and never folded into it.',
+        'not_applicable' => 'Not applicable',
+        'skipped' => 'Skipped',
+        'answered' => 'Answered',
+        'answered_of' => ':answered of :applicable asked',
+        'positive' => 'Good',
+        'no_scores' => 'No scores yet',
+        'thin' => '(few answers)',
+        'small_sample' => 'Asked only when exactly one person replied since the conversation last opened. Not applicable and skipped answers are counts, not scores, and the percentage is a share of the good, ok and bad answers alone. With fewer than ten, read it as a direction rather than a measurement.',
+        'scores' => ['good' => 'Good', 'ok' => 'Ok', 'bad' => 'Bad', 'not_applicable' => 'Not applicable'],
+    ],
+
     'comments' => [
         'heading' => 'What people said',
         'empty' => 'Nobody left a comment in this period. The comment box is optional, and most people skip it — a score with no words is still an answer.',
         'score' => 'Score',
         'said' => 'What they said',
+        'help' => 'About the agent',
+        'agent_not_asked' => 'Not asked',
         'conversation' => 'Conversation',
         'when' => 'When',
         'latest' => '{1} The most recent :count comment. A score tells you something went wrong; this is the only place that says what.|[0,*] The most recent :count comments. A score tells you something went wrong; this is the only place that says what.',

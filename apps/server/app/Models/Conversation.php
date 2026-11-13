@@ -214,6 +214,57 @@ class Conversation extends Model
         return $episode !== null && ! $this->ratings()->where('episode_event_id', $episode->id)->exists();
     }
 
+    /**
+     * The one person who helped in the stretch of work `$close` ended, or null.
+     *
+     * The episode runs from the previous lifecycle boundary -- the latest
+     * close or reopen before this close, or creation -- up to and including the
+     * close. A qualifying agent is a dashboard user who sent the visitor a
+     * message inside it; conversations carry no private notes, so every such
+     * message was seen. Exactly one qualifies, or nobody is named: with two
+     * people in the episode there is no honest single answer to "how was the
+     * help from X". Assignment and who clicked Close say nothing about who
+     * helped, so neither is consulted (docs/product/satisfaction.md).
+     */
+    public function ratingEpisodeAgent(AuditEvent $close): ?User
+    {
+        $boundary = AuditEvent::query()
+            ->where('subject_type', $this->getMorphClass())
+            ->where('subject_id', $this->id)
+            ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
+            ->where('id', '!=', $close->id)
+            ->where(function ($query) use ($close): void {
+                $query->where('occurred_at', '<', $close->occurred_at)
+                    ->orWhere(fn ($same) => $same->where('occurred_at', $close->occurred_at)->where('id', '<', $close->id));
+            })
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $senders = $this->messages()
+            ->where('sender_type', User::class)
+            ->whereNotNull('sender_id')
+            ->when($boundary !== null, fn ($query) => $query->where('created_at', '>=', $boundary->occurred_at))
+            ->where('created_at', '<=', $close->occurred_at)
+            ->distinct()
+            ->limit(2)
+            ->pluck('sender_id');
+
+        return $senders->count() === 1 ? User::query()->find($senders->first()) : null;
+    }
+
+    /**
+     * An opaque handle for the agent a prompt names, bound to its close.
+     *
+     * The widget sends it back with an agent answer, and the server refuses an
+     * answer whose handle does not match the agent it recomputes -- so a score
+     * attaches to the person the visitor saw named, and to nobody else.
+     */
+    public static function ratingAgentToken(AuditEvent $close, User $agent): string
+    {
+        return substr(hash('sha256', 'rating-agent:'.$close->id.':'.$agent->id), 0, 16);
+    }
+
     public function ratings(): HasMany
     {
         return $this->hasMany(ConversationRating::class);

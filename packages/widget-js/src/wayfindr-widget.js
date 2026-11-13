@@ -112,6 +112,10 @@
       'rating.send': 'Send',
       'rating.thanks': 'Thank you — that helps.',
       'rating.failed': 'That could not be sent.',
+      'rating.overall': 'How was your overall support experience?',
+      'rating.agent': 'How was the help you received from {name}?',
+      'rating.notApplicable': 'Not applicable',
+      'rating.skip': 'Skip',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Please check the details above.',
       'intake.required': 'Please fill in the required fields.',
@@ -216,6 +220,10 @@
       'rating.send': 'Senden',
       'rating.thanks': 'Vielen Dank — das hilft uns.',
       'rating.failed': 'Das konnte nicht gesendet werden.',
+      'rating.overall': 'Wie war Ihre Support-Erfahrung insgesamt?',
+      'rating.agent': 'Wie war die Hilfe von {name}?',
+      'rating.notApplicable': 'Trifft nicht zu',
+      'rating.skip': 'Überspringen',
       'intake.optional': '{label} (optional)',
       'intake.checkDetails': 'Bitte prüfen Sie die Angaben oben.',
       'intake.required': 'Bitte füllen Sie die Pflichtfelder aus.',
@@ -1477,7 +1485,7 @@
           site_public_key: sitePublicKey,
         }));
       },
-      rateConversation: function (supportCode, score, comment, episode) {
+      rateConversation: function (supportCode, score, comment, episode, shown) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/rating', {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
@@ -1488,6 +1496,13 @@
           // conversation has since been reopened and closed again, rather than
           // attributing an answer about finished work to newer work.
           episode: episode,
+          // What the visitor was SHOWN (#1156): the template, and the agent
+          // the second question named. The answer is stored against these, so
+          // a settings change while the prompt was open cannot reinterpret it.
+          template: shown && shown.template ? shown.template.key : null,
+          template_version: shown && shown.template ? shown.template.version : null,
+          agent: shown && shown.agent ? shown.agent.ref : null,
+          agent_score: shown && shown.agent ? shown.agentScore : null,
         });
       },
       searchArticles: function (query) {
@@ -1859,9 +1874,19 @@
       '      <button class="wayfindr-widget__rating-score" type="button" data-score="ok"></button>',
       '      <button class="wayfindr-widget__rating-score" type="button" data-score="bad"></button>',
       '    </div>',
+      '    <fieldset class="wayfindr-widget__rating-agent" hidden>',
+      '      <legend class="wayfindr-widget__rating-agent-question"></legend>',
+      '      <div class="wayfindr-widget__rating-scores">',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="good"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="ok"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="bad"></button>',
+      '        <button class="wayfindr-widget__rating-agent-score" type="button" data-agent-score="not_applicable"></button>',
+      '      </div>',
+      '    </fieldset>',
       '    <label class="wayfindr-widget__rating-label" for="' + escapeHtml(ratingId) + '"></label>',
       '    <textarea class="wayfindr-widget__rating-comment" id="' + escapeHtml(ratingId) + '" rows="2" maxlength="1000"></textarea>',
       '    <button class="wayfindr-widget__rating-send" type="submit"></button>',
+      '    <button class="wayfindr-widget__rating-skip" type="button"></button>',
       '    <p class="wayfindr-widget__rating-status" role="status" aria-live="polite" hidden></p>',
       '  </form>',
       '  <p class="wayfindr-widget__typing" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
@@ -1929,6 +1954,9 @@
     var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
     var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
     var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    var ratingAgentBlock = rootEl.querySelector('.wayfindr-widget__rating-agent');
+    var ratingAgentQuestion = rootEl.querySelector('.wayfindr-widget__rating-agent-question');
+    var ratingSkip = rootEl.querySelector('.wayfindr-widget__rating-skip');
     // The window that owns this document, not the ambient global: a test
     // harness (and an embed inside an iframe) hands the widget a document whose
     // view is not the one this script happens to be running in.
@@ -1973,6 +2001,16 @@
     // outstanding at once: a stale one for a close that has since been
     // superseded, and the live one for the close now on screen.
     var ratingInFlight = null;
+    // The agent the second question names for the close on screen, or null.
+    // Captured when the close is first seen and kept for it, so a later poll
+    // cannot change who an open prompt is about (#1156).
+    var ratingAgent = null;
+    var ratingAgentScore = null;
+    // A skipped close is remembered by its opaque token in this browser, so
+    // the prompt stays hidden across reloads -- and a NEW close, with a new
+    // token, is asked about afresh. Skipping records nothing on the server.
+    var ratingSkipStorage = resolveStorageOption(options);
+    var ratingSkipKey = 'wayfindr:' + options.sitePublicKey + ':rating-skipped';
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -2231,6 +2269,12 @@
       if (conversation && typeof conversation.rating_episode === 'string' && conversation.rating_episode !== ratingEpisode) {
         ratingEpisode = conversation.rating_episode;
         ratingScore = null;
+        ratingAgentScore = null;
+        ratingAgent = conversation.rating_agent
+          && typeof conversation.rating_agent.ref === 'string'
+          && typeof conversation.rating_agent.name === 'string'
+          ? { ref: conversation.rating_agent.ref, name: conversation.rating_agent.name }
+          : null;
         ratingComment.value = '';
         ratingStatus.hidden = true;
         ratingStatus.textContent = '';
@@ -5442,7 +5486,8 @@
       var shouldAsk = Boolean(ratingConfig && ratingConfig.asks)
         && supportCode !== null
         && conversationStatus === 'closed'
-        && ! ratingAnswered;
+        && ! ratingAnswered
+        && ! (ratingEpisode !== null && storageGet(ratingSkipStorage, ratingSkipKey) === ratingEpisode);
 
       rating.hidden = ! shouldAsk;
 
@@ -5450,9 +5495,24 @@
         return;
       }
 
-      ratingIntro.textContent = ratingConfig.intro || t('rating.intro');
+      var asksAgent = ratingAsksAgent();
+
+      ratingIntro.textContent = ratingConfig.intro || t(ratingTemplateKey() === 'starter' ? 'rating.overall' : 'rating.intro');
       ratingLabel.textContent = t('rating.comment');
       ratingSend.textContent = t('rating.send');
+      ratingSkip.textContent = t('rating.skip');
+
+      // The agent's name is the one the visitor saw on their messages, and is
+      // set as text, never markup.
+      ratingAgentBlock.hidden = ! asksAgent;
+      ratingAgentQuestion.textContent = asksAgent ? t('rating.agent', { name: ratingAgent.name }) : '';
+
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-agent-score'), function (button) {
+        var value = button.getAttribute('data-agent-score');
+
+        button.textContent = value === 'not_applicable' ? t('rating.notApplicable') : t('rating.' + value);
+        button.setAttribute('aria-pressed', value === ratingAgentScore ? 'true' : 'false');
+      });
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
         button.textContent = t('rating.' + button.getAttribute('data-score'));
@@ -5475,11 +5535,42 @@
 
       ratingSend.disabled = busy || ratingScore === null;
       ratingComment.disabled = busy;
+      ratingSkip.disabled = busy;
 
-      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
+      [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score, .wayfindr-widget__rating-agent-score'), function (button) {
         button.disabled = busy;
       });
     }
+
+    function ratingTemplateKey() {
+      return ratingConfig && ratingConfig.template ? ratingConfig.template.key : 'overall';
+    }
+
+    // Only when the template this widget was given asks about the agent AND
+    // the server named exactly one for this close.
+    function ratingAsksAgent() {
+      return ratingTemplateKey() === 'starter' && ratingAgent !== null;
+    }
+
+    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-agent-score'), function (button) {
+      button.addEventListener('click', function () {
+        var value = button.getAttribute('data-agent-score');
+
+        // Pressing the chosen answer again clears it: the agent question is
+        // optional, and an accidental press must not become a score.
+        ratingAgentScore = ratingAgentScore === value ? null : value;
+        renderRatingPrompt();
+      });
+    });
+
+    ratingSkip.addEventListener('click', function () {
+      if (ratingEpisode === null || ratingInFlight === ratingEpisode) {
+        return;
+      }
+
+      storageSet(ratingSkipStorage, ratingSkipKey, ratingEpisode);
+      rating.hidden = true;
+    });
 
     [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
       button.addEventListener('click', function () {
@@ -5516,7 +5607,11 @@
       ratingInFlight = submittedEpisode;
       applyRatingFormState();
 
-      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode).then(function () {
+      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode, {
+        template: ratingConfig && ratingConfig.template ? ratingConfig.template : null,
+        agent: ratingAsksAgent() ? ratingAgent : null,
+        agentScore: ratingAsksAgent() ? ratingAgentScore : null,
+      }).then(function () {
         // Says nothing when the close it answered is no longer the one on
         // screen. Thanking the visitor beside a fresh, unanswered question
         // reads as an acknowledgement OF that question -- the same reason the
@@ -6684,6 +6779,10 @@
       asks: prompt.asks === true,
       // Operator copy: shown as typed, escaped, never interpreted.
       intro: typeof prompt.intro === 'string' && prompt.intro.trim() ? prompt.intro.trim() : null,
+      // Which questions to ask. Absent from an older server: the single one.
+      template: prompt.template && typeof prompt.template.key === 'string' && typeof prompt.template.version === 'number'
+        ? { key: prompt.template.key, version: prompt.template.version }
+        : null,
     } : null;
   }
 
@@ -8758,6 +8857,14 @@
       '.wayfindr-widget__rating-scores{display:flex;gap:8px}',
       '.wayfindr-widget__rating-score{flex:1 1 0;min-width:0;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-agent{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}',
+      '.wayfindr-widget__rating-agent-question{margin:0;padding:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
+      // Four answers on a narrow phone wrap rather than squeezing a label
+      // below its readable width.
+      '.wayfindr-widget__rating-agent .wayfindr-widget__rating-scores{flex-wrap:wrap}',
+      '.wayfindr-widget__rating-agent-score{flex:1 1 0;min-width:72px;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1.2 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-agent-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
+      '.wayfindr-widget__rating-agent-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
       // The chosen answer has to be visible without colour alone carrying it,
       // so the border thickens as well as changing hue.
       '.wayfindr-widget__rating-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
@@ -8766,6 +8873,8 @@
       '.wayfindr-widget__rating-send{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-send:hover:not(:disabled){border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-send:disabled{opacity:0.55;cursor:default}',
+      '.wayfindr-widget__rating-skip{justify-self:start;min-height:34px;border:0;background:none;color:var(--wf-muted);cursor:pointer;padding:0 4px;font:13px/1 var(--wf-font-sans);text-decoration:underline}',
+      '.wayfindr-widget__rating-skip:disabled{opacity:0.55;cursor:default}',
       '.wayfindr-widget__rating-status{margin:0;color:color-mix(in srgb, var(--wf-signal-stop) 80%, var(--wf-ink));font-size:12px}',
       '.wayfindr-widget__away{margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink));font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
