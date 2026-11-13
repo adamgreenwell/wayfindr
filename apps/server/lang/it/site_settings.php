@@ -405,6 +405,12 @@ return [
                 'label' => 'L’esperienza e l’agente che ha aiutato',
                 'questions' => ['Com’è stata la Sua esperienza di assistenza complessiva? — buono, discreto, negativo', 'Com’è stato l’aiuto ricevuto da [nome dell’agente]? — buono, discreto, negativo, non pertinente', 'C’è altro che vorrebbe farci sapere? — facoltativo'],
             ],
+            'custom' => [
+                'label' => 'Il Suo modello',
+                'label_version' => 'Il Suo modello (versione :version)',
+                'none' => 'Pubblichi una versione del Suo modello prima di sceglierlo.',
+                'edit' => 'Modifica il Suo modello',
+            ],
         ],
     ],
 

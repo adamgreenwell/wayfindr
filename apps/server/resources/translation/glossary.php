@@ -106,6 +106,10 @@ return [
             ':count ms',
             'Status: :value',
             'Label: :value',
+            // A published rating template's number (#1157). German uses the
+            // same word; `Fassung` reads as an edition of a text.
+            'Version',
+            'Version :version',
         ],
 
         // `Agent` and `Name` are deliberately ABSENT: Italian says `Agente`
