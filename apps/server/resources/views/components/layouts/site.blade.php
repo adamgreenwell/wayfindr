@@ -36,6 +36,23 @@
 
     $siteSections = array_values(array_filter($siteSections, fn (array $section): bool => $section['visible']));
 
+    // The level above. The sites directory for anyone AgentSiteController@index
+    // admits -- the same seven permissions -- and otherwise the automations
+    // list, which is where a reader holding only ManageAutomations reaches a
+    // site's proactive messages from. A back link that answers 403 is worse
+    // than none.
+    $siteBack = $agent->hasAnyAccountPermission(
+        \App\Enums\AccountPermission::ManageSites,
+        \App\Enums\AccountPermission::ManageSiteAccess,
+        \App\Enums\AccountPermission::ManagePrivacySettings,
+        \App\Enums\AccountPermission::ManageIntegrations,
+        \App\Enums\AccountPermission::ViewAudit,
+        \App\Enums\AccountPermission::ViewConversations,
+        \App\Enums\AccountPermission::ManageTickets,
+    )
+        ? ['href' => route('dashboard.sites.index'), 'label' => __('nav.items.sites')]
+        : ['href' => route('dashboard.account.automation-rules.index'), 'label' => __('account_shell.sections.automations')];
+
     // The settings page is the site itself; the rail item above it already
     // says "Sites", so a crumb would only repeat the page's own heading.
     $siteCrumb = request()->routeIs('dashboard.sites.show')
@@ -55,7 +72,7 @@
         'titleLang' => '',
         'icon' => 'sites',
         'color' => $site->resolvedColor()->cssVariable(),
-        'back' => ['href' => route('dashboard.sites.index'), 'label' => __('nav.items.sites')],
+        'back' => $siteBack,
         'groups' => [['label' => null, 'sections' => $siteSections]],
     ]"
 >

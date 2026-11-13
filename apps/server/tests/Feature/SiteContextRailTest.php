@@ -128,6 +128,13 @@ test('every site rail link opens for its reader, and every destination it hides 
         }
 
         expect($shown)->toBe($open, "{$role}: {$name} shows a site rail that differs from the pages this reader can open");
+
+        // The way out has to open too: a reader holding only ManageAutomations
+        // reaches proactive messages but not the sites directory.
+        preg_match('/class="wf-context-back" href="([^"]+)"/', (string) $this->actingAs($reader)->get($href)->getContent(), $back);
+        $backStatus = $this->actingAs($reader)->get(html_entity_decode($back[1] ?? ''))->status();
+
+        expect($backStatus)->toBe(200, "{$role}: {$name}'s rail leads back to ".($back[1] ?? 'nothing').", which answers {$backStatus}");
     }
 })->with(siteRailReaders());
 
