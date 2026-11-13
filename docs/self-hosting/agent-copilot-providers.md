@@ -38,8 +38,9 @@ validated complete supplied sentences with published-guidance attribution or use
 a safe clarification for unsupported/conflicting guidance. Source/access/policy
 changes withdraw the entire draft. Inspecting sources is read-only; inserting
 requires explicit fresh authorization, preserves edits and never sends.
-Refinement generation remains #1173: its future explicit action may send bounded
-scrubbed composer text, while automatic preparation never does. Attachments and
+Private draft refinement shipped in #1195: only an agent's explicit refinement
+request sends their own unsent composer text, bounded to 4,000 characters and
+scrubbed first, while automatic preparation never does. Attachments and
 cobrowse snapshots remain excluded. No live provider is activated by this source
 work; deployment and current-model evaluation are separate qualification.
 
