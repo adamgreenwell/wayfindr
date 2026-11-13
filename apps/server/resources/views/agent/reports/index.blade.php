@@ -590,6 +590,58 @@
                 @endif
             </section>
 
+            @if ($agentSatisfaction !== [])
+                {{-- A different question from the figure above, reported on its
+                     own and never folded into it (#1156). Not applicable and
+                     skipped are counts, not scores. --}}
+                <section class="section" aria-labelledby="report-agent-satisfaction-heading">
+                    <div class="section-header">
+                        <h2 id="report-agent-satisfaction-heading">{{ __('reports.agent_satisfaction.heading') }}</h2>
+                        <span class="lede">{{ __('reports.agent_satisfaction.lede') }}</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">{{ __('reports.tables.agent') }}</th>
+                                    <th scope="col">{{ __('reports.satisfaction.good') }}</th>
+                                    <th scope="col">{{ __('reports.satisfaction.ok') }}</th>
+                                    <th scope="col">{{ __('reports.satisfaction.bad') }}</th>
+                                    <th scope="col">{{ __('reports.agent_satisfaction.not_applicable') }}</th>
+                                    <th scope="col">{{ __('reports.agent_satisfaction.skipped') }}</th>
+                                    <th scope="col">{{ __('reports.agent_satisfaction.answered') }}</th>
+                                    <th scope="col">{{ __('reports.agent_satisfaction.positive') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($agentSatisfaction as $row)
+                                    <tr>
+                                        <th scope="row" lang="">{{ $row['name'] }}</th>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['good']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['ok']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['bad']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['not_applicable']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['skipped']) }}</td>
+                                        <td>{{ __('reports.agent_satisfaction.answered_of', ['answered' => \App\Support\ReaderNumber::count($row['answered']), 'applicable' => \App\Support\ReaderNumber::count($row['applicable'])]) }}</td>
+                                        <td>
+                                            @if ($row['answered'] === 0)
+                                                {{ __('reports.agent_satisfaction.no_scores') }}
+                                            @else
+                                                {{ $row['positive_label'] }}
+                                                @if ($row['answered'] < 10)
+                                                    <span class="lede">{{ __('reports.agent_satisfaction.thin') }}</span>
+                                                @endif
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="lede section-body">{{ __('reports.agent_satisfaction.small_sample') }}</p>
+                </section>
+            @endif
+
             <section class="section" aria-labelledby="report-comments-heading">
                 <div class="section-header">
                     <h2 id="report-comments-heading">{{ __('reports.comments.heading') }}</h2>
@@ -605,6 +657,7 @@
                                 <tr>
                                     <th scope="col">{{ __('reports.comments.score') }}</th>
                                     <th scope="col">{{ __('reports.comments.said') }}</th>
+                                    <th scope="col">{{ __('reports.comments.help') }}</th>
                                     <th scope="col">{{ __('reports.comments.conversation') }}</th>
                                     <th scope="col">{{ __('reports.comments.when') }}</th>
                                 </tr>
@@ -616,6 +669,15 @@
                                         {{-- Visitor-authored, so escaped like any other visitor text and
                                              never used as a link label. --}}
                                         <td class="cell-wrap report-comment" lang="">{{ $comment['comment'] }}</td>
+                                        <td>
+                                            @if ($comment['agent_name'] === null)
+                                                {{ __('reports.comments.agent_not_asked') }}
+                                            @elseif ($comment['agent_score'] === null)
+                                                <span lang="">{{ $comment['agent_name'] }}</span>: {{ __('reports.agent_satisfaction.skipped') }}
+                                            @else
+                                                <span lang="">{{ $comment['agent_name'] }}</span>: {{ __('reports.agent_satisfaction.scores.'.$comment['agent_score']) }}
+                                            @endif
+                                        </td>
                                         <td>
                                             <a lang="" href="{{ route('dashboard.conversations.show', $comment['support_code']) }}">{{ $comment['support_code'] }}</a>
                                         </td>

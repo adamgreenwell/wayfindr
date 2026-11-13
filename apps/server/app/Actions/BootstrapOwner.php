@@ -258,7 +258,7 @@ class BootstrapOwner
             $this->refuse('owner_bootstrap_claim_file_refused');
         }
 
-        return $this->identity($stat);
+        return $this->directoryIdentity($stat);
     }
 
     private function openClaim(string $path, bool $create, bool &$created)
@@ -289,6 +289,18 @@ class BootstrapOwner
         }
 
         return $handle;
+    }
+
+    /**
+     * The claim directory, as the same directory. Not `nlink`: a directory's
+     * link count is not stable while files are written into it on every
+     * filesystem -- APFS counts each entry, so creating the claim itself moved
+     * it from 2 to 3 and the command refused its own file on macOS. dev and
+     * ino still name the directory; a swap or replacement changes them.
+     */
+    private function directoryIdentity(array $stat): array
+    {
+        return array_intersect_key($stat, array_flip(['dev', 'ino', 'mode', 'uid', 'gid']));
     }
 
     private function identity(array $stat): array
