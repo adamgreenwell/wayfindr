@@ -13,7 +13,6 @@ return [
     'title' => 'Website-Einstellungen',
     'subtitle' => 'Einstellungen für :domain',
     'unconfigured_domain' => 'eine Domain ohne Einrichtung',
-    'back' => 'Zurück zu Websites',
 
     'flash' => [
         'identity_verification_on' => 'Die Identitätsprüfung für Besucher ist aktiv.',
@@ -486,8 +485,6 @@ return [
     ],
     'status' => [
         'title' => 'Website-Status',
-        'back' => 'Zurück zu den Website-Einstellungen',
         'subtitle' => 'Wie der Support dieser Website läuft — nicht, wie die Website eingerichtet ist.',
-        'link' => 'Website-Status',
     ],
 ];

@@ -13,7 +13,6 @@ return [
     'title' => 'Impostazioni del sito',
     'subtitle' => 'Impostazioni per :domain',
     'unconfigured_domain' => 'un dominio non configurato',
-    'back' => 'Torna ai siti',
 
     'flash' => [
         'identity_verification_on' => 'La verifica dell\'identità dei visitatori è attiva.',
@@ -486,8 +485,6 @@ return [
     ],
     'status' => [
         'title' => 'Stato del sito',
-        'back' => 'Torna alle impostazioni del sito',
         'subtitle' => 'Come sta funzionando il supporto di questo sito, a differenza di come è configurato.',
-        'link' => 'Stato del sito',
     ],
 ];

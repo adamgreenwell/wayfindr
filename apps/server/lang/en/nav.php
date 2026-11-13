@@ -29,6 +29,16 @@ return [
         'operator' => 'Operator',
     ],
 
+    // The rail inside one site: its sections replace the product's.
+    'site' => [
+        'sections_label' => 'Site sections',
+        'settings' => 'Settings',
+        'status' => 'Status',
+        'tester' => 'Tester',
+        'live' => 'Live visitors',
+        'proactive' => 'Proactive messages',
+    ],
+
     'regions' => [
         'primary' => 'Primary navigation',
         'breadcrumb' => 'Breadcrumb',
