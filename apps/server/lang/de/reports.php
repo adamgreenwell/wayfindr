@@ -185,6 +185,8 @@ return [
         'answered' => 'Beantwortet',
         'answered_detail' => '{1} Von :count Schließung. Jeder obige Wert ist ein Anteil dieser Zahl, niemals der Schließungen — Personen ohne Antwort gelten nicht als zufrieden.|[0,*] Von :count Schließungen. Jeder obige Wert ist ein Anteil dieser Zahl, niemals der Schließungen — Personen ohne Antwort gelten nicht als zufrieden.',
         'small_sample' => 'So wenige Antworten, dass eine weitere den Prozentsatz merklich verändern würde. Lesen Sie dies als Richtung, nicht als Messwert.',
+        'summary_builtin' => '{1} :answered von :closed Abschluss haben die eingebaute Frage beantwortet|[0,*] :answered von :closed Abschlüssen haben die eingebaute Frage beantwortet',
+        'only_custom' => 'In diesem Zeitraum hat niemand die eingebaute Frage beantwortet. Antworten auf Ihre eigenen Vorlagen stehen getrennt weiter unten.',
     ],
 
     'agent_satisfaction' => [
@@ -202,7 +204,7 @@ return [
     ],
 
     'custom_template' => [
-        'heading' => 'Eigene Vorlage, Version :version',
+        'heading' => ':site — eigene Vorlage, Version :version',
         'scale_three' => 'Drei Antworten',
         'scale_five' => 'Fünf Sterne',
         'answer' => 'Antwort',

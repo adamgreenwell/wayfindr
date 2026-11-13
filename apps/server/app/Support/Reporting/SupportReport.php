@@ -376,6 +376,7 @@ final class SupportReport
 
             $versions = SiteRatingTemplateVersion::query()
                 ->whereIn('id', $overall->pluck('template_version_id')->unique()->all())
+                ->with('site:id,name')
                 ->get()
                 ->keyBy('id');
 
@@ -420,6 +421,9 @@ final class SupportReport
                 $results[] = [
                     'version_id' => (int) $version->id,
                     'site_id' => (int) $version->site_id,
+                    // Versions are numbered per site, so "version 1" alone
+                    // names one per site in an all-sites report.
+                    'site_name' => (string) $version->site?->name,
                     'version' => (int) $version->version,
                     'scale' => $scale,
                     'question' => $definition->text('overall'),

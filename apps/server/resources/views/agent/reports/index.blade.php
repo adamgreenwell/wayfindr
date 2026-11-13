@@ -539,7 +539,7 @@
             <section class="section" aria-labelledby="report-satisfaction-heading">
                 <div class="section-header">
                     <h2 id="report-satisfaction-heading">{{ __('reports.satisfaction.heading') }}</h2>
-                    <span class="lede">{{ trans_choice('reports.satisfaction.summary', $satisfaction['closed'], [
+                    <span class="lede">{{ trans_choice($customTemplates === [] ? 'reports.satisfaction.summary' : 'reports.satisfaction.summary_builtin', $satisfaction['closed'], [
                         'answered' => \App\Support\ReaderNumber::count($satisfaction['answered']),
                         'closed' => \App\Support\ReaderNumber::count($satisfaction['closed']),
                     ]) }}</span>
@@ -551,6 +551,11 @@
                     <p class="empty">
                         @if ($satisfaction['closed'] === 0)
                             {{ __('reports.satisfaction.no_closes') }}
+                        @elseif ($customTemplates !== [])
+                            {{-- Visitors did answer -- a site's own questions,
+                                 reported below. Saying "nobody answered" here
+                                 would contradict the sections under it. --}}
+                            {{ __('reports.satisfaction.only_custom') }}
                         @else
                             {{ __('reports.satisfaction.no_answers_before') }}
                             <strong>{{ __('reports.satisfaction.setting') }}</strong>
@@ -648,7 +653,7 @@
                      built-in figure or another version (#1157). --}}
                 <section class="section" aria-labelledby="report-custom-template-{{ $custom['version_id'] }}">
                     <div class="section-header">
-                        <h2 id="report-custom-template-{{ $custom['version_id'] }}">{{ __('reports.custom_template.heading', ['version' => $custom['version']]) }}</h2>
+                        <h2 id="report-custom-template-{{ $custom['version_id'] }}">{!! __('reports.custom_template.heading', ['version' => e($custom['version']), 'site' => '<span lang="">'.e($custom['site_name']).'</span>']) !!}</h2>
                         <span class="lede">{{ __('reports.custom_template.scale_'.$custom['scale']) }}</span>
                     </div>
                     <p class="section-body"><span lang="en">{{ $custom['question'] }}</span></p>

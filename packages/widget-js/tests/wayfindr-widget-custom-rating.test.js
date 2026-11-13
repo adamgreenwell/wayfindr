@@ -40,6 +40,7 @@ const FIVE = {
 };
 
 function widgetWith({ definition = THREE, version = 3, agent = { ref: 'ref-ada', name: 'Ada' }, locale = null, languages = ['en-US'] } = {}) {
+  let shown = { definition, version };
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', { url: 'https://docs.example.test/' });
   const sent = [];
   const values = new Map(Object.entries({
@@ -77,7 +78,7 @@ function widgetWith({ definition = THREE, version = 3, agent = { ref: 'ref-ada',
             public_key: 'site_public_docs', settings: {}, color: 'blue',
             availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
             intake: { asks: false, intro: null, fields: { name: 'off', email: 'off', reason: 'off' } },
-            rating: { asks: true, intro: 'Operator intro is for the built-ins', template: { key: 'custom', version, definition } },
+            rating: { asks: true, intro: 'Operator intro is for the built-ins', template: { key: 'custom', version: shown.version, definition: shown.definition } },
           },
           visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs', identified: false },
         } });
@@ -93,6 +94,8 @@ function widgetWith({ definition = THREE, version = 3, agent = { ref: 'ref-ada',
       return jsonResponse(200, { data: {} });
     },
   });
+
+  widget.publish = (next, nextVersion) => { shown = { definition: next, version: nextVersion }; };
 
   return { widget, sent };
 }
@@ -180,4 +183,27 @@ test('site wording and the agent name are text, and a name with braces is not a 
 
   assert.equal(q(widget, '.wayfindr-widget__rating-intro').querySelector('img'), null);
   assert.equal(q(widget, '.wayfindr-widget__rating-agent-question').textContent, 'And {name}<b> — how did they do?');
+});
+
+test('a version published mid-survey cannot change the open prompt’s scale or answers', async () => {
+  const { widget, sent } = widgetWith();
+  await openPanel(widget);
+
+  q(widget, '.wayfindr-widget__rating-score[data-score="bad"]').click();
+  q(widget, '.wayfindr-widget__rating-agent-score[data-agent-score="ok"]').click();
+
+  // A five-star version is published; minimise and reopen refreshes bootstrap.
+  widget.publish(FIVE, 4);
+  q(widget, '.wayfindr-widget__close').click();
+  await settle();
+  await openPanel(widget);
+
+  assert.deepEqual(qa(widget, '.wayfindr-widget__rating-score').map((b) => b.getAttribute('data-score')), ['good', 'ok', 'bad']);
+  assert.equal(q(widget, '.wayfindr-widget__rating-score[data-score="bad"]').getAttribute('aria-pressed'), 'true');
+  await submit(widget);
+
+  const post = sent.find((r) => r.url.includes('/rating'));
+  assert.equal(post.body.template_version, 3);
+  assert.equal(post.body.score, 'bad');
+  assert.equal(post.body.agent_score, 'ok');
 });

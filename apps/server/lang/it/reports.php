@@ -185,6 +185,8 @@ return [
         'answered' => 'Risposte',
         'answered_detail' => '{1} Su :count chiusura. Ogni valore sopra rappresenta una quota di questo numero, mai delle chiusure: chi non ha detto nulla non viene considerato soddisfatto.|[0,*] Su :count chiusure. Ogni valore sopra rappresenta una quota di questo numero, mai delle chiusure: chi non ha detto nulla non viene considerato soddisfatto.',
         'small_sample' => 'Le risposte sono così poche che una sola in più cambierebbe sensibilmente la percentuale. Lo legga come una direzione, non come una misurazione.',
+        'summary_builtin' => '{1} :answered di :closed chiusura ha risposto alla domanda predefinita|[0,*] :answered di :closed chiusure hanno risposto alla domanda predefinita',
+        'only_custom' => 'Nessuno ha risposto alla domanda predefinita in questo periodo. Le risposte ai Suoi modelli sono riportate separatamente più sotto.',
     ],
 
     'agent_satisfaction' => [
@@ -202,7 +204,7 @@ return [
     ],
 
     'custom_template' => [
-        'heading' => 'Il Suo modello, versione :version',
+        'heading' => ':site — il Suo modello, versione :version',
         'scale_three' => 'Tre risposte',
         'scale_five' => 'Cinque stelle',
         'answer' => 'Risposta',

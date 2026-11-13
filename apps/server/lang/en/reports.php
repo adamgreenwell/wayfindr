@@ -185,6 +185,8 @@ return [
         'answered' => 'Answered',
         'answered_detail' => '{1} Out of :count close. Every figure above is a share of this number, never of the closes — people who said nothing are not counted as satisfied.|[0,*] Out of :count closes. Every figure above is a share of this number, never of the closes — people who said nothing are not counted as satisfied.',
         'small_sample' => 'Few enough answers that one more would move the percentage noticeably. Read it as a direction rather than a measurement.',
+        'summary_builtin' => '{1} :answered of :closed close answered the built-in question|[0,*] :answered of :closed closes answered the built-in question',
+        'only_custom' => 'Nobody answered the built-in question in this period. Answers to your own templates are reported separately below.',
     ],
 
     'agent_satisfaction' => [
@@ -202,7 +204,7 @@ return [
     ],
 
     'custom_template' => [
-        'heading' => 'Your own template, version :version',
+        'heading' => ':site — your own template, version :version',
         'scale_three' => 'Three answers',
         'scale_five' => 'Five stars',
         'answer' => 'Answer',

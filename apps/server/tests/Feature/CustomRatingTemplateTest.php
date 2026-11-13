@@ -2,6 +2,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationRating;
 use App\Models\Site;
@@ -262,8 +263,8 @@ test('each version is reported on its own, and none of it reaches the built-in f
     $this->actingAs($w['owner'])
         ->get(route('dashboard.reports.index'))
         ->assertOk()
-        ->assertSeeText('Your own template, version 1')
-        ->assertSeeText('Your own template, version 2')
+        ->assertSeeText('your own template, version 1')
+        ->assertSeeText('your own template, version 2')
         ->assertSee('&lt;b&gt;Sorted?&lt;/b&gt;', escape: false)
         ->assertDontSee('<b>Sorted?</b>', escape: false);
 });
@@ -311,4 +312,50 @@ test('the editor page renders in German for a German admin', function (): void {
         ->assertOk()
         ->assertSee('<html lang="de">', escape: false)
         ->assertSeeText('Entwurf speichern');
+});
+
+test('each section names its site, because every site numbers its versions from one', function (): void {
+    $w = customTemplateWorld();
+    $w['site']->forceFill(['name' => 'Docs Site'])->save();
+    $other = Site::factory()->for($w['account'])->create(['name' => 'Shop Site', 'settings' => ['rating' => ['enabled' => true]]]);
+    $closedAt = now()->subDay()->startOfHour();
+
+    foreach ([[$w['site'], 1], [$other, 2]] as [$site, $event]) {
+        $version = SiteRatingTemplateVersion::query()->create([
+            'site_id' => $site->id, 'version' => 1, 'definition' => customTemplateDraft(), 'published_at' => now(),
+        ]);
+        ConversationRating::query()->forceCreate([
+            'conversation_id' => Conversation::factory()->for($site)->create()->id, 'site_id' => $site->id,
+            'episode_event_id' => $event, 'episode_closed_at' => $closedAt, 'rated_at' => $closedAt, 'score' => 'good',
+            'template_key' => 'custom', 'template_version' => 1, 'template_version_id' => $version->id, 'scale' => 'three',
+        ]);
+    }
+
+    $this->actingAs($w['owner'])
+        ->get(route('dashboard.reports.index'))
+        ->assertOk()
+        ->assertSeeText('Docs Site — your own template, version 1')
+        ->assertSeeText('Shop Site — your own template, version 1');
+});
+
+test('a period with only custom answers does not claim that nobody answered', function (): void {
+    $w = customTemplateWorld();
+    $version = customTemplatePublish($this, $w, customTemplateDraft());
+    $closedAt = now()->subDay()->startOfHour();
+    $conversation = Conversation::factory()->for($w['site'])->create();
+    AuditEvent::query()->forceCreate([
+        'account_id' => $w['account']->id, 'site_id' => $w['site']->id, 'action' => ConversationLifecycleLog::CLOSED,
+        'subject_type' => $conversation->getMorphClass(), 'subject_id' => $conversation->id, 'occurred_at' => $closedAt, 'metadata' => [],
+    ]);
+    ConversationRating::query()->forceCreate([
+        'conversation_id' => $conversation->id, 'site_id' => $w['site']->id, 'episode_event_id' => 1,
+        'episode_closed_at' => $closedAt, 'rated_at' => $closedAt, 'score' => 'ok',
+        'template_key' => 'custom', 'template_version' => 1, 'template_version_id' => $version->id, 'scale' => 'three',
+    ]);
+
+    $this->actingAs($w['owner'])
+        ->get(route('dashboard.reports.index'))
+        ->assertOk()
+        ->assertSeeText('Nobody answered the built-in question in this period.')
+        ->assertDontSeeText('Nobody answered in this period.');
 });
