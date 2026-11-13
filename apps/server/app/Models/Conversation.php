@@ -276,18 +276,22 @@ class Conversation extends Model
     }
 
     /**
-     * An opaque handle for the agent a prompt names, bound to its close.
+     * An opaque handle for the agent a prompt names, bound to its close and to
+     * the name it was shown with.
      *
-     * The widget sends it back with an agent answer, and the server refuses an
-     * answer whose handle does not match the agent it recomputes -- so a score
-     * attaches to the person the visitor saw named, and to nobody else. Built
-     * from the id, so it can still be checked after the account is deleted.
+     * The widget sends it back with the name, and the server accepts the name
+     * only if the handle matches -- so the response records the person and the
+     * name the visitor actually saw, even if the agent is renamed or their
+     * account deleted between the prompt and the answer (#1206). Keyed with
+     * the application key: the close and agent ids are small integers, so an
+     * unkeyed hash could be recomputed for any name a visitor chose to plant
+     * in the reports.
      */
-    public static function ratingAgentToken(AuditEvent $close, User|int $agent): string
+    public static function ratingAgentToken(AuditEvent $close, User|int $agent, string $shownName): string
     {
         $id = $agent instanceof User ? $agent->id : $agent;
 
-        return substr(hash('sha256', 'rating-agent:'.$close->id.':'.$id), 0, 16);
+        return substr(hash_hmac('sha256', 'rating-agent:'.$close->id.':'.$id.':'.$shownName, (string) config('app.key')), 0, 32);
     }
 
     public function ratings(): HasMany

@@ -124,9 +124,9 @@ test('the one agent who replied in the closed episode is named, and the answer i
 
     $named = agentRatingPoll($this, $token)->assertOk()->json('data.conversation.rating_agent');
 
-    expect($named)->toBe(['ref' => Conversation::ratingAgentToken($close, $ada), 'name' => 'Ada Agent']);
+    expect($named)->toBe(['ref' => Conversation::ratingAgentToken($close, $ada, $ada->name), 'name' => 'Ada Agent']);
 
-    agentRatingPost($this, $token, ['score' => 'ok', 'agent' => $named['ref'], 'agent_score' => 'good'])->assertCreated();
+    agentRatingPost($this, $token, ['score' => 'ok', 'agent' => $named['ref'], 'agent_name' => $named['name'], 'agent_score' => 'good'])->assertCreated();
 
     $rating = ConversationRating::query()->firstOrFail();
 
@@ -206,7 +206,7 @@ test('an agent answer naming anyone but the agent who helped is refused', functi
     $close = agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
     $token = agentRatingToken($this, $w['conversation']);
 
-    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $mallory), 'agent_score' => 'bad'])
+    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $mallory, $mallory->name), 'agent_name' => $mallory->name, 'agent_score' => 'bad'])
         ->assertUnprocessable()->assertJsonValidationErrors('agent');
 
     // A score with no agent named is not an agent answer either.
@@ -214,7 +214,7 @@ test('an agent answer naming anyone but the agent who helped is refused', functi
         ->assertUnprocessable()->assertJsonValidationErrors('agent_score');
 
     // And the single-question template never carries one.
-    agentRatingPost($this, $token, ['score' => 'good', 'template' => 'overall', 'agent' => Conversation::ratingAgentToken($close, $ada), 'agent_score' => 'bad'])
+    agentRatingPost($this, $token, ['score' => 'good', 'template' => 'overall', 'agent' => Conversation::ratingAgentToken($close, $ada, $ada->name), 'agent_name' => $ada->name, 'agent_score' => 'bad'])
         ->assertUnprocessable()->assertJsonValidationErrors('agent');
 
     expect(ConversationRating::query()->count())->toBe(0);
@@ -234,7 +234,7 @@ test('an answer keeps the template it was shown, whatever the site switched to s
         return $settings;
     });
 
-    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $ada), 'agent_score' => 'ok'])->assertCreated();
+    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $ada, $ada->name), 'agent_name' => $ada->name, 'agent_score' => 'ok'])->assertCreated();
 
     expect(ConversationRating::query()->firstOrFail()->only(['template_key', 'agent_score']))
         ->toBe(['template_key' => 'starter', 'agent_score' => 'ok']);
@@ -261,7 +261,7 @@ test('the snapshot survives a rename, and a deleted account keeps the name the v
     $close = agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
     $token = agentRatingToken($this, $w['conversation']);
 
-    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $ada), 'agent_score' => 'good'])->assertCreated();
+    agentRatingPost($this, $token, ['score' => 'good', 'agent' => Conversation::ratingAgentToken($close, $ada, $ada->name), 'agent_name' => $ada->name, 'agent_score' => 'good'])->assertCreated();
 
     $ada->forceFill(['name' => 'Ada Renamed'])->save();
     expect(ConversationRating::query()->firstOrFail()->agent_name)->toBe('Ada Agent');
@@ -389,25 +389,32 @@ test('the reply that reopens a conversation belongs to the episode it started', 
     expect($w['conversation']->ratingEpisodeAgent($second)?->id)->toBe($bob->id);
 });
 
-test('a deleted agent keeps the overall answer and drops only the agent answer', function (): void {
+test('the name the visitor was shown is the one recorded, through a rename or a deletion', function (): void {
     $w = agentRatingWorld();
     $ada = User::factory()->for($w['account'])->create(['name' => 'Ada']);
     agentRatingReply($w['conversation'], $ada, '2026-11-01 10:05:00');
-    $close = agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
+    agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
     $token = agentRatingToken($this, $w['conversation']);
-    $handle = Conversation::ratingAgentToken($close, $ada);
+    $shown = agentRatingPoll($this, $token)->json('data.conversation.rating_agent');
 
-    // The account goes while the prompt naming them is still open.
-    $ada->delete();
+    // Renamed while the prompt is open.
+    $ada->forceFill(['name' => 'Ada Lovelace'])->save();
 
-    agentRatingPost($this, $token, ['score' => 'bad', 'comment' => 'Slow.', 'agent' => $handle, 'agent_score' => 'good'])->assertCreated();
+    agentRatingPost($this, $token, ['score' => 'bad', 'agent' => $shown['ref'], 'agent_name' => $shown['name'], 'agent_score' => 'good'])->assertCreated();
 
-    expect(ConversationRating::query()->firstOrFail()->only(['score', 'comment', 'agent_user_id', 'agent_name', 'agent_score']))
-        ->toBe(['score' => 'bad', 'comment' => 'Slow.', 'agent_user_id' => null, 'agent_name' => null, 'agent_score' => null]);
+    expect(ConversationRating::query()->firstOrFail()->only(['agent_user_id', 'agent_name', 'rated_agent_id', 'agent_score']))
+        ->toBe(['agent_user_id' => $ada->id, 'agent_name' => 'Ada', 'rated_agent_id' => $ada->id, 'agent_score' => 'good']);
 
-    // A handle for anybody else is still refused.
-    agentRatingPost($this, $token, ['score' => 'bad', 'agent' => 'not-a-real-handle', 'agent_score' => 'good'])
+    // A name the server never issued is refused, whatever the handle.
+    agentRatingPost($this, $token, ['score' => 'bad', 'agent' => $shown['ref'], 'agent_name' => 'The CEO', 'agent_score' => 'good'])
         ->assertUnprocessable()->assertJsonValidationErrors('agent');
+
+    // Deleted while the prompt is open: the answer stays, under the shown name.
+    $ada->delete();
+    agentRatingPost($this, $token, ['score' => 'ok', 'agent' => $shown['ref'], 'agent_name' => $shown['name'], 'agent_score' => 'bad'])->assertOk();
+
+    expect(ConversationRating::query()->firstOrFail()->only(['score', 'agent_user_id', 'agent_name', 'rated_agent_id', 'agent_score']))
+        ->toBe(['score' => 'ok', 'agent_user_id' => null, 'agent_name' => 'Ada', 'rated_agent_id' => $ada->id, 'agent_score' => 'bad']);
 });
 
 test('deleting accounts never merges two agents, and a rename never splits one', function (): void {
