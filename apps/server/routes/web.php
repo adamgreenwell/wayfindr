@@ -3,6 +3,8 @@
 use App\Http\Controllers\AgentAccountAgentAccessController;
 use App\Http\Controllers\AgentAccountAgentController;
 use App\Http\Controllers\AgentAccountAgentRoleController;
+use App\Http\Controllers\AgentAccountAiAssistController;
+use App\Http\Controllers\AgentAccountAiAssistPolicyController;
 use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
@@ -21,9 +23,13 @@ use App\Http\Controllers\AgentAlertRealtimeReceiptController;
 use App\Http\Controllers\AgentAlertReconciliationController;
 use App\Http\Controllers\AgentAlertSoundGateController;
 use App\Http\Controllers\AgentArticleController;
+use App\Http\Controllers\AgentAssistFeedbackController;
+use App\Http\Controllers\AgentAssistReportController;
 use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
 use App\Http\Controllers\AgentAutomationRuleController;
+use App\Http\Controllers\AgentConversationAiPreparationController;
+use App\Http\Controllers\AgentConversationAiSourceController;
 use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationBulkActionController;
 use App\Http\Controllers\AgentConversationController;
@@ -31,6 +37,7 @@ use App\Http\Controllers\AgentConversationCopilotKnowledgeSuggestionController;
 use App\Http\Controllers\AgentConversationCopilotReplyDraftController;
 use App\Http\Controllers\AgentConversationCopilotSummaryController;
 use App\Http\Controllers\AgentConversationCopilotTicketSuggestionController;
+use App\Http\Controllers\AgentConversationDraftRefinementController;
 use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
@@ -71,6 +78,7 @@ use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
+use App\Http\Controllers\OperatorUpdateController;
 use App\Http\Controllers\OperatorWebPushSettingsController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
@@ -84,6 +92,10 @@ Route::get('/', function () {
 
 Route::get('/setup', [FirstRunSetupController::class, 'create'])->name('setup.create');
 Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.store');
+
+// Render even for an authenticated visitor so its fragment is cleared before
+// any navigation. Reset submission remains guest-only below.
+Route::get('/reset-password', [PasswordResetController::class, 'fragment'])->name('password.reset.fragment');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
@@ -161,6 +173,19 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/ai-assist/report', [AgentAssistReportController::class, 'show'])->middleware('throttle:12,1,ai-assist-report:')->name('dashboard.account.ai-assist.report');
+    Route::get('/dashboard/account/ai-assist', [AgentAccountAiAssistController::class, 'show'])
+        ->name('dashboard.account.ai-assist.show');
+    foreach (['propose', 'test', 'discover', 'activate', 'enabled', 'disconnect', 'discard'] as $action) {
+        Route::post('/dashboard/account/ai-assist/'.$action, [AgentAccountAiAssistController::class, $action])
+            ->name('dashboard.account.ai-assist.'.$action);
+    }
+    Route::put('/dashboard/account/ai-assist/limits', [AgentAccountAiAssistController::class, 'limits'])
+        ->name('dashboard.account.ai-assist.limits');
+    Route::post('/dashboard/account/ai-assist/policy/account', [AgentAccountAiAssistPolicyController::class, 'account'])
+        ->name('dashboard.account.ai-assist.policy.account');
+    Route::post('/dashboard/account/ai-assist/policy/sites', [AgentAccountAiAssistPolicyController::class, 'sites'])
+        ->name('dashboard.account.ai-assist.policy.sites');
     Route::get('/dashboard/account/team', AgentAccountTeamController::class)
         ->name('dashboard.account.team.show');
     Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])
@@ -427,29 +452,60 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.attachments.destroy');
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
+    Route::get('/dashboard/conversations/{supportCode}/assist/sources/{article}', [AgentConversationAiSourceController::class, 'show'])
+        ->middleware('throttle:60,1,ai-assist-read:')->name('dashboard.conversations.assist.sources.show');
+    Route::get('/dashboard/conversations/{supportCode}/assist/{task}/use', [AgentConversationAiPreparationController::class, 'use'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1,ai-assist-use:')->name('dashboard.conversations.assist.use');
+    Route::get('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'show'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:ai-assist-status')->name('dashboard.conversations.assist.show');
+    Route::post('/dashboard/conversations/{supportCode}/assist/{task}', [AgentConversationAiPreparationController::class, 'store'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket'])->middleware('throttle:60,1,ai-assist-ensure:')->name('dashboard.conversations.assist.store');
+
+    Route::post('/dashboard/conversations/{supportCode}/assist-feedback/{task}', [AgentAssistFeedbackController::class, 'store'])
+        ->whereIn('task', ['summary', 'reply', 'knowledge', 'ticket', 'refinement'])->middleware('throttle:120,1,ai-assist-feedback:')->name('dashboard.conversations.assist.feedback');
+
     Route::get('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-summary.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-summary', [AgentConversationCopilotSummaryController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-summary.store');
+    Route::post('/dashboard/conversations/{supportCode}/draft-refinement/authorize', [AgentConversationDraftRefinementController::class, 'authorize'])
+        ->middleware('throttle:6,1,ai-refinement-authorize:')->name('dashboard.conversations.draft-refinement.authorize');
+    Route::get('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'show'])
+        ->middleware('throttle:120,1,ai-refinement-read:')->name('dashboard.conversations.draft-refinement.show');
+    Route::post('/dashboard/conversations/{supportCode}/draft-refinement', [AgentConversationDraftRefinementController::class, 'store'])
+        ->middleware('throttle:6,1,ai-refinement-request:')->name('dashboard.conversations.draft-refinement.store');
+    foreach (['apply', 'cancel'] as $action) {
+        Route::post('/dashboard/conversations/{supportCode}/draft-refinement/'.$action, [AgentConversationDraftRefinementController::class, $action])
+            ->middleware('throttle:60,1,ai-refinement-action:')->name('dashboard.conversations.draft-refinement.'.$action);
+    }
+    Route::get('/dashboard/conversations/{supportCode}/copilot-reply-draft/use', [AgentConversationCopilotReplyDraftController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-reply-draft.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-reply-draft', [AgentConversationCopilotReplyDraftController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-reply-draft.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-reply-draft', [AgentConversationCopilotReplyDraftController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-reply-draft.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion/use', [AgentConversationCopilotTicketSuggestionController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-ticket-suggestion.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-ticket-suggestion.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-ticket-suggestion.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion/use', [AgentConversationCopilotKnowledgeSuggestionController::class, 'use'])
+        ->middleware('throttle:60,1,ai-assist-use:')
+        ->name('dashboard.conversations.copilot-knowledge-suggestion.use');
     Route::get('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion', [AgentConversationCopilotKnowledgeSuggestionController::class, 'show'])
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,ai-assist-read:')
         ->name('dashboard.conversations.copilot-knowledge-suggestion.show');
     Route::post('/dashboard/conversations/{supportCode}/copilot-knowledge-suggestion', [AgentConversationCopilotKnowledgeSuggestionController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,ai-assist-generate:')
         ->name('dashboard.conversations.copilot-knowledge-suggestion.store');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])
         ->name('dashboard.conversations.messages.store');
@@ -517,6 +573,22 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     ->name('operator.')
     ->group(function (): void {
         Route::get('/', OperatorDashboardController::class)->name('dashboard');
+        Route::prefix('updates')->name('updates.')->where([
+            'operation' => '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',
+        ])->group(function (): void {
+            Route::get('/', [OperatorUpdateController::class, 'capabilities'])->name('capabilities');
+            Route::get('/console', [OperatorUpdateController::class, 'index'])->name('index');
+            Route::get('/candidate', [OperatorUpdateController::class, 'candidate'])->middleware('throttle:10,1')->name('candidate');
+            Route::post('/reauthenticate', [OperatorUpdateController::class, 'reauthenticate'])->middleware('throttle:5,1')->name('reauthenticate');
+            Route::post('/plan', [OperatorUpdateController::class, 'plan'])->middleware('throttle:10,1')->name('plan');
+            Route::post('/recheck', [OperatorUpdateController::class, 'plan'])->middleware('throttle:10,1')->name('recheck');
+            Route::get('/status', [OperatorUpdateController::class, 'status'])->name('status');
+            Route::get('/history', [OperatorUpdateController::class, 'history'])->name('history');
+            Route::get('/{operation}/review', [OperatorUpdateController::class, 'review'])->name('review');
+            Route::get('/{operation}/events', [OperatorUpdateController::class, 'events'])->name('events');
+            Route::post('/{operation}/start', [OperatorUpdateController::class, 'start'])->middleware('throttle:10,1')->name('start');
+            Route::post('/{operation}/cancel', [OperatorUpdateController::class, 'cancel'])->middleware('throttle:10,1')->name('cancel');
+        });
         Route::get('/onboarding', OperatorOnboardingController::class)->name('onboarding');
         Route::get('/settings/mail', [OperatorMailSettingsController::class, 'edit'])
             ->name('settings.mail.edit');

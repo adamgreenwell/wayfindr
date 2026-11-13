@@ -1,0 +1,560 @@
+# Managed-update qualification evidence
+
+## October 14, 2026: helper 0.10 exchange, failed-safe preservation and ordinary restore
+
+The [sanitized native checkpoint](2026-10-14-helper010-failedsafe-amd64.json) records a normal idle helper 0.9 → published 0.10 exchange on the fresh AMD64 Source VM. One ordinary v1.4.3 → v1.4.4 Start ended `failed_safe` / `previous_serving_verified` before application mutation, migration or protective backup. The original services and configured origin were verified, with no active operation or owned hold. Two fresh data snapshots, both effective keys and local/remote attachment reads passed. The historical refusal cause remains unresolved; later health-check observations reproduce a normal exec-refusal path without identifying the historical exec.
+
+A separate ordinary v1.4.3 drill passed backup, production erasure, an authenticated survivor-object read before application-key transfer, one normal `RestoreService(path, false)` call and two fresh verifiers. Both keys decrypted, wrong writer keys failed, surviving local/remote binaries were read, and the post-backup erased visitor stayed absent with its ticket scrubbed. Two harness refusals before `RestoreService` remain saved. A read-only capture verified the clean PostgreSQL baseline; the corrected oneoffs used the full 77-name canonical environment, applied only the ten accepted Source names, retained all other values and checked all 86 effective values before Laravel. Root and independent reviews accepted the native results and complete private evidence archive.
+
+After their test purpose was complete and evidence accepted, the fresh pair, both system disks, two stopped server copies and four temporary Mac images were deleted. All eleven older server VMs, held operations, switches, original receipts and shared pristine image were preserved. The sum of the two server cleanup-interval gains was 13.94 GiB of available space; this is not a continuous start-to-end measurement or exclusive filesystem attribution. The Mac images reported 7.24 GiB of allocated storage; physical reclamation is unconfirmed. Private cleanup receipts remain saved beside the archive. [PR #1162](https://github.com/adamgreenwell/wayfindr/pull/1162) prepares the unpublished helper 0.11 exec-settlement correction. Neither that candidate nor the ordinary restore establishes successful managed upgrade or protective-archive recovery. Managed qualification remains **false, with 0/100 scenarios qualified**.
+
+## October 13, 2026: public helper 0.10 runtime refusal and lab reachability
+
+The [sanitized failed-attempt receipt](2026-10-13-v1.4.4-runtime-verification.json)
+records the fresh AMD64/classic public v1.4.3 → v1.4.4 attempt with separately
+installed helper 0.10. Paired pre-Start continuity audits passed; one ordinary
+HTTPS Start returned 202. Native revision 18 is `recovery_required` /
+`runtime_verification_failed`, with `mutation_started: true`, five expected
+target roles running, no runtime receipt or configuration promotion, and the
+hold owned. The local observer stopped on a filesystem save error after 156
+HTTP records; a terminal result or bounded poll timeout is not established.
+
+Paired read-only export audits preserve the stable operation trees, journal,
+migration receipt and protective archive. The public archive verifier accepted
+source SQL, two local attachment bodies and declared key fingerprints. Saved
+container/layout and process-readiness checks pass; uncaptured runtime paths,
+target data, external objects, delivery, erasure and restore remain unaccepted.
+
+A pure-PHP check in the target web container timed out at TCP establishment;
+zero TLS handshakes occurred. Later read-only firewall/routing metadata supports
+a current same-bridge-to-host INPUT blocker: Docker DNAT excludes that bridge,
+and UFW defaults to DROP with only the Mac's SSH allow. This is a policy
+inference consistent with the timeout, not a packet trace or proof of the
+historical helper refusal. Certificate trust remains untested by this check.
+
+No firewall/trust repair, Start replay, recovery, helper replacement or hold
+release followed the failure. Restore remains held without Source keys,
+archive or ledger transfer; all older VMs and held operations remain untouched.
+The next fresh lab must admit container endpoint TCP/TLS and configured object
+store access before Start. Managed qualification remains **false, with zero of
+100 scenarios qualified**; U8/#1115, #1153 and epic #1107 remain open.
+
+## October 12, 2026: v1.4.4/helper 0.10 publication verified
+
+The [sanitized publication receipt](2026-10-12-v1.4.4-publication.json) records
+separate root and independent audits of the public Release/assets, complete
+source archive, both AMD64/ARM64 OCI chains and stable aliases. Static registry
+layer readback also verified the baked version, commit, release manifest and
+history on both architectures. No downloaded source or image code was executed
+for those checks. The public website has separate provider-completion and
+homepage-delivery evidence.
+
+Helper 0.10 remains a separate administrator upgrade. Fresh disposable guests
+were created and booted, with their raw provisioning receipts delivered; native
+helper exchange, complete application upgrade and ordinary separate-VM restore
+remain separate gates. The earlier origin-trust failure and held Restore peer
+below remain preserved. Managed qualification remains **false, with zero of
+100 scenarios qualified**. Publication and source regressions do not close U8,
+#1140, #1153 or epic #1107.
+
+## October 12, 2026: public helper 0.9 origin-trust refusal
+
+The [sanitized receipt](2026-10-12-v1.4.3-origin-trust.json) records the fresh
+AMD64/classic public v1.4.2 → v1.4.3 attempt using separately upgraded public
+helper 0.9. Exactly one ordinary HTTPS Start ran. Its GET-only observer timed
+out at the last reachable API revision 8; separate read-only native captures
+found revision 18, `recovery_required` / `origin_verification_failed`, after
+migration. All five target roles were running, with no accepted runtime receipt
+or configuration promotion.
+
+The guest's default certificate trust rejected the lab issuer with verification
+error 20. The same fresh `/up` challenge using the exact captured lab CA, with
+hostname and chain verification required, returned a correctly signed held
+v1.4.3 response. This establishes a missed host-trust prerequisite; the original
+suppressed exception stack remains unavailable. The private export and an
+independent public-verifier replay preserve the journal, migration receipt,
+source SQL and two local attachment bodies. External objects, target data,
+delivery, erasure and separate-VM restore remain unverified.
+
+No trust installation, Start replay, recovery, helper replacement or hold
+release followed the failure. The restore peer remains writer-held; older VMs
+and held operations remain untouched. [#1153](https://github.com/adamgreenwell/wayfindr/issues/1153)
+tracks the unpublished helper 0.10 correction and fresh qualification. Managed
+qualification remains **false, with zero of 100 scenarios qualified**.
+
+## October 11, 2026: published helper 0.7 rendered-default refusal
+
+Public [`v1.4.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.1)
+at `fb16730f7fdc052dadaab1af372d0aa225f70d90` passed exact-main CI,
+guarded publication and independent public readback of the Release assets,
+source tree, both OCI platform/configuration chains and version aliases.
+Its complete public helper `0.7.0` distribution was verified separately;
+application image pulls do not replace the host helper.
+
+The [sanitized checkpoint](2026-10-11-rendered-command-default-refusal.json)
+records one ordinary HTTPS Start for public `v1.4.0` → `v1.4.1` on a dedicated
+Ubuntu AMD64/classic source. The operation remains held at revision 17 with
+`recovery_required`, checkpoint `apply_release_intent`,
+`runtime_verification_failed` and `mutation_started: true`. The migration
+receipt is retained; no runtime receipt or configuration commit exists. The
+new web container was created but not started, and the other four source
+writers remain stopped. This is a failed managed application attempt.
+
+A completed read-only diagnostic retained two observations and the actual
+staged Compose render. Replaying the exact published verifier rejects only
+its command and entrypoint comparisons: Compose emits explicit `null` for
+both, while Docker uses the target image defaults. Python's `dict.get` keeps
+a present null instead of selecting the supplied default. The other ten
+layout predicates and the target-container checks pass. This reproduces a
+concrete verifier defect consistent with the private creation-intent boundary;
+the historical failing call site itself was not traced.
+
+The source correction is an **unpublished candidate**. It must distinguish
+missing/null inheritance from explicit empty overrides and retain the other
+verification guards. No correction was installed, and no retry, recovery or
+hold clearance followed this observation. Archive bodies were not exported by
+the diagnostic; post-migration data integrity, target success, post-archive
+erasure and ordinary restore remain unproven for this attempt. The separate
+restore guest's five-writer hold is preserved; no application-key,
+protective-archive or erasure-ledger handoff or ordinary restore ran.
+
+Managed updates remain **not qualified for production use**, with **zero of
+100 managed scenarios qualified**. Publication, helper replacement and a
+reproduced failure do not qualify application upgrade or recovery. Earlier
+entries below retain their original dated identities, claims and limitations.
+
+## October 10, 2026: v1.4.0 application and helper publication verified
+
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [public-artifact receipt](2026-10-10-v1.4.0-publication.json) binds helper
+`0.6.0`/protocol 1, all five modules, provenance files and the normal, legacy
+recovery and active-operation bridge administrator CLIs. It deliberately
+records no installed helper, baked-image or application behavior claim.
+Earlier candidate exchanges retain their original candidate scope.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
+## October 10, 2026: published helper process-listing refusal
+
+The first ordinary HTTPS Start attempt for published `v1.2.0` → `v1.3.0`,
+with installed helper `0.5.0`, stopped at `apply_started` with
+`recovery_required` on the dedicated Ubuntu ARM64 Docker 29.1.3/containerd
+guest. The durable operation reports `mutation_started: false`, neither hold
+owned, and no protective archive. Independent root readback found both the
+operation's apply and protection directories absent. Source containers kept
+their original IDs and images; the helper process stayed running with its
+original PID/start time and zero restarts. This is a failed start observation,
+not completed protection, application-upgrade, recovery or restore evidence.
+Managed qualification remains false with zero qualified scenarios.
+
+A fresh normal-context application readback matched the current pre-start
+fixture baseline: logical data, all four local/remote attachment GETs,
+current/previous-key decryption, installation identity and the baseline erasure
+ledger. TLS material and proxy configuration matched, and the trusted-CA HTTPS
+health check returned 200. That baseline followed an explicit synthetic lab
+repair; this comparison does not restore pre-loss continuity or prove recovery.
+
+Read-only `docker top <container> -eo args` failed for all seven running
+containers with `Couldn't find PID field in ps output`. The same containers
+returned their live commands successfully with `-eo pid,args`.
+[Moby's process selector](https://github.com/moby/moby/blob/master/daemon/top_unix.go)
+requires a PID column to select container tasks. Published helper `0.5.0`
+omits that column in both command-settlement and service-role checks. Its
+bounded capture discards stderr, so the operation retains the conservative
+generic refusal; the bounded service-journal readback had no entries.
+
+The source correction requests `pid,args` at both call sites. Regression
+fixtures now model the daemon refusing a listing without PID, accept each
+expected live role, and retain the existing pending-exec, orphaned window,
+failed-listing and wrong-role refusals. This candidate does not alter the
+published helper, recover the failed operation or qualify the upgrade span.
+An independently reviewed native component probe loaded only the two private
+candidate modules with the published configuration/API. Seven actual running
+containers passed command settlement and all five application roles passed
+readiness; all 33 Docker inspect/top calls succeeded. Raw evidence verified
+the original runtime bindings, installed published helper, enrollment and
+failed operation journal were preserved, apart from its ordinary heartbeat.
+This is candidate component evidence, not a completed application upgrade.
+Publication, supported helper replacement and fresh native qualification
+remain separate gates. No retry, recovery, journal clearance or fixture
+erasure was performed for this observation.
+
+## October 10, 2026: v1.3.0 application and helper publication verified
+
+The [public-artifact receipt](2026-10-10-v1.3.0-publication.json) binds release
+`v1.3.0`, commit `1bae329c4e349017716827dd0ce26b9ba7f9f2ac`, successful
+exact-main CI and guarded publisher, Release assets, both amd64/arm64 OCI
+chains, and the `1.3.0`, `1.3` and `latest` aliases. Independent public source
+readback also verified helper `0.5.0`/protocol 1, all five modules and the
+supported upgrade CLI at that same immutable tag.
+
+This makes the real `v1.2.0` → `v1.3.0` minor-release pair available. It does
+not prove image pulls, baked-file probes, installed-helper replacement, managed
+protection/apply/fault recovery, restore or any native AMD64 guest behavior.
+The application image does not install or upgrade the host helper. Qualification
+remains false with zero managed scenarios. The older receipts below retain
+their original dated claims and limitations.
+
+
+## October 9, 2026: published-artifact gate blocked
+
+The read-only preflight checked the actual public `v1.1.0` → `v1.1.1` patch
+span. Both release/tag identities, release-manifest bytes and published image
+digest assets verified. Neither immutable source tree contains the required
+managed updater application/helper contracts. Both roles refused with
+`helper_not_published` and exit status `2`.
+
+- [Public declaration receipt](2026-10-09-publication-gate.json)
+- [Blocked evidence scaffold](2026-10-09-blocked-evidence.json)
+
+Commands executed from the repository root:
+
+```bash
+python3 scripts/smoke/managed-update-vm.py preflight --source v1.1.0 --target v1.1.1 --output /tmp/wayfindr-u8-public-gate.json --evidence-output /tmp/wayfindr-u8-blocked-evidence.json
+python3 scripts/self-host/update_vm_evidence.py /tmp/wayfindr-u8-blocked-evidence.json
+```
+
+Both commands exited `2`; the validator classified **blocked**, with **zero
+executed scenarios** and `qualified: false`. Choose fresh output paths for a
+new run: the driver refuses to overwrite receipts.
+
+No image was pulled, VM was provisioned, helper was enrolled/interrupted,
+update was started, guest was rebooted, or archive was restored. These receipts
+are public-declaration gate evidence, not VM, baked-image, update, backup,
+recovery or restore qualification. They contain public artifact identities and
+an observer-generated report UUID, without installation credentials or content.
+
+The next published run needs compatible exact source/target releases and fresh
+dedicated Ubuntu VMs. Use the [qualification matrix](../../managed-update-qualification.md);
+retain independent backup creation and separate-VM restore evidence. U8/#1115
+and the epic completion gates remain open.
+
+
+## October 9, 2026: development candidate rehearsed on two VMs
+
+The [sanitized candidate receipt](2026-10-09-candidate-rehearsal.json) records
+actual observations from two independent Ubuntu 24.04.5 ARM64 Parallels guests.
+The source checkout was clean at
+`3b79fc5c76c37e4756fc11698ae731f0f3243575`. Its image retained the development
+identity `1.2.0-dev+3b79fc5c76c37e4756fc11698ae731f0f3243575`; no stable build
+version was supplied, and nothing was pushed to a registry.
+
+On both guests, all five application roles used the same actual image ID.
+PostgreSQL, the actual production Redis readiness guard, 80 applied migrations,
+zero failed jobs, ordinary serving, signed private-nonce delivery through Caddy
+and the authenticated API support loop passed. Independent readback confirmed
+the current container states, baked identity and image linkage on both guests.
+Linux updater fixtures passed 331 tests without skips, including socket peer
+credentials. The checked-in real-UID lease fixture also passed all nine checks
+against the candidate image's actual baked lease/gate classes.
+
+An ordinary 19,642-byte archive was transferred with matching checksums and
+restored on the separate VM using the retained effective keys. The retained
+logical snapshots matched; one synthetic local attachment's bytes and one
+encrypted operator setting verified. The erasure ledger was empty, so this
+establishes no post-archive erasure replay. The source resumed ordinary serving,
+and the restored application independently passed realtime and support-loop
+checks. The restore VM's app-free baseline was snapshotted before this work;
+the snapshot has not yet been reverted or qualified.
+
+This rehearsal exposed and motivated the real Predis reply and cross-UID lease
+fixes before publication. Build-network DNS delay, source-clone permissions,
+process-list formatting and archive discovery were corrected in the private lab
+harness; they are recorded separately from product defects. Raw private logs,
+effective keys and synthetic content remain outside this repository.
+
+The procedure used the source-build Compose files, the production
+`ManagedRealtimeProbe` and `ManagedApplyCommand::verifyRedis` methods, the
+checked-in `scripts/smoke/support-loop.sh`, and the ordinary backup/restore
+commands described in [backup-restore.md](../../backup-restore.md). The private
+harness supplied synthetic setup and readback assertions; it is not a second
+managed-update driver. Reproduce on dedicated disposable guests, preserve the
+actual development identity and record fresh guest, image, archive and snapshot
+receipts. Later integration commits containing documentation or fixture changes
+are separate source identities from this exact rehearsed candidate.
+
+**Managed qualification remains false, with zero executed managed scenarios.**
+The read-only admission check classified the development image as ineligible;
+enrollment was not invoked. There was no published
+source-to-target update, protective custody, helper fault/recovery or reboot
+during an upgrade. Public DNS/TLS, browser acceptance, user-session
+`/broadcasting/auth`, remote attachments and post-archive erasure replay remain
+unverified. U8/#1115 and all applicable matrix gates remain open.
+
+
+## October 9, 2026: required-bind startup proved across actual guest reboots
+
+The [boot-order receipt](2026-10-09-boot-order-rehearsal.json) records a separate
+isolated service/container probe on the same dedicated Ubuntu ARM64 VM. It uses
+an independent socket responder and a PHP-only container from the exact
+candidate image, with application UID:GID 1000:1000, a required read-only
+`/run` directory bind and Docker's `unless-stopped` restart policy. No
+application volumes, network access, enrollment credentials or updater
+operation participate.
+
+The original ordering passed its initial socket round trip, then failed after
+an actual guest reboot. Docker attempted the bind at 4.800656 seconds, before
+the helper service could start after Docker and create its runtime directory.
+The container remained stopped with the original mount error through 167.38
+seconds of uptime, although the helper and socket had become available. No
+manual start or recreation occurred during that observation.
+
+With the reviewed tmpfiles rule, normal boot setup created the empty socket
+directory before Docker started. Only the rule's runtime pathname was changed
+to keep the probe isolated. After a second actual guest reboot, the same
+persisted container autonomously started, observed its empty bind before the
+helper populated it, and completed a fresh socket nonce round trip before any
+intervention. Subsequent helper stop/start preserved the directory's device and
+inode and the container's identity/start time. There was no Docker override or
+extra ordering unit. Initial boot timestamps were retained separately from the
+later helper restart.
+
+The matching enrollment fix installs only the exact reviewed fixed rule,
+refuses preexisting rule/runtime artifacts, verifies root:1000 ownership and
+mode 0750 before helper enable, and rechecks the directory identity after
+authenticated startup. Interrupted enrollment retains its evidence for explicit
+recovery. The probe establishes this boot bind prerequisite on normal systemd
+ordering; it does not execute the actual enrolled helper/application protocol.
+**Managed qualification remains false with zero scenarios.** Published-source
+enrollment, idle helper/guest reboot and target-bound interrupted upgrades still
+require their own observations. The original development candidate receipt
+remains bound to its earlier source/image identity; this host enrollment fix is
+validated separately.
+
+
+## October 9 EDT / October 10 UTC, 2026: first compatible source published
+
+The final 1.2.0 source is `56374e9574ed84616aae430d06589cfe2f0b33a0`.
+[Exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
+passed. [Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
+passed. Independent public readback completed at 00:29 UTC on October 10. The
+Release published at 00:26 UTC, October 9 at 20:26 EDT; the notes retain their
+October 9 date. The public Release is stable and not a draft, GitHub latest is
+`v1.2.0`, and `1.2.0`, `1.2` and `latest` image selectors resolve to the same
+verified OCI index.
+
+| Public artifact | Verified identity |
+| --- | --- |
+| OCI index | `sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683` |
+| amd64 platform manifest | `sha256:5039c0be6e4d0250aadbaf12e4d3df47c7f073d476bf90575a83b3b4aeece8fa` |
+| amd64 configuration | `sha256:2766ddb5bcefd2bcb69e6c5e3220eb8f91a17f31bce30b2fb2696b1b8488ccd4` |
+| arm64 platform manifest | `sha256:afa4730dd6ad38c2710f6a08258104a94f200eb9df8931b53b59899fc175e15e` |
+| arm64 configuration | `sha256:4bd909bcdd9bff20a3842a036134ebf550c5d2951aa501d53424dac00820e1cb` |
+| [Release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v1.2.0/release-manifest.json), 1,111 bytes | SHA256 `2f07858a050a4c602500247d9d27ac7ad01b09e612a9425d5148ae4442aa92f4` |
+
+Both public OCI configuration documents declare raw `WAYFINDR_VERSION=v1.2.0`
+and the exact release commit; the manifest and OCI version label are canonical
+`1.2.0`. These public configuration reads do not prove the bytes under
+`/etc/wayfindr` or execute an installed application.
+
+ARM64 never-started-image verification passed for baked `v1.2.0`, full
+`56374e9574ed84616aae430d06589cfe2f0b33a0` commit, the byte-identical
+1,111-byte manifest and canonical builder history.
+The probe was created without starting, used no network or mounts, and verified
+the named user/group UID/GID 1000. Local Config/rootfs matched the public ARM64
+configuration; RepoDigest/Descriptor bound the official OCI index.
+
+[Actual source and ordinary-recovery receipt](2026-10-10-published-source-and-ordinary-restore.json): official
+ARM64 installation, supported optional enrollment, idle helper restart and
+autonomous idle guest reboot passed. The tagged installed distribution and
+helper code matched. All five application roles used UID/GID 1000 on the exact
+official image; PostgreSQL, production Redis, PHP 8.4.26, 80 applied migrations
+and zero failed jobs were verified. Authenticated application/helper
+capabilities/status/history used protocol 1/helper 0.4.0; only web had the
+read-only runtime mount.
+
+Helper restart preserved container IDs, runtime-directory inode and
+credential/config/source fingerprints with a new generation. Real idle guest
+reboot preserved all eight container IDs, with seven services running and the
+completed storage-init container. Initial read-only boot observations preceded
+intervention; tmpfiles completed before Docker and helper startup. Private
+WebSocket nonce and authenticated API/operator/runtime checks passed again.
+No operation or hold existed. Exact probe ID/name absence was read back after
+boot. These installed-VM observations are ARM64/private HTTP only; they do not
+establish TLS or user-session broadcasting authorization.
+
+Ordinary archive/restore on a separate clean, unenrolled ARM64 guest also
+**passed without force**. The fixed pre-erasure archive is 21,391 bytes, SHA256
+`6aeae349566289fdc766471aa2e4b12315e576015c02f8e160dac95029d28539`.
+The real latest nonempty ledger (one committed entry) was installed before
+restore. The effective current key was installed before first application
+start, retaining fresh DB credentials and restore origin; there were no
+previous keys, so rotation was not exercised.
+
+The exact returned erasure receipt bound the restored row/account/site/public
+key/lineage and positive SYSTEM replay audit event. One contact, conversation,
+message, attachment and ticket scrub were verified; the post-archive source
+erasure event was absent from the dump. Survivor logical rows/local binary,
+persisted setting and encrypted setting decryption matched the pre-erasure
+archive binding. Target rows/local binary remained absent, archived ticket
+personal fields were scrubbed, and pending/unreadable/outstanding ledger work
+was clear. The read-only sequence query and a distinct post-up API contact
+proved erased IDs were not reused. Five official runtime roles, PostgreSQL,
+production Redis, private nonce and authenticated API/operator checks passed.
+Erasure used the production service, not the dashboard confirmation flow.
+No preparation or synthetic receipt stands in for either actual VM run.
+
+The actual Docker 29/containerd guest reports the OCI index digest as local
+image `.Id` and container `.Image`, while the verified public configuration
+digest is a separate identity and not a usable local image address. The initial
+private probe stopped at that identity mismatch; a bounded probe correction
+verified source identity without changing the published image or product.
+Published managed artifact verification/apply retain configuration-digest assumptions,
+tracked as execution blocker [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
+This is not evidence of an attempted managed operation. Private controller
+refusals were retained: initial image/User assumptions, JSON stdout parsing
+after actual enrollment success, and a 12-character versus full candidate-ID
+comparison. Bounded controller corrections resumed the existing installation
+without rerunning enrollment or manually rescuing the rebooted stack. These
+verification issues do not establish a product reboot failure.
+
+The affected code is installed in the host helper. Managed apply replaces the
+application image/overlay and installation image/configuration binding; it does not replace helper
+code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
+enrolled hosts. A newer application image alone therefore cannot repair an
+already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
+supported, ownership-aware, byte-verified helper upgrade preserves enrollment
+identity, credential, journal, locks and recovery state while refusing active or
+partial work, or qualify a real newer published source freshly enrolled with the
+fixed helper. Manual helper overwrite, marker deletion, store switching and
+silent enrollment overwrite are not supported recovery paths.
+
+
+This first source is distinct from the development-candidate and isolated
+boot-order receipts above. Source installation/idle reboot and ordinary restore
+do not qualify target-bound protection, apply, interrupted migration or reboot
+during an active update. Those require a real newer compatible published target.
+Managed qualification remains **false with zero scenarios**. U8/#1115,
+U9/#1116 and epic #1107 remain open. Preserve all preceding dated evidence and
+append the reviewed actual result rather than rewriting its artifact or scope.
+
+
+## October 9 EDT / October 10 UTC, 2026: Docker 29 helper recovery candidate
+
+The [sanitized helper-recovery receipt](2026-10-10-docker29-helper-recovery.json)
+records an actual interrupted-CLI recovery and artifact-component rehearsal on
+a new disposable Ubuntu ARM64 VM with Docker 29.1.3 and the containerd image
+store. The running application remained the exact public `v1.2.0` image. The
+five-module candidate bundle came from
+`6a9b834eb7c1d77efc3caa2f4cef0e974cbefc74`; the receipt binds its exact bundle
+hash and the separately frozen helper-upgrade CLI hash. Earlier lab VMs were
+preserved.
+
+An explicit `recover` of the retained candidate transaction freshly froze the
+published `0.4.0` helper and persisted a new `frozen_idle` record for that same
+transaction. The external fault controller killed that
+frozen helper through `cgroup.kill` and paused the upgrade CLI for 6.5 seconds,
+beyond the service's five-second restart delay. The service remained inactive
+with MainPID zero and the same executor generation. Its canonical
+`Restart=on-failure` policy stayed unchanged; typed systemd metadata recorded
+the effective `ExecCondition` exiting `1`, blocking automatic restart.
+
+The controller then killed the paused CLI. An ordinary upgrade attempt refused
+with `upgrade_unavailable`, `recovery_required: true` and the unchanged
+transaction identity. Explicit `recover` with that same transaction UUID and
+reviewed bundle completed the `0.4.0` → `0.5.0` replacement. This records recovery
+after an actual CLI interruption; an uninterrupted fresh upgrade remains a
+separate observation.
+
+The published application's real PHP `HostUpdaterClient` authenticated the new
+helper through protocol `1` and HMAC. Enrollment identity, credential and
+configuration, state/runtime/lifetime-lock identities and durable journal
+operations were preserved. All eight application container IDs stayed the
+same: seven services remained running and storage-init retained exit `0`. The
+complete old `0.4.0` code generation remained retained; the transaction and stop
+marker cleared through the supported procedure.
+
+On that same candidate, actual `Artifacts.prepare` and read-only retained
+`verify` passed against independently downloaded public `v1.2.0` release
+metadata and image bytes. Artifact schema `2` kept index, selected platform,
+raw configuration and observed local image identities distinct. Complete
+Config/RootFS comparison, the selected container manifest and baked
+version/commit/manifest/history passed through the never-started, network-disabled
+probe without installation mounts. No newer application target or managed
+operation was created.
+
+Native observations exposed legitimate `0700` code directories under a
+restrictive root umask and systemd 255 automatic restarts skipping
+`ConditionPathExists`. The reviewed candidate preserves the safe directory mode
+and uses the verified `ExecCondition` guard. A private observer assertion also
+initially reported `pending_not_refused`: it expected a dedicated pending reason
+instead of the actual safe `upgrade_unavailable` refusal. Only the harness
+continuation was corrected before explicit recovery; the frozen CLI and
+transaction stayed unchanged. Private logs and host authority remain outside
+this repository.
+
+This is ARM64/containerd candidate helper-lifecycle and current-release component
+evidence. The `0.5.0` distribution is not published; the public `v1.2.0` helper
+remains `0.4.0`. Managed qualification remains **false with zero managed
+scenarios**. A real newer compatible application release and all 100 native
+architecture/image-store scenario cases remain required. This run does not
+establish managed protective custody, application apply/migration, an
+active-update reboot, native interruption during directory exchange, historical
+terminal apply recovery, or the other native/store combinations. U8/#1115,
+U9/#1116 and epic #1107 remain open.
+
+
+## October 10, 2026: clean helper upgrade and atomic-exchange recovery
+
+The [sanitized lifecycle receipt](2026-10-10-helper-lifecycle-rehearsal.json)
+records two native trials on one new disposable Ubuntu 24.04.5 ARM64 VM with
+Docker 29.1.3/containerd. The application and enrolled source helper were the
+exact public `v1.2.0`/`0.4.0` distribution. The target was the unchanged merged
+`0.5.0` helper at `7b0cbb43bc3d9dbc2d4c97072d3b92e220cbbdae`, with the exact
+five-module bundle and upgrade CLI already bound in the prior receipt.
+No product correction was required.
+
+The clean uninterrupted upgrade passed. Its evidence was exported before
+restoring only that VM's own clean, powered-off published-source snapshot and
+freshly verifying the second trial's `0.4.0` baseline. These are two trials on
+one VM; earlier lab VMs remained preserved.
+
+For the second trial, a private ptrace controller matched the unmodified CLI's
+actual ARM64 `renameat2` entry, both `AT_FDCWD` descriptors, exact installed and
+staging paths and `RENAME_EXCHANGE` flags. The syscall-exit stop reported zero
+without error; all five module bytes and directory inodes had exchanged while
+the unchanged transaction still recorded `staging`. The controller killed and
+reaped only its owned stopped CLI without resuming it. The parent-directory
+fsync and next transaction write had not been reached. Fault-state evidence
+was exported before recovery.
+
+Beyond a 6.5-second wait, the old helper remained inactive with MainPID zero and
+the canonical `Restart=on-failure`/five-second delay unchanged. Ordinary upgrade
+refused with recovery required and the same transaction without mutation;
+explicit `recover` with that transaction and bundle completed replacement.
+Both trials preserved all eight container IDs/PIDs/start times/restart counts,
+nine authority/configuration files' bytes/inodes/metadata,
+runtime/state/lifetime-lock identities, code owner/group/mode `0700`, and journal
+ownership/mode and all non-heartbeat/generation fields. The published PHP client
+authenticated the new helper through HMAC with a new executor generation;
+the full old code remained retained and transaction/stop markers cleared.
+
+Nine single-row account/user/site/visitor/conversation/message/ticket/attachment/
+operator-setting fixtures, a persisted site setting, a 65,613-byte binary
+containing every octet value and raw encrypted-setting ciphertext survived both
+trials. Fresh PHP processes verified data and decryption with the unchanged
+effective current key and zero previous keys. Rotation was not exercised.
+Raw authority, ciphertext, installation/guest identities, container IDs and
+configuration fingerprints remain private.
+
+This is same-kernel process-crash recovery after successful exchange and before
+the parent-directory fsync. It does not establish power-loss durability or
+reboot recovery. Historical terminal managed-apply custody and the other native
+architecture/image-store combinations remain unobserved. The merged helper is
+unpublished; no newer application target or managed protection/apply/migration
+ran. Managed qualification remains **false with zero of 100 managed cases**.
+Keep #1131, U8/#1115, U9/#1116 and epic #1107 open. Preserve the earlier dated
+receipt and its distinct recovery/artifact-component observations above.

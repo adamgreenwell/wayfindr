@@ -14,7 +14,22 @@ final class CopilotAgent implements Agent, HasProviderOptions
 {
     use Promptable;
 
-    public function __construct(private readonly string $systemInstructions) {}
+    public function __construct(
+        private readonly string $systemInstructions,
+        private readonly string $openRouterProvider = '',
+        private readonly ?int $outputCap = null,
+        private readonly bool $guarded = false,
+    ) {}
+
+    public function maxTokens(): ?int
+    {
+        return $this->outputCap;
+    }
+
+    public function maxSteps(): int
+    {
+        return 1;
+    }
 
     public function instructions(): string
     {
@@ -35,7 +50,7 @@ final class CopilotAgent implements Agent, HasProviderOptions
             return [];
         }
 
-        $upstreamProvider = strtolower(trim((string) config('ai.providers.wayfindr.openrouter.provider')));
+        $upstreamProvider = strtolower(trim($this->openRouterProvider));
 
         if ($upstreamProvider === '') {
             return [];
@@ -46,6 +61,7 @@ final class CopilotAgent implements Agent, HasProviderOptions
                 'order' => [$upstreamProvider],
                 'allow_fallbacks' => false,
                 'zdr' => true,
+                ...($this->guarded ? ['require_parameters' => true] : []),
             ],
         ];
     }

@@ -213,6 +213,14 @@ final class UpgradeGuard
 
     private bool $lastAssessable = true;
 
+    private ?bool $lastFresh = null;
+
+    /** @var array{origin: ?string, acknowledged: ?string, installation_profile: string}|null */
+    private ?array $candidateInputs = null;
+
+    /** @var array<string, ?bool> */
+    private array $candidateChecks = [];
+
     /**
      * The canonical release the last assessment was about, from the manifest.
      *
@@ -342,6 +350,65 @@ final class UpgradeGuard
      */
     public function assess(bool $includeTarget = false): array
     {
+        return $this->assessRelease($includeTarget);
+    }
+
+    /**
+     * Review a candidate with the same rules as the installed-release guard.
+     * The live guard's context and the persistent release state remain untouched.
+     *
+     * @param  array<string, mixed>  $manifest
+     * @param  list<array<string, mixed>>  $history
+     * @return array<string, mixed>
+     */
+    public function assessTarget(array $manifest, array $history): array
+    {
+        ReleaseManifest::assertPublished($manifest);
+        $validated = self::validatedHistory($history);
+
+        if ($validated === null) {
+            throw new \InvalidArgumentException('The candidate release history is malformed.');
+        }
+
+        $state = $this->state->snapshot();
+        $candidate = new self($state, $this->checks, new UpgradeContext);
+        $candidate->candidateInputs = [
+            'origin' => $this->declaredOrigin(),
+            'acknowledged' => $this->acknowledged(),
+            'installation_profile' => $this->installationProfile(),
+        ];
+        $assessment = $candidate->assessRelease(true, $manifest, $validated);
+
+        return $assessment + [
+            'outstanding' => $candidate->lastOutstanding,
+            'notices' => $candidate->lastNotices,
+            'installation_profile' => $candidate->lastInstallationProfile,
+            'source_state' => $state->snapshotData(),
+            'declared_origin' => $candidate->candidateInputs['origin'],
+            'target_commit' => $candidate->lastCommit,
+            'assessable' => $candidate->lastAssessable,
+            'acknowledgements' => UpgradeRequirements::parseAcknowledged($candidate->candidateInputs['acknowledged']),
+            'check_evidence' => $candidate->candidateChecks,
+            'fresh_install' => $candidate->lastFresh,
+        ];
+    }
+
+    private function evaluateCheck(string $name): ?bool
+    {
+        if ($this->candidateInputs === null) {
+            return $this->checks->evaluate($name);
+        }
+
+        if (! array_key_exists($name, $this->candidateChecks)) {
+            $this->candidateChecks[$name] = $this->checks->evaluate($name);
+        }
+
+        return $this->candidateChecks[$name];
+    }
+
+    /** @return array<string, mixed> */
+    private function assessRelease(bool $includeTarget, ?array $candidateManifest = null, ?array $candidateHistory = null): array
+    {
         $this->lastTarget = null;
         $this->lastFrom = null;
         $this->lastCommit = null;
@@ -350,10 +417,12 @@ final class UpgradeGuard
         // below would otherwise leave the previous assessment's advice in place,
         // and a floor refusal would report notices computed for a different span.
         $this->lastNotices = [];
+        $this->lastOutstanding = [];
         $this->lastAssessable = true;
+        $this->lastFresh = null;
 
         try {
-            $manifest = $this->read($this->manifestPath());
+            $manifest = $candidateManifest ?? $this->read($this->manifestPath());
         } catch (Throwable) {
             $this->lastAssessable = false;
 
@@ -387,10 +456,10 @@ final class UpgradeGuard
         $this->lastCommit = is_string($manifestCommit) && trim($manifestCommit) !== ''
             ? $manifestCommit
             : null;
-        $installationProfile = $this->installationProfile();
+        $installationProfile = $this->candidateInputs['installation_profile'] ?? $this->installationProfile();
         $this->lastInstallationProfile = $installationProfile;
 
-        $history = $this->history();
+        $history = $candidateHistory ?? $this->history();
 
         // Present but unreadable. Refusing is recoverable — the history ships
         // with the release, so repulling the image or the checkout replaces it —
@@ -430,7 +499,9 @@ final class UpgradeGuard
         // operator may state where it is instead, which is what keeps the floor
         // check below from being a refusal they cannot clear.
         $recordedStateVersion = $this->state->recordedVersion();
-        $recorded = $recordedStateVersion ?? $this->declaredOrigin();
+        $declaredOrigin = $this->candidateInputs !== null ? $this->candidateInputs['origin'] : $this->declaredOrigin();
+        $acknowledged = $this->candidateInputs !== null ? $this->candidateInputs['acknowledged'] : $this->acknowledged();
+        $recorded = $recordedStateVersion ?? $declaredOrigin;
         $this->lastFrom = $recorded;
         $sameInstallationProfile = $recordedStateVersion !== null
             && $this->state->recordedInstallationProfile() === $installationProfile;
@@ -476,6 +547,8 @@ final class UpgradeGuard
             && $this->state->wasFreshInstall()) {
             $fresh = true;
         }
+
+        $this->lastFresh = $fresh;
 
         // The floor: releases below it cannot upgrade directly, because the
         // migration path that would carry them has been retired. This is checked
@@ -570,8 +643,8 @@ final class UpgradeGuard
             $history,
             $from,
             $target,
-            UpgradeRequirements::parseAcknowledged($this->acknowledged()),
-            fn (string $name): ?bool => $this->checks->evaluate($name),
+            UpgradeRequirements::parseAcknowledged($acknowledged),
+            fn (string $name): ?bool => $this->evaluateCheck($name),
             freshInstall: $fresh,
             includeTarget: $includeTarget,
             // The release this install is actually running. The span may start
@@ -598,8 +671,8 @@ final class UpgradeGuard
         // them.
         $this->lastNotices = UpgradeRequirements::outstandingNotices(
             $manifest,
-            UpgradeRequirements::parseAcknowledged($this->acknowledged()),
-            fn (string $name): ?bool => $this->checks->evaluate($name),
+            UpgradeRequirements::parseAcknowledged($acknowledged),
+            fn (string $name): ?bool => $this->evaluateCheck($name),
         );
 
         // Only the phases that must precede the schema change may block it. An
@@ -680,7 +753,7 @@ final class UpgradeGuard
      * override an operator could use to relabel a host install and bypass its
      * work.
      */
-    private function installationProfile(): string
+    public function installationProfile(): string
     {
         $configured = config('wayfindr.release.installation_profile');
 
@@ -732,10 +805,20 @@ final class UpgradeGuard
             return null;
         }
 
+        return self::validatedHistory($decoded['releases']);
+    }
+
+    /** @return ?list<array<string, mixed>> */
+    private static function validatedHistory(array $history): ?array
+    {
+        if (! array_is_list($history)) {
+            return null;
+        }
+
         $releases = [];
         $seenVersions = [];
 
-        foreach ($decoded['releases'] as $release) {
+        foreach ($history as $release) {
             // Dropping the entry would shorten the history rather than reject it,
             // and a release that quietly disappears takes its before-pull and
             // after-pull requirements with it. Valid JSON is not the same as a

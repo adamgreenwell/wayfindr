@@ -2,14 +2,77 @@
 
 This roadmap is directional and should not include private business strategy.
 
-The latest public release is
+**Published 1.4.4; managed-update qualification remains open.**
+
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb41cc2b0a94d3ca038ee0b29164ea539b4`, with release notes dated
+October 12, 2026. All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38301307593)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38321421228)
+passed. Root and independent public audits verified the Release/assets, exact
+source archive, both amd64/arm64 OCI chains and static baked identities, and
+`1.4.4`/`1.4`/`latest` aliases. The [publication receipt](../self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+records the exact public identities and verification limits.
+
+Helper `0.10.0`, protocol 1, checks the serving source's configured origin with
+normal TLS and fresh release/key-bound proof before taking maintenance
+ownership. It remains a separate root-only administrator upgrade; pulling an
+application image does not replace an installed helper. No operator action or
+migration is required for the application release; standing notices remain.
+
+The fresh AMD64/classic public `v1.4.3` → `v1.4.4` attempt passed its separate
+helper 0.10 installation and pre-Start continuity checks, then one accepted
+Start ended in `recovery_required` / `runtime_verification_failed` after
+mutation. Five target roles are running; configuration promotion and runtime
+verification remain incomplete. The [dated native receipt](../self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+records the failure and read-only preservation evidence. Its Source and Restore
+holds remain preserved. A complete managed application upgrade, recovery
+and separate-VM restore remain independent gates. Managed updates are **not
+qualified for production use**, with **0/100** managed scenarios qualified.
+Earlier failed operations and held installations retain their original recovery
+contracts. U8/#1115, U9/#1116, #1153 and epic #1107 remain open.
+
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty; standing notices and all retained
+release history remain intact. This housekeeping publishes no release and does
+not choose its feature scope.
+
+## Dated v1.4.0 publication (October 10, 2026)
+
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
+
+The [publication receipt](../self-hosting/evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+records the exact public identities.
+
+Helper `0.6.0`, protocol 1, corrects Docker process listings and supports
+separate root-only replacement of exact published `0.4.0` and `0.5.0` bundles.
+Normal replacement remains idle-only. The explicit active-operation bridge
+preserves one admitted failed apply; application recovery remains a separate
+administrator action. Pulling an application image does not replace host helper
+code. No operator action or migration is required for the application release;
+standing backup-queue guidance remains.
+
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
+
+An earlier public release is
 [`v1.1.1`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1)
 (October 2, 2026), at tag `648caa1b`. Its
 [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36966810612)
 verified the manifest and multi-architecture image at `sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9`.
 The patch fixes dashboard and widget consistency, mobile controls, keyboard
 context, and release diagnostics; it has no migrations or required operator
-action. Current `main` identifies the next development line as `1.2.0-dev`.
+action. Its dated hosted-runner proof remains specific to that artifact.
 
 `v1.1.1` passed both hosted-runner paths on October 2: a
 [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
@@ -46,10 +109,26 @@ The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issue
 and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
 are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-## Implemented in v1.1.1
+## Implemented in v1.3.0
 
-This section describes the public `v1.1.1` artifact. Some foundation also
-exists in older releases; the release notes define each version's boundary.
+This section describes public `v1.3.0` at `1bae329c`, including the Docker 29
+helper correction and supported helper replacement. Some foundation also
+exists in older releases; their release notes define each version's boundary.
+
+1.2.0 adds read-only review of the next release in Operator → Updates,
+hardens terminal upgrades and provides optional independent managed execution
+on explicitly enrolled Linux/systemd hosts. Authorized review/start/cancel,
+durable history, reconnecting progress and explicit root recovery are
+implemented. No operator action is required; one additive audit-event
+deduplication migration runs automatically, and unenrolled installs retain
+their update path. Managed updates are not qualified for production use.
+
+U1–U7 implementation is delivered. [U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115)
+and [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
+with zero qualified managed scenarios. The first compatible published source
+can establish source enrollment, idle reboot and ordinary separate-VM restore;
+the published 1.2.0 → 1.3.0 pair now supplies a real target for managed
+protection/apply tests. See the [qualification plan](../self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
 and work context are more consistent; Reports filters, long comments and chart

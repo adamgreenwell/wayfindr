@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "date": "2026-10-17",
+  "tester": "Adam",
+  "evidence_type": "human_report",
+  "synthetic_preview": true,
+  "runtime_ui_candidate": "f430c7e6c63d698394a842cf612c597b61dd91cb",
+  "screen_reader": {
+    "result": "pass_reported",
+    "platform": "macOS",
+    "utility": "VoiceOver",
+    "statement": "Everything seems to check out - I'm not encountering anything that's not passing accessibility or screen reader checks",
+    "utility_statement": "I used the built-in macOS voiceOver utility",
+    "receipt": "https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6242979703"
+  },
+  "physical_small_device": {
+    "result": "pass_reported",
+    "statement": "Yes—phone/tablet checks passed",
+    "receipt": "https://github.com/adamgreenwell/wayfindr/pull/1199#issuecomment-6243045464"
+  },
+  "unspecified": [
+    "device_model",
+    "browser",
+    "browser_version",
+    "os_version",
+    "screen_reader_version"
+  ],
+  "limits": [
+    "No detailed spoken-announcement transcript supplied.",
+    "No comprehensive device or localized human-comprehension matrix claimed.",
+    "Not live-model quality, deployed-upgrade, pilot, release or deployment evidence."
+  ]
+}

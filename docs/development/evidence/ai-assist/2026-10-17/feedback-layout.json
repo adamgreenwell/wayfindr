@@ -1,0 +1,12 @@
+{
+  "renderedControls": 1,
+  "layout": [
+    {
+      "task": "summary",
+      "labelBelowAction": true,
+      "selectBelowLabel": true,
+      "selectWithinControls": true
+    }
+  ],
+  "copied_old_markup_failure": "Feedback labels or controls overlap"
+}

@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "scope": "Isolated systemd/Docker required-bind boot prerequisite on an actual disposable VM; no application/helper enrollment or managed update.",
+  "qualified": false,
+  "qualified_managed_scenarios": 0,
+  "before_fix": {
+    "schema": 1,
+    "kind": "synthetic_required_bind_boot_order",
+    "result": "failed",
+    "observed_at_utc": "2026-10-09T23:09:36.798155+00:00",
+    "vm_uuid": "b53ca627-ef1d-4ab6-b5c4-d1f994ce4533",
+    "boot_id_before": "6e2e2093-e0c5-4b91-bda7-3f10aaad921e",
+    "boot_id_after": "dc1faffd-d3cc-4a09-a0cc-d8579456097e",
+    "baseline_socket_roundtrip_passed": true,
+    "same_persisted_container": true,
+    "image_id": "sha256:ff17f70dc59ed131bbc9731609308122cfbc304cbb2ae97e915a02b7853d88ae",
+    "container_user": "1000:1000",
+    "restart_policy": "unless-stopped",
+    "bind_source": "/run/wayfindr-u8-boot-bind-probe",
+    "bind_read_only": true,
+    "helper_unit_after_docker": true,
+    "runtime_directory_preserve": "yes",
+    "runtime_dir_on_tmpfs": true,
+    "first_observed_uptime_seconds": 22.52,
+    "final_observed_uptime_seconds": 167.38,
+    "container_running": false,
+    "container_restart_count": 0,
+    "container_state_error": "failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: failed to fulfil mount request: open /run/wayfindr-u8-boot-bind-probe: no such file or directory",
+    "helper_active": true,
+    "socket_exists_after_helper_start": true,
+    "journal_order_seconds": {
+      "docker_mount_failure": 4.800656,
+      "docker_active": 4.97323,
+      "helper_exec_start": 4.978527,
+      "helper_socket_ready": 5.018303
+    },
+    "autonomous_recovery_observed": false,
+    "manual_start_or_recreate_after_boot": false,
+    "app_or_helper_enrollment_performed": false,
+    "qualified_managed_scenarios": 0
+  },
+  "with_reviewed_tmpfiles_rule": {
+    "schema": 1,
+    "kind": "synthetic_required_bind_boot_order",
+    "result": "passed",
+    "observed_at_utc": "2026-10-09T23:13:24.058897+00:00",
+    "vm_uuid": "b53ca627-ef1d-4ab6-b5c4-d1f994ce4533",
+    "boot_id_before": "dc1faffd-d3cc-4a09-a0cc-d8579456097e",
+    "boot_id_after": "fbba931e-28c5-49fb-bca4-a886fda9e208",
+    "initial_observed_uptime_seconds": 25.19,
+    "reviewed_source_template_sha256": "47aab750e3e8b3c22223877b10c50f7ba340f9acafcc0a1f54f0812843cc9dc5",
+    "synthetic_rule_sha256": "4a98eaff1e35e7554ef9748504d4c5fc4bbb6e92ad353cba62d3e854bca29ebf",
+    "template_change": "unique synthetic runtime pathname only",
+    "normal_systemd_tmpfiles_setup_before_docker": true,
+    "service_order_monotonic_microseconds": {
+      "systemd-tmpfiles-setup.service": {
+        "ExecMainStartTimestampMonotonic": 2400649,
+        "ActiveEnterTimestampMonotonic": 2410183
+      },
+      "docker.service": {
+        "ExecMainStartTimestampMonotonic": 4489260,
+        "ActiveEnterTimestampMonotonic": 5069343
+      },
+      "wayfindr-u8-boot-bind-probe.service": {
+        "ExecMainStartTimestampMonotonic": 5078073,
+        "ActiveEnterTimestampMonotonic": 5078180
+      }
+    },
+    "empty_runtime_directory_created_before_initial_helper": true,
+    "container_observed_empty_bind_at_reboot_start": true,
+    "same_persisted_container_after_boot": true,
+    "container_user": "1000:1000",
+    "restart_policy": "unless-stopped",
+    "image_id": "sha256:ff17f70dc59ed131bbc9731609308122cfbc304cbb2ae97e915a02b7853d88ae",
+    "autonomous_container_running": true,
+    "autonomous_state_error": "",
+    "autonomous_restart_count": 0,
+    "autonomous_socket_nonce_passed_before_intervention": true,
+    "runtime_directory_same_inode_across_helper_stop_start_before_and_after_boot": true,
+    "container_id_and_started_at_unchanged_across_helper_stop_start": true,
+    "global_docker_override_or_extra_ordering_unit": false,
+    "actual_helper_enrollment": false,
+    "official_source_installation": false,
+    "qualified_managed_scenarios": 0,
+    "service_order_observed_before_within_boot_helper_restart": true
+  },
+  "limitations": [
+    "The probe uses a separate Unix-socket responder and PHP-only container, not the actual enrolled updater/application protocol.",
+    "Only the fixed rule runtime pathname was substituted; no extra boot-ordering unit or Docker override was used.",
+    "Two actual guest reboots establish the bind-directory prerequisite; published-source enrollment and idle/active managed reboot remain separate gates.",
+    "Observed on the dedicated Ubuntu24.04.5/systemd255/Docker29.1.3 ARM64 VM using normal systemd boot ordering."
+  ]
+}

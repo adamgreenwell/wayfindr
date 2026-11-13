@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "kind": "helper_upgrade_artifact_component_rehearsal",
+  "qualified": false,
+  "executed_managed_scenarios": 0,
+  "scope": "Actual recovery/replacement of the published helper with an unpublished reviewed candidate, and current-public-release artifact component verification; no managed application upgrade.",
+  "environment": {
+    "os": "Ubuntu 24.04.5 LTS",
+    "kernel": "6.8.0-146-generic",
+    "native_architecture": "arm64",
+    "image_store": "containerd",
+    "docker_engine": "29.1.3",
+    "docker_compose": "2.40.3",
+    "systemd": "255.4-1ubuntu8.17",
+    "python": "3.12.3",
+    "disposable": true
+  },
+  "published_source": {
+    "tag": "v1.2.0",
+    "commit": "56374e9574ed84616aae430d06589cfe2f0b33a0",
+    "helper_version": "0.4.0",
+    "protocol": 1,
+    "official_install_and_enrollment_passed": true,
+    "source_distribution_bytes_verified": true,
+    "application_changed": false
+  },
+  "candidate": {
+    "helper_version": "0.5.0",
+    "protocol": 1,
+    "published": false,
+    "five_module_source_commit": "6a9b834eb7c1d77efc3caa2f4cef0e974cbefc74",
+    "five_module_bundle_sha256": "e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29",
+    "upgrade_cli_sha256": "19084e3126c578f4b002a876d0a21fa5187b65f1a931fbf6278ab70db9b39cbf",
+    "module_sha256": {
+      "updater.py": "4ad7316d4dda4788f209ea6ef685ecab864bd2352bf82a0a50ddc6f7e2a8c038",
+      "update_protection.py": "f61f6323be01c541722d2b7393412523a0985cc30ade647f1d4cce7a606e0b85",
+      "update_apply.py": "e31e81351c476999af8d94ff52bf0a2d4b49ee03e0db8b84c8c734b2fcc1da36",
+      "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+      "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944"
+    }
+  },
+  "helper_lifecycle": {
+    "result": "passed",
+    "path": "Exact published 0.4.0 generation, retained candidate failure, interrupted explicit recovery at frozen_idle, same-transaction explicit recovery into 0.5.0.",
+    "wrong_bundle_refused_before_gate": true,
+    "published_code_directory_mode": "0700",
+    "code_directory_mode_preserved": true,
+    "fresh_kernel_frozen_idle_verified": true,
+    "automatic_restart_barrier": {
+      "permanent_unit_condition_and_service_exec_condition_verified": true,
+      "typed_dbus_executable_argv_and_nonignored_failure_verified": true,
+      "canonical_restart_policy": "on-failure",
+      "canonical_restart_delay_seconds": 5,
+      "observed_wait_seconds": 6.5,
+      "old_helper_pid_zero_and_unit_inactive": true,
+      "journal_generation_unchanged_while_waiting": true
+    },
+    "fault_injection": {
+      "external_frozen_helper_cgroup_kill": true,
+      "upgrade_cli_sigstop_during_wait": true,
+      "upgrade_cli_sigkill_after_wait": true,
+      "stage": "frozen_idle"
+    },
+    "fresh_upgrade_refusal": {
+      "reason": "upgrade_unavailable",
+      "recovery_required": true,
+      "same_transaction_verified": true,
+      "transaction_stop_gate_and_code_unchanged": true
+    },
+    "explicit_same_transaction_recovery_passed": true,
+    "all_eight_application_container_ids_preserved": true,
+    "seven_services_running": true,
+    "configured_health_checks_passed": [
+      "web",
+      "reverb",
+      "postgres",
+      "redis"
+    ],
+    "storage_init_exit_code": 0,
+    "installation_identity_credential_config_and_source_bytes_preserved": true,
+    "state_runtime_directory_and_lifetime_lock_inodes_preserved": true,
+    "durable_journal_operations_revision_and_ownership_preserved": true,
+    "new_helper_generation_verified": true,
+    "published_application_hmac_client_authenticated_new_helper": true,
+    "old_complete_code_generation_retained": true,
+    "transaction_and_stop_gate_cleared": true,
+    "managed_operations_created": 0
+  },
+  "artifact_component": {
+    "application_upgrade_performed": false,
+    "artifact_schema": 2,
+    "candidate_code_unchanged": true,
+    "config_digest": "sha256:4bd909bcdd9bff20a3842a036134ebf550c5d2951aa501d53424dac00820e1cb",
+    "execution_platform": "linux/arm64",
+    "execution_reference": "ghcr.io/adamgreenwell/wayfindr:1.2.0@sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+    "helper_version": "0.5.0",
+    "index_digest": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+    "local_image_descriptor": {
+      "digest": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "size": 1609
+    },
+    "local_image_id": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+    "managed_operation_created": false,
+    "platform_manifest_digest": "sha256:afa4730dd6ad38c2710f6a08258104a94f200eb9df8931b53b59899fc175e15e",
+    "prepare_verified": true,
+    "public_release_id": 408436515,
+    "purpose": "current-public-release-artifact-component",
+    "qualified": false,
+    "retained_verify_verified": true,
+    "schema": 1,
+    "target": {
+      "commit": "56374e9574ed84616aae430d06589cfe2f0b33a0",
+      "image_digest": "sha256:052a2897b503ebfdec4cfba232d2893cd48f3cdadeb3478c4161627d38e01683",
+      "tag": "v1.2.0",
+      "version": "1.2.0"
+    }
+  },
+  "observed_candidate_findings": [
+    {
+      "finding": "Published enrollment under a restrictive root umask creates safe root-owned mode 0700 code. Initial candidate refused that actual directory.",
+      "correction_proved": "Accept and preserve exact safe 0700/0750/0755 modes, including atomic staging and recovery; actual 0700 native recovery passed."
+    },
+    {
+      "finding": "Unit ConditionPathExists alone did not suppress the published helper automatic restart after cgroup.kill.",
+      "correction_proved": "Permanent service ExecCondition with typed manager readback suppressed the actual restart beyond RestartSec, with the CLI paused and then killed; same-transaction recovery passed."
+    }
+  ],
+  "observer_correction": "The first fault harness accepted too few refusal reason labels. The actual upgrade_unavailable response already required recovery and named the exact retained transaction without mutation. A separately retained continuation validated the same state and completed explicit recovery.",
+  "limitations": [
+    "Candidate helper and CLI are unpublished; the public v1.2.0 distribution remains helper 0.4.0.",
+    "Native observations cover ARM64 and the containerd store only; classic and amd64 paths have fixture coverage, not these native observations.",
+    "No uninterrupted fresh upgrade by the final CLI, native interruption during directory exchange, or historical terminal managed-apply recovery was exercised in this run.",
+    "No newer published application target, target migration, managed protection/apply/fallback, active-application-update reboot, independent operator acceptance or full matrix was executed.",
+    "The 25 scenarios across native amd64/arm64 and classic/containerd require 100 actual cases; managed qualification remains false.",
+    "Raw logs, credentials, installation and guest identities, container IDs and configuration fingerprints remain private."
+  ],
+  "observed_on_utc": "2026-10-10"
+}

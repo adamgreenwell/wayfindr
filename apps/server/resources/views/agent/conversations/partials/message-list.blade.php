@@ -40,7 +40,7 @@
                     && $secondsSincePrevious <= 300;
                 $messageClasses = 'message '.($isSupportSide ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
             @endphp
-            <article class="{{ $messageClasses }}" data-message-id="{{ $transcriptMessage->id }}">
+            <article class="{{ $messageClasses }}" id="conversation-message-{{ $transcriptMessage->id }}" data-message-id="{{ $transcriptMessage->id }}">
                 <div class="message-meta">
                     <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}" @if ($senderNameIsAuthored) lang="" @endif>
                         {{ $senderName }}@if ($integrationName) · <span lang="">{{ $integrationName }}</span>@endif

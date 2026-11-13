@@ -496,3 +496,23 @@ are not longitudinal drift evidence,
 representative runtime safety, or provider approval. The agent-controlled
 copilot remains the approved boundary, #762 remains open, and visitor-facing
 implementation still requires another explicit ADR decision.
+
+## Private reply runtime evidence (#1172)
+
+The consented private-reply recipe has a separate conservative extractive guard
+(`ConversationGroundedReplyGuard`), not the historical evaluation answer schema.
+`tests/Fixtures/grounded-reply-claims.json` binds explicit unsupported policy,
+completed-action, promise and dropped-negation cases. Integration tests also cover
+conflicting limits/prose, source injection, fabricated references, total input
+budgets, revocation races and tampered stored sources with a guarded fake provider.
+
+Runtime evidence must identify the fixture SHA-256, current prompt instructions
+SHA-256 and `ConversationGroundedReplyGuard::identity()` alongside the tested
+commit/source hashes. The latter binds significant PHP tokens for selection,
+parsing, prompting and guarding, plus the installed language detector version.
+Formatting-only changes preserve identity; recipe/scorer changes invalidate it.
+Old model captures are not qualification for this recipe, a new route or a changed
+model. These synthetic assertions establish deterministic behavior and safe
+clarification paths; they do not establish current model usefulness or general
+semantic correctness. Any real-provider evaluation requires separate authorized
+execution and fresh fixture/prompt/scorer/route/model evidence.

@@ -1,0 +1,26 @@
+# Explicit enrollment overlay. The enrollment command writes a copy beside
+# compose.yml with the host-owned installation identity filled in.
+# Only web receives the restricted helper interface. No Docker socket, host
+# installation directory, journal, or helper code enters an application service.
+services:
+  web:
+    environment:
+      WAYFINDR_INSTALLATION_OWNERSHIP: installer-managed
+      WAYFINDR_INSTALLATION_ID: "__WAYFINDR_INSTALLATION_ID__"
+      WAYFINDR_UPDATER_ENABLED: "true"
+      WAYFINDR_UPDATER_SOCKET: /run/wayfindr-updater/updater.sock
+      WAYFINDR_UPDATER_CREDENTIALS: /run/wayfindr-updater-auth/credential.json
+    volumes:
+      # A directory bind survives a helper restart recreating its socket.
+      - type: bind
+        source: /run/wayfindr-updater
+        target: /run/wayfindr-updater
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/wayfindr-updater/credential.json
+        target: /run/wayfindr-updater-auth/credential.json
+        read_only: true
+        bind:
+          create_host_path: false

@@ -31,16 +31,30 @@ document, not a complete compliance register.
 | Ticket external links | Provider, project or repository key, external ID/key, URL, sync status, last sync time, metadata | `ticket_external_links` | External links point to third-party systems. Operators should assume linked providers have their own access, retention, and privacy rules. |
 | Agent copilot settings | Provider, model, optional endpoint, encrypted API key | `operator_settings` or environment | Optional and instance-wide. The key is write-only and omitted from audit metadata. A custom endpoint receives the configured key, so operators should trust and protect that destination. |
 | Agent copilot requests | A bounded, feature-selected text prompt and generated suggestion | Not stored by Wayfindr's provider boundary | Text is scrubbed immediately before transmission and attachments/cobrowse snapshots have no provider path. The selected provider may process or retain requests under its own terms; operators must review that policy. No customer-facing action is automatic. |
-| Conversation copilot summaries | Conversation and requesting-agent links, latest generated summary, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_summaries` | Stores only the latest agent-requested suggestion, never its prompt. Queue payloads contain IDs only. The worker rechecks access before provider delivery; refresh replaces the prior result, new messages mark it stale, and conversation deletion cascades to the summary. AI audit metadata excludes prompt and output text. |
-| Conversation copilot reply drafts | Conversation and requesting-agent links, latest generated draft, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_reply_drafts` | Stores only the latest agent-requested suggestion, never its prompt. Queue payloads contain IDs only. The worker rechecks reply permission before provider delivery; refresh replaces the prior result, new messages mark it stale and block insertion, and conversation deletion cascades to the draft. The suggestion fills only an empty composer after an explicit agent action and never sends itself. AI audit metadata excludes prompt and output text. |
+| Account/site AI Assist policies | Mode, task permissions, published-context consent, optional context ceiling and opaque revision | `account_ai_assist_policies`, `site_ai_assist_policies` | Configuration only, no visitor links, transcripts, provider output or credentials. Removed with their account/site; absent account policy preserves legacy Manual, while new sites under an explicit policy start Off. Current authority is rechecked for bulk edits and connection activation. Relevant articles Off short circuits AI article queries and passage sharing; explicit On discloses bounded published same-account sharing without site knowledge isolation. |
+| AI catalogue revision metadata | Two opaque article/label catalogue UUIDs | `accounts.ai_article_catalogue_revision`, `accounts.ai_ticket_label_catalogue_revision` | Server-managed account configuration metadata, with no visitor links, transcript, source content, credentials or output. Database triggers update the tokens in the same transaction as relevant catalogue mutations; rollback restores them and account deletion removes them. They add no per-visitor export/erasure surface or retained history. |
+| AI preparation receipts | Account/conversation/task links, opaque fingerprint and generation, requesting agent, status and lifecycle/retry timestamps | `ai_assist_preparation_receipts` | One mutable metadata row per input fingerprint until conversation erasure; retains terminal outcomes across input cycles without retaining prompts or output. Equivalent viewers share admission. Export includes generation/lifecycle metadata, retry deadlines and staff roles, omits the internal fingerprint; account/conversation deletion cascades. |
+| Conversation copilot summaries | Conversation and requesting-agent links, latest generated summary, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_summaries` | Stores the current suggestion and at most one prior authorized Ready snapshot during refresh, never its prompt. Queue payloads contain IDs only. The worker rechecks access before provider delivery; refresh replaces the prior result, new messages mark it stale, and conversation deletion cascades to the summary. AI audit metadata excludes prompt and output text. |
+| Conversation copilot reply drafts | Conversation and requesting-agent links, latest generated draft, optional bounded scrubbed source passages and signed proofs/validated proposal metadata/recipe identities, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_reply_drafts` | Stores the current suggestion and at most one prior authorized Ready snapshot during refresh, never its prompt. Queue payloads contain IDs only. The worker rechecks reply permission before provider delivery; refresh replaces the prior result, new messages mark it stale and block insertion, and conversation deletion cascades to the draft. Consented grounded replies share selected published same-account passages within the total input ceiling; Off keeps transcript-only help. Source/access changes withdraw the entire grounded output. Nullable grounding metadata is excluded from visitor exports; the editable business draft remains exported. Explicit insertion fills an empty composer or uses a freshly authorized Preview/Apply replacement preserving edits, and never sends itself. AI audit metadata excludes prompt and output text. |
 | Conversation copilot knowledge suggestions | Conversation and requesting-agent links, up to three published account-article IDs, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_knowledge_suggestions` | The provider receives only bounded, scrubbed subject/message text and returns strictly validated local search phrases. Article titles, bodies, IDs, and the knowledge catalogue never leave the install. Wayfindr ranks published same-account articles locally and stores only their IDs, never the prompt, search phrases, article content, or rendered snippets. Queue payloads contain IDs only. The worker rechecks reply permission and published knowledge around provider delivery; new messages mark the result stale and block insertion. Display rechecks account ownership and published state. An explicit insert fills only an empty composer and never sends a reply. AI audit metadata excludes prompt, provider output, and article content. |
-| Conversation copilot ticket suggestions | Conversation and requesting-agent links, latest suggested title, priority, existing account-label IDs, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_ticket_suggestions` | Stores only the latest agent-requested suggestion, never its prompt. Queue payloads contain IDs only. The worker rechecks ticket-management permission and the absence of a linked ticket before provider delivery. The provider receives bounded, scrubbed subject/message text and returns a strictly validated title and priority; account labels are matched locally and the label catalogue never leaves the install. New messages mark the suggestion stale and block insertion. Applying it only fills an untouched form and never creates a ticket. AI audit metadata excludes prompt and output text. |
+| Conversation copilot ticket suggestions | Conversation and requesting-agent links, latest suggested title, priority, existing account-label IDs, source message position/count, provider/model and token counts, lifecycle timestamps and generic failure code | `conversation_copilot_ticket_suggestions` | Stores the current suggestion and at most one prior authorized Ready snapshot during refresh, never its prompt. Queue payloads contain IDs only. The worker rechecks ticket-management permission and the absence of a linked ticket before provider delivery. The provider receives bounded, scrubbed subject/message text and returns a strictly validated title and priority; account labels are matched locally and the label catalogue never leaves the install. New messages mark the suggestion stale and block insertion. Applying it only fills an untouched form and never creates a ticket. AI audit metadata excludes prompt and output text. |
 | Grounded-answer evaluation fixtures and private runs | Synthetic support questions in English or German, synthetic published-article text including adversarial instructions, trusted `current`/`stale` freshness labels, expected citations/fact phrases/refusal reasons and optional answer language, curated baseline answers/confidence, or a private provider/model-tagged candidate run with exact suite/prompt SHA-256 identities | Public baseline: `resources/evaluations/grounded-answers/*.json`; captured runs: operator-selected path outside the repository | Public, versioned development evidence only; it is not runtime support data and offline scoring or comparison does not call a provider or database. Fixture schemas v3 and v4 require each article's trusted synthetic freshness label; fixture v2 remains accepted and is normalized to `current`. Fixture v4 also binds a pinned offline German-versus-all-profiles classifier, whole-answer score margin, and bounded English marker-window check into the suite identity for its selected German answer case. Freshness and answer language are fixture inputs, not values inferred from stored knowledge, widget locale, or other runtime behavior. Explicit capture sends fixture questions, articles, freshness labels, and any synthetic adversarial text—but never expected answers, answer-language labels, classifier settings, score margins, or marker settings—to the configured provider and writes a new `0600` response-schema-v3 file outside the checkout. Its deterministic digests identify the complete fixture/policy suite and prompt contract so equivalent provider captures can be compared; legacy response-schema-v2 files remain individually scoreable but are unbound and excluded from comparison. Changing to the sixteen-case adversarial/German contract intentionally makes the prior nine-case capture incomparable. Four same-contract sixteen-case captures now exist across three model/upstream routes, but all were recorded within about 78 minutes and only one passed the frozen gate. They establish point-in-time cross-route evidence—not long-term drift resistance, model-revision evidence, provider approval, or runtime safety. Reports contain run metadata, digests, aggregate metrics, and case IDs/reason codes, never questions, articles, answers, expected-answer content, or matched language markers. The 16/16 bundled baseline is curated evaluator evidence, not provider output. Private customer transcripts, provider runs, and evaluation datasets with real user information must not be committed. Operators own private-run access and retention. |
 | Cobrowse sessions | Consent status, requested/consented/ended timestamps, telemetry, page state, sanitized snapshot, mutation buffer | `cobrowse_sessions` | Cobrowse data should be masked in the browser before transmission. |
-| Audit events | Actor, subject, event type, metadata, timestamps | `audit_events` | Intended for accountability and important lifecycle events. |
+| Audit events | Actor, subject, event type, metadata, timestamps | `audit_events` | Intended for accountability and important lifecycle events. Private AI refinement events retain closed content-free lifecycle metadata with opaque provenance, coarse timings and nullable reported tokens, under existing account/site visibility, applicable visitor exports and erasure scrubbing; they inherit the documented audit retention posture. Managed-update mirrors use global records with null tenant account/site ownership, numeric operator IDs, exact release/plan identities, redacted host evidence and outcomes; the host journal remains authoritative outside database backups. No passwords, keys, operator names or customer support content are copied into update history. |
 | Sessions, cache, queues | Laravel runtime data | Laravel cache/session/job tables or configured drivers | Runtime stores may include identifiers or serialized job payloads. |
 | Logs | Errors, deployment diagnostics, request/runtime details | Application and infrastructure logs | Operators should avoid logging secrets and should rotate logs. |
 | Backups | Database and file snapshots | Operator infrastructure | Backups can retain deleted application data unless the operator has a backup lifecycle policy. |
+
+All four conversation copilot artifacts also store opaque policy/source HMACs,
+a bounded source-proof snapshot, preparation fingerprint and retry deadline, never
+a copied prompt. One prior Ready output may remain while refresh runs; terminal
+success or failure clears it. Visitor export applies the same business-field rules
+to both slots and omits internal proofs/retry bookkeeping. These internal proofs are omitted from visitor exports.
+Policy changes invalidate queued, in-flight publication and visible/insertion
+work, including Off→On cycles. Fresh Use payloads recheck access, source,
+connection and task eligibility; suggestions never send themselves. Removing a
+visitor/conversation still removes the derived artifacts through existing cascades.
+The policy tables contain no visitor data and remain account/site configuration.
 
 ## Data Wayfindr Should Avoid
 
@@ -108,3 +122,69 @@ server's temporary directory and removed once it has been sent; the
 Future retention controls should let operators decide how long each data class
 is kept and should show the data responsibility reminder before saving unusually
 long or indefinite retention windows.
+
+### Private agent draft refinement
+
+Explicit Preview can send the bounded, scrubbed unsent draft and permitted minimum
+context to the configured processor. Automatic preparation never receives composer
+text. Before sending a draft, the browser obtains a content-free, expiring
+`authorized` generation using only a UUID revision. Lost authorization replies
+leave metadata only; cancellation of a known handle also fences capture replies
+that arrive after navigation. A cancelled, deleted or superseded handle cannot
+recreate work. `conversation_draft_refinements` retains one owner/account/conversation-bound
+slot, with encrypted scrubbed prompt, encrypted scope/source proofs and encrypted
+candidate. The raw original stays in the owning browser's memory. Input clears on
+Ready and every terminal/cancel path; scope/preview clear on failure, stale, Cancel
+and Apply. A fixed 15-minute maximum bounds all content, and minute cleanup deletes
+expired rows. There is no shared refinement output or durable draft history.
+
+`conversation_draft_refinement_sends` retains only account/conversation/generation
+and send start time for the bounded in-flight erasure exclusion. It survives
+private-slot cancellation/supersession and user deletion, and expires after the
+180-second uncertainty window. Known returned results or proven unsent failures remove their own claim.
+Post-dispatch timeouts and lost responses retain the uncertainty window.
+Visitor erasure refuses fresh claims under the shared account lock, then removes
+both tables via conversation cascade. Account/site/conversation deletion cascades
+both tables; user deletion removes the private slot. Neither table is included in
+visitor exports: private unsent staff drafts/proofs are not visitor business
+records, and transient send metadata exists solely for erasure admission.
+
+Private lifecycle audits use a closed metadata allowlist: actor/scope/work IDs,
+state/operation, revisions and keyed work/model/route identities, coarse server timing,
+nullable reported tokens and a closed failure code. They never copy draft/preview/source
+text, raw model/endpoint/upstream strings, credentials or provider exceptions. Metadata
+grants and polls are not adoption signals; server Apply is not proof of insertion.
+These existing account/site-scoped audit records join applicable visitor exports;
+erasure scrubs their metadata before removing private work. They inherit the existing
+audit posture of no automatic retention. Expiry cleanup audits/deletes at most 500
+private slots per run, while the fixed 15-minute usability limit remains independent
+of physical cleanup. See the [audit and feedback contract](../architecture/ai-assist-observability.md).
+
+Queue payloads contain IDs only; private text is not flashed into old input or
+request/session history. Usage retains its existing content-free attempt metadata,
+including provider cooldowns independently of private cleanup. Selected processors
+and backups have their own retention boundaries. See the [runtime contract and
+rollback guidance](../architecture/ai-assist-draft-refinement.md).
+
+
+### AI Assist observation metadata
+
+`ai_assist_feedback` stores server-scoped account/site/conversation/viewer/generation
+identities, a keyed source proof, independent viewed/used/rejected timestamps, closed
+usefulness/correction categories, assessment revision and bookkeeping timestamps. It
+stores no prompt, original/edited draft, generated text, free-text feedback or receipt.
+Visitor export includes observations with a staff-role viewer and omits the keyed proof.
+Conversation/site/account/user deletion cascades it; visitor erasure removes it with the
+conversation under the same account lock as admission. Shared/private lifecycle audits
+use configured opaque model/route tags, closed state/reasons and nullable bounded timing
+and token measurements; legacy action names stay compatible.
+
+Optional operator settings `WAYFINDR_AI_FEEDBACK_RETENTION_DAYS`,
+`WAYFINDR_AI_AUDIT_RETENTION_DAYS` and `WAYFINDR_AI_USAGE_RETENTION_DAYS` default to 0
+(no automatic pruning). Feedback/audit accept 1–3650 days; usage requires 32–3650.
+The hourly bounded metadata command preserves active usage holds/current-day budgets,
+prunes only Assist audit actions, and provides a non-mutating dry-run. Private content
+still expires within 15 minutes; metadata retention cannot extend its usability.
+Backup/log/processor retention remains operator-owned. See
+[Assist observability](../architecture/ai-assist-observability.md#operator-retention-and-privacy)
+for scope, limits, export/deletion, unknown observations and command details.

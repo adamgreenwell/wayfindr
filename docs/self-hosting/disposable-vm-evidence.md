@@ -13,6 +13,11 @@ mail, retention, and security review.
 
 ## Minimum Matrix
 
+For the managed updater, use the separate
+[managed update qualification matrix](managed-update-qualification.md) and its
+strict evidence validator. The installer scenarios below do not exercise
+enrolled helper operations, interrupted migration, or same-VM reboot recovery.
+
 For the current reliability cycle, collect evidence from at least two
 disposable Linux VMs:
 
@@ -70,6 +75,13 @@ that runs selected public-artifact scenarios on a fresh GitHub-hosted Ubuntu
 evidence for an install or upgrade claim.
 
 Available scenarios:
+
+- `managed-update-preflight` — accepts exact `managed_source` and
+  `managed_target` published tags and checks their public release declarations.
+  It installs nothing. An unavailable updater or invalid span exits nonzero,
+  retains sanitized gate/incomplete-evidence artifacts and records **blocked**;
+  a ready declaration is still **not VM qualification**. This read-only gate
+  does not run any of the legacy installer scenarios below.
 
 - `clean-install-latest` — downloads the public one-line installer, installs the
   latest release image, completes synthetic setup, verifies runtime processes,

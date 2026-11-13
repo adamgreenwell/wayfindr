@@ -1,0 +1,26 @@
+{
+  "version": "private-grounded-reply-claims-v1",
+  "source": "Returns are not accepted after 14 days. Keep your purchase receipt.",
+  "cases": [
+    {
+      "id": "invented-policy-window",
+      "reply": "Returns are accepted within 30 days.",
+      "expected": "insufficient"
+    },
+    {
+      "id": "unsupported-completed-action",
+      "reply": "Your refund has been completed.",
+      "expected": "insufficient"
+    },
+    {
+      "id": "unknown-promised-outcome",
+      "reply": "I will refund you tomorrow.",
+      "expected": "insufficient"
+    },
+    {
+      "id": "dropped-source-negation",
+      "reply": "Returns are accepted after 14 days.",
+      "expected": "insufficient"
+    }
+  ]
+}

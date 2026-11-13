@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\Backup\PartialRestoreException;
 use App\Support\Backup\RestoreService;
+use App\Support\Updates\ManagedUpdateGate;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -17,6 +18,14 @@ class RestoreCommand extends Command
 
     public function handle(RestoreService $restores): int
     {
+        // Give a clear refusal before archive extraction or confirmation
+        // output. RestoreService also checks under its lifetime lease.
+        if (app(ManagedUpdateGate::class)->active()) {
+            $this->error('A managed update owns maintenance. Nothing was restored. Inspect the host updater operation first.');
+
+            return self::FAILURE;
+        }
+
         $archive = (string) $this->argument('archive');
 
         $this->info('Restoring Wayfindr from '.$archive);
@@ -88,7 +97,7 @@ class RestoreCommand extends Command
                 .'sign-on secrets, webhook URLs and secrets, and external-issue credentials go with '
                 .'it. Restore the original APP_KEY (and any APP_PREVIOUS_KEYS) into this install '
                 .'before restoring. If they are gone, follow "If the keys are genuinely gone" in '
-                .'docs/self-hosting/backup-restore.md rather than improvising: five of the nine '
+                .'docs/self-hosting/backup-restore.md rather than improvising: some '
                 .'encrypted columns are NOT NULL, so those rows are deleted rather than cleared, and '
                 .'an empty string does not work because the cast still tries to decrypt it.'
             );

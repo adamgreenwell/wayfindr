@@ -25,7 +25,13 @@ mkdir -p \
 # Gated automatic migrations: the compose web service opts in so a fresh
 # install and every upgrade converge without a manual exec; workers leave it
 # off and simply wait on the web service's health.
-if [ "${WAYFINDR_AUTO_MIGRATE:-0}" = "1" ] || [ "${WAYFINDR_AUTO_MIGRATE:-false}" = "true" ]; then
+if [ -e storage/framework/managed-upgrade.json ] || [ -L storage/framework/managed-upgrade.json ]; then
+    # U4 recovery starts the ORIGINAL container while the host's operation still
+    # holds intake. Starting it reruns this entrypoint: do not turn recovery into
+    # an implicit migration. Any marker, including a corrupt one or symlink,
+    # keeps automatic migrations suppressed; the app separately refuses traffic.
+    echo "wayfindr: managed update hold active; automatic migrations suppressed." >&2
+elif [ "${WAYFINDR_AUTO_MIGRATE:-0}" = "1" ] || [ "${WAYFINDR_AUTO_MIGRATE:-false}" = "true" ]; then
     tries=0
     while true; do
         php artisan migrate --force --no-interaction && break

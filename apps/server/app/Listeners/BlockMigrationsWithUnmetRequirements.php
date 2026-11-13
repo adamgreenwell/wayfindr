@@ -8,6 +8,8 @@ use App\Support\Release\ActionAdvice;
 use App\Support\Release\FloorAdvice;
 use App\Support\Release\UpgradeContext;
 use App\Support\Release\UpgradeGuard;
+use App\Support\Updates\ManagedMigrationContext;
+use App\Support\Updates\ManagedUpdateGate;
 use Illuminate\Console\Events\CommandStarting;
 use Throwable;
 
@@ -54,8 +56,27 @@ class BlockMigrationsWithUnmetRequirements
      */
     private const REBUILDING_COMMANDS = ['migrate:fresh', 'migrate:refresh'];
 
+    private const MANAGED_GUARDED = ['migrate', 'migrate:fresh', 'migrate:refresh', 'migrate:rollback', 'migrate:reset', 'migrate:install', 'db:wipe'];
+
     public function handle(CommandStarting $event): void
     {
+        // A managed hold permits only the fixed migration owner, carrying a
+        // live typed lease in this process. A UUID or environment flag cannot
+        // grant another console command permission to touch the held schema.
+        if (in_array($event->command, self::MANAGED_GUARDED, true)) {
+            try {
+                $denied = app(ManagedUpdateGate::class)->active() && ! app(ManagedMigrationContext::class)->allows($event->command);
+            } catch (Throwable) {
+                $event->output->writeln('<error>Managed update ownership could not be verified. Not changing the schema.</error>');
+                $this->terminate(1);
+            }
+
+            if ($denied) {
+                $event->output->writeln('<error>Managed update maintenance holds this schema. Use the operation-owned update command.</error>');
+                $this->terminate(UpgradeGuard::EXIT_BLOCKED);
+            }
+        }
+
         if (! in_array($event->command, self::GUARDED, true)) {
             return;
         }

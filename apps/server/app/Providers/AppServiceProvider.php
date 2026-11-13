@@ -14,8 +14,19 @@ use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
 use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushFactory;
+use App\Support\Ai\AccountAiConnectionProbe;
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\GuardedAccountAiConnectionProbe;
 use App\Support\Ai\LaravelAgentCopilotProvider;
+use App\Support\Ai\Network\AiDnsResolver;
+use App\Support\Ai\Network\AiModelDiscovery;
+use App\Support\Ai\Network\AiNetworkPolicy;
+use App\Support\Ai\Network\AiOutboundAdmission;
+use App\Support\Ai\Network\BoundedAiDnsResolver;
+use App\Support\Ai\Network\GuardedAiModelDiscovery;
+use App\Support\Ai\Network\UnavailableAiOutboundAdmission;
+use App\Support\Ai\Usage\AiUsageClock;
+use App\Support\Ai\Usage\DatabaseAiUsageClock;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
@@ -29,7 +40,10 @@ use App\Support\Backup\PostgresDatabaseRestorer;
 use App\Support\DatabaseKey;
 use App\Support\Release\CheckRegistry;
 use App\Support\Release\UpgradeContext;
+use App\Support\Updates\ManagedUpdateGate;
+use App\Support\Updates\ManagedUpdateMaintenanceMode;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\MaintenanceMode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\Channels\DatabaseChannel;
@@ -50,6 +64,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // The host updater owns a separate durable hold. Laravel workers and
+        // scheduled tasks must see it even when ordinary maintenance is absent.
+        $this->app->extend(MaintenanceMode::class, fn (MaintenanceMode $ordinary): MaintenanceMode => new ManagedUpdateMaintenanceMode(
+            $ordinary, $this->app->make(ManagedUpdateGate::class),
+        ));
+
         // Agent alerts are stored under a lock shared with contact erasure, so
         // one raised just before an erasure cannot land just after it quoting
         // the person (ADR 0026 §1).
@@ -74,6 +94,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(DatabaseRestorer::class, PostgresDatabaseRestorer::class);
         $this->app->bind(OidcClient::class, SocialiteOidcClient::class);
         $this->app->bind(AgentCopilotProvider::class, LaravelAgentCopilotProvider::class);
+        $this->app->bind(AccountAiConnectionProbe::class, GuardedAccountAiConnectionProbe::class);
+        $this->app->bind(AiDnsResolver::class, BoundedAiDnsResolver::class);
+        $this->app->bind(AiOutboundAdmission::class, UnavailableAiOutboundAdmission::class);
+        $this->app->bind(AiUsageClock::class, DatabaseAiUsageClock::class);
+        $this->app->bind(AiModelDiscovery::class, GuardedAiModelDiscovery::class);
+        $this->app->bind(AiNetworkPolicy::class, fn (): AiNetworkPolicy => new AiNetworkPolicy(
+            $this->app->make(AiDnsResolver::class),
+            (array) config('wayfindr.ai.network', []),
+            (string) config('app.key'),
+        ));
 
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload
@@ -157,7 +187,9 @@ class AppServiceProvider extends ServiceProvider
      * (a conversation's public code), `token` (a password reset), `slug` (a
      * widget article), `path` (the framework's local-disk file route), and the
      * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
-     * Laravel's database notification, whose key is a UUID column.
+     * Laravel's database notification, whose key is a UUID column. `operation`
+     * is a canonical host-journal UUID constrained by the operator update group.
+     * `task` is the Assist capability enum, bounded explicitly on its routes.
      *
      * Registered here rather than beside the routes because the router applies
      * a global pattern when a route is created, and this provider boots before
@@ -198,6 +230,17 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureRateLimiters(): void
     {
+        // Three visible tasks poll at two seconds while preparing. Bound each
+        // task and the whole viewer separately without starving normal polling.
+        RateLimiter::for('ai-assist-status', function (Request $request): array {
+            $viewer = $request->user()?->getAuthIdentifier() ?? $request->ip();
+
+            return [
+                Limit::perMinute(60)->by('viewer:'.$viewer.':task:'.$request->route('task')),
+                Limit::perMinute(180)->by('viewer:'.$viewer),
+            ];
+        });
+
         // Asking for a reset link is unauthenticated and sends mail, so it is
         // throttled on both the address and the source. Keying on the address
         // alone would let one attacker deny an agent their own recovery;

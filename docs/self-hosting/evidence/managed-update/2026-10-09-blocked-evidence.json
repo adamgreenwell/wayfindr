@@ -1,0 +1,20 @@
+{
+  "artifacts": [],
+  "backup": null,
+  "claim": "blocked",
+  "environments": [],
+  "finished_at": "2026-10-09T20:45:29Z",
+  "limitations": [
+    "artifacts_unpublished",
+    "matrix_incomplete",
+    "reboot_not_executed",
+    "restore_not_executed",
+    "vm_not_provisioned"
+  ],
+  "restore": null,
+  "run_id": "b4adae89-67ec-48fa-bd08-3b180bf4adb2",
+  "scenarios": [],
+  "schema": 1,
+  "started_at": "2026-10-09T20:45:29Z",
+  "synthetic": null
+}

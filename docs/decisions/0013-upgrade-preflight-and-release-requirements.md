@@ -271,12 +271,76 @@ Two consequences fall out of putting it there, both wanted:
   migrate forward after restoring an older archive; if the running release needs
   an action first, that is exactly a migration that should stop.
 
-### The installer hands off to the version it downloaded
+### The installer hands off only to a compatible staged controller
 
-`install.sh --upgrade` re-execs the refreshed script with the original arguments
-before any pull, guarded against re-exec loops by an environment marker. This is
-what allows a preflight to exist at all, and it fixes the read-while-overwritten
-hazard as a side effect.
+The original hand-off re-executed the target release's installer before any
+pull, guarded against loops by an environment marker. That gave a release's new
+preflight control and avoided continuing through a script being overwritten.
+It also allowed an older target installer to discard improvements in a newer
+bootstrap, including preparation checks and failure handling.
+
+The protected upgrade path therefore separates the **application release** from
+the **update controller**. A target installer declaring the supported staging
+protocol, version 1, may receive control from its private staged path. Its
+arguments include the already selected ref, so the hand-off cannot resolve a
+different latest release. The active Compose file, environment, and installer
+are untouched at that point. A hand-off transfers responsibility for cleanup of
+its parent staging directory; a recursion marker alone never certifies that
+preparation or activation has happened.
+
+A legacy target installer without the protocol is retained as a release
+reference, not executed as the controller. The current hardened controller
+continues through the release-history preflight and remains the installed
+`install.sh` after success. If the current script arrived through a pipe, its
+persisted replacement comes from the current bootstrap and must declare the
+supported protocol. An unknown protocol is refused rather than guessed at.
+Future releases can refresh their preflight through a compatible controller
+without handing the operation back to a legacy updater.
+
+The target's declarations and artifact guard still define its requirements.
+The controller checks published manifests through the supported APIs of the
+installed image, as described above; the target guard enforces the same history
+before migration. Changing controller selection does not create a guard bypass
+or an acknowledgement that overrides a negative check.
+
+### Preparation leaves the active installation in place
+
+The controller stages downloaded files and a copy of the environment, applies
+environment migrations to that copy, validates the installer and Compose
+configuration, and completes the existing release preflight before activation.
+Compose continues to use the original project directory and persistent volumes.
+A failed lookup, download, preparation check, or published-image pull stops
+without replacing active files or recreating the running stack.
+
+After a successful pull, the controller records the exact local image identity
+and pins execution to the prepared image, including its registry digest when
+available. Activation must not pull again or resolve a moving tag a second time.
+An explicit local source path may use an available local image; general pull
+failures do not silently become local-image upgrades. `--upgrade --no-start`
+leaves the prepared files private and performs no activation.
+
+A per-installation lock serializes terminal upgrades, including across staged
+hand-off. Cleanup removes the lock only when its recorded owner is the current
+process. A crash can leave a lock requiring operator inspection; no contender
+guesses that a previous operation has finished or removes another owner's lock.
+
+Before promoting staged files, the controller records recovery copies of the
+active configuration and installer, plus the previous image reference. These
+are not a data backup. Once a restart can have reached migration, a failed
+upgrade reports recovery information and does not automatically restore old
+application files, downgrade images, or restore the database. Compatibility and
+data recovery are separate decisions.
+
+Startup verification proves both availability and identity. Web, queue,
+backup-queue, scheduler, and Reverb must all be running the prepared image's
+concrete Docker identity. A published release's baked version, commit, and
+manifest must match its release assets, and the running application's reported
+version and commit must agree with the verified image. This catches nonempty
+environment overrides that would shadow the baked identity. Web health and
+application-serving checks must also pass. Custom images are checked against
+their prepared and reported identities without claiming official provenance.
+An old container answering successfully or a stale worker is not proof that
+the requested upgrade succeeded.
 
 ### The hand-off cannot protect its own arrival
 
@@ -284,6 +348,14 @@ An upgrade launched by any pre-slice-4 installer runs a process containing no
 re-exec instruction, so the replacement it downloads is never given control
 whatever that replacement says. The capability takes effect only from the *next*
 upgrade onward.
+
+The same boundary applies to protected preparation. A legacy installer may
+overwrite its active Compose file before handing control to a hardened one;
+the receiving controller cannot preserve the file that has already been
+replaced. Operators requiring the protected path must start the operation with
+the hardened installer, or invoke the current bootstrap directly with
+`--upgrade --dir <installation>`. Full preparation guarantees begin at that
+entry point, not retroactively at a legacy caller.
 
 The release that introduces the preflight must therefore **require no operator
 action itself** — safe to take unprotected — so every install gets one harmless

@@ -75,11 +75,24 @@ final class DashboardLanguage
      * a validation failure.
      */
     public const EXTRACTED_ROUTES = [
+        'dashboard.account.ai-assist.show',
+        'dashboard.account.ai-assist.report',
+        'dashboard.account.ai-assist.propose',
+        'dashboard.account.ai-assist.test',
+        'dashboard.account.ai-assist.discover',
+        'dashboard.account.ai-assist.activate',
+        'dashboard.account.ai-assist.enabled',
+        'dashboard.account.ai-assist.disconnect',
+        'dashboard.account.ai-assist.discard',
+        'dashboard.account.ai-assist.limits',
+        'dashboard.account.ai-assist.policy.account',
+        'dashboard.account.ai-assist.policy.sites',
         // The operator-console rollout now covers the dashboard, onboarding,
         // break-glass, and settings surfaces listed here. The shared shell uses
         // the same catalogue but stays English on every route not yet listed,
         // preserving the one-language-per-document boundary during rollout.
         'operator.dashboard',
+        'operator.updates.index',
         'operator.onboarding',
         // The platform side of break-glass: one request page, three read-only
         // viewers, and the writes whose validation or lifecycle result renders

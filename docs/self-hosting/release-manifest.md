@@ -8,6 +8,9 @@ The rules it encodes come from [ADR 0012](../decisions/0012-platform-versioning.
 [ADR 0013](../decisions/0013-upgrade-preflight-and-release-requirements.md)
 (how it is enforced). This page is the practical companion to both.
 
+The [read-only update planner](update-plan.md) uses these same requirements to
+review a candidate release before it is installed.
+
 ## Two files, and why
 
 **`release.json`** at the repository root is authored by hand, like the

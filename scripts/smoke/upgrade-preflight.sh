@@ -977,12 +977,13 @@ echo "the startup wait probes past the exemption:"
 check "it probes /up"                 1 "$(printf '%s' "$wait_body" | grep -c 'local_url/up')"
 # Presence, not a count: the root is probed twice, once for the status and once
 # to show the operator what the release is asking for.
-check "it also probes a real route"   yes "$(printf '%s' "$wait_body" | grep -q 'local_url/\"' && echo yes || echo no)"
+# Drain streamed assertions: grep -q may close early and make printf fail under pipefail.
+check "it also probes a real route"   yes "$(printf '%s' "$wait_body" | grep 'local_url/\"' >/dev/null && echo yes || echo no)"
 check "it treats 503 as not serving"  1 "$(printf '%s' "$wait_body" | grep -c '= \"503\"')"
 # A container that EXITED is not listed without --all, which is precisely the
 # container this is looking for. Without it the refusal went unseen and the loop
 # ran its full two minutes before printing a generic failure.
-check "it lists stopped containers"   yes "$(printf '%s' "$wait_body" | grep -q 'compose ps --all -q web' && echo yes || echo no)"
+check "it lists stopped containers"   yes "$(printf '%s' "$wait_body" | grep 'compose ps --all -q web' >/dev/null && echo yes || echo no)"
 check "it does not use the bare form" 0   "$(printf '%s' "$wait_body" | grep -c 'compose ps -q web')"
 
 # And the installer must actually consult it before saying the upgrade worked.
@@ -1099,9 +1100,9 @@ preflight_body="$(awk '/^upgrade_preflight\(\) \{/,/^\}/' "$INSTALLER")"
 
 echo
 echo "work that is only possible now stops the pull:"
-check "NOW is collected"           yes "$(printf '%s' "$preflight_body" | grep -q "grep '\^NOW|'" && echo yes || echo no)"
-check "NOW joins blocking"         yes "$(printf '%s' "$preflight_body" | grep -q 'onlynow' && echo yes || echo no)"
-check "NOW is excluded from later" yes "$(printf '%s' "$preflight_body" | grep -q "grep -v '\^NOW|'" && echo yes || echo no)"
+check "NOW is collected"           yes "$(printf '%s' "$preflight_body" | grep "grep '\^NOW|'" >/dev/null && echo yes || echo no)"
+check "NOW joins blocking"         yes "$(printf '%s' "$preflight_body" | grep 'onlynow' >/dev/null && echo yes || echo no)"
+check "NOW is excluded from later" yes "$(printf '%s' "$preflight_body" | grep "grep -v '\^NOW|'" >/dev/null && echo yes || echo no)"
 
 # The refusal footer must not speak for "the steps above" as a whole. A refusal
 # carrying BOTH a skipped-release step and work the install can still do was
@@ -1168,7 +1169,7 @@ check "installer offers a placeholder, not the floor" \
 check "artifact offers a placeholder, not the floor" \
     "ok" \
     "$(grep -A1 'WAYFINDR_UPGRADE_FROM=' "$APP/app/Support/Release/FloorAdvice.php" \
-        | grep -q 'WAYFINDR_UPGRADE_FROM=<' && echo ok || echo prefills)"
+        | grep 'WAYFINDR_UPGRADE_FROM=<' >/dev/null && echo ok || echo prefills)"
 
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

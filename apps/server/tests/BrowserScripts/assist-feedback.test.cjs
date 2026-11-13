@@ -1,0 +1,177 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {createRequire}=require('node:module');
+const test=require('node:test');
+const root=path.resolve(__dirname,'../../../..');
+const {JSDOM}=createRequire(path.join(root,'packages/widget-js/package.json'))('jsdom');
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const generation='11111111-1111-4111-8111-111111111111';
+async function fixture(t,{hidden=false,closed=false,deny=false,viewFailures=[],usedFailures=[],belowFold=false,task='reply',hasArticle=false,clip=null}={}) {
+ const markup=`<main data-tab-panel ${hidden?'hidden':''}><div data-reply-shell><details data-assist-rail ${closed?'':'open'}><summary>Assist</summary><div data-assist-scroll><section data-ai-assist data-task="${task}" data-state="ready" data-generation="${generation}" data-initial="{}"><p data-ai-message>Task ready</p><div data-ai-output>Human-reviewed synthetic suggestion${hasArticle?'<button data-ai-use>Insert excerpt</button>':''}</div><div data-assist-feedback data-feedback-url="/feedback" data-feedback-copy='{"choose":"Choose first","saved":"Saved","unavailable":"Unavailable"}'><div data-feedback-controls hidden><button type="button" data-feedback-reject>Reject</button><select data-feedback-usefulness><option value=""></option><option value="useful">Useful</option><option value="not_useful">Not useful</option><option value="unsure">Unsure</option></select><label data-feedback-correction-label hidden><select data-feedback-correction><option value="unassessed">Unknown</option><option value="none">None</option><option value="minor">Minor</option><option value="material">Material</option></select></label><button type="button" data-feedback-save>Save</button></div><p data-feedback-status></p></div></section></div></details></div></main>`;
+ const dom=new JSDOM(markup,{url:'https://support.example.test/conversation',runScripts:'outside-only',pretendToBeVisual:true});t.after(()=>dom.window.close());
+ const {window}=dom;const requests=[],timers=[];let revision=0,used=false,rejected=false,now=1000;
+ window.performance.now=()=>now;
+ const scroll=window.document.querySelector('[data-assist-scroll]'),outer=window.document.querySelector('main');let position=clip?.target;
+ const box=clip?.box||{top:100,bottom:200,left:0,right:200,width:200,height:100};
+ const dimensions=(element,values)=>{for(const [key,value]of Object.entries(values))Object.defineProperty(element,key,{value,configurable:true});};
+ if(clip){scroll.style[clip.axis==='x'?'overflowX':'overflowY']=clip.mode;dimensions(scroll,{clientTop:0,clientLeft:0,clientHeight:100,clientWidth:200,...clip.dimensions});}
+ if(clip?.outer){outer.style.overflowY='hidden';dimensions(outer,{clientTop:0,clientLeft:0,clientHeight:20,clientWidth:200});}
+ window.Element.prototype.getBoundingClientRect=function(){if(clip&&this===scroll)return box;if(clip?.outer&&this===outer)return {top:120,bottom:140,left:0,right:200,width:200,height:20};return position||{top:belowFold?10000:10,bottom:belowFold?10020:30,left:0,right:200,width:200,height:20};};
+ window.Element.prototype.getClientRects=function(){return this.closest('[hidden]')?[]:[{}];};
+ window.setInterval=fn=>timers.push(fn);
+ window.fetch=async(url,options)=>{const input=JSON.parse(options.body);requests.push(input);const failure=input.event==='viewed'?viewFailures.shift():input.event==='used'?usedFailures.shift():null;if(failure==='network')throw new TypeError('Network error');if(failure==='server')return {ok:false,status:503};if(failure==='refused')return {ok:false,status:409};if(input.event==='assessment')revision++;if(input.event==='used')used=true;if(input.event==='rejected')rejected=true;if(failure==='json')return {ok:true,json:async()=>{throw new SyntaxError('Interrupted response');}};return {ok:!deny,status:deny?503:200,json:async()=>({generation,viewed:true,used,rejected,revision,usefulness:input.usefulness||null,correction:input.correction||null})};};
+ window.Storage.prototype.setItem=()=>{throw Error('Feedback must not persist text in browser storage');};
+ await flush(); // Settle JSDOM's initial details toggle before measuring request retries.
+ window.eval(fs.readFileSync(path.join(root,'apps/server/resources/views/agent/conversations/partials/assist-feedback-script.blade.php'),'utf8').replace(/<\/?script>/g,''));await flush();
+ return {scroll,position:rect=>{position=rect;},advance:ms=>{now+=ms;},onScreen:()=>{belowFold=false;},offScreen:()=>{belowFold=true;},window,requests,timers,panel:window.document.querySelector('[data-ai-assist]'),main:window.document.querySelector('main'),rail:window.document.querySelector('details')};
+}
+test('visible rendered output records one view across polling and no use from readiness',async t=>{
+ const f=await fixture(t);for(let i=0;i<5;i++){f.timers[0]();await flush();}
+ assert.deepEqual(f.requests,[{event:'viewed',generation}]);
+});
+for(const options of [{hidden:true},{closed:true}])test('hidden workspaces and collapsed rails do not report views',async t=>{
+ const f=await fixture(t,options);assert.equal(f.requests.length,0);f.main.hidden=false;f.rail.open=true;f.timers[0]();await flush();assert.equal(f.requests.length,1);assert.equal(f.requests[0].event,'viewed');
+});
+test('only explicit rejection and assessment count; insertion receipt stays metadata-only',async t=>{
+ const f=await fixture(t);f.window.wayfindrAssistFeedback.used(f.panel,generation,'opaque-receipt');await flush();
+ const root=f.panel.querySelector('[data-assist-feedback]');assert.equal(root.querySelector('[data-feedback-correction-label]').hidden,false);
+ root.querySelector('[data-feedback-save]').click();await flush();assert.equal(f.requests.length,2);
+ root.querySelector('[data-feedback-usefulness]').value='useful';root.querySelector('[data-feedback-correction]').value='material';root.querySelector('[data-feedback-save]').click();await flush();
+ root.querySelector('[data-feedback-usefulness]').value='not_useful';root.querySelector('[data-feedback-save]').click();await flush();
+ root.querySelector('[data-feedback-reject]').click();await flush();
+ assert.deepEqual(f.requests.map(x=>x.event),['viewed','used','assessment','assessment','rejected']);
+ assert.deepEqual(f.requests[1],{event:'used',receipt:'opaque-receipt',generation});
+ assert.equal(f.requests[2].expected_revision,0);assert.equal(f.requests[3].expected_revision,1);
+ assert.equal(JSON.stringify(f.requests).includes('Human-reviewed'),false);assert.equal(root.querySelector('[data-feedback-reject]').disabled,true);
+});
+test('failed feedback remains unknown and reports an accessible failure',async t=>{
+ const f=await fixture(t,{deny:true});assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'Unavailable');
+ f.timers[0]();await flush();assert.equal(f.requests.length,2,'A later visibility scan may retry the idempotent view');
+});
+
+for(const failure of ['network','server','json'])test(`a ${failure} view failure retries once visible and permits assessment`,async t=>{
+ const f=await fixture(t,{viewFailures:[failure]});assert.equal(f.requests.length,1);
+ f.offScreen();f.timers[0]();await flush();assert.equal(f.requests.length,1,'A failed request does not invent a view while output is off screen');
+ f.onScreen();f.timers[0]();f.timers[0]();await flush();assert.equal(f.requests.length,2,'The displayed generation retries without concurrent duplicate views');
+ assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'','Recovery clears the old failure status');
+ for(let i=0;i<3;i++){f.timers[0]();await flush();}assert.equal(f.requests.length,2,'A successful view is not retried');
+ const root=f.panel.querySelector('[data-assist-feedback]');root.querySelector('[data-feedback-usefulness]').value='useful';root.querySelector('[data-feedback-save]').click();await flush();
+ assert.deepEqual(f.requests.map(x=>x.event),['viewed','viewed','assessment']);assert.equal(f.requests[2].expected_revision,0);assert.equal(root.querySelector('[data-feedback-status]').textContent,'Saved');
+});
+
+test('failed explicit feedback is not automatically resubmitted as another vote',async t=>{
+ const f=await fixture(t);const root=f.panel.querySelector('[data-assist-feedback]');
+ f.window.fetch=async(url,options)=>{f.requests.push(JSON.parse(options.body));return {ok:false};};
+ root.querySelector('[data-feedback-usefulness]').value='useful';root.querySelector('[data-feedback-save]').click();await flush();
+ for(let i=0;i<3;i++){f.timers[0]();await flush();}
+ assert.deepEqual(f.requests.map(x=>x.event),['viewed','assessment']);assert.equal(root.querySelector('[data-feedback-status]').textContent,'Unavailable');
+});
+
+test('a failed old generation view cannot reset the new generation attempt',async t=>{
+ const f=await fixture(t,{belowFold:true});let rejectOld;const next='22222222-2222-4222-8222-222222222222';
+ f.window.fetch=async(url,options)=>{const input=JSON.parse(options.body);f.requests.push(input);if(input.generation===generation)return new Promise((resolve,reject)=>{rejectOld=reject;});return {ok:true,json:async()=>({viewed:true,used:false,rejected:false,revision:0})};};
+ f.onScreen();f.timers[0]();await flush();f.panel.dataset.generation=next;f.timers[0]();rejectOld(new TypeError('Old request failed'));await flush();
+ for(let i=0;i<3;i++){f.timers[0]();await flush();}
+ assert.deepEqual(f.requests,[{event:'viewed',generation},{event:'viewed',generation:next}]);assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'');
+});
+
+for(const failure of ['network','server','json'])test(`an inserted suggestion recovers a ${failure} acknowledgement with the same receipt`,async t=>{
+ const f=await fixture(t,{usedFailures:[failure]});f.window.wayfindrAssistFeedback.used(f.panel,generation,'opaque-receipt');await flush();
+ f.timers[0]();await flush();assert.equal(f.requests.length,2,'A failed insertion observation waits before retrying');
+ f.advance(2000);f.timers[0]();f.timers[0]();await flush();assert.deepEqual(f.requests.slice(1),[{event:'used',receipt:'opaque-receipt',generation},{event:'used',receipt:'opaque-receipt',generation}]);
+ const root=f.panel.querySelector('[data-assist-feedback]');assert.equal(root.querySelector('[data-feedback-correction-label]').hidden,false,'A recovered use acknowledgement permits correction feedback');
+ assert.equal(root.querySelector('[data-feedback-status]').textContent,'','A recovered use clears its transient failure');
+ f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,3,'Acknowledged insertion observations stop retrying');
+ root.querySelector('[data-feedback-usefulness]').value='useful';root.querySelector('[data-feedback-correction]').value='material';root.querySelector('[data-feedback-save]').click();await flush();assert.equal(f.requests[3].correction,'material');
+});
+
+test('an insertion observation drops its memory-only receipt at the finite deadline',async t=>{
+ const f=await fixture(t,{usedFailures:['server','server']});f.window.wayfindrAssistFeedback.used(f.panel,generation,'short-lived-receipt');await flush();
+ f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,3);
+ f.advance(58000);for(let i=0;i<3;i++){f.timers[0]();await flush();}assert.equal(f.requests.length,3,'Expired insertion authorization is never replayed');
+ assert.equal(f.panel.querySelector('[data-feedback-correction-label]').hidden,true);
+});
+
+test('a definitive insertion refusal never automatically retries',async t=>{
+ const f=await fixture(t,{usedFailures:['refused']});f.window.wayfindrAssistFeedback.used(f.panel,generation,'refused-receipt');await flush();
+ f.advance(2000);for(let i=0;i<3;i++){f.timers[0]();await flush();}assert.equal(f.requests.length,2);assert.equal(f.panel.querySelector('[data-feedback-correction-label]').hidden,true);
+});
+
+test('a new generation discards pending insertion acknowledgement retries',async t=>{
+ const f=await fixture(t,{usedFailures:['server']});f.window.wayfindrAssistFeedback.used(f.panel,generation,'old-receipt');await flush();
+ f.panel.dataset.generation='22222222-2222-4222-8222-222222222222';f.advance(2000);f.timers[0]();await flush();
+ assert.deepEqual(f.requests.map(x=>x.event),['viewed','used','viewed']);f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,3);
+});
+
+test('insertion authorization expires before a queued observation can dispatch',async t=>{
+ const f=await fixture(t,{belowFold:true});let releaseView;
+ f.window.fetch=async(url,options)=>{f.requests.push(JSON.parse(options.body));return new Promise(resolve=>{releaseView=()=>resolve({ok:true,json:async()=>({viewed:true,used:false,rejected:false,revision:0})});});};
+ f.onScreen();f.timers[0]();await flush();f.window.wayfindrAssistFeedback.used(f.panel,generation,'queued-receipt');f.advance(60000);f.timers[0]();releaseView();await flush();
+ assert.deepEqual(f.requests.map(x=>x.event),['viewed'],'An expired queued receipt never reaches fetch');
+});
+
+test('an in-flight insertion observation is aborted at its deadline',async t=>{
+ const f=await fixture(t);let aborted=false;
+ f.window.fetch=async(url,options)=>{f.requests.push(JSON.parse(options.body));return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>{aborted=true;reject(new f.window.DOMException('Expired','AbortError'));}));};
+ f.window.wayfindrAssistFeedback.used(f.panel,generation,'in-flight-receipt');await flush();f.advance(60000);f.timers[0]();await flush();
+ assert.equal(aborted,true);f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,2);
+});
+
+test('page navigation discards pending insertion receipts rather than replaying them',async t=>{
+ const f=await fixture(t,{usedFailures:['server']});f.window.wayfindrAssistFeedback.used(f.panel,generation,'navigation-receipt');await flush();
+ f.window.dispatchEvent(new f.window.Event('pagehide'));f.advance(2000);f.timers[0]();await flush();assert.equal(f.requests.length,2);
+});
+
+for(const event of ['viewed','used'])for(const failure of ['network','server','json'])test(`ticket ${event} recovery clears both ${failure} failure messages`,async t=>{
+ const f=await fixture(t,{task:'ticket',viewFailures:event==='viewed'?[failure]:[],usedFailures:event==='used'?[failure]:[]});
+ if(event==='used'){f.window.wayfindrAssistFeedback.used(f.panel,generation,'ticket-receipt');await flush();}
+ assert.equal(f.panel.querySelector('[data-ai-message]').textContent,'Unavailable');assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'Unavailable');
+ f.advance(2000);f.timers[0]();await flush();assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'');assert.equal(f.panel.querySelector('[data-ai-message]').textContent,'','Ticket recovery clears the failure in its visible live status');
+});
+
+test('ticket feedback recovery preserves a newer task status',async t=>{
+ const f=await fixture(t,{task:'ticket',usedFailures:['server']});f.window.wayfindrAssistFeedback.used(f.panel,generation,'ticket-receipt');await flush();
+ f.panel.querySelector('[data-ai-message]').textContent='New task status';f.advance(2000);f.timers[0]();await flush();
+ assert.equal(f.panel.querySelector('[data-feedback-status]').textContent,'');assert.equal(f.panel.querySelector('[data-ai-message]').textContent,'New task status');
+});
+
+for(const mode of ['auto','scroll','hidden','clip'])for(const axis of ['x','y'])test(`${mode} overflow on ${axis} clips unseen suggestions inside the browser viewport`,async t=>{
+ const target=axis==='x'?{top:150,bottom:170,left:250,right:270,width:20,height:20}:{top:250,bottom:270,left:10,right:30,width:20,height:20};
+ const f=await fixture(t,{clip:{mode,axis,target}});assert.equal(f.requests.length,0,'Overflow-clipped output is not a view');
+ f.position({top:150,bottom:170,left:10,right:30,width:20,height:20});f.scroll.dispatchEvent(new f.window.Event('scroll'));await flush();
+ assert.deepEqual(f.requests,[{event:'viewed',generation}]);
+});
+
+test('every clipping ancestor must intersect the displayed output',async t=>{
+ const f=await fixture(t,{clip:{mode:'auto',outer:true,target:{top:150,bottom:170,left:10,right:30,width:20,height:20}}});assert.equal(f.requests.length,0,'A visible inner scroll area does not bypass an outer clip');
+ f.position({top:125,bottom:135,left:10,right:30,width:20,height:10});f.timers[0]();await flush();assert.equal(f.requests.length,1);
+});
+
+test('clipping uses the client area rather than an ancestors border box',async t=>{
+ const f=await fixture(t,{clip:{mode:'auto',box:{top:100,bottom:220,left:0,right:200,width:200,height:120},dimensions:{clientTop:10,clientHeight:100},target:{top:215,bottom:219,left:10,right:30,width:20,height:4}}});
+ assert.equal(f.requests.length,0,'Output intersecting only the border box is clipped');f.position({top:205,bottom:209,left:10,right:30,width:20,height:4});f.timers[0]();await flush();assert.equal(f.requests.length,1);
+});
+
+test('visible overflow does not clip an otherwise on-screen suggestion',async t=>{
+ const f=await fixture(t,{clip:{mode:'visible',target:{top:250,bottom:270,left:10,right:30,width:20,height:20}}});assert.equal(f.requests.length,1);
+});
+
+test('a partly intersecting suggestion is viewed but an empty scrollport is not',async t=>{
+ const partial=await fixture(t,{clip:{mode:'auto',target:{top:195,bottom:205,left:10,right:30,width:20,height:10}}});assert.equal(partial.requests.length,1);
+ const empty=await fixture(t,{clip:{mode:'auto',dimensions:{clientHeight:0},target:{top:150,bottom:170,left:10,right:30,width:20,height:20}}});assert.equal(empty.requests.length,0,'A zero-height scrollport cannot display output');
+});
+
+test('suggestions below the viewport remain unviewed until they actually enter view',async t=>{
+ const f=await fixture(t,{belowFold:true});assert.equal(f.requests.length,0,'Below-fold rendering is not a view');
+ f.onScreen();f.window.dispatchEvent(new f.window.Event('scroll'));f.timers[0]();await flush();assert.equal(f.requests.length,1);
+});
+
+test('assessment controls remain usable after viewed output scrolls above the viewport',async t=>{
+ const f=await fixture(t);f.offScreen();f.timers[0]();await flush();assert.equal(f.panel.querySelector('[data-feedback-controls]').hidden,false);assert.equal(f.requests.length,1);
+});
+
+test('empty article matches do not report a view while an actual article suggestion does',async t=>{
+ const empty=await fixture(t,{task:'knowledge'});assert.equal(empty.requests.length,0);
+ const article=await fixture(t,{task:'knowledge',hasArticle:true});assert.equal(article.requests.length,1);assert.equal(article.requests[0].event,'viewed');
+});

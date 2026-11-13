@@ -258,6 +258,33 @@ class OperatorSettings
     }
 
     /**
+     * Read one authoritative group without applying anything to global config.
+     * Connection consumers need this again after a provider call, even before
+     * the cache-version callback runs. An unreadable store/secret fails closed.
+     *
+     * @return array<string, mixed> Managed key => decoded/cast effective value.
+     */
+    public function freshValuesForGroup(string $group): array
+    {
+        if ($this->baseline === null) {
+            $this->captureBaseline();
+        }
+
+        $keys = $this->keysForGroup($group);
+        $stored = OperatorSetting::query()->whereIn('key', $keys)->pluck('value', 'key')->all();
+        $values = [];
+
+        foreach ($keys as $key) {
+            $meta = self::MANAGED[$key];
+            $values[$key] = ! array_key_exists($key, $stored) || $stored[$key] === null
+                ? $this->baseline[$meta['config']]
+                : $this->castValue($key, $this->decode($key, $stored[$key]));
+        }
+
+        return $values;
+    }
+
+    /**
      * Whether destructive consumers may trust the currently applied values.
      * A fail-safe env fallback keeps the app usable, but must not be mistaken
      * for an authoritative operator-managed value during cleanup or rotation.

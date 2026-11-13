@@ -9,6 +9,46 @@ reply draft, suggested knowledge snippets, and suggested ticket details during
 conversation-to-ticket conversion. It does not add autonomous replies or
 customer-facing AI.
 
+## Option 1 Assist — development source status
+
+This section describes current feature development. Use the documentation at your
+installed release tag for operator behavior; the installation-default manual
+copilot sections below retain their existing configuration guidance.
+
+The [AI Support Assist contract](../product/ai-support-assist-contract.md) now has
+account connections, guarded transport/usage, [administration](../product/ai-support-assist-admin.md),
+[shared preparation](../architecture/ai-assist-preparation-lifecycle.md) and the
+[conversation rail](../product/ai-support-assist-rail.md) merged in source. The
+account screen groups installation/own connection choices, write-only credentials,
+separate proposed/tested/active revisions and behavior/task/site/usage controls.
+Automatic preparation requires renewed explicit account/site approval; upgrades
+preserve Manual behavior. A provider probe proves one synthetic request, not
+retention, quality or permission to process support data.
+
+The #1172 selection/parser foundation merged in #1192. Its completion branch adds
+[grounded private replies](../architecture/ai-assist-grounded-drafts.md): Relevant
+articles On permits bounded scrubbed selected published same-account passages
+within the combined transcript/context ceiling. Off performs no reply article
+retrieval and keeps transcript-only help. The independent knowledge-search task
+still sends transcript text and ranks returned search phrases locally. Articles
+are account-owned; site controls do not isolate knowledge into site collections.
+
+Private means hidden from visitors, not local processing. Grounded replies copy
+validated complete supplied sentences with published-guidance attribution or use
+a safe clarification for unsupported/conflicting guidance. Source/access/policy
+changes withdraw the entire draft. Inspecting sources is read-only; inserting
+requires explicit fresh authorization, preserves edits and never sends.
+Refinement generation remains #1173: its future explicit action may send bounded
+scrubbed composer text, while automatic preparation never does. Attachments and
+cobrowse snapshots remain excluded. No live provider is activated by this source
+work; deployment and current-model evaluation are separate qualification.
+
+Changing site behavior/tasks/context/enablement requires both account management
+authority and access to each affected site. Activation/replacement/re-enablement
+of a shared account connection rechecks every affected enabled site under the
+account lock. Account management grants no access to other sites. Disabling and
+disconnecting remain available, and destinations obey operator network policy.
+
 ## Configure it in the operator console
 
 A platform operator can open **Operator → Agent copilot** and choose:

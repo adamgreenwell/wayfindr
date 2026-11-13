@@ -3,10 +3,37 @@
 Wayfindr is an open-source, self-hostable support platform for live chat, email,
 a help centre, consent-based cobrowsing, and durable ticketing — with reporting
 over the conversations and tickets it handles. The project reached `v1.0.0` on
-September 30, 2026, and the latest public release is `v1.1.1` (October 2,
-2026). This patch fixes dashboard and widget consistency, mobile controls,
-keyboard flows and release diagnostics, with no migrations or required
-operator action. The next development line is `1.2.0-dev`.
+September 30, 2026.
+
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb4`, dated October 12, 2026. Exact-main CI and the guarded publisher
+passed. Separate root and independent audits verified Release/assets, the source
+archive, both architecture OCI chains and static baked identities, and stable
+aliases. Helper `0.10.0` checks the serving source's trusted configured origin
+before maintenance ownership. It remains a separate administrator upgrade;
+application image updates preserve the installed helper. No operator action or
+migration is required for the application; standing notices remain. See
+[Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+The October 13 fresh `v1.4.3` → `v1.4.4` attempt passed separate helper 0.10
+installation and pre-Start continuity checks, then one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation. Five saved
+target-role layout/readiness checks pass; complete runtime verification,
+recovery and separate-VM restore remain unaccepted. Its Source and Restore
+holds and all older held operations remain preserved. Managed updates remain
+**not qualified for production use**, with **0/100** scenarios qualified. The
+[dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+separates the later TCP timeout with zero TLS attempts and current firewall-policy
+inference from the unknown historical refusal cause. Before Start on a separately
+approved additional fresh pair, check web/migration access to its configured
+public HTTPS and external object store, then normal TLS; keep any lab rules
+scoped and Restore's own CA/bundle independent. Existing holds are not repair
+targets. Development source is `1.5.0-dev`; this reset publishes no release.
+
+Earlier `v1.2.0` evidence covers its ARM64 published-source install,
+enrollment, idle restart/reboot and separate ordinary restore over
+private HTTP. Those observations and older dated evidence remain on
+[Disposable VM Evidence](Disposable-VM-Evidence) and [Releases](Releases).
+
 It is a working support desk, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.

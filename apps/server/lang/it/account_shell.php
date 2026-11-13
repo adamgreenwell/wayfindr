@@ -30,6 +30,7 @@ return [
         'visitor_attributes' => 'Attributi dei visitatori',
         'automations' => 'Automazioni',
         'sla_policies' => 'Criteri SLA',
+        'ai_assist' => 'Assistente IA',
         'integrations' => 'Integrazioni',
         'api' => 'API e webhook',
         'audit' => 'Registro di audit',

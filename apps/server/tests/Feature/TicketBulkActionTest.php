@@ -514,6 +514,8 @@ test('undoing a close back to pending records both reopen and pending lifecycle 
 
     $undoEvents = $ticket->auditEvents()
         ->whereIn('action', ['ticket.reopened', 'ticket.pending'])
+        // Timestamps share a second; PostgreSQL does not promise insertion order.
+        ->orderBy('id')
         ->get()
         ->filter(fn ($event): bool => (int) data_get($event->metadata, 'undo_of_ticket_bulk_action_run_id') === $run->id);
 

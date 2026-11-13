@@ -10,6 +10,7 @@
 
     $operatorSections = [
         ['label' => __('operator.shell.sections.console'), 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.dashboard')],
+        ['label' => __('operator.shell.sections.updates'), 'href' => route('operator.updates.index'), 'active' => request()->routeIs('operator.updates.*')],
         ['label' => __('operator.shell.sections.onboarding'), 'href' => route('operator.onboarding'), 'active' => request()->routeIs('operator.onboarding')],
         ['label' => __('operator.shell.sections.mail'), 'href' => route('operator.settings.mail.edit'), 'active' => request()->routeIs('operator.settings.mail.*')],
         ['label' => __('operator.shell.sections.webpush'), 'href' => route('operator.settings.webpush.edit'), 'active' => request()->routeIs('operator.settings.webpush.*')],
@@ -45,6 +46,9 @@
         </nav>
 
         <div class="wf-context-body">
+            @unless (request()->routeIs('operator.updates.index'))
+                <x-operator-update-resume />
+            @endunless
             {{-- Rendered HERE, once, rather than by each page.
                  Operator controllers flash a result on 35 paths and only five
                  pages rendered anywhere for one to land, so most of them --

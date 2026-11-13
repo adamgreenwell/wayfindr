@@ -1,0 +1,72 @@
+{
+  "qualification": false,
+  "reasons": [
+    {
+      "code": "helper_not_published",
+      "role": "source"
+    },
+    {
+      "code": "helper_not_published",
+      "role": "target"
+    }
+  ],
+  "schema": 1,
+  "scope": "published_artifact_declarations",
+  "source": {
+    "commit": "9b634b23f65c767221331133e3ccd60c9c3ed5f9",
+    "digest_asset_sha256": "16fd185242088d8fddd41b7be14ffeee7d4aafc50e96261f6dee0cf4c3539545",
+    "helper_protocol": null,
+    "helper_version": null,
+    "image_digest": "sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905",
+    "image_reference": "ghcr.io/adamgreenwell/wayfindr:1.1.0@sha256:ef0f50c987aa56a796e627c93197c3bb5a8588fbb6f1fc43056c598681d05905",
+    "manifest_sha256": "c46f78a39e1cb28db04a6c44285d382ddb11577a6d3eeb714e87e8ae7698d098",
+    "metadata_verified": true,
+    "minimum_upgrade_from": "0.1.0-alpha.1",
+    "protocol_probe_present": false,
+    "release_id": 401049035,
+    "release_url": "https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.0",
+    "required_files": {
+      "apps/server/routes/web.php": "dfc379c08846890cd65be68dd201241f067a7217",
+      "docker/self-hosting/compose.yml": "0c40e4ab247d1495a1f80bd6daf372c48e961f7a",
+      "scripts/self-host/install.sh": "df2c50e9b223588ad216476f17d3a0d965f617f3"
+    },
+    "required_files_present": false,
+    "source_tree_sha": "1586466772716c39e7b702ed018b0308a43590e2",
+    "source_tree_verified": false,
+    "tag": "v1.1.0",
+    "version": "1.1.0"
+  },
+  "status": "blocked",
+  "target": {
+    "commit": "648caa1bc47ea1644c2b2f8aa830135dfc013629",
+    "digest_asset_sha256": "ad78bcb8a42c0f22ef0156e5e2818edb07eccf1434324525eba1c3e6ecb42ba6",
+    "helper_protocol": null,
+    "helper_version": null,
+    "image_digest": "sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9",
+    "image_reference": "ghcr.io/adamgreenwell/wayfindr:1.1.1@sha256:c816a46187549ea35ab04e7cae5fcbb96c3d80b1c06842951228a772ddc956a9",
+    "manifest_sha256": "779bca8adf44c5079eb954e708328185289fb65d7ca9d937fa769db2d1017942",
+    "metadata_verified": true,
+    "minimum_upgrade_from": "0.1.0-alpha.1",
+    "protocol_probe_present": false,
+    "release_id": 401551199,
+    "release_url": "https://github.com/adamgreenwell/wayfindr/releases/tag/v1.1.1",
+    "required_files": {
+      "apps/server/routes/web.php": "dfc379c08846890cd65be68dd201241f067a7217",
+      "docker/self-hosting/compose.yml": "0c40e4ab247d1495a1f80bd6daf372c48e961f7a",
+      "scripts/self-host/install.sh": "df2c50e9b223588ad216476f17d3a0d965f617f3"
+    },
+    "required_files_present": false,
+    "source_tree_sha": "a73651811110daf8e99505c6b0ce52caf101ebe6",
+    "source_tree_verified": false,
+    "tag": "v1.1.1",
+    "version": "1.1.1"
+  },
+  "verification": {
+    "baked_image": false,
+    "host": false,
+    "public_release_metadata": true,
+    "reboot": false,
+    "release_guards": false,
+    "source_tree_declarations": false
+  }
+}

@@ -11,7 +11,7 @@
             const panel = document.querySelector('[data-copilot-summary]');
             const pending = panel?.dataset.state === 'pending';
 
-            if (!panel || (!pending && !force) || (pending && attempts >= maximumAttempts)) {
+            if (!panel || (pending && attempts >= maximumAttempts)) {
                 return;
             }
 
@@ -36,7 +36,7 @@
                     },
                 });
 
-                if (response.status === 204 || response.status === 404) {
+                if ([204, 403, 404, 410].includes(response.status)) {
                     panel.remove();
 
                     return;
@@ -46,7 +46,11 @@
                     throw new Error('Summary refresh failed.');
                 }
 
-                panel.outerHTML = await response.text();
+                const markup = await response.text();
+
+                if (panel.isConnected) {
+                    panel.outerHTML = markup;
+                }
             } catch (error) {
                 // Keep the queued state intact. A normal page refresh can
                 // recover it without turning a transient poll failure into a
@@ -63,8 +67,9 @@
 
                 const currentPanel = document.querySelector('[data-copilot-summary]');
 
-                if (currentPanel?.dataset.state === 'pending') {
-                    window.setTimeout(() => refresh(), 2000);
+                if (currentPanel) {
+                    // Ready output is re-authorized too, so policy edits withdraw it.
+                    window.setTimeout(() => refresh(), currentPanel.dataset.state === 'pending' ? 2000 : 10000);
                 }
             }
         };

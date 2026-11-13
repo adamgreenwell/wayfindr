@@ -4,11 +4,15 @@ namespace App\Support\Backup;
 
 use App\Models\ConversationMessageAttachment;
 use App\Support\Attachments\AttachmentStorage;
+use App\Support\Release\UpgradeGuard;
+use FilesystemIterator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\WhitespacePathNormalizer;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -29,6 +33,21 @@ class BackupService
      */
     public function create(string $destinationDir): array
     {
+        return $this->createArchive($destinationDir);
+    }
+
+    /** Protective points occupy a separate remote namespace and never prune. */
+    public function createProtective(string $destinationDir, string $operationId): array
+    {
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $operationId) !== 1) {
+            throw new RuntimeException('protective_backup_invalid_operation');
+        }
+
+        return $this->createArchive($destinationDir, $operationId);
+    }
+
+    private function createArchive(string $destinationDir, ?string $operationId = null): array
+    {
         // Owner-only for everything this produces — the working dump and the
         // final archive both hold the database and private attachment bytes.
         // Setting the umask (rather than a post-hoc chmod) means the archive
@@ -36,7 +55,7 @@ class BackupService
         $previousUmask = umask(0077);
 
         try {
-            return $this->assemble($destinationDir);
+            return $this->assemble($destinationDir, $operationId);
         } finally {
             umask($previousUmask);
         }
@@ -45,7 +64,7 @@ class BackupService
     /**
      * @return array{path: string, size: int, manifest: array<string, mixed>, remote: array<string, string>|null}
      */
-    private function assemble(string $destinationDir): array
+    private function assemble(string $destinationDir, ?string $operationId): array
     {
         if (! is_dir($destinationDir) && ! mkdir($destinationDir, 0700, true) && ! is_dir($destinationDir)) {
             throw new RuntimeException("Backup destination is not writable: {$destinationDir}");
@@ -74,10 +93,19 @@ class BackupService
             $localDisks = $this->copyLocalAttachments($work.'/attachments', $archivable);
 
             $manifest = $this->manifest($timestamp, $localDisks, $this->externalRowDisks($archivable), $dumpLabel);
-            file_put_contents(
-                $work.'/manifest.json',
-                json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
-            );
+
+            if ($operationId !== null) {
+                $manifest['protective_operation'] = $operationId;
+                $manifest['installation_profile'] = app(UpgradeGuard::class)->installationProfile();
+                $manifest['archive_integrity'] = $this->inventory($work);
+                $this->assertProtectiveLocalCoverage($manifest['archive_integrity']['members'], $archivable);
+            }
+
+            $manifestJson = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+
+            if (file_put_contents($work.'/manifest.json', $manifestJson) !== strlen($manifestJson)) {
+                throw new RuntimeException('Could not completely write the backup manifest.');
+            }
 
             // Archives land under a per-install prefix on the local path too —
             // not just the remote disk — so two installs that share one host
@@ -100,7 +128,7 @@ class BackupService
             // never leave a truncated file under the final name, where it would
             // be indistinguishable from a good backup.
             $partial = $archive.'.partial';
-            $this->tarWorkDir($work, $partial);
+            $this->tarWorkDir($work, $partial, $operationId !== null);
 
             if (! rename($partial, $archive)) {
                 @unlink($partial);
@@ -118,7 +146,7 @@ class BackupService
                 // the command can say the local archive is intact AND that the
                 // offsite push failed — never "success" when offsite did not
                 // land (ADR 0010).
-                'remote' => $this->uploadToRemote($archive, $size),
+                'remote' => $this->uploadToRemote($archive, $size, $operationId),
             ];
         } finally {
             $this->removeDir($work);
@@ -209,11 +237,18 @@ class BackupService
         try {
             $disk = Storage::disk($diskName);
             $removed = 0;
+            $prefix = $this->backupPrefix();
 
             // List ONLY this install's prefix — never the whole bucket — so a
             // shorter window here cannot erase another install's archives that
             // happen to share the disk.
-            foreach ($disk->files($this->backupPrefix()) as $path) {
+            foreach ($disk->files($prefix) as $path) {
+                // Laravel lists direct files by default, but retain this guard
+                // even if a custom adapter returns nested recovery points.
+                if (str_starts_with($path, $prefix.'/protective/')) {
+                    continue;
+                }
+
                 if ($keep !== null && basename($path) === $keep) {
                     continue;
                 }
@@ -424,7 +459,7 @@ class BackupService
      *
      * @return array<string, string>|null
      */
-    private function uploadToRemote(string $archivePath, int $localSize): ?array
+    private function uploadToRemote(string $archivePath, int $localSize, ?string $operationId = null): ?array
     {
         $diskName = trim((string) config('wayfindr.backup.disk'));
 
@@ -448,7 +483,9 @@ class BackupService
             $disk = Storage::disk($diskName);
             // Namespace the object per-install so a shared bucket is safe: the
             // retention prune only ever reaches within this same prefix.
-            $key = $this->backupPrefix().'/'.basename($archivePath);
+            $key = $this->backupPrefix()
+                .($operationId === null ? '' : '/protective/'.$operationId)
+                .'/'.basename($archivePath);
 
             $stream = fopen($archivePath, 'rb');
 
@@ -700,9 +737,61 @@ class BackupService
         }
     }
 
-    private function tarWorkDir(string $work, string $archive): void
+    /** The protective verifier accepts only explicit regular ustar members. */
+    private function inventory(string $work): array
     {
-        $process = new Process(['tar', '-czf', $archive, '-C', $work, '.'], timeout: null);
+        $members = [];
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($work, FilesystemIterator::SKIP_DOTS));
+
+        foreach ($iterator as $item) {
+            if ($item->isLink() || ! $item->isFile()) {
+                throw new RuntimeException('protective_backup_unsafe_member');
+            }
+
+            $name = substr($item->getPathname(), strlen($work) + 1);
+            $sha = hash_file('sha256', $item->getPathname());
+
+            if ($sha === false || count($members) >= BackupArchiveVerifier::MAX_MEMBERS) {
+                throw new RuntimeException('protective_backup_inventory_failed');
+            }
+
+            $members[$name] = ['bytes' => $item->getSize(), 'sha256' => $sha];
+        }
+
+        ksort($members);
+
+        return ['schema' => 1, 'algorithm' => 'sha256', 'members' => $members];
+    }
+
+    /** Writes are already quiesced; a missing local row must block protection. */
+    private function assertProtectiveLocalCoverage(array $members, array $archivable): void
+    {
+        ConversationMessageAttachment::query()
+            ->whereIn('storage_disk', $archivable)
+            ->select(['id', 'storage_disk', 'storage_key', 'size_bytes', 'checksum'])
+            ->chunkById(500, function ($rows) use ($members): void {
+                foreach ($rows as $row) {
+                    $name = 'attachments/'.$row->storage_disk.'/'.$row->storage_key;
+                    $facts = $members[$name] ?? null;
+
+                    if (! is_array($facts) || $row->storage_key === ''
+                        || ($row->size_bytes !== null && $facts['bytes'] !== $row->size_bytes)
+                        || ($row->checksum !== null && ! hash_equals((string) $row->checksum, $facts['sha256']))) {
+                        throw new RuntimeException('protective_backup_local_coverage_failed');
+                    }
+                }
+            });
+    }
+
+    private function tarWorkDir(string $work, string $archive, bool $protective = false): void
+    {
+        $command = ['tar'];
+
+        if ($protective) {
+            $command[] = '--format=ustar';
+        }
+
+        $process = new Process([...$command, '-czf', $archive, '-C', $work, '.'], timeout: null);
         $process->run();
 
         if (! $process->isSuccessful()) {

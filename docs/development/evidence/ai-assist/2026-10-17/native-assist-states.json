@@ -1,0 +1,65 @@
+{
+  "browser": "155.0.8059.80",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "theme": "light",
+  "locale": "en",
+  "states": [
+    {
+      "expected": "preparing",
+      "state": "preparing",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": false,
+      "liveRegions": 1,
+      "railOpen": true
+    },
+    {
+      "expected": "ready",
+      "state": "ready",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": true,
+      "liveRegions": 1,
+      "railOpen": true
+    },
+    {
+      "expected": "stale",
+      "state": "stale",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": false,
+      "liveRegions": 1,
+      "railOpen": true
+    },
+    {
+      "expected": "unavailable",
+      "state": "unavailable",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": false,
+      "liveRegions": 1,
+      "railOpen": true
+    },
+    {
+      "expected": "disabled",
+      "state": "disabled",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": false,
+      "liveRegions": 1,
+      "railOpen": true
+    },
+    {
+      "expected": "insufficient_context",
+      "state": "insufficient_context",
+      "overflow": false,
+      "composerEmpty": true,
+      "canUse": false,
+      "liveRegions": 1,
+      "railOpen": true
+    }
+  ]
+}

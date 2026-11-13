@@ -38,6 +38,8 @@ final readonly class ConversationKnowledgeSuggestionPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
+            sourceRevision: $context->sourceRevision,
+            sourceSnapshot: $context->sourceSnapshot,
             lastMessageId: (int) $latestMessageId,
         );
     }

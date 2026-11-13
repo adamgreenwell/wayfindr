@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "recorded_at_utc": "2026-10-09T22:51:43.613754+00:00",
+  "scope": "Prepublication development candidate runtime and ordinary archive restore on independent disposable VMs. No managed qualification.",
+  "candidate": {
+    "commit": "3b79fc5c76c37e4756fc11698ae731f0f3243575",
+    "version": "1.2.0-dev+3b79fc5c76c37e4756fc11698ae731f0f3243575",
+    "image_id": "sha256:ff17f70dc59ed131bbc9731609308122cfbc304cbb2ae97e915a02b7853d88ae",
+    "image_os": "linux",
+    "image_architecture": "arm64",
+    "official_image": false,
+    "registry_pushed": false,
+    "build_identity_argument": "WAYFINDR_BUILD_COMMIT only; WAYFINDR_BUILD_VERSION unset",
+    "clean_source_checkout_verified_on_both_guests": true
+  },
+  "guests": {
+    "update": {
+      "hostname": "wayfindr-u8-update",
+      "product_uuid": "b53ca627-ef1d-4ab6-b5c4-d1f994ce4533",
+      "machine_id": "ac2771bd5ec248deaa5d6fec5645f74b",
+      "boot_id": "6e2e2093-e0c5-4b91-bda7-3f10aaad921e",
+      "architecture": "aarch64",
+      "virtualization": "parallels"
+    },
+    "restore": {
+      "hostname": "wayfindr-u8-restore",
+      "product_uuid": "61f7a983-481a-4276-b3ac-e0105301706a",
+      "machine_id": "3047ca398f6e480bbf0dab3d50e0e360",
+      "boot_id": "a7c9b681-564f-430d-9ed7-66aa257b566d",
+      "architecture": "aarch64",
+      "virtualization": "parallels"
+    }
+  },
+  "runtime": {
+    "checked_roles_on_each_vm": [
+      "web",
+      "queue",
+      "backup-queue",
+      "scheduler",
+      "reverb"
+    ],
+    "all_roles_same_exact_image": true,
+    "php": "8.4.26",
+    "curl": "8.14.1",
+    "curl_async_dns": true,
+    "postgresql_select_1": true,
+    "redis_actual_managed_apply_guard_via_reflection": true,
+    "shipped_and_applied_migrations": 80,
+    "failed_jobs": 0,
+    "ordinary_maintenance_released": true,
+    "managed_hold_absent": true
+  },
+  "realtime": {
+    "production_probe_class": "ManagedRealtimeProbe",
+    "private_signed_nonce_event_delivered_on_both_vms": true,
+    "configured_browser_facing_route": "private NAT HTTP via Caddy",
+    "tls_verified": false,
+    "user_session_broadcasting_auth_verified": false
+  },
+  "support_loop": {
+    "authenticated_api_support_loop_passed_on_both_vms": true,
+    "mode": "existing support-loop.sh API visitor mode"
+  },
+  "ordinary_archive": {
+    "sha256": "5df6acd9fa20914988323ab6c97ecc09a36856d3bb57198003aa9198da694f48",
+    "size_bytes": 19642,
+    "manifest_version": "1.2.0-dev+3b79fc5c76c37e4756fc11698ae731f0f3243575",
+    "manifest_commit": "3b79fc5c76c37e4756fc11698ae731f0f3243575",
+    "includes_local_attachment_binaries": true,
+    "local_attachment_disks": [
+      "attachments"
+    ],
+    "external_attachment_disks": [],
+    "database_dump": "pg_dump (PostgreSQL) 17.11 (Debian 17.11-1.pgdg13+2)",
+    "ordinary_not_protective": true,
+    "erasure_ledger_files": 0
+  },
+  "ordinary_restore": {
+    "separate_vm": true,
+    "same_exact_image_id": true,
+    "source_and_transferred_archive_sha256_equal": true,
+    "required_effective_key_set_matches_source_manifest_and_restore": true,
+    "no_keys_in_public_receipt": true,
+    "latest_erasure_ledger_transferred_before_restore": true,
+    "erasure_ledger_files": 0,
+    "post_archive_erasure_replay_qualified": false,
+    "force_flag_used": false,
+    "source_and_restored_logical_snapshot_equal": true,
+    "logical_snapshot_sha256": "bbb444dfd4bd1d99abe06eaa5930e1337cdec24212032547fda588d6f4983e35",
+    "synthetic_counts": {
+      "accounts": 1,
+      "users": 1,
+      "sites": 1,
+      "conversations": 1,
+      "conversation_messages": 1,
+      "tickets": 1,
+      "conversation_message_attachments": 1
+    },
+    "referenced_attachment_bytes_and_checksum_verified": true,
+    "encrypted_operator_setting_decrypted": true,
+    "restore_verified_attachments": 1
+  },
+  "linux_fixtures": {
+    "host_updater_suites": 13,
+    "host_updater_tests": 331,
+    "skips": 0,
+    "socket_peer_credentials_exercised": true,
+    "php_fixture_interpreter": "isolated cached PHP-base; network none; synthetic temporary paths only; CLI errors on stderr",
+    "baked_image_lease_access_checks": [
+      "root_creator",
+      "cross_uid_readonly_admission",
+      "exclusive_lifetime_and_same_inode",
+      "outside_group_refused",
+      "preexisting_readonly_mode",
+      "managed_marker_refusal",
+      "concurrent_publication_keeps_same_inode",
+      "private_staging_owner_verified_before_chmod",
+      "nofollow_initialization_race"
+    ],
+    "baked_lease_implementation_sha256": "c60b01fb0988fbf24a846cc169ed35b0ea24eef686d14101023efb4604e56ee7"
+  },
+  "development_admission": {
+    "kind": "read_only_development_image_admission",
+    "reason": "stable_official_image_required",
+    "candidate_commit": "3b79fc5c76c37e4756fc11698ae731f0f3243575",
+    "enroll_invoked": false,
+    "global_enrollment_state_created": false
+  },
+  "preserved_baselines": {
+    "red_candidate_610b6d5d_stopped_and_retained": true,
+    "restore_clean_app_free_snapshot": {
+      "parallels_id": "61f7a983-481a-4276-b3ac-e0105301706a",
+      "snapshot_id": "{a8dc97b6-bda2-4bb6-b368-1c89ff90d6c0}",
+      "state_at_snapshot": "poweroff",
+      "booted_app_free_after_snapshot": true,
+      "snapshot_restore_performed": false
+    }
+  },
+  "build_environment": {
+    "measured_composer_bridge_dns_seconds": 10.157,
+    "measured_composer_host_dns_seconds": 1.054,
+    "exact_locked_archive_http_200_and_tls_verified_on_both_paths": true,
+    "authorized_build_network": "host",
+    "dependencies_and_lockfile_unchanged": true,
+    "harness_corrections": [
+      "readable public-source clone modes under private root0700 ancestor",
+      "docker top includes PID field",
+      "bounded archive discovery follows actual namespaced output"
+    ]
+  },
+  "qualified_managed_scenarios": 0,
+  "limitations": [
+    "No official release/tag/registry publication or supported enrollment.",
+    "No source-to-target managed update, protective archive custody, cancellation/fault/reboot/recovery scenario.",
+    "No public TLS/DNS, browser acceptance or Laravel user-session /broadcasting/auth test.",
+    "Local attachments only; no remote storage or post-archive erasure replay.",
+    "The clean-runtime snapshot was created and read back; reverting it has not been tested.",
+    "Exact candidate3b79fc5c is the rehearsed image; later documentation or test-only integration heads are separate identities."
+  ],
+  "qualified": false
+}

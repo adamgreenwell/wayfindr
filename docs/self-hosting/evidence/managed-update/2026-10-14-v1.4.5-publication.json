@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "repository": "adamgreenwell/wayfindr",
+  "tag": "v1.4.5",
+  "version": "1.4.5",
+  "commit": "60fc0ffe02bd88da50e90961506812197423a4ae",
+  "source_tree_sha": "297165cfad88d42207a2e82d03edf3506463a2f4",
+  "main_ci_run_id": 38566416583,
+  "publisher_run_id": 38568771151,
+  "release_id": 412726338,
+  "release_manifest_sha256": "6e019e7f8c87f03fe766801c0c6c950fd4d44fa9a150b09e0fbc56db4fb5d9d5",
+  "digest_asset_sha256": "9249b5bdb5af1269ab89450fc8d088fe94581cc2b3817a59f6d346c6aa37723c",
+  "oci_index_digest": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab",
+  "platforms": {
+    "amd64": {
+      "config_digest": "sha256:52d5e1d536badd0e03e58ad4561384b80c922e134e3352b14e503b4774cc0abe",
+      "index_descriptor": {
+        "digest": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 1609
+      },
+      "platform_descriptor": {
+        "digest": "sha256:1541315e531c22fc16f7b2b6f77bf7ceac376f876fb5f1dbab9c6681622a39d8",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        "size": 7311
+      },
+      "platform_manifest_digest": "sha256:1541315e531c22fc16f7b2b6f77bf7ceac376f876fb5f1dbab9c6681622a39d8",
+      "rootfs_diff_ids_sha256": "e69296f90aa48647b4e136663744fa3958066527188db1b13d375673c1af61ab"
+    },
+    "arm64": {
+      "config_digest": "sha256:655e357a7880ffa06b01809fbcea4eeba7a9da1b698593ea030fa91aa43de062",
+      "index_descriptor": {
+        "digest": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 1609
+      },
+      "platform_descriptor": {
+        "digest": "sha256:ead8861d3a3377649e667aee7279d8a710742ab026f0871324b4dbd6a5a16eda",
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "platform": {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        "size": 7312
+      },
+      "platform_manifest_digest": "sha256:ead8861d3a3377649e667aee7279d8a710742ab026f0871324b4dbd6a5a16eda",
+      "rootfs_diff_ids_sha256": "d0003ca37ea828f2c4f4138e2c3eca1218675ab9b98d2ee465b508d6d623e887"
+    }
+  },
+  "aliases": {
+    "1.4": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab",
+    "1.4.5": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab",
+    "latest": "sha256:60eb27cb281a12af936420ac76ea08b7892ea27b8956f866b703df64d32d3aab"
+  },
+  "latest_release_verified": true,
+  "published_helper": {
+    "additional_cli_sha256": {
+      "scripts/self-host/bridge-updater.py": "bc11f3cd4f991df4db5ed722e92c78b8843e1772bc569fa5461c4599c205b793",
+      "scripts/self-host/upgrade-updater-0.5-recovery.py": "fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616"
+    },
+    "bundle_sha256": "d7aca2f4cf4b3aa0068fe6ffcf86e05ec3c22b292a5f0b0878ee4ce780324f9f",
+    "commit": "60fc0ffe02bd88da50e90961506812197423a4ae",
+    "files": {
+      "protection_archive.py": "50a7f3a68845a63d5716d5338e1a104f065171f034e71b3e7d1d3af1deb92944",
+      "update_apply.py": "fde82095b14c4d3244b410f6e901b8fe7c7492057e899f7abbac1316512b6400",
+      "update_artifacts.py": "8c58600bd97b13221c808d32c86e46280a3aefe409309c8b5c6d6f077b518812",
+      "update_protection.py": "bd5f1404f0bc4e0abff90c86e32d5d212bb3c2b47c0e60b45857f242049b9d2f",
+      "updater.py": "a29ced7b3fcc11fc952498f5524a40d7810638b79304c5c9d55ad4b258a884a7"
+    },
+    "helper_version": "0.11.0",
+    "protocol": 1,
+    "provenance_files": {
+      "docker/self-hosting/compose.updater.yml": "be3de4a06ceda47480bc49d6e991433b6513f711c462394328df29426c121949",
+      "docker/self-hosting/compose.yml": "0fbb264ebd52094b8cfb20866cd7382733b4e0c9775aaa7e52de7b14c7111f01",
+      "docker/self-hosting/wayfindr-updater.conf": "47aab750e3e8b3c22223877b10c50f7ba340f9acafcc0a1f54f0812843cc9dc5",
+      "docker/self-hosting/wayfindr-updater.service": "f478f16ab8d42796f10b94abd5531d9dae63b01e9e8a26fa59345c426ca96f25",
+      "scripts/self-host/install.sh": "a5482b90df3e3ecd9a7c46e66522c7c338568fd90b3d54145863abd8dcbd9465"
+    },
+    "schema": 1,
+    "source_tree_sha": "297165cfad88d42207a2e82d03edf3506463a2f4",
+    "tag": "v1.4.5",
+    "upgrade_cli_sha256": "761d3daf7cbc9220ef0cb924cf99f7f86508e8630781bf47a0320445da7058bb"
+  },
+  "kind": "published_application_helper_source_archive_and_static_identity_readback",
+  "verified_at_utc": "2026-10-14T13:56:04.263965+00:00",
+  "publication_verified": true,
+  "root_and_independent_public_audits_passed": true,
+  "source_archive_verified": true,
+  "source_archive": {
+    "sha256": "a8920ea8dd0b4fac05e606c1a79a388e69461daf987c0cdbb674b812e746ece9",
+    "git_blob_files": 1626,
+    "downloaded_code_executed": false
+  },
+  "registry_baked_identity_verified": true,
+  "baked_identity_scope": "Digest/diff-id verified suffix layers independently establish version, commit, release manifest and history; all later layers are checked for canonical selected-path replacements and whiteout effects.",
+  "native_baked_probe_or_runtime_verified": false,
+  "installed_helper_verified": false,
+  "static_baked_identity": {
+    "amd64": {
+      "suffix_start": 23,
+      "verified_layers": 14,
+      "files": {
+        "etc/wayfindr/commit": {
+          "bytes": 40,
+          "sha256": "e097da1c9c8fd7277eeac152dc0ff465ca7add5baa1b354cf913848ede04a740"
+        },
+        "etc/wayfindr/release-history.json": {
+          "bytes": 33604,
+          "sha256": "3b49286f76df6ef9005f866990faff2cacc6f64f5a2e0848929307d6f2aecc1a"
+        },
+        "etc/wayfindr/release.json": {
+          "bytes": 1111,
+          "sha256": "6e019e7f8c87f03fe766801c0c6c950fd4d44fa9a150b09e0fbc56db4fb5d9d5"
+        },
+        "etc/wayfindr/version": {
+          "bytes": 6,
+          "sha256": "ad839b71f5e416d09646ea54329d4f65f035855c279fb111b9631b3f7eba5766"
+        }
+      }
+    },
+    "arm64": {
+      "suffix_start": 23,
+      "verified_layers": 14,
+      "files": {
+        "etc/wayfindr/commit": {
+          "bytes": 40,
+          "sha256": "e097da1c9c8fd7277eeac152dc0ff465ca7add5baa1b354cf913848ede04a740"
+        },
+        "etc/wayfindr/release-history.json": {
+          "bytes": 33604,
+          "sha256": "3b49286f76df6ef9005f866990faff2cacc6f64f5a2e0848929307d6f2aecc1a"
+        },
+        "etc/wayfindr/release.json": {
+          "bytes": 1111,
+          "sha256": "6e019e7f8c87f03fe766801c0c6c950fd4d44fa9a150b09e0fbc56db4fb5d9d5"
+        },
+        "etc/wayfindr/version": {
+          "bytes": 6,
+          "sha256": "ad839b71f5e416d09646ea54329d4f65f035855c279fb111b9631b3f7eba5766"
+        }
+      }
+    }
+  },
+  "audit_receipt_sha256": {
+    "public_chain": "09bd4fb9e68269cdcbf4c2a0444133878d4eb3f8bef28c22a17af6b203e7058b",
+    "independent_public_chain": "3bad8ceffd6daa28963e12510d567dbd63e14e4f2edee68d76eb4ae7cbc8e6c7",
+    "full_source_archive": "09500b9b97e87ce4daaeb8d4b161605e6bc08a04f374e8ef66d87bb1f00164ee",
+    "registry_baked_identity": "fd2a0b148c140763b439256859acf31d83c625408656c7a05b3cea238ecdda76",
+    "independent_registry_baked_identity": "8fd2d3970ebc5f414e5fc479df18a17d07b32702fe6ddb85142f0878b509c6b7",
+    "root_full_source_archive": "d2513a899f0cf5d04b7d40c0b286880f0e73a2aa6270ae27818825617e4c125c"
+  },
+  "qualification": false,
+  "qualified_managed_scenarios": 0,
+  "total_managed_scenarios": 100,
+  "limitations": [
+    "Public artifact, complete source archive and both architecture static image identities only. Native Helper 0.11 installation and application-upgrade/restore behavior require separate evidence.",
+    "Helper 0.11 remains a separate administrator upgrade; pulling an application image does not replace installed helper code.",
+    "Older VMs and held operations remain untouched. No complete managed scenario is qualified by this publication receipt."
+  ]
+}

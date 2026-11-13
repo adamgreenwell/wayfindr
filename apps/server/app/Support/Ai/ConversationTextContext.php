@@ -10,5 +10,7 @@ final readonly class ConversationTextContext
         public string $input,
         public int $messageCount,
         public int $lastMessageId,
+        public ?string $sourceRevision = null,
+        public array $sourceSnapshot = [],
     ) {}
 }

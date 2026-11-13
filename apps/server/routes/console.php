@@ -38,6 +38,10 @@ Schedule::command('wayfindr:expire-break-glass-grants')
     ->everyFiveMinutes()
     ->description('Stamp overdue break-glass grants as expired and audit the transition.');
 
+Schedule::command('wayfindr:expire-ai-usage-reservations')
+    ->everyMinute()
+    ->description('Release expired unsent AI holds and bounded concurrency leases.');
+
 Schedule::command('wayfindr:sweep-orphaned-attachments')
     ->hourly()
     ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');
@@ -126,3 +130,9 @@ Schedule::command('wayfindr:prune-presence-visitors')
 Schedule::command('wayfindr:prune-proactive-message-deliveries')
     ->daily()
     ->description('Delete proactive-message delivery evidence past its bounded retention window.');
+
+Schedule::command('wayfindr:prune-draft-refinements')->everyMinute()->withoutOverlapping()
+    ->description('Remove private input and previews after their fixed 15-minute expiry.');
+
+Schedule::command('wayfindr:prune-assist-observability')->hourly()->withoutOverlapping()
+    ->description('Prune operator-configured Assist metadata in bounded batches.');
