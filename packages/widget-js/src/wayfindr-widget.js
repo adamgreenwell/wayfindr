@@ -2006,6 +2006,12 @@
     // cannot change who an open prompt is about (#1156).
     var ratingAgent = null;
     var ratingAgentScore = null;
+    // The template the prompt on screen was first shown with, for the same
+    // reason the agent is captured: a bootstrap refresh -- minimise and reopen
+    // after an operator changed the site's template -- must not change what an
+    // open survey asks, hide an answer already chosen, or send the response
+    // under a template the visitor never saw (#1206).
+    var ratingShownTemplate = null;
     // A skipped close is remembered by its opaque token in this browser, so
     // the prompt stays hidden across reloads -- and a NEW close, with a new
     // token, is asked about afresh. Skipping records nothing on the server.
@@ -2274,6 +2280,7 @@
         ratingEpisode = conversation.rating_episode;
         ratingScore = null;
         ratingAgentScore = null;
+        ratingShownTemplate = null;
         ratingAgent = conversation.rating_agent
           && typeof conversation.rating_agent.ref === 'string'
           && typeof conversation.rating_agent.name === 'string'
@@ -5499,6 +5506,11 @@
         return;
       }
 
+      // Fixed the first time this close's prompt is drawn.
+      if (ratingShownTemplate === null) {
+        ratingShownTemplate = ratingConfig.template || { key: 'overall', version: 1 };
+      }
+
       var asksAgent = ratingAsksAgent();
 
       ratingIntro.textContent = ratingConfig.intro || t(ratingTemplateKey() === 'starter' ? 'rating.overall' : 'rating.intro');
@@ -5552,7 +5564,9 @@
     }
 
     function ratingTemplateKey() {
-      return ratingConfig && ratingConfig.template ? ratingConfig.template.key : 'overall';
+      var template = ratingShownTemplate || (ratingConfig && ratingConfig.template);
+
+      return template ? template.key : 'overall';
     }
 
     // Only when the template this widget was given asks about the agent AND
@@ -5618,7 +5632,7 @@
       applyRatingFormState();
 
       client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode, {
-        template: ratingConfig && ratingConfig.template ? ratingConfig.template : null,
+        template: ratingShownTemplate || (ratingConfig && ratingConfig.template) || null,
         agent: ratingAsksAgent() ? ratingAgent : null,
         agentScore: ratingAsksAgent() ? ratingAgentScore : null,
       }).then(function () {
