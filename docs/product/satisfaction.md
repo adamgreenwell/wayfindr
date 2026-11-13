@@ -89,6 +89,87 @@ that has never closed. Otherwise the promise this page makes — that ratings ar
 written only after an enabled prompt, about a finished stretch of work — would
 hold for the widget and not for the API.
 
+## Asking about the agent too
+
+A site can choose the **starter template** instead of the single question. It
+asks two separate things, and keeps them separate everywhere afterwards:
+
+| Question | Answers |
+| --- | --- |
+| How was your overall support experience? | good / ok / bad |
+| How was the help you received from *agent name*? | good / ok / bad / not applicable |
+| Anything you would like us to know? | optional comment |
+
+The overall question is the same question the single-question template asks, so
+its answers count towards the same figure. The agent question is a different
+question and is reported on its own: an agent score is never folded into
+overall satisfaction, and an overall score is never read as a verdict on an
+agent.
+
+### Which agent, if any
+
+The agent question names **the one person who helped in the closed stretch of
+work being rated**, or it is not asked at all.
+
+- **The episode** runs from the conversation's previous `conversation.closed`
+  event — or its creation if there is none — up to and including the close
+  being rated. It is bounded by the previous close rather than the reopen,
+  because a reply that reopens a conversation is written before the reopen is
+  recorded, and it belongs to the episode it started. Both bounds are
+  inclusive: a message in the same second as a close is counted on both sides,
+  so the uncertainty can only produce "more than one person", which asks
+  nothing, and never leaves somebody named for help they did not give alone.
+- **A qualifying agent** is a human dashboard user who sent a message to the
+  visitor inside that episode. Conversations carry no private notes, so every
+  message a user sends is one the visitor saw. Messages from integrations, API
+  tokens and proactive rules are not a person helping.
+- **Exactly one qualifying agent** → the question names them.
+- **None, or more than one** → no agent question. With two people in the
+  episode — a handoff, a colleague stepping in — there is no honest single
+  answer to "how was the help from X", and picking one would attribute a score
+  to someone the visitor may never have meant. Overall feedback is still
+  collected.
+- **Who is assigned, and who clicked Close, settle nothing.** Assignment is
+  current state that changes after the fact, and closing is housekeeping that a
+  colleague or the visitor may do. Neither says who helped.
+
+### What a response keeps
+
+The agent and the template are **snapshotted onto the response** when it is
+written: the agent's user id and the display name the visitor was shown, and
+the template key and version. Reassigning the conversation, renaming the agent,
+or switching the site back to the single question later moves none of it. If the
+agent's account is deleted, the id is cleared and the name stays.
+
+The name recorded is **the name the visitor was shown**, not whatever the
+account is called when the answer arrives. The prompt carries a handle the
+server signed over the close, the agent and that name, and the answer is
+accepted only with the name it was issued with. So an agent renamed — or deleted
+— between the prompt and the answer is still recorded under the name the
+visitor read, and a forged handle or name is refused.
+
+The widget shows the template and agent it received with the prompt and sends
+them back with the answer. The server recomputes the qualifying agent for that
+close and refuses an agent answer that names anyone else, so the answer is
+attached to the person the visitor actually saw named. Changing the site's
+template while a prompt is open does not change what that open prompt meant: the
+answer is stored against the template it was shown under.
+
+### Skipping is not answering
+
+- The visitor can **skip** the survey. Skipping hides that episode's prompt in
+  that browser — for the open widget even where storage is unavailable — and
+  records nothing: an unanswered question stays absent rather than becoming a
+  row.
+- The agent question is **optional**. Overall feedback can be sent without it.
+- **Not applicable** is an answer that the question did not fit, not a score.
+
+None of the three contribute to an agent figure. An agent result counts only
+good, ok and bad answers; *applicable* is how many responses were asked the
+question, and *answered* is how many gave a score. Ratings collected before the
+starter template existed stay overall feedback: no agent score is inferred for
+them.
+
 ## Never a percentage nobody answered for
 
 The reports page has a **Satisfaction** tab. Its rules:

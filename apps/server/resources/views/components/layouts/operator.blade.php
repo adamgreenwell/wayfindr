@@ -27,50 +27,47 @@
     $operatorCrumb = collect($operatorSections)->firstWhere('active')['label'] ?? null;
 @endphp
 
-<x-layouts.app :title="$title" :agent="$operatorAgent" :account="$operatorAccount" :crumb="$operatorCrumb">
-    <div class="wf-context">
-        {{-- A second sidebar for one deep object, the way an object's own
-             sections work in the platforms this direction came from. The rail
-             says which part of the product you are in; this says which part of
-             the operator console. --}}
-        <nav class="wf-context-nav" aria-label="{{ __('operator.shell.sections_label') }}">
-            <p class="wf-context-heading">{{ __('operator.shell.heading') }}</p>
+<x-layouts.app
+    :title="$title"
+    :agent="$operatorAgent"
+    :account="$operatorAccount"
+    :crumb="$operatorCrumb"
+    :context="[
+        'label' => __('operator.shell.sections_label'),
+        'title' => __('operator.shell.heading'),
+        'icon' => 'operator',
+        'back' => ['href' => route('dashboard'), 'label' => __('nav.items.dashboard')],
+        'groups' => [['label' => null, 'sections' => $operatorSections]],
+    ]"
+>
+    {{-- The console's sections live in the rail, in place of the product's:
+         one sidebar that says which part of the operator console you are in,
+         rather than a second one beside it. --}}
+    <div class="wf-context-body">
+        @unless (request()->routeIs('operator.updates.index'))
+            <x-operator-update-resume />
+        @endunless
+        {{-- Rendered HERE, once, rather than by each page.
+             Operator controllers flash a result on 35 paths and only five
+             pages rendered anywhere for one to land, so most of them --
+             including confirming a readiness item from the console itself
+             -- did the work and answered with a silent page.
 
-            @foreach ($operatorSections as $section)
-                <a
-                    class="wf-context-link"
-                    href="{{ $section['href'] }}"
-                    @if ($section['active']) aria-current="page" @endif
-                >{{ $section['label'] }}</a>
-            @endforeach
-        </nav>
+             `x-operator-feedback` takes a bare catalogue key as well as a
+             key with runtime parameters, so one region serves both shapes
+             and a page never needs its own.
 
-        <div class="wf-context-body">
-            @unless (request()->routeIs('operator.updates.index'))
-                <x-operator-update-resume />
-            @endunless
-            {{-- Rendered HERE, once, rather than by each page.
-                 Operator controllers flash a result on 35 paths and only five
-                 pages rendered anywhere for one to land, so most of them --
-                 including confirming a readiness item from the console itself
-                 -- did the work and answered with a silent page.
+             `status` is polite and `alert` is assertive, which is the
+             distinction the roles exist for: a confirmation can wait for a
+             pause in what a screen reader is saying, and a failure cannot. --}}
+        @if (session('status'))
+            <p class="status-message" role="status"><x-operator-feedback :feedback="session('status')" /></p>
+        @endif
 
-                 `x-operator-feedback` takes a bare catalogue key as well as a
-                 key with runtime parameters, so one region serves both shapes
-                 and a page never needs its own.
+        @if (session('error'))
+            <p class="status-message" role="alert"><x-operator-feedback :feedback="session('error')" /></p>
+        @endif
 
-                 `status` is polite and `alert` is assertive, which is the
-                 distinction the roles exist for: a confirmation can wait for a
-                 pause in what a screen reader is saying, and a failure cannot. --}}
-            @if (session('status'))
-                <p class="status-message" role="status"><x-operator-feedback :feedback="session('status')" /></p>
-            @endif
-
-            @if (session('error'))
-                <p class="status-message" role="alert"><x-operator-feedback :feedback="session('error')" /></p>
-            @endif
-
-            {{ $slot }}
-        </div>
+        {{ $slot }}
     </div>
 </x-layouts.app>

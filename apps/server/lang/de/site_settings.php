@@ -13,7 +13,6 @@ return [
     'title' => 'Website-Einstellungen',
     'subtitle' => 'Einstellungen für :domain',
     'unconfigured_domain' => 'eine Domain ohne Einrichtung',
-    'back' => 'Zurück zu Websites',
 
     'flash' => [
         'identity_verification_on' => 'Die Identitätsprüfung für Besucher ist aktiv.',
@@ -395,6 +394,18 @@ return [
         'restricted' => 'Nur eine Admin-Person des Kontos kann ändern, ob Besuchende gefragt werden.',
         'once' => 'Eine besuchende Person antwortet einmal pro Abschluss. Eine geänderte Antwort ersetzt die vorige, statt eine neue hinzuzufügen. So werden wenige Antworten nicht überlagert. Nach dem erneuten Öffnen und Schließen einer Unterhaltung wird wieder gefragt, weil es sich um eine neue Erfahrung handelt.',
         'comments' => 'Kommentare sind die eigenen Worte einer besuchenden Person und werden wie jede andere Nachricht nach den Aufbewahrungsregeln dieser Website behandelt. Siehe :data.',
+        'template' => 'Welche Fragen gestellt werden',
+        'template_help' => 'Die Agent-Frage nennt eine Person, und nur dann, wenn seit dem letzten Öffnen der Unterhaltung genau eine Person der besuchenden Person geantwortet hat. Bei niemandem oder mehreren Personen wird nur die Gesamtfrage gestellt. Ihre Antworten werden getrennt ausgewertet und verändern den Gesamtwert nie.',
+        'templates' => [
+            'overall' => [
+                'label' => 'Eine Frage zur Erfahrung',
+                'questions' => ['Wie zufrieden waren Sie? — gut, okay, schlecht', 'Optionaler Kommentar'],
+            ],
+            'starter' => [
+                'label' => 'Die Erfahrung und wer geholfen hat',
+                'questions' => ['Wie war Ihre Support-Erfahrung insgesamt? — gut, okay, schlecht', 'Wie war die Hilfe von [Name des Agents]? — gut, okay, schlecht, trifft nicht zu', 'Möchten Sie uns noch etwas mitteilen? — optional'],
+            ],
+        ],
     ],
 
     'intake' => [
@@ -486,8 +497,6 @@ return [
     ],
     'status' => [
         'title' => 'Website-Status',
-        'back' => 'Zurück zu den Website-Einstellungen',
         'subtitle' => 'Wie der Support dieser Website läuft — nicht, wie die Website eingerichtet ist.',
-        'link' => 'Website-Status',
     ],
 ];

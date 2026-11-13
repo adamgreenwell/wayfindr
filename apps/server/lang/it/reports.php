@@ -187,11 +187,27 @@ return [
         'small_sample' => 'Le risposte sono così poche che una sola in più cambierebbe sensibilmente la percentuale. Lo legga come una direzione, non come una misurazione.',
     ],
 
+    'agent_satisfaction' => [
+        'heading' => 'L’agente che ha aiutato',
+        'lede' => 'Una domanda separata dal dato precedente, e mai combinata con esso.',
+        'not_applicable' => 'Non pertinente',
+        'skipped' => 'Saltata',
+        'answered' => 'Risposte',
+        'answered_of' => ':answered su :applicable a cui è stato chiesto',
+        'positive' => 'Buono',
+        'no_scores' => 'Ancora nessuna valutazione',
+        'thin' => '(poche risposte)',
+        'small_sample' => 'Chiesto solo quando esattamente una persona ha risposto dall’ultima apertura della conversazione. Le risposte non pertinenti e saltate sono conteggi, non valutazioni, e la percentuale riguarda solo le risposte buono, discreto e negativo. Con meno di dieci, la legga come una tendenza e non come una misura.',
+        'scores' => ['good' => 'Buono', 'ok' => 'Discreto', 'bad' => 'Negativo', 'not_applicable' => 'Non pertinente'],
+    ],
+
     'comments' => [
         'heading' => 'Cosa hanno detto le persone',
         'empty' => 'In questo periodo nessuno ha lasciato un commento. Il campo è facoltativo e la maggior parte delle persone lo salta: un punteggio senza parole resta comunque una risposta.',
         'score' => 'Punteggio',
         'said' => 'Cosa hanno detto',
+        'help' => 'Sull’agente',
+        'agent_not_asked' => 'Non chiesto',
         'conversation' => 'Conversazione',
         'when' => 'Quando',
         'latest' => '{1} Il :count commento più recente. Un punteggio dice che qualcosa è andato storto; questo è l’unico posto che dice cosa.|[0,*] I :count commenti più recenti. Un punteggio dice che qualcosa è andato storto; questo è l’unico posto che dice cosa.',

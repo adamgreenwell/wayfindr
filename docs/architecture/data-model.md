@@ -96,7 +96,7 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   surfaces can coexist after a disk change.
 - `conversation_read_states`: per-user/per-conversation read markers used by
   calm unread and unattended-alert behavior.
-- `conversation_ratings`: a visitor's answer to how a closed conversation went.
+- `conversation_ratings`: a visitor's answer to how a closed conversation went, with the template it was asked under and, for the starter template, a snapshot of the one agent rated (see `docs/product/satisfaction.md`).
   It is a row rather than a column on `conversations`, so absence is what
   "unrated" means and no average can be taken over the people who said nothing,
   and `episode_event_id` names the `conversation.closed` audit event being

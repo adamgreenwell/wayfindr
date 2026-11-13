@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('site_settings.status.title')" :agent="$agent" :account="$account">
-            <x-page-header :back-href="route('dashboard.sites.show', $site)" :back-label="__('site_settings.status.back')">
+<x-layouts.site :site="$site" :title="__('site_settings.status.title')" :agent="$agent" :account="$account">
+            <x-page-header>
                 <x-slot:titleContent><span lang="">{{ $site->name }}</span></x-slot:titleContent>
                 <x-slot:subtitleContent>{{ __('site_settings.status.subtitle') }}</x-slot:subtitleContent>
             </x-page-header>
@@ -230,4 +230,4 @@
                     @endif
                 </section>
             @endif
-</x-layouts.app>
+</x-layouts.site>

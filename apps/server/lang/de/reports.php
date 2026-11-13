@@ -187,11 +187,27 @@ return [
         'small_sample' => 'So wenige Antworten, dass eine weitere den Prozentsatz merklich verändern würde. Lesen Sie dies als Richtung, nicht als Messwert.',
     ],
 
+    'agent_satisfaction' => [
+        'heading' => 'Wer geholfen hat',
+        'lede' => 'Eine eigene Frage, getrennt vom Wert oben und nie damit verrechnet.',
+        'not_applicable' => 'Trifft nicht zu',
+        'skipped' => 'Übersprungen',
+        'answered' => 'Beantwortet',
+        'answered_of' => ':answered von :applicable gefragt',
+        'positive' => 'Gut',
+        'no_scores' => 'Noch keine Bewertungen',
+        'thin' => '(wenige Antworten)',
+        'small_sample' => 'Nur gefragt, wenn seit dem letzten Öffnen der Unterhaltung genau eine Person geantwortet hat. „Trifft nicht zu“ und übersprungene Antworten sind Zählungen, keine Bewertungen; der Prozentsatz ist ein Anteil nur der Antworten gut, okay und schlecht. Bei weniger als zehn Antworten zeigt der Wert eine Richtung, keine Messung.',
+        'scores' => ['good' => 'Gut', 'ok' => 'Okay', 'bad' => 'Schlecht', 'not_applicable' => 'Trifft nicht zu'],
+    ],
+
     'comments' => [
         'heading' => 'Was die Menschen gesagt haben',
         'empty' => 'In diesem Zeitraum hat niemand einen Kommentar hinterlassen. Das Kommentarfeld ist optional und wird meist übersprungen — eine Bewertung ohne Worte ist trotzdem eine Antwort.',
         'score' => 'Bewertung',
         'said' => 'Aussage',
+        'help' => 'Zur Hilfe',
+        'agent_not_asked' => 'Nicht gefragt',
         'conversation' => 'Unterhaltung',
         'when' => 'Zeitpunkt',
         'latest' => '{1} Der neueste :count Kommentar. Eine Bewertung zeigt, dass etwas schiefging; nur hier steht, was es war.|[0,*] Die neuesten :count Kommentare. Eine Bewertung zeigt, dass etwas schiefging; nur hier steht, was es war.',
