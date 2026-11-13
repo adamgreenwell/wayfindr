@@ -185,6 +185,8 @@ return [
         'answered' => 'Risposte',
         'answered_detail' => '{1} Su :count chiusura. Ogni valore sopra rappresenta una quota di questo numero, mai delle chiusure: chi non ha detto nulla non viene considerato soddisfatto.|[0,*] Su :count chiusure. Ogni valore sopra rappresenta una quota di questo numero, mai delle chiusure: chi non ha detto nulla non viene considerato soddisfatto.',
         'small_sample' => 'Le risposte sono così poche che una sola in più cambierebbe sensibilmente la percentuale. Lo legga come una direzione, non come una misurazione.',
+        'summary_builtin' => '{1} :answered di :closed chiusura ha risposto alla domanda predefinita|[0,*] :answered di :closed chiusure hanno risposto alla domanda predefinita',
+        'only_custom' => 'Nessuno ha risposto alla domanda predefinita in questo periodo. Le risposte ai Suoi modelli sono riportate separatamente più sotto.',
     ],
 
     'agent_satisfaction' => [
@@ -199,6 +201,18 @@ return [
         'thin' => '(poche risposte)',
         'small_sample' => 'Chiesto solo quando esattamente una persona ha risposto dall’ultima apertura della conversazione. Le risposte non pertinenti e saltate sono conteggi, non valutazioni, e la percentuale riguarda solo le risposte buono, discreto e negativo. Con meno di dieci, la legga come una tendenza e non come una misura.',
         'scores' => ['good' => 'Buono', 'ok' => 'Discreto', 'bad' => 'Negativo', 'not_applicable' => 'Non pertinente'],
+    ],
+
+    'custom_template' => [
+        'heading' => ':site — il Suo modello, versione :version',
+        'scale_three' => 'Tre risposte',
+        'scale_five' => 'Cinque stelle',
+        'answer' => 'Risposta',
+        'count' => 'Risposte',
+        'summary_three' => ':answered risposte; :positive buono. Una domanda separata dal dato predefinito, e mai combinata con esso.',
+        'summary_five' => ':answered risposte; :positive con quattro o cinque stelle; media :average stelle. Una domanda separata dal dato predefinito, e mai combinata con esso.',
+        'agent' => 'Sull’aiuto: :answered su :asked a cui è stato chiesto hanno dato una valutazione (:positive positive); :not_applicable non pertinenti e :skipped saltate, che non contano come valutazione.',
+        'stars' => '{1} :count stella|[0,*] :count stelle',
     ],
 
     'comments' => [

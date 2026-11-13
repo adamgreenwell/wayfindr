@@ -185,6 +185,8 @@ return [
         'answered' => 'Answered',
         'answered_detail' => '{1} Out of :count close. Every figure above is a share of this number, never of the closes — people who said nothing are not counted as satisfied.|[0,*] Out of :count closes. Every figure above is a share of this number, never of the closes — people who said nothing are not counted as satisfied.',
         'small_sample' => 'Few enough answers that one more would move the percentage noticeably. Read it as a direction rather than a measurement.',
+        'summary_builtin' => '{1} :answered of :closed close answered the built-in question|[0,*] :answered of :closed closes answered the built-in question',
+        'only_custom' => 'Nobody answered the built-in question in this period. Answers to your own templates are reported separately below.',
     ],
 
     'agent_satisfaction' => [
@@ -199,6 +201,18 @@ return [
         'thin' => '(few answers)',
         'small_sample' => 'Asked only when exactly one person replied since the conversation last opened. Not applicable and skipped answers are counts, not scores, and the percentage is a share of the good, ok and bad answers alone. With fewer than ten, read it as a direction rather than a measurement.',
         'scores' => ['good' => 'Good', 'ok' => 'Ok', 'bad' => 'Bad', 'not_applicable' => 'Not applicable'],
+    ],
+
+    'custom_template' => [
+        'heading' => ':site — your own template, version :version',
+        'scale_three' => 'Three answers',
+        'scale_five' => 'Five stars',
+        'answer' => 'Answer',
+        'count' => 'Answers',
+        'summary_three' => ':answered answered; :positive good. A separate question from the built-in figure, so never combined with it.',
+        'summary_five' => ':answered answered; :positive gave four or five stars; average :average stars. A separate question from the built-in figure, so never combined with it.',
+        'agent' => 'About the agent: :answered of :asked asked gave a score (:positive positive); :not_applicable not applicable and :skipped skipped, which count as no score.',
+        'stars' => '{1} :count star|[0,*] :count stars',
     ],
 
     'comments' => [

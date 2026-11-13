@@ -404,6 +404,12 @@ return [
                 'label' => 'The experience and the agent who helped',
                 'questions' => ['How was your overall support experience? — good, ok, bad', 'How was the help you received from [agent name]? — good, ok, bad, not applicable', 'Anything you would like us to know? — optional'],
             ],
+            'custom' => [
+                'label' => 'Your own template',
+                'label_version' => 'Your own template (version :version)',
+                'none' => 'Publish a version of your own template before choosing it.',
+                'edit' => 'Edit your own template',
+            ],
         ],
     ],
 

@@ -383,6 +383,7 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
         'ended_by' => 'a label built for the widget when it asks, never stored',
         'requested_by' => 'what the widget is told about a cobrowse request when it asks, never stored',
         'confirmed_by' => 'operator readiness confirmations, which are about the installation',
+        'published_by_id' => 'a site\'s rating template versions: site configuration the export does not read',
         'confirmed_by_id' => 'operator readiness confirmations, which are about the installation',
         'user_id' => 'read states, SLA alert deliveries and OIDC identities, which the export does not read, and the login session',
     ];
