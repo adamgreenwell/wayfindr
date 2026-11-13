@@ -13,7 +13,17 @@ use Psr\Http\Message\RequestInterface;
 use SensitiveParameter;
 use Throwable;
 
-/** One transfer, with bounded headers before Guzzle retains or parses them. */
+/**
+ * One transfer, with bounded headers before Guzzle retains or parses them.
+ *
+ * Built on Guzzle 7 internals: it replaces Guzzle's own header callback and
+ * drives `EasyHandle` and `HeaderProcessor` directly. That is why
+ * `apps/server/composer.json` holds `guzzlehttp/guzzle` at `^7`. Guzzle 8
+ * changed those internals, and under it this class misclassified oversized
+ * headers and refused responses exactly at the ceilings (#1208). Moving to the
+ * next major means porting this class on purpose, with `AiHttpTransportTest`
+ * as the contract, not letting a framework bump carry it along.
+ */
 final class BoundedAiCurlFactory implements CurlFactoryInterface
 {
     private const HEADER_BYTES = 32_768;
