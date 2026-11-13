@@ -372,3 +372,40 @@ test('no agent section appears where no response was ever asked about an agent',
         ->assertOk()
         ->assertDontSee('id="report-agent-satisfaction-heading"', escape: false);
 });
+
+test('the reply that reopens a conversation belongs to the episode it started', function (): void {
+    $w = agentRatingWorld();
+    $ada = User::factory()->for($w['account'])->create();
+    $bob = User::factory()->for($w['account'])->create();
+    agentRatingReply($w['conversation'], $ada, '2026-11-01 10:05:00');
+    agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
+
+    // Bob's reply is written first and reopens the conversation a second
+    // later: the reply precedes the reopen it caused.
+    agentRatingReply($w['conversation'], $bob, '2026-11-01 11:00:00');
+    agentRatingReopen($w['conversation'], '2026-11-01 11:00:01');
+    $second = agentRatingClose($w['conversation'], '2026-11-01 11:10:00');
+
+    expect($w['conversation']->ratingEpisodeAgent($second)?->id)->toBe($bob->id);
+});
+
+test('a deleted agent keeps the overall answer and drops only the agent answer', function (): void {
+    $w = agentRatingWorld();
+    $ada = User::factory()->for($w['account'])->create(['name' => 'Ada']);
+    agentRatingReply($w['conversation'], $ada, '2026-11-01 10:05:00');
+    $close = agentRatingClose($w['conversation'], '2026-11-01 10:10:00');
+    $token = agentRatingToken($this, $w['conversation']);
+    $handle = Conversation::ratingAgentToken($close, $ada);
+
+    // The account goes while the prompt naming them is still open.
+    $ada->delete();
+
+    agentRatingPost($this, $token, ['score' => 'bad', 'comment' => 'Slow.', 'agent' => $handle, 'agent_score' => 'good'])->assertCreated();
+
+    expect(ConversationRating::query()->firstOrFail()->only(['score', 'comment', 'agent_user_id', 'agent_name', 'agent_score']))
+        ->toBe(['score' => 'bad', 'comment' => 'Slow.', 'agent_user_id' => null, 'agent_name' => null, 'agent_score' => null]);
+
+    // A handle for anybody else is still refused.
+    agentRatingPost($this, $token, ['score' => 'bad', 'agent' => 'not-a-real-handle', 'agent_score' => 'good'])
+        ->assertUnprocessable()->assertJsonValidationErrors('agent');
+});

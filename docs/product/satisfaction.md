@@ -111,10 +111,14 @@ agent.
 The agent question names **the one person who helped in the closed stretch of
 work being rated**, or it is not asked at all.
 
-- **The episode** runs from the conversation's previous lifecycle boundary — the
-  latest `conversation.closed` or `conversation.reopened` event before this
-  close, or the conversation's creation if there is none — up to and including
-  the `conversation.closed` event being rated.
+- **The episode** runs from the conversation's previous `conversation.closed`
+  event — or its creation if there is none — up to and including the close
+  being rated. It is bounded by the previous close rather than the reopen,
+  because a reply that reopens a conversation is written before the reopen is
+  recorded, and it belongs to the episode it started. Both bounds are
+  inclusive: a message in the same second as a close is counted on both sides,
+  so the uncertainty can only produce "more than one person", which asks
+  nothing, and never leaves somebody named for help they did not give alone.
 - **A qualifying agent** is a human dashboard user who sent a message to the
   visitor inside that episode. Conversations carry no private notes, so every
   message a user sends is one the visitor saw. Messages from integrations, API
@@ -135,7 +139,11 @@ The agent and the template are **snapshotted onto the response** when it is
 written: the agent's user id and the display name the visitor was shown, and
 the template key and version. Reassigning the conversation, renaming the agent,
 or switching the site back to the single question later moves none of it. If the
-agent's account is deleted, the id is cleared and the name stays.
+agent's account is deleted, the id is cleared and the name stays. If it is
+deleted while a prompt naming them is still open, the overall answer and comment
+are kept and the agent answer is dropped — there is no name left to record it
+against, and refusing the whole response would lose everything else the visitor
+said.
 
 The widget shows the template and agent it received with the prompt and sends
 them back with the answer. The server recomputes the qualifying agent for that
@@ -147,8 +155,9 @@ answer is stored against the template it was shown under.
 ### Skipping is not answering
 
 - The visitor can **skip** the survey. Skipping hides that episode's prompt in
-  that browser and records nothing — an unanswered question stays absent rather
-  than becoming a row.
+  that browser — for the open widget even where storage is unavailable — and
+  records nothing: an unanswered question stays absent rather than becoming a
+  row.
 - The agent question is **optional**. Overall feedback can be sent without it.
 - **Not applicable** is an answer that the question did not fit, not a score.
 

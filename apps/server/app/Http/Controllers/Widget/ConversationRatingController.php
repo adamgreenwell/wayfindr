@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationRating;
+use App\Models\User;
 use App\Support\Sites\RatingTemplate;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\VisitorConversationResolver;
@@ -176,12 +177,23 @@ class ConversationRatingController extends Controller
             return [null, null, null];
         }
 
-        $agent = $template->asksAboutAgent() ? $conversation->ratingEpisodeAgent($episode) : null;
+        $agentId = $template->asksAboutAgent() ? $conversation->ratingEpisodeAgentId($episode) : null;
 
-        if ($agent === null || ! hash_equals(Conversation::ratingAgentToken($episode, $agent), $handle)) {
+        if ($agentId === null || ! hash_equals(Conversation::ratingAgentToken($episode, $agentId), $handle)) {
             throw ValidationException::withMessages([
                 'agent' => 'That is not the person who helped with this conversation.',
             ]);
+        }
+
+        $agent = User::query()->find($agentId);
+
+        // The right person, whose account has been deleted since the prompt
+        // was shown. There is no name left to snapshot, so the agent answer is
+        // dropped and the overall answer and comment are kept: refusing the
+        // whole response would lose what the visitor said about everything
+        // else, with no way to send it again for this close (#1206).
+        if ($agent === null) {
+            return [null, null, null];
         }
 
         return [$agent->id, $agent->name, $score];

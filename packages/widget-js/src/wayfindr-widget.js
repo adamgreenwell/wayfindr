@@ -2011,6 +2011,10 @@
     // token, is asked about afresh. Skipping records nothing on the server.
     var ratingSkipStorage = resolveStorageOption(options);
     var ratingSkipKey = 'wayfindr:' + options.sitePublicKey + ':rating-skipped';
+    // Also held here, so Skip works for this widget session where storage is
+    // unavailable or refuses the write -- otherwise the next poll would bring
+    // the skipped survey straight back.
+    var ratingSkippedEpisode = null;
     var helpDebounce = null;
     var cobrowseAllow = rootEl.querySelector('.wayfindr-widget__cobrowse-allow');
     var cobrowseDecline = rootEl.querySelector('.wayfindr-widget__cobrowse-decline');
@@ -5487,7 +5491,7 @@
         && supportCode !== null
         && conversationStatus === 'closed'
         && ! ratingAnswered
-        && ! (ratingEpisode !== null && storageGet(ratingSkipStorage, ratingSkipKey) === ratingEpisode);
+        && ! ratingIsSkipped();
 
       rating.hidden = ! shouldAsk;
 
@@ -5542,6 +5546,11 @@
       });
     }
 
+    function ratingIsSkipped() {
+      return ratingEpisode !== null
+        && (ratingSkippedEpisode === ratingEpisode || storageGet(ratingSkipStorage, ratingSkipKey) === ratingEpisode);
+    }
+
     function ratingTemplateKey() {
       return ratingConfig && ratingConfig.template ? ratingConfig.template.key : 'overall';
     }
@@ -5568,6 +5577,7 @@
         return;
       }
 
+      ratingSkippedEpisode = ratingEpisode;
       storageSet(ratingSkipStorage, ratingSkipKey, ratingEpisode);
       rating.hidden = true;
     });

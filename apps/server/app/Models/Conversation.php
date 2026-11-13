@@ -217,21 +217,32 @@ class Conversation extends Model
     /**
      * The one person who helped in the stretch of work `$close` ended, or null.
      *
-     * The episode runs from the previous lifecycle boundary -- the latest
-     * close or reopen before this close, or creation -- up to and including the
-     * close. A qualifying agent is a dashboard user who sent the visitor a
-     * message inside it; conversations carry no private notes, so every such
-     * message was seen. Exactly one qualifies, or nobody is named: with two
-     * people in the episode there is no honest single answer to "how was the
-     * help from X". Assignment and who clicked Close say nothing about who
-     * helped, so neither is consulted (docs/product/satisfaction.md).
+     * The episode runs from the PREVIOUS CLOSE -- or the conversation's
+     * creation if there is none -- up to and including this close. Bounded by
+     * the close rather than the reopen, because a reply that reopens a closed
+     * conversation is written before the reopen is recorded: bounded by the
+     * reopen, that reply could fall outside the very episode it started, and
+     * the person who started it would vanish from the count (#1206).
+     *
+     * Both bounds are inclusive. Timestamps have second resolution, so a
+     * message in the same second as a close cannot be placed on one side of it
+     * with certainty; counting it in both keeps the error in the safe
+     * direction. An extra person makes "two people helped", which asks nothing,
+     * where a missing one could leave somebody else named for help they did not
+     * give alone.
+     *
+     * A qualifying agent is a dashboard user who sent the visitor a message in
+     * the episode; conversations carry no private notes, so every such message
+     * was seen. Exactly one qualifies, or nobody is named. Assignment and who
+     * clicked Close say nothing about who helped, so neither is consulted
+     * (docs/product/satisfaction.md).
      */
-    public function ratingEpisodeAgent(AuditEvent $close): ?User
+    public function ratingEpisodeAgentId(AuditEvent $close): ?int
     {
-        $boundary = AuditEvent::query()
+        $previousClose = AuditEvent::query()
             ->where('subject_type', $this->getMorphClass())
             ->where('subject_id', $this->id)
-            ->whereIn('action', [ConversationLifecycleLog::CLOSED, ConversationLifecycleLog::REOPENED])
+            ->where('action', ConversationLifecycleLog::CLOSED)
             ->where('id', '!=', $close->id)
             ->where(function ($query) use ($close): void {
                 $query->where('occurred_at', '<', $close->occurred_at)
@@ -244,13 +255,24 @@ class Conversation extends Model
         $senders = $this->messages()
             ->where('sender_type', User::class)
             ->whereNotNull('sender_id')
-            ->when($boundary !== null, fn ($query) => $query->where('created_at', '>=', $boundary->occurred_at))
+            ->when($previousClose !== null, fn ($query) => $query->where('created_at', '>=', $previousClose->occurred_at))
             ->where('created_at', '<=', $close->occurred_at)
             ->distinct()
             ->limit(2)
             ->pluck('sender_id');
 
-        return $senders->count() === 1 ? User::query()->find($senders->first()) : null;
+        return $senders->count() === 1 ? (int) $senders->first() : null;
+    }
+
+    /**
+     * The account behind {@see self::ratingEpisodeAgentId()}, or null -- also
+     * null when that person's account has since been deleted.
+     */
+    public function ratingEpisodeAgent(AuditEvent $close): ?User
+    {
+        $id = $this->ratingEpisodeAgentId($close);
+
+        return $id === null ? null : User::query()->find($id);
     }
 
     /**
@@ -258,11 +280,14 @@ class Conversation extends Model
      *
      * The widget sends it back with an agent answer, and the server refuses an
      * answer whose handle does not match the agent it recomputes -- so a score
-     * attaches to the person the visitor saw named, and to nobody else.
+     * attaches to the person the visitor saw named, and to nobody else. Built
+     * from the id, so it can still be checked after the account is deleted.
      */
-    public static function ratingAgentToken(AuditEvent $close, User $agent): string
+    public static function ratingAgentToken(AuditEvent $close, User|int $agent): string
     {
-        return substr(hash('sha256', 'rating-agent:'.$close->id.':'.$agent->id), 0, 16);
+        $id = $agent instanceof User ? $agent->id : $agent;
+
+        return substr(hash('sha256', 'rating-agent:'.$close->id.':'.$id), 0, 16);
     }
 
     public function ratings(): HasMany

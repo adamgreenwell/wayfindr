@@ -243,3 +243,29 @@ test('the agent question speaks German from the catalogue', async () => {
   assert.equal(agentScore(widget, 'not_applicable').textContent, 'Trifft nicht zu');
   assert.equal(q(widget, '.wayfindr-widget__rating-skip').textContent, 'Überspringen');
 });
+
+test('skip holds for the open widget even where storage is unavailable', async () => {
+  const unwritable = {
+    getItem: (key) => ({
+      'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
+      'wayfindr:site_public_docs:visitor-token': 'visitor-token-docs',
+      'wayfindr:site_public_docs:support-code': 'WF-DOCS',
+    })[key] ?? null,
+    setItem: () => { throw new Error('QuotaExceededError'); },
+    removeItem: () => {},
+    values: new Map(),
+  };
+  const { widget, sent } = widgetWith({ storage: unwritable });
+  await openPanel(widget);
+
+  q(widget, '.wayfindr-widget__rating-skip').click();
+  await settle();
+
+  // The next poll re-renders the prompt; a skip remembered only in storage
+  // would bring it straight back.
+  q(widget, '.wayfindr-widget__refresh').click();
+  await settle();
+
+  assert.equal(q(widget, '.wayfindr-widget__rating').hidden, true);
+  assert.equal(ratingPosts(sent).length, 0);
+});
