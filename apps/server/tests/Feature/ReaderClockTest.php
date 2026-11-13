@@ -327,8 +327,16 @@ it('tells an approver the expiry on their own clock', function () {
  * the fallback and renders their whole dashboard on a clock they never chose.
  */
 it('accepts a zone the platform can resolve, alias or not', function () {
-    foreach (['US/Eastern', 'Asia/Calcutta', 'Europe/Kiev'] as $alias) {
-        expect(DashboardTimezone::normalise($alias))->toBe($alias)
+    $canonical = ['US/Eastern' => 'America/New_York', 'Asia/Calcutta' => 'Asia/Kolkata', 'Europe/Kiev' => 'Europe/Kyiv'];
+    $platform = DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+
+    foreach ($canonical as $alias => $zone) {
+        // Kept exactly where the platform resolves the alias; its canonical zone
+        // where the host's tzdata ships without aliases (#1204). Never null.
+        $expected = in_array($alias, $platform, true) ? $alias : $zone;
+
+        expect(DashboardTimezone::normalise($alias))->toBe($expected)
+            ->and(in_array($alias, DashboardTimezone::acceptable(), true))->toBeTrue()
             ->and(in_array($alias, DateTimeZone::listIdentifiers(), true))
             ->toBeFalse("{$alias} is no longer an alias; the test has stopped proving anything");
     }
@@ -340,16 +348,38 @@ it('accepts a zone the platform can resolve, alias or not', function () {
         ->toBe('10:32');
 });
 
+/**
+ * Ubuntu ships the backward-compatible aliases separately (`tzdata-legacy`),
+ * so a PHP built on system tzdata can lack every one of them (#1204). The
+ * platform list is passed in, so this holds on any host the suite runs on.
+ */
+it('maps an alias the platform lacks to its canonical zone instead of the fallback', function () {
+    $withoutAliases = DateTimeZone::listIdentifiers();
+
+    expect(DashboardTimezone::resolveAgainst('US/Eastern', $withoutAliases))->toBe('America/New_York')
+        ->and(DashboardTimezone::resolveAgainst('Asia/Calcutta', $withoutAliases))->toBe('Asia/Kolkata')
+        ->and(DashboardTimezone::resolveAgainst('Europe/Kiev', $withoutAliases))->toBe('Europe/Kyiv')
+        // A platform that does resolve the alias keeps it as stored.
+        ->and(DashboardTimezone::resolveAgainst('US/Eastern', [...$withoutAliases, 'US/Eastern']))->toBe('US/Eastern')
+        // Neither the zone nor a link to one the platform has: still refused.
+        ->and(DashboardTimezone::resolveAgainst('Europe/Atlantis', $withoutAliases))->toBeNull()
+        ->and(DashboardTimezone::resolveAgainst('US/Eastern', ['Europe/Berlin']))->toBeNull()
+        ->and(DashboardTimezone::resolveAgainst('', $withoutAliases))->toBeNull();
+});
+
 it('keeps an alias on the profile form instead of silently reassigning it', function () {
     // The select offers canonical names only, so a stored alias has no option
     // to be selected. Left out, the browser selects whichever option comes
     // first and the next save moves the agent to a zone they never picked.
+    $kept = DashboardTimezone::normalise('US/Eastern');
     $agent = User::factory()->for(Account::factory())->create(['timezone' => 'US/Eastern']);
+
+    expect($kept)->toBeIn(['US/Eastern', 'America/New_York']);
 
     $this->actingAs($agent)
         ->get(route('dashboard.profile.show'))
         ->assertOk()
-        ->assertSee('value="US/Eastern" selected', escape: false);
+        ->assertSee('value="'.$kept.'" selected', escape: false);
 
     // And it survives a round trip through the form.
     $this->actingAs($agent)
@@ -357,7 +387,7 @@ it('keeps an alias on the profile form instead of silently reassigning it', func
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    expect($agent->fresh()->timezone)->toBe('US/Eastern');
+    expect($agent->fresh()->timezone)->toBe($kept);
 });
 
 it('offers canonical names only, not the aliases beside them', function () {
@@ -368,11 +398,15 @@ it('offers canonical names only, not the aliases beside them', function () {
         ->and(array_key_exists('US', $choices))->toBeFalse();
 
     // Unless one is already stored, in which case it is offered so it can be
-    // kept -- and exactly once, however many times it is asked for.
-    $withAlias = DashboardTimezone::choices('US/Eastern');
+    // kept -- and exactly once, however many times it is asked for. On a host
+    // without aliases, the stored alias is offered as its canonical zone.
+    if (DashboardTimezone::normalise('US/Eastern') === 'US/Eastern') {
+        expect(DashboardTimezone::choices('US/Eastern')['US'])->toBe(['US/Eastern']);
+    } else {
+        expect(DashboardTimezone::choices('US/Eastern'))->toBe($choices);
+    }
 
-    expect($withAlias['US'])->toBe(['US/Eastern'])
-        ->and(DashboardTimezone::choices('Asia/Kolkata')['Asia'])->toBe($choices['Asia']);
+    expect(DashboardTimezone::choices('Asia/Kolkata')['Asia'])->toBe($choices['Asia']);
 });
 
 /**
@@ -420,4 +454,40 @@ it('translates the month rather than reordering it, which is why isoFormat', fun
 
     expect(ReaderClock::date($at))->toBe('24 ago 2026')
         ->and(CarbonImmutable::instance($at)->locale('it')->translatedFormat('M j, Y'))->toBe('ago 24, 2026');
+});
+
+/**
+ * Where the host's tzdata ships no aliases (#1204), a stored alias has to come
+ * back selected as its canonical zone. Otherwise the form shows "follow the
+ * install" selected, and saving an unrelated change clears the agent's clock.
+ * The platform is faked so this holds on every runner, not only alias-less ones.
+ */
+it('keeps an alias selected through the profile form on a host without aliases', function () {
+    DashboardTimezone::fakePlatform(DateTimeZone::listIdentifiers());
+
+    try {
+        $agent = User::factory()->for(Account::factory())->create(['timezone' => 'US/Eastern']);
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.profile.show'))
+            ->assertOk()
+            ->assertSee('value="America/New_York" selected', escape: false)
+            ->assertDontSee('value="" selected', escape: false);
+
+        // The form submits what it shows selected.
+        $this->actingAs($agent)
+            ->put(route('dashboard.profile.update'), ['name' => 'Renamed', 'timezone' => 'America/New_York'])
+            ->assertSessionHasNoErrors();
+
+        expect($agent->fresh()->timezone)->toBe('America/New_York');
+
+        // And a client still holding the alias is accepted and mapped.
+        $this->actingAs($agent)
+            ->put(route('dashboard.profile.update'), ['name' => 'Renamed', 'timezone' => 'US/Eastern'])
+            ->assertSessionHasNoErrors();
+
+        expect($agent->fresh()->timezone)->toBe('America/New_York');
+    } finally {
+        DashboardTimezone::fakePlatform(null);
+    }
 });
