@@ -412,7 +412,7 @@ test('a deleted agent keeps the overall answer and drops only the agent answer',
 
 test('deleting accounts never merges two agents, and a rename never splits one', function (): void {
     $w = agentRatingWorld();
-    $owner = User::factory()->for($w['account'])->create(['account_role' => \App\Enums\AccountRole::Owner]);
+    $owner = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Owner]);
     $first = User::factory()->for($w['account'])->create(['name' => 'Sam']);
     $second = User::factory()->for($w['account'])->create(['name' => 'Sam']);
     $renamed = User::factory()->for($w['account'])->create(['name' => 'Robin']);
