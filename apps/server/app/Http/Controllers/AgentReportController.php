@@ -59,6 +59,19 @@ class AgentReportController extends Controller
             'satisfaction' => $satisfaction,
             'satisfactionPositiveLabel' => $this->readablePercentage($satisfaction['positive']),
             'ratingComments' => $report->comments(),
+            // Per agent, each percentage pre-rendered the same way as the
+            // overall figure: a null is "--", never a 0%.
+            'customTemplates' => array_map(
+                fn (array $row): array => $row + [
+                    'positive_label' => $this->readablePercentage($row['positive']),
+                    'agent_positive_label' => $this->readablePercentage($row['agent']['positive']),
+                ],
+                $report->customTemplates(),
+            ),
+            'agentSatisfaction' => array_map(
+                fn (array $row): array => $row + ['positive_label' => $this->readablePercentage($row['positive'])],
+                $report->agentSatisfaction(),
+            ),
             'agentActivity' => $report->agentActivity(),
             'queueHealth' => $queueHealth,
             'slaHistory' => $sla->history(),

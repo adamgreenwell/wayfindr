@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('sites.tester.document_title')" :agent="$agent" :account="$account">
-            <x-page-header :subtitle="__('sites.tester.subtitle')" :back-href="route('dashboard.sites.show', $site)" :back-label="__('sites.tester.back')">
+<x-layouts.site :site="$site" :title="__('sites.tester.document_title')" :agent="$agent" :account="$account">
+            <x-page-header :subtitle="__('sites.tester.subtitle')">
                 {{-- The heading mixes product copy with the account-authored site
                      name, so only the authored fragment has unknown language. --}}
                 <x-slot:title-content>
@@ -147,4 +147,4 @@
                     window.Wayfindr.init(options);
                 })();
             </script>
-</x-layouts.app>
+</x-layouts.site>

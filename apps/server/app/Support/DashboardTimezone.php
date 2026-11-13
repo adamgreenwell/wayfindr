@@ -80,7 +80,20 @@ final class DashboardTimezone
      */
     public static function acceptable(): array
     {
-        return DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+        $platform = self::platformIdentifiers();
+        $available = array_flip($platform);
+
+        // A host whose PHP reads system tzdata may not carry the aliases at all
+        // (Ubuntu ships them separately as `tzdata-legacy`, #1204). An alias
+        // stays acceptable there whenever its canonical zone resolves, because
+        // normalise() will store and render it as that zone.
+        foreach (self::backwardLinks() as $alias => $canonical) {
+            if (! isset($available[$alias]) && isset($available[$canonical])) {
+                $platform[] = $alias;
+            }
+        }
+
+        return $platform;
     }
 
     /**
@@ -96,13 +109,69 @@ final class DashboardTimezone
             return null;
         }
 
-        $timezone = trim($timezone);
+        return self::resolveAgainst(trim($timezone), self::platformIdentifiers());
+    }
 
+    /**
+     * The zone to use for `$timezone` on a platform that resolves `$platform`.
+     *
+     * A zone the platform resolves is kept exactly as stored, alias or not. An
+     * alias it cannot resolve becomes its canonical zone from IANA's backward
+     * links, so a reader on `US/Eastern` keeps the east-coast clock instead of
+     * silently dropping to the fallback. The link table is the one list kept
+     * here, and only for this: IANA retains backward links indefinitely.
+     *
+     * @param  list<string>  $platform
+     */
+    public static function resolveAgainst(string $timezone, array $platform): ?string
+    {
         if ($timezone === '') {
             return null;
         }
 
-        return in_array($timezone, self::acceptable(), true) ? $timezone : null;
+        if (in_array($timezone, $platform, true)) {
+            return $timezone;
+        }
+
+        $canonical = self::backwardLinks()[$timezone] ?? null;
+
+        return $canonical !== null && in_array($canonical, $platform, true) ? $canonical : null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function platformIdentifiers(): array
+    {
+        return self::$platform ?? DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+    }
+
+    /** @var list<string>|null */
+    private static ?array $platform = null;
+
+    /**
+     * Stand in for the host's zone database, or null to use the real one.
+     *
+     * Tests only. Whether aliases resolve depends on how the host's PHP was
+     * built (#1204), so a test that relied on the machine it ran on would
+     * prove the alias-less path only on some runners and pass vacuously on
+     * the rest.
+     *
+     * @param  list<string>|null  $identifiers
+     */
+    public static function fakePlatform(?array $identifiers): void
+    {
+        self::$platform = $identifiers;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function backwardLinks(): array
+    {
+        static $links = null;
+
+        return $links ??= require resource_path('data/timezone-backward-links.php');
     }
 
     /**

@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('site_settings.title')" :agent="$agent" :account="$account">
-            <x-page-header :back-href="route('dashboard.sites.index')" :back-label="__('site_settings.back')">
+<x-layouts.site :site="$site" :title="__('site_settings.title')" :agent="$agent" :account="$account">
+            <x-page-header>
                 <x-slot:titleContent><span lang="">{{ $site->name }}</span></x-slot:titleContent>
                 <x-slot:subtitleContent><x-translated-feedback :feedback="[
                     'key' => 'site_settings.subtitle',
@@ -10,12 +10,7 @@
             </x-page-header>
 
             {{-- The six read-only blocks that used to sit among these settings
-                 now have their own surface (#985). A link rather than silence:
-                 somebody who knew where readiness was must be able to find it. --}}
-            <p class="lede">
-                <a class="text-link" href="{{ route('dashboard.sites.status', $site) }}">{{ __('site_settings.status.link') }}</a>
-            </p>
-
+                 have their own surface (#985), reached from the site's rail. --}}
             @if ($siteStatusFeedback)
                 <p class="status-message">
                     @if (is_array($siteStatusFeedback))
@@ -1000,6 +995,52 @@
                             </p>
                         </div>
 
+                        <fieldset class="field">
+                            <legend>{{ __('site_settings.rating.template') }}</legend>
+                            @foreach (\App\Support\Sites\RatingTemplate::keys() as $templateKey)
+                                <label for="rating_template_{{ $templateKey }}">
+                                    <input type="radio" id="rating_template_{{ $templateKey }}" name="rating_template" value="{{ $templateKey }}"
+                                        @disabled($templateKey === 'custom' && $latestRatingTemplate === null)
+                                        @checked(old('rating_template', $ratingPrompt->template->key) === $templateKey)>
+                                    @if ($templateKey === 'custom' && $latestRatingTemplate !== null)
+                                        {{ __('site_settings.rating.templates.custom.label_version', ['version' => $latestRatingTemplate->version]) }}
+                                    @else
+                                        {{ __('site_settings.rating.templates.'.$templateKey.'.label') }}
+                                    @endif
+                                </label>
+                                {{-- The preview is the questions themselves, so what an admin
+                                     picks is what a visitor will read. --}}
+                                @if ($templateKey === 'custom')
+                                    @if ($latestRatingTemplate === null)
+                                        <p class="field-help">{{ __('site_settings.rating.templates.custom.none') }}</p>
+                                    @else
+                                        <ul class="field-help" data-rating-template-preview="custom" lang="en">
+                                            <li>{{ $latestRatingTemplate->definition()->text('overall') }}</li>
+                                            @if ($latestRatingTemplate->definition()->asksAboutAgent())
+                                                <li>{{ $latestRatingTemplate->definition()->text('agent') }}</li>
+                                            @endif
+                                            @if ($latestRatingTemplate->definition()->asksForComment())
+                                                <li>{{ $latestRatingTemplate->definition()->text('comment') }}</li>
+                                            @endif
+                                        </ul>
+                                    @endif
+                                    <p class="field-help">
+                                        <a class="text-link" href="{{ route('dashboard.sites.rating-template.edit', $site) }}">{{ __('site_settings.rating.templates.custom.edit') }}</a>
+                                    </p>
+                                @else
+                                    <ul class="field-help" data-rating-template-preview="{{ $templateKey }}">
+                                        @foreach (__('site_settings.rating.templates.'.$templateKey.'.questions') as $question)
+                                            <li>{{ $question }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                            @endforeach
+                            <p class="field-help">{{ __('site_settings.rating.template_help') }}</p>
+                            @error('rating_template')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </fieldset>
+
                         <div class="field">
                             <label for="rating_intro">{{ __('site_settings.rating.intro') }}</label>
                             <input type="text" id="rating_intro" name="rating_intro" maxlength="160"
@@ -1380,4 +1421,4 @@
                     </section>
                 @endif
             @endcan
-</x-layouts.app>
+</x-layouts.site>

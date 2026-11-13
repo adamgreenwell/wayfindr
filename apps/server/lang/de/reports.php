@@ -185,6 +185,34 @@ return [
         'answered' => 'Beantwortet',
         'answered_detail' => '{1} Von :count Schließung. Jeder obige Wert ist ein Anteil dieser Zahl, niemals der Schließungen — Personen ohne Antwort gelten nicht als zufrieden.|[0,*] Von :count Schließungen. Jeder obige Wert ist ein Anteil dieser Zahl, niemals der Schließungen — Personen ohne Antwort gelten nicht als zufrieden.',
         'small_sample' => 'So wenige Antworten, dass eine weitere den Prozentsatz merklich verändern würde. Lesen Sie dies als Richtung, nicht als Messwert.',
+        'summary_builtin' => '{1} :answered von :closed Abschluss haben die eingebaute Frage beantwortet|[0,*] :answered von :closed Abschlüssen haben die eingebaute Frage beantwortet',
+        'only_custom' => 'In diesem Zeitraum hat niemand die eingebaute Frage beantwortet. Antworten auf Ihre eigenen Vorlagen stehen getrennt weiter unten.',
+    ],
+
+    'agent_satisfaction' => [
+        'heading' => 'Wer geholfen hat',
+        'lede' => 'Eine eigene Frage, getrennt vom Wert oben und nie damit verrechnet.',
+        'not_applicable' => 'Trifft nicht zu',
+        'skipped' => 'Übersprungen',
+        'answered' => 'Beantwortet',
+        'answered_of' => ':answered von :applicable gefragt',
+        'positive' => 'Gut',
+        'no_scores' => 'Noch keine Bewertungen',
+        'thin' => '(wenige Antworten)',
+        'small_sample' => 'Nur gefragt, wenn seit dem letzten Öffnen der Unterhaltung genau eine Person geantwortet hat. „Trifft nicht zu“ und übersprungene Antworten sind Zählungen, keine Bewertungen; der Prozentsatz ist ein Anteil nur der Antworten gut, okay und schlecht. Bei weniger als zehn Antworten zeigt der Wert eine Richtung, keine Messung.',
+        'scores' => ['good' => 'Gut', 'ok' => 'Okay', 'bad' => 'Schlecht', 'not_applicable' => 'Trifft nicht zu'],
+    ],
+
+    'custom_template' => [
+        'heading' => ':site — eigene Vorlage, Version :version',
+        'scale_three' => 'Drei Antworten',
+        'scale_five' => 'Fünf Sterne',
+        'answer' => 'Antwort',
+        'count' => 'Antworten',
+        'summary_three' => ':answered beantwortet; :positive gut. Eine eigene Frage, getrennt vom eingebauten Wert und nie damit verrechnet.',
+        'summary_five' => ':answered beantwortet; :positive mit vier oder fünf Sternen; Durchschnitt :average Sterne. Eine eigene Frage, getrennt vom eingebauten Wert und nie damit verrechnet.',
+        'agent' => 'Zur Hilfe: :answered von :asked Gefragten haben bewertet (:positive positiv); :not_applicable „trifft nicht zu“ und :skipped übersprungen, die als keine Bewertung zählen.',
+        'stars' => '{1} :count Stern|[0,*] :count Sterne',
     ],
 
     'comments' => [
@@ -192,6 +220,8 @@ return [
         'empty' => 'In diesem Zeitraum hat niemand einen Kommentar hinterlassen. Das Kommentarfeld ist optional und wird meist übersprungen — eine Bewertung ohne Worte ist trotzdem eine Antwort.',
         'score' => 'Bewertung',
         'said' => 'Aussage',
+        'help' => 'Zur Hilfe',
+        'agent_not_asked' => 'Nicht gefragt',
         'conversation' => 'Unterhaltung',
         'when' => 'Zeitpunkt',
         'latest' => '{1} Der neueste :count Kommentar. Eine Bewertung zeigt, dass etwas schiefging; nur hier steht, was es war.|[0,*] Die neuesten :count Kommentare. Eine Bewertung zeigt, dass etwas schiefging; nur hier steht, was es war.',

@@ -8,7 +8,9 @@ use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotSummary;
 use App\Models\ConversationDraftRefinement;
+use App\Models\ConversationRating;
 use App\Models\Site;
+use App\Models\SiteRatingTemplateVersion;
 use App\Models\User;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
@@ -20,6 +22,7 @@ use App\Support\Ai\Observability\SharedAssistAudit;
 use App\Support\Ai\Preparation\AiAssistPreparation;
 use App\Support\Ai\Refinement\DraftRefinements;
 use App\Support\Ai\Usage\AiUsageLedger;
+use App\Support\Sites\RatingTemplateDefinition;
 use App\Support\Visitors\VisitorEraser;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -382,3 +385,32 @@ test('refinement quota refusals are separated from other admitted failures', fun
     }
     expect(Illuminate\Support\Facades\DB::table('conversation_draft_refinement_sends')->count())->toBe(0);
 })->with(['usage_request_limit', 'usage_token_limit', 'usage_concurrency_limit', 'provider_failed']);
+
+test('the outcome measure counts only the built-in rating question, never a site’s own template', function (): void {
+    $w = feedbackReady();
+    feedbackRecord($w, 'viewed');
+    $version = SiteRatingTemplateVersion::query()->create([
+        'site_id' => $w['conversation']->site_id, 'version' => 1, 'published_at' => now(),
+        'definition' => RatingTemplateDefinition::starter()->toArray(),
+    ]);
+    $rate = fn (int $event, array $values) => ConversationRating::query()->forceCreate($values + [
+        'conversation_id' => $w['conversation']->id, 'site_id' => $w['conversation']->site_id,
+        'episode_event_id' => $event, 'episode_closed_at' => now(), 'rated_at' => now(),
+    ]);
+
+    $rate(1, ['score' => 'bad', 'template_key' => 'custom', 'template_version' => 1, 'template_version_id' => $version->id, 'scale' => 'three']);
+    $rate(2, ['score' => '5', 'template_key' => 'custom', 'template_version' => 1, 'template_version_id' => $version->id, 'scale' => 'five']);
+
+    $outcome = app(AssistReport::class)->read($w['owner'])['outcomes']['viewed_cohort'];
+
+    expect($outcome['scores'])->toBe(['good' => 0, 'ok' => 0, 'bad' => 0])
+        ->and($outcome['rating_responses'])->toBe(0)
+        ->and($outcome['rated_conversations'])->toBe(0);
+
+    $rate(3, ['score' => 'good']);
+
+    $outcome = app(AssistReport::class)->read($w['owner'])['outcomes']['viewed_cohort'];
+
+    expect($outcome['scores'])->toBe(['good' => 1, 'ok' => 0, 'bad' => 0])
+        ->and($outcome['rated_conversations'])->toBe(1);
+});

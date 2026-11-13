@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
+use App\Models\SiteRatingTemplateVersion;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
@@ -20,6 +21,7 @@ use App\Support\ReaderNumber;
 use App\Support\Routing\SiteRouting;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
+use App\Support\Sites\RatingTemplate;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\Sites\SiteManagerCoverage;
@@ -365,6 +367,9 @@ class AgentSiteController extends Controller
             // Shown once, immediately after it is issued, and never again.
             'issuedIdentitySecret' => $this->issuedIdentitySecret($request),
             'ratingPrompt' => SiteRatingPrompt::for($site),
+            // The site's newest published template, if any: the one choosing
+            // "your own template" asks (#1157).
+            'latestRatingTemplate' => SiteRatingTemplateVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first(),
             'routing' => SiteRouting::for($site),
             'widgetLocale' => WidgetLanguage::for($site),
             'widgetLanguages' => WidgetLanguage::options(),
@@ -885,7 +890,16 @@ class AgentSiteController extends Controller
         $validated = $request->validate([
             'rating_enabled' => ['nullable', 'boolean'],
             'rating_intro' => ['nullable', 'string', 'max:160'],
+            'rating_template' => ['nullable', 'string', Rule::in(RatingTemplate::keys())],
         ]);
+
+        // Your own template can only be chosen once there is a version to ask.
+        if (($validated['rating_template'] ?? null) === RatingTemplate::CUSTOM
+            && ! SiteRatingTemplateVersion::query()->where('site_id', $site->id)->exists()) {
+            throw ValidationException::withMessages([
+                'rating_template' => __('site_settings.rating.templates.custom.none'),
+            ]);
+        }
 
         DB::transaction(function () use ($request, $site, $validated): void {
             [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
@@ -894,6 +908,9 @@ class AgentSiteController extends Controller
                 $settings['rating'] = [
                     'enabled' => (bool) ($validated['rating_enabled'] ?? false),
                     'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+                    // Which questions are asked. An open prompt keeps the
+                    // template it was shown with; this changes the next one.
+                    'template' => $validated['rating_template'] ?? RatingTemplate::OVERALL,
                 ];
 
                 return $settings;

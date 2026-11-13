@@ -99,9 +99,17 @@ return [
             // catalogue already builds on the German noun (`Teamliste`,
             // `des Teams`); `Mannschaft` is a sports side.
             'Team',
+            // A site's widget tester, as its rail entry. German borrows the
+            // word -- the page itself is already `Website-Tester` -- and
+            // `Prüfprogramm` would name a different thing.
+            'Tester',
             ':count ms',
             'Status: :value',
             'Label: :value',
+            // A published rating template's number (#1157). German uses the
+            // same word; `Fassung` reads as an edition of a text.
+            'Version',
+            'Version :version',
         ],
 
         // `Agent` and `Name` are deliberately ABSENT: Italian says `Agente`

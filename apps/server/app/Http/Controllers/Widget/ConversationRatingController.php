@@ -3,7 +3,11 @@
 namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditEvent;
+use App\Models\Conversation;
 use App\Models\ConversationRating;
+use App\Models\User;
+use App\Support\Sites\RatingTemplate;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\VisitorConversationResolver;
 use Carbon\CarbonImmutable;
@@ -39,10 +43,23 @@ class ConversationRatingController extends Controller
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
-            'score' => ['required', 'string', Rule::in(ConversationRating::SCORES)],
+            // Checked against the template's own scale once that is known:
+            // good/ok/bad, or 1-5 on a five-star template (#1157).
+            'score' => ['required', 'string', 'max:16'],
             'comment' => ['nullable', 'string', 'max:1000'],
             // Which close the visitor was looking at when they answered.
             'episode' => ['required', 'string', 'max:64'],
+            // The template the visitor was SHOWN (#1156). Absent from a widget
+            // that predates templates, which only ever asked the single
+            // overall question.
+            'template' => ['nullable', 'string', Rule::in(RatingTemplate::keys())],
+            'template_version' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            // The handle of the agent the question named, and the answer to it.
+            // A null score with a handle is "skipped", which is absent data.
+            'agent' => ['nullable', 'string', 'max:64'],
+            // The name the question showed, verified against the handle.
+            'agent_name' => ['nullable', 'string', 'max:255'],
+            'agent_score' => ['nullable', 'string', 'max:16'],
         ]);
 
         $conversation = $conversations->resolve(
@@ -82,6 +99,43 @@ class ConversationRatingController extends Controller
             ]);
         }
 
+        // Stored against the template the visitor was shown, not the one the
+        // site is set to now: a settings change while the prompt was open must
+        // not reinterpret the answer.
+        $template = RatingTemplate::find(
+            $validated['template'] ?? RatingTemplate::OVERALL,
+            (int) ($validated['template_version'] ?? 1),
+            $conversation->site,
+        );
+
+        if ($template === null) {
+            throw ValidationException::withMessages([
+                'template' => 'That is not a question this site has asked.',
+            ]);
+        }
+
+        // An answer on the template's own scale, and no other. A five-star
+        // answer must never be stored where a good/ok/bad one is read, or the
+        // reports would average two different questions together.
+        if (! in_array($validated['score'], $template->scores(), true)) {
+            throw ValidationException::withMessages([
+                'score' => 'That is not one of the answers this question offered.',
+            ]);
+        }
+
+        if (isset($validated['agent_score']) && ! in_array($validated['agent_score'], $template->agentScores(), true)) {
+            throw ValidationException::withMessages([
+                'agent_score' => 'That is not one of the answers this question offered.',
+            ]);
+        }
+
+        // A template that does not ask for a comment does not get one.
+        if ($template->isCustom() && ! $template->definition()->asksForComment()) {
+            $validated['comment'] = null;
+        }
+
+        [$agentId, $agentName, $agentScore, $ratedAgentId] = $this->agentAnswer($conversation, $episode, $template, $validated);
+
         $comment = trim((string) ($validated['comment'] ?? ''));
         $existed = $conversation->ratings()->where('episode_event_id', $episode->id)->exists();
 
@@ -101,16 +155,74 @@ class ConversationRatingController extends Controller
                 'episode_closed_at' => CarbonImmutable::parse($episode->occurred_at)->toDateTimeString(),
                 'score' => $validated['score'],
                 'comment' => $comment === '' ? null : $comment,
+                'template_key' => $template->key,
+                'template_version' => $template->version,
+                'template_version_id' => $template->published?->id,
+                'scale' => $template->isCustom() ? $template->scale() : null,
+                'agent_user_id' => $agentId,
+                'agent_name' => $agentName,
+                'rated_agent_id' => $ratedAgentId,
+                'agent_score' => $agentScore,
                 'rated_at' => now()->toDateTimeString(),
                 'created_at' => now()->toDateTimeString(),
                 'updated_at' => now()->toDateTimeString(),
             ]],
             ['conversation_id', 'episode_event_id'],
-            ['score', 'comment', 'rated_at', 'updated_at'],
+            [
+                'score', 'comment', 'template_key', 'template_version', 'template_version_id', 'scale',
+                'agent_user_id', 'agent_name', 'rated_agent_id', 'agent_score', 'rated_at', 'updated_at',
+            ],
         );
 
         return response()->json([
             'data' => ['rating' => ['score' => $validated['score']]],
         ], $existed ? 200 : 201);
+    }
+
+    /**
+     * The agent snapshot for this answer: [user id, name, score].
+     *
+     * Only where the template asks about the agent AND the widget names the
+     * agent it showed. The server recomputes who qualifies for this close and
+     * refuses a handle naming anyone else, so a score attaches to the person
+     * the visitor saw -- never to whoever is assigned, or clicked Close.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{0: int|null, 1: string|null, 2: string|null, 3: int|null} [live account id, shown name, score, stable agent id]
+     */
+    private function agentAnswer(Conversation $conversation, AuditEvent $episode, RatingTemplate $template, array $validated): array
+    {
+        $handle = $validated['agent'] ?? null;
+        $score = $validated['agent_score'] ?? null;
+
+        if ($handle === null) {
+            if ($score !== null) {
+                throw ValidationException::withMessages([
+                    'agent_score' => 'This question did not name anyone to rate.',
+                ]);
+            }
+
+            return [null, null, null, null];
+        }
+
+        $agentId = $template->asksAboutAgent() ? $conversation->ratingEpisodeAgentId($episode) : null;
+        $shownName = $validated['agent_name'] ?? null;
+
+        if ($agentId === null
+            || $shownName === null
+            || ! hash_equals(Conversation::ratingAgentToken($episode, $agentId, $shownName), $handle)) {
+            throw ValidationException::withMessages([
+                'agent' => 'That is not the person who helped with this conversation.',
+            ]);
+        }
+
+        // The name the visitor saw, not whatever the account is called now: a
+        // rename between the prompt and the answer must not attach the score
+        // to a name the visitor never read. Verified by the handle, so it is
+        // the name the server issued. An account deleted since keeps the
+        // answer too -- the id clears, the name stays, as for a later deletion.
+        $agentStillExists = User::query()->whereKey($agentId)->exists();
+
+        return [$agentStillExists ? $agentId : null, $shownName, $score, $agentId];
     }
 }

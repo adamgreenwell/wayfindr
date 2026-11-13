@@ -13,7 +13,6 @@ return [
     'title' => 'Impostazioni del sito',
     'subtitle' => 'Impostazioni per :domain',
     'unconfigured_domain' => 'un dominio non configurato',
-    'back' => 'Torna ai siti',
 
     'flash' => [
         'identity_verification_on' => 'La verifica dell\'identità dei visitatori è attiva.',
@@ -395,6 +394,24 @@ return [
         'restricted' => 'Solo un amministratore dell’account può cambiare se i visitatori ricevono la domanda.',
         'once' => 'Un visitatore risponde una volta per ogni chiusura. Se cambia idea, la risposta precedente viene sostituita e non se ne aggiunge una nuova, evitando che pochi risultati vengano sommersi. Se una conversazione viene riaperta e chiusa di nuovo, la domanda ricompare perché l’esperienza è realmente diversa.',
         'comments' => 'I commenti sono parole del visitatore e vengono conservati secondo le regole del sito come qualsiasi altro messaggio. Veda :data.',
+        'template' => 'Quali domande porre',
+        'template_help' => 'La domanda sull’agente nomina una persona, e solo quando esattamente una persona ha risposto al visitatore dall’ultima apertura della conversazione. Con nessuno o più persone viene posta solo la domanda generale. Le risposte vengono riportate separatamente e non modificano mai il dato generale.',
+        'templates' => [
+            'overall' => [
+                'label' => 'Una domanda sull’esperienza',
+                'questions' => ['Come siamo andati? — buono, discreto, negativo', 'Commento facoltativo'],
+            ],
+            'starter' => [
+                'label' => 'L’esperienza e l’agente che ha aiutato',
+                'questions' => ['Com’è stata la Sua esperienza di assistenza complessiva? — buono, discreto, negativo', 'Com’è stato l’aiuto ricevuto da [nome dell’agente]? — buono, discreto, negativo, non pertinente', 'C’è altro che vorrebbe farci sapere? — facoltativo'],
+            ],
+            'custom' => [
+                'label' => 'Il Suo modello',
+                'label_version' => 'Il Suo modello (versione :version)',
+                'none' => 'Pubblichi una versione del Suo modello prima di sceglierlo.',
+                'edit' => 'Modifica il Suo modello',
+            ],
+        ],
     ],
 
     'intake' => [
@@ -486,8 +503,6 @@ return [
     ],
     'status' => [
         'title' => 'Stato del sito',
-        'back' => 'Torna alle impostazioni del sito',
         'subtitle' => 'Come sta funzionando il supporto di questo sito, a differenza di come è configurato.',
-        'link' => 'Stato del sito',
     ],
 ];

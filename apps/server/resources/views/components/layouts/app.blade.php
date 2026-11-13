@@ -14,6 +14,22 @@
     // A deeper crumb for surfaces that have their own sections, so the bar can
     // say "Operator > Backups" rather than stopping at the rail item.
     'crumb' => null,
+    // One sidebar that changes with where you are. A surface with sections of
+    // its own -- the account, the operator console, one site -- hands the rail
+    // its sections and the rail shows those INSTEAD of the product's, with a
+    // way back up one level. Two sidebars side by side left the page body
+    // ~600px wide at 1100px and made the reader work out which column was
+    // which. Shape:
+    //
+    //   label    the nav's accessible name ("Account sections")
+    //   title    what you are inside ("Account", or a site's name)
+    //   titleLang  '' when the title is the user's words, as a site name is
+    //   icon     an icon name for the title
+    //   color    optional CSS variable carrying the object's wayfinding colour
+    //   back     ['href' => ..., 'label' => ...], the level above
+    //   groups   list of ['label' => ?string, 'sections' => list of
+    //            ['label' => ..., 'href' => ..., 'active' => bool]]
+    'context' => null,
 ])
 
 <!DOCTYPE html>
@@ -136,11 +152,13 @@
             --wf-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
             --wf-font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
             --wf-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-            --wf-text-display: 2.05rem;
-            --wf-text-title: 1.3rem;
+            --wf-text-display: 1.75rem;
+            --wf-text-title: 1.125rem;
             --wf-text-body: 0.97rem;
             --wf-text-ui: 0.875rem;
+            --wf-text-small: 0.8125rem;
             --wf-text-label: 0.75rem;
+            --wf-text-micro: 0.6875rem;
             --wf-text-code: 0.86rem;
             --wf-space-1: 4px;
             --wf-space-2: 8px;
@@ -329,7 +347,7 @@
 
         .wf-mark-name {
             font-family: var(--wf-font-mono);
-            font-size: 12px;
+            font-size: var(--wf-text-micro);
             font-weight: 500;
             letter-spacing: 0.14em;
             text-transform: uppercase;
@@ -344,7 +362,7 @@
 
         .wf-nav-heading {
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -412,7 +430,7 @@
             background: var(--wf-surface);
             color: var(--wf-muted);
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -445,13 +463,13 @@
         }
 
         .wf-identity-name {
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             font-weight: 600;
             color: var(--wf-ink);
         }
 
         .wf-identity-sub {
-            font-size: 11px;
+            font-size: var(--wf-text-label);
             color: var(--wf-muted);
             overflow: hidden;
             text-overflow: ellipsis;
@@ -469,7 +487,7 @@
             border-radius: var(--wf-radius);
             background: transparent;
             color: var(--wf-muted);
-            font-size: 12px;
+            font-size: var(--wf-text-label);
             font-weight: 500;
             padding: 6px 0;
             cursor: pointer;
@@ -542,7 +560,7 @@
             background: var(--wf-paper);
             color: var(--wf-ink);
             padding: 5px var(--wf-space-2);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
         }
 
         .wf-topbar-search input:focus {
@@ -556,7 +574,7 @@
             border-radius: var(--wf-radius);
             background: transparent;
             color: var(--wf-muted);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             font-weight: 500;
             padding: 5px var(--wf-space-3);
             cursor: pointer;
@@ -583,7 +601,7 @@
             gap: var(--wf-space-2);
             flex: none;
             padding: 5px var(--wf-space-2);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             font-weight: 500;
             white-space: nowrap;
         }
@@ -611,7 +629,7 @@
             color: var(--wf-muted);
             padding: 1px 5px;
             font-family: var(--wf-font-mono);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             line-height: 1.5;
         }
 
@@ -652,7 +670,7 @@
 
         .wf-command-header h2 {
             margin: 0;
-            font-size: 1.2rem;
+            font-size: var(--wf-text-title);
         }
 
         .wf-command-dismiss {
@@ -660,6 +678,7 @@
             height: 30px;
             flex: none;
             padding: 0;
+            /* A glyph, sized as an icon rather than as type. */
             font-size: 20px;
             line-height: 1;
         }
@@ -671,6 +690,7 @@
 
         .wf-command-search input {
             width: 100%;
+            /* Below 16px, iOS zooms the page into a focused field. */
             font-size: 16px;
         }
 
@@ -687,7 +707,7 @@
         .wf-command-group h3 {
             margin: 0 0 var(--wf-space-2);
             color: var(--wf-muted);
-            font-size: 11px;
+            font-size: var(--wf-text-micro);
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
@@ -734,7 +754,7 @@
 
         .wf-command-current {
             color: var(--wf-muted);
-            font-size: 11px;
+            font-size: var(--wf-text-label);
         }
 
         .wf-command-empty {
@@ -759,7 +779,7 @@
         .wf-shortcut-group h3 {
             margin: 0 0 var(--wf-space-2);
             color: var(--wf-muted);
-            font-size: 11px;
+            font-size: var(--wf-text-micro);
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
@@ -844,7 +864,7 @@
             padding: 6px 12px 6px 8px;
             border: var(--wf-border) solid var(--wf-rule);
             border-radius: var(--wf-radius);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             font-weight: 500;
             cursor: pointer;
         }
@@ -907,7 +927,7 @@
 
         .wf-lane-count {
             font-family: var(--wf-font-mono);
-            font-size: 11px;
+            font-size: var(--wf-text-label);
             font-weight: 500;
             font-variant-numeric: tabular-nums;
             color: var(--wf-muted);
@@ -960,7 +980,7 @@
 
         .wf-filter > label {
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -974,7 +994,7 @@
             background: var(--wf-surface);
             color: var(--wf-ink);
             padding: 5px 8px;
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
         }
 
         .wf-filter input:focus,
@@ -1001,11 +1021,11 @@
         .wf-filter-actions .button {
             min-height: 30px;
             padding: 0 12px;
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
         }
 
         .wf-filter-help {
-            font-size: 11px;
+            font-size: var(--wf-text-label);
             color: var(--wf-muted);
         }
 
@@ -1031,7 +1051,7 @@
 
         .wf-queue-summary {
             margin: 0 0 var(--wf-space-3);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             color: var(--wf-muted);
         }
 
@@ -1069,7 +1089,7 @@
         .wf-bulk-toolbar > label:not(.sr-only) {
             color: var(--wf-muted);
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -1159,7 +1179,7 @@
                 color: var(--wf-muted);
                 content: attr(data-label);
                 font-family: var(--wf-font-cond);
-                font-size: 10.5px;
+                font-size: var(--wf-text-micro);
                 font-weight: 600;
                 letter-spacing: 0.06em;
                 text-transform: uppercase;
@@ -1169,14 +1189,14 @@
         .wf-queue {
             width: 100%;
             border-collapse: collapse;
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
         }
 
         .wf-queue thead th {
             padding: 6px 10px;
             border-bottom: var(--wf-border) solid var(--wf-rule-firm);
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -1216,7 +1236,7 @@
             display: block;
             margin-top: 2px;
             color: var(--wf-muted);
-            font-size: 11.5px;
+            font-size: var(--wf-text-label);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -1297,7 +1317,7 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            font-size: 11px;
+            font-size: var(--wf-text-label);
             color: var(--wf-muted);
             white-space: nowrap;
         }
@@ -1350,11 +1370,11 @@
         /* The copy control is useful but must not outweigh the subject above
            it. In a queue row it is a quiet mono chip, not a button. */
         .wf-queue-preview .support-reference code {
-            font-size: 11px;
+            font-size: var(--wf-text-label);
         }
 
         .wf-queue-preview .support-reference-copy {
-            font-size: 10px;
+            font-size: var(--wf-text-label);
             padding: 0 4px;
             min-height: 0;
         }
@@ -1375,7 +1395,7 @@
 
         .wf-queue-code {
             font-family: var(--wf-font-mono);
-            font-size: 11px;
+            font-size: var(--wf-text-label);
             color: var(--wf-muted);
             text-decoration: none;
             white-space: nowrap;
@@ -1396,51 +1416,84 @@
             color: var(--wf-signal-hold);
         }
 
-        /* ── Context sidebar (ADR 0014) ───────────────────────────────────
-           The rail says which part of the product you are in. This says which
-           part of THIS object -- the operator console has seven sections and
-           used to navigate them with a single "back" link at the top of each
-           page, outside the application shell entirely. */
-        .wf-context {
-            display: grid;
-            grid-template-columns: 188px minmax(0, 1fr);
-            gap: var(--wf-space-6);
-            align-items: start;
-        }
+        /* ── Contextual rail (ADR 0014) ───────────────────────────────────
+           One sidebar that changes with where you are. Inside a surface with
+           sections of its own -- the account, the operator console, one site
+           -- the rail shows THAT surface's sections in place of the product's,
+           and the first thing in it is the way back up one level.
 
-        .wf-context-nav {
+           This replaced a second 188px sidebar beside the 236px rail. Two
+           columns of navigation left a page body of ~600px at 1100px wide, had
+           to collapse into a row above the page before the rail itself did,
+           and made the reader decide which of two lists said where they were. */
+        .wf-context-head {
             display: flex;
             flex-direction: column;
-            gap: 1px;
-            position: sticky;
-            top: calc(52px + var(--wf-space-5));
-            /* Its own scroll area once it is taller than the window below the
-               top bar. Sticky alone kept the last groups under a short window
-               for the whole length of a long page -- and the account sidebar
-               is the only way to those pages. */
-            max-height: calc(100vh - 52px - 2 * var(--wf-space-5));
-            overflow-y: auto;
+            gap: var(--wf-space-2);
+        }
+
+        .wf-context-back {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0 var(--wf-space-2);
+            padding: 6px var(--wf-space-3);
+            border-radius: var(--wf-radius);
+            color: var(--wf-muted);
+            font-size: var(--wf-text-label);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .wf-context-back:hover {
+            background: var(--wf-surface-2);
+            color: var(--wf-ink);
+        }
+
+        .wf-context-back:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: -2px;
+        }
+
+        /* What you are inside. A site takes its wayfinding colour here, the
+           same hue its queue rows carry, so the rail itself says which site. */
+        .wf-context-title {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin: 0;
+            padding: 0 var(--wf-space-4);
+            color: var(--wf-ink);
+            font-size: var(--wf-text-ui);
+            font-weight: 600;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+
+        .wf-context-title .wf-icon {
+            margin-top: 1px;
+            color: var(--rail-context-color, var(--wf-muted));
         }
 
         .wf-context-heading {
-            margin: 0 0 var(--wf-space-2);
-            padding: 0 var(--wf-space-3);
+            margin: 0;
+            padding: var(--wf-space-2) var(--wf-space-3) var(--wf-space-1);
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: var(--wf-muted);
         }
 
-        /* The account sidebar groups its destinations; a group's heading
-           needs air above it to read as the start of the next run of links,
-           not the end of the previous one. */
+        /* A group's heading needs air above it to read as the start of the
+           next run of links, not the end of the previous one. */
         .wf-context-link + .wf-context-heading {
-            margin-top: var(--wf-space-4);
+            margin-top: var(--wf-space-3);
         }
 
         .wf-context-link {
+            display: block;
             padding: 6px var(--wf-space-3);
             border-radius: var(--wf-radius);
             color: var(--wf-muted);
@@ -1470,47 +1523,6 @@
             min-width: 0;
         }
 
-        /* The first card in the body already carries the top margin the
-           sections below it use, which pushed it out of line with the nav. */
-        .wf-context-body > .section:first-child,
-        .wf-context-body > .page-header + .section {
-            margin-top: var(--wf-space-4);
-        }
-
-        /* Collapses before the rail does. Beside the 236px rail, 188px of
-           sidebar left a page body of ~600px at 1100px wide and under 400px
-           just above the rail's own 900px breakpoint -- a phone's width for
-           the forms and tables these pages hold. The sections become a
-           scrolling row above the body instead. */
-        @media (max-width: 1100px) {
-            .wf-context {
-                grid-template-columns: minmax(0, 1fr);
-                gap: var(--wf-space-4);
-            }
-
-            .wf-context-nav {
-                position: static;
-                max-height: none;
-                flex-direction: row;
-                gap: var(--wf-space-1);
-                overflow-x: auto;
-                border-bottom: var(--wf-border) solid var(--wf-rule);
-                padding-bottom: var(--wf-space-2);
-            }
-
-            .wf-context-heading {
-                display: none;
-            }
-
-            .wf-context-link {
-                white-space: nowrap;
-            }
-
-            .wf-context-link[aria-current="page"] {
-                box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
-            }
-        }
-
         /* ── Queue switcher (ADR 0014) ────────────────────────────────────
            The reference platforms put this in the breadcrumb; here it sits with
            the page title, which is the same affordance without threading a slot
@@ -1528,7 +1540,7 @@
             align-items: center;
             padding: 0 var(--wf-space-3);
             color: var(--wf-muted);
-            font-size: 13px;
+            font-size: var(--wf-text-small);
             text-decoration: none;
         }
 
@@ -1555,7 +1567,7 @@
             cursor: pointer;
             list-style: none;
             font-family: var(--wf-font-mono);
-            font-size: 11.5px;
+            font-size: var(--wf-text-label);
             font-variant-numeric: tabular-nums;
             color: var(--wf-muted);
             white-space: nowrap;
@@ -1588,7 +1600,7 @@
             padding: 7px var(--wf-space-3);
             border-bottom: var(--wf-border) solid var(--wf-rule);
             color: var(--wf-muted);
-            font-size: 12.5px;
+            font-size: var(--wf-text-small);
             text-decoration: none;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1654,7 +1666,7 @@
 
             .wf-theme button {
                 padding: 5px 7px;
-                font-size: 10px;
+                font-size: var(--wf-text-micro);
             }
 
             /* Visually hidden, NOT display:none. The icon beside it is
@@ -1679,8 +1691,44 @@
                 display: none;
             }
 
-            .wf-nav-link[aria-current="page"] {
+            .wf-nav-link[aria-current="page"],
+            .wf-context-link[aria-current="page"] {
                 box-shadow: inset 0 calc(var(--wf-rail) * -1) 0 var(--wf-brand);
+            }
+
+            /* In a context the strip reads: way back, then the sections. The
+               title and group headings drop out -- the breadcrumb names the
+               page, and a heading in a single scrolling row is noise. The back
+               link keeps its words for assistive technology, the same way the
+               rail's own labels do. */
+            .wf-context-head {
+                flex: none;
+            }
+
+            .wf-context-title,
+            .wf-context-heading {
+                display: none;
+            }
+
+            .wf-context-back {
+                margin: 0;
+                padding: 7px;
+            }
+
+            .wf-context-back span {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .wf-context-link {
+                white-space: nowrap;
             }
 
             .wf-rail-foot {
@@ -1763,7 +1811,7 @@
            into a panel that already has its own. */
         .panel h2 {
             margin: 24px 0 0;
-            font-size: 1rem;
+            font-size: var(--wf-text-title);
             line-height: 1.3;
         }
 
@@ -1799,7 +1847,7 @@
         .panel h1,
         .page h1 {
             margin: 0;
-            font-size: 1.75rem;
+            font-size: var(--wf-text-display);
             line-height: 1.2;
         }
 
@@ -1812,7 +1860,7 @@
             display: inline-block;
             margin-bottom: 10px;
             color: var(--muted);
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
             font-weight: 600;
             text-decoration: none;
         }
@@ -1863,14 +1911,14 @@
         .field legend {
             padding: 0;
             margin-bottom: 6px;
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
             font-weight: 600;
         }
 
         .field label {
             display: block;
             margin-bottom: 6px;
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
             font-weight: 600;
         }
 
@@ -1883,6 +1931,7 @@
             padding: 11px 12px;
             background: var(--wf-surface);
             color: var(--text);
+            /* Below 16px, iOS zooms the page into a focused field. */
             font-size: 1rem;
         }
 
@@ -1901,7 +1950,7 @@
         .field-error {
             margin: 6px 0 0;
             color: var(--danger);
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
         }
 
         .sr-only {
@@ -1919,7 +1968,7 @@
         .field-help {
             margin: var(--wf-space-2) 0 0;
             color: var(--muted);
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
         }
 
         .check-row {
@@ -2022,7 +2071,7 @@
         .wf-pager__summary {
             margin: 0;
             color: var(--muted);
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
         }
 
         .wf-pager__summary strong {
@@ -2050,7 +2099,7 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             color: var(--text);
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
             font-weight: 600;
             text-decoration: none;
         }
@@ -2284,7 +2333,7 @@
         }
 
         .tabs__badge {
-            font-size: 12px;
+            font-size: var(--wf-text-label);
             font-weight: 600;
             line-height: 1;
             padding: 4px 8px;
@@ -2318,7 +2367,18 @@
         .section-header h2,
         .section-header h3 {
             margin: 0;
-            font-size: 1rem;
+            line-height: 1.3;
+        }
+
+        /* Two steps, not one. Both rendered 16px/600, so a section's heading
+           and a sub-part inside it read as the same level -- the hierarchy was
+           visually flat on every renovated page. */
+        .section-header h2 {
+            font-size: var(--wf-text-title);
+        }
+
+        .section-header h3 {
+            font-size: var(--wf-text-body);
         }
 
         .section-actions {
@@ -2474,14 +2534,14 @@
 
         th {
             color: var(--muted);
-            font-size: 0.8rem;
+            font-size: var(--wf-text-micro);
             text-transform: uppercase;
         }
 
         .table-note {
             color: var(--muted);
             display: block;
-            font-size: 0.82rem;
+            font-size: var(--wf-text-small);
             margin-top: 4px;
             white-space: nowrap;
         }
@@ -2564,7 +2624,7 @@
             flex: 1 1 16rem;
             margin: 0;
             color: var(--wf-muted);
-            font-size: 13px;
+            font-size: var(--wf-text-small);
             line-height: 1.5;
         }
 
@@ -2731,7 +2791,7 @@
         .meta-label {
             color: var(--muted);
             display: block;
-            font-size: 0.8rem;
+            font-size: var(--wf-text-micro);
             text-transform: uppercase;
         }
 
@@ -2922,7 +2982,7 @@
             margin: 0;
             padding: 18px 20px 0;
             font-family: var(--wf-font-cond);
-            font-size: 10.5px;
+            font-size: var(--wf-text-micro);
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -2960,7 +3020,7 @@
         .readiness-check h3,
         .readiness-check h4 {
             margin: 0;
-            font-size: 1rem;
+            font-size: var(--wf-text-body);
         }
 
         .readiness-check p {
@@ -2975,7 +3035,7 @@
             min-height: 30px;
             padding: 0 10px;
             color: var(--muted);
-            font-size: 0.82rem;
+            font-size: var(--wf-text-small);
             font-weight: 600;
             white-space: nowrap;
         }
@@ -3076,7 +3136,7 @@
 
         .article-preview h3 {
             margin: 12px 0 4px;
-            font-size: 1rem;
+            font-size: var(--wf-text-body);
         }
 
         .article-preview p,
@@ -3175,7 +3235,7 @@
             border-radius: 999px;
             color: var(--text);
             display: inline-flex;
-            font-size: 0.86rem;
+            font-size: var(--wf-text-ui);
             font-weight: 600;
             gap: 8px;
             min-height: 34px;
@@ -3249,7 +3309,7 @@
             color: var(--muted);
             cursor: pointer;
             display: inline-flex;
-            font-size: 0.76rem;
+            font-size: var(--wf-text-label);
             font-weight: 600;
             min-height: 28px;
             padding: 0 8px;
@@ -3276,7 +3336,7 @@
             color: var(--text);
             font-family: var(--wf-font-mono);
             font-weight: 400;
-            font-size: 0.88rem;
+            font-size: var(--wf-text-code);
             line-height: 1.55;
             white-space: pre;
         }
@@ -3451,7 +3511,7 @@
             color: var(--muted);
             display: flex;
             flex-wrap: wrap;
-            font-size: 0.85rem;
+            font-size: var(--wf-text-small);
             gap: 8px;
             justify-content: space-between;
         }
@@ -3512,7 +3572,7 @@
             border-radius: 8px;
             color: var(--text);
             display: inline-flex;
-            font-size: 0.9rem;
+            font-size: var(--wf-text-ui);
             gap: 8px;
             padding: 8px 10px;
         }
@@ -3558,7 +3618,7 @@
             border-radius: 999px;
             color: var(--text);
             display: inline-flex;
-            font-size: 0.82rem;
+            font-size: var(--wf-text-small);
             gap: 8px;
             max-width: 100%;
             padding: 4px 6px 4px 12px;
@@ -3580,7 +3640,7 @@
 
         .reply-attach-chip-state {
             color: var(--muted);
-            font-size: 0.75rem;
+            font-size: var(--wf-text-label);
         }
 
         .reply-attach-chip--error .reply-attach-chip-state {
@@ -3592,6 +3652,7 @@
             border: 0;
             color: var(--muted);
             cursor: pointer;
+            /* A glyph, sized as an icon rather than as type. */
             font-size: 1.05rem;
             font-weight: 600;
             line-height: 1;
@@ -3611,7 +3672,7 @@
         .details-disclosure__summary {
             color: var(--muted);
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: var(--wf-text-small);
             font-weight: 600;
             padding: 10px 14px;
         }
@@ -3687,7 +3748,7 @@
 
         .reply-assist h3 {
             margin: 0;
-            font-size: 1rem;
+            font-size: var(--wf-text-body);
         }
 
         .reply-template-preview {
@@ -3766,7 +3827,7 @@
             gap: 8px;
             margin-top: 4px;
             color: var(--muted);
-            font-size: 0.85rem;
+            font-size: var(--wf-text-small);
         }
 
         @media (max-width: 1100px) {
@@ -3963,7 +4024,7 @@
                 width: auto;
                 padding: 0;
                 border: 0;
-                font-size: 13.5px;
+                font-size: var(--wf-text-small);
                 white-space: normal;
                 overflow-wrap: anywhere;
             }
@@ -3999,7 +4060,7 @@
                 grid-row: 1;
                 min-width: 0;
                 border-left: 0;
-                font-size: 1rem;
+                font-size: var(--wf-text-body);
             }
 
             .wf-ticket-queue .wf-queue-subject > a {
@@ -4050,7 +4111,7 @@
             }
 
             .wf-ticket-queue .wf-queue-preview {
-                font-size: 12.5px;
+                font-size: var(--wf-text-small);
             }
 
             .wf-ticket-queue .wf-queue-state,
@@ -4177,23 +4238,56 @@
                     <span class="wf-mark-name">Wayfindr</span>
                 </a>
 
-                <nav class="wf-nav" aria-label="{{ __('nav.regions.primary') }}">
-                    <p class="wf-nav-heading">{{ __('nav.groups.work') }}</p>
-                    @foreach ($workItems as $item)
-                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
-                            <x-icon :name="$item['icon']" />
-                            <span>{{ $item['label'] }}</span>
+                @if ($context)
+                    {{-- The rail in a context: its sections replace the
+                         product's, and the way out is the first thing in it.
+                         The command palette still reaches every destination. --}}
+                    <div class="wf-context-head">
+                        <a class="wf-context-back" href="{{ $context['back']['href'] }}">
+                            <x-icon name="chevron-left" :size="14" />
+                            <span>{{ $context['back']['label'] }}</span>
                         </a>
-                    @endforeach
 
-                    <p class="wf-nav-heading">{{ __('nav.groups.manage') }}</p>
-                    @foreach ($manageItems as $item)
-                        <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
-                            <x-icon :name="$item['icon']" />
-                            <span>{{ $item['label'] }}</span>
-                        </a>
-                    @endforeach
-                </nav>
+                        <p class="wf-context-title"{!! ! empty($context['color']) ? ' style="--rail-context-color: var('.e($context['color']).')"' : '' !!}>
+                            <x-icon :name="$context['icon']" />
+                            <span{!! ($context['titleLang'] ?? null) !== null ? ' lang="'.e($context['titleLang']).'"' : '' !!}>{{ $context['title'] }}</span>
+                        </p>
+                    </div>
+
+                    <nav class="wf-nav wf-context-nav" aria-label="{{ $context['label'] }}">
+                        @foreach ($context['groups'] as $group)
+                            @if (filled($group['label'] ?? null))
+                                <p class="wf-context-heading">{{ $group['label'] }}</p>
+                            @endif
+
+                            @foreach ($group['sections'] as $section)
+                                <a
+                                    class="wf-context-link"
+                                    href="{{ $section['href'] }}"
+                                    @if ($section['active']) aria-current="page" @endif
+                                >{{ $section['label'] }}</a>
+                            @endforeach
+                        @endforeach
+                    </nav>
+                @else
+                    <nav class="wf-nav" aria-label="{{ __('nav.regions.primary') }}">
+                        <p class="wf-nav-heading">{{ __('nav.groups.work') }}</p>
+                        @foreach ($workItems as $item)
+                            <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                                <x-icon :name="$item['icon']" />
+                                <span>{{ $item['label'] }}</span>
+                            </a>
+                        @endforeach
+
+                        <p class="wf-nav-heading">{{ __('nav.groups.manage') }}</p>
+                        @foreach ($manageItems as $item)
+                            <a class="wf-nav-link" href="{{ $item['href'] }}" @if ($item['active']) aria-current="page" @endif>
+                                <x-icon :name="$item['icon']" />
+                                <span>{{ $item['label'] }}</span>
+                            </a>
+                        @endforeach
+                    </nav>
+                @endif
 
                 <div class="wf-rail-foot">
                     <div class="wf-theme" role="group" aria-label="{{ __('nav.regions.theme') }}" data-wf-theme-group>

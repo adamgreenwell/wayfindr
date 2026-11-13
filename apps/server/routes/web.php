@@ -80,6 +80,7 @@ use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
 use App\Http\Controllers\OperatorUpdateController;
 use App\Http\Controllers\OperatorWebPushSettingsController;
+use App\Http\Controllers\SiteRatingTemplateController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
@@ -372,6 +373,12 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
 
     Route::put('/dashboard/sites/{site}/rating', [AgentSiteController::class, 'updateRating'])
         ->name('dashboard.sites.rating.update');
+    Route::get('/dashboard/sites/{site}/rating-template', [SiteRatingTemplateController::class, 'edit'])
+        ->name('dashboard.sites.rating-template.edit');
+    Route::put('/dashboard/sites/{site}/rating-template', [SiteRatingTemplateController::class, 'update'])
+        ->name('dashboard.sites.rating-template.update');
+    Route::post('/dashboard/sites/{site}/rating-template/publish', [SiteRatingTemplateController::class, 'publish'])
+        ->name('dashboard.sites.rating-template.publish');
     Route::get('/dashboard/sites/{site}/live', [AgentSiteController::class, 'live'])
         ->name('dashboard.sites.live');
     Route::put('/dashboard/sites/{site}/presence', [AgentSiteController::class, 'updatePresence'])
