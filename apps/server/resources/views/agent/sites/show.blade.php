@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('site_settings.title')" :agent="$agent" :account="$account">
-            <x-page-header :back-href="route('dashboard.sites.index')" :back-label="__('site_settings.back')">
+<x-layouts.site :site="$site" :title="__('site_settings.title')" :agent="$agent" :account="$account">
+            <x-page-header>
                 <x-slot:titleContent><span lang="">{{ $site->name }}</span></x-slot:titleContent>
                 <x-slot:subtitleContent><x-translated-feedback :feedback="[
                     'key' => 'site_settings.subtitle',
@@ -10,12 +10,7 @@
             </x-page-header>
 
             {{-- The six read-only blocks that used to sit among these settings
-                 now have their own surface (#985). A link rather than silence:
-                 somebody who knew where readiness was must be able to find it. --}}
-            <p class="lede">
-                <a class="text-link" href="{{ route('dashboard.sites.status', $site) }}">{{ __('site_settings.status.link') }}</a>
-            </p>
-
+                 have their own surface (#985), reached from the site's rail. --}}
             @if ($siteStatusFeedback)
                 <p class="status-message">
                     @if (is_array($siteStatusFeedback))
@@ -1380,4 +1375,4 @@
                     </section>
                 @endif
             @endcan
-</x-layouts.app>
+</x-layouts.site>

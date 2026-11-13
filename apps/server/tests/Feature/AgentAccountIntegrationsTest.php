@@ -919,10 +919,23 @@ test('the add-connection form is reachable by heading', function (): void {
 
     // There is no global h3 rule; without the section-header one the heading
     // takes the browser's margins and outsizes the h2 it sits under.
-    preg_match('/([^{}]*)\{\s*margin:\s*0;\s*font-size:\s*1rem;\s*\}/', accountIntegrationsPageStylesheet($xpath), $rule);
+    // A step BELOW the section's h2 (title), so the two do not read as one
+    // level -- they shared 1rem until the type scale was tightened.
+    preg_match_all('/([^{}]*)\{([^{}]*)\}/', accountIntegrationsPageStylesheet($xpath), $rules, PREG_SET_ORDER);
+    $sizes = [];
 
-    expect(in_array('.section-header h3', array_map('trim', explode(',', $rule[1] ?? '')), true))
-        ->toBeTrue('no rule sizes an h3 inside .section-header, so the new heading renders at the browser default');
+    foreach ($rules as $rule) {
+        if (preg_match('/font-size:\s*([^;]+);/', $rule[2], $size) === 1) {
+            foreach (array_map('trim', explode(',', $rule[1])) as $selector) {
+                $sizes[$selector] = trim($size[1]);
+            }
+        }
+    }
+
+    expect($sizes['.section-header h3'] ?? null)
+        ->toBe('var(--wf-text-body)', 'no rule sizes an h3 inside .section-header, so the new heading renders at the browser default')
+        ->and($sizes['.section-header h2'] ?? null)
+        ->toBe('var(--wf-text-title)', 'the section h2 is not a step above the h3 inside it');
 });
 
 test('setup guidance is open only while it is needed', function (): void {

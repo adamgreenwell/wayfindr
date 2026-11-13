@@ -197,7 +197,6 @@ return [
         'document_title' => 'Website-Tester',
         'title' => 'Tester für :site',
         'subtitle' => 'Gehostete Beispielseite für das Widget, die Chat-Schleife und die Cobrowsing-Maskierung dieser Website.',
-        'back' => 'Zurück zu den Websiteeinstellungen',
         'context' => [
             'heading' => 'Testoberfläche',
             'lede' => 'Websitebezogene Widget-Installation',

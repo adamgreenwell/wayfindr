@@ -366,17 +366,43 @@ test('the breadcrumb leads to the account overview, not the operator console', f
         ->assertDontSee('href="'.route('operator.dashboard').'"', false);
 });
 
-test('the desktop sidebar scrolls on its own when it is taller than the window', function (): void {
-    // Sticky with no height bound: on a short window (1024x600) the Connections
-    // and Oversight links sat below the fold for the whole length of the page.
+test('the account sections live in the rail, which scrolls on its own when it is taller than the window', function (): void {
+    // One sidebar that changes with where you are. The account's sections used
+    // to be a second sticky column beside the rail, with a height bound of its
+    // own; inside the rail they inherit the rail's, so a short window (1024x600)
+    // still reaches Connections and Oversight.
     $owner = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Owner]);
     $html = (string) $this->actingAs($owner)->get(route('dashboard.account.show'))->assertOk()->getContent();
 
-    preg_match('/\n        \.wf-context-nav \{([^}]*)\}/', $html, $rule);
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
 
-    expect($rule)->not->toBe([], 'the desktop context-nav rule did not render; this guard is checking nothing')
-        ->and(str_contains($rule[1], 'max-height: calc(100vh') && str_contains($rule[1], 'overflow-y: auto'))
-        ->toBeTrue('the sticky sidebar has no bounded height of its own, so its last links can sit below a short window');
+    expect($xpath->query('//aside[@class="wf-rail"]//nav[contains(@class, "wf-context-nav")]')->length)
+        ->toBe(1, 'the account sections are not inside the rail')
+        ->and($xpath->query('//nav[@aria-label="Primary navigation"]')->length)
+        ->toBe(0, 'the product navigation still renders beside the account sections -- two sidebars again');
+
+    preg_match('/\n        \.wf-rail \{([^}]*)\}/', $html, $rule);
+
+    expect($rule)->not->toBe([], 'the desktop rail rule did not render; this guard is checking nothing')
+        ->and(str_contains($rule[1], 'height: 100vh') && str_contains($rule[1], 'overflow-y: auto'))
+        ->toBeTrue('the rail has no bounded height of its own, so its last links can sit below a short window');
+});
+
+test('the rail leads back out of the account', function (): void {
+    $owner = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.account.sla-policies.index'))
+        ->assertOk()
+        ->assertSeeInOrder([
+            'class="wf-context-back" href="'.route('dashboard').'"',
+            '<span>Dashboard</span>',
+            'class="wf-context-title"',
+            '<span>Account</span>',
+            'aria-label="Account sections"',
+        ], false);
 });
 
 /**
@@ -412,18 +438,15 @@ function accountSidebarMediaCss(string $html, string $condition): string
     return (string) preg_replace('/\s+/', ' ', implode(' ', $blocks));
 }
 
-test('the sidebar becomes a row above the page before the rail collapses', function (): void {
-    // Keyed to the rail's 900px breakpoint, the 188px sidebar stayed beside the
-    // 236px rail down to 901px, leaving the page body under 400px -- a phone's
-    // width for the forms and tables these pages hold.
+test('no account page keeps a second sidebar column beside the rail', function (): void {
+    // The 1100px collapse existed only because two sidebars side by side left
+    // the page body under 400px just above the rail's own breakpoint. With the
+    // sections in the rail there is no second column to collapse, and a
+    // leftover grid would reserve 188px of empty space beside every page.
     $owner = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Owner]);
     $html = (string) $this->actingAs($owner)->get(route('dashboard.account.show'))->assertOk()->getContent();
 
-    $midWidth = accountSidebarMediaCss($html, 'max-width: 1100px');
-
-    expect($midWidth)->not->toBe('', 'no 1100px media block rendered; this guard is checking nothing')
-        ->and(str_contains($midWidth, '.wf-context { grid-template-columns: minmax(0, 1fr);'))
-        ->toBeTrue('the context sidebar still sits beside the page between 900px and 1100px')
-        ->and(str_contains($midWidth, '.wf-context-nav { position: static;'))
-        ->toBeTrue('the collapsed sidebar row still sticks to the window instead of scrolling with the page');
+    expect(accountSidebarMediaCss($html, 'max-width: 1100px'))->not->toContain('.wf-context {')
+        ->and((bool) preg_match('/\n        \.wf-context \{/', $html))
+        ->toBeFalse('a .wf-context grid still lays out a second column beside the page');
 });
