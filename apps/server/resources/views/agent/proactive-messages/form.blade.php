@@ -1,6 +1,6 @@
 @php($editing = $proactiveMessageRule !== null)
 
-<x-layouts.app :title="$editing ? __('proactive_messages.edit.title') : __('proactive_messages.create.title')" :agent="$agent" :account="$account">
+<x-layouts.site :site="$site" :title="$editing ? __('proactive_messages.edit.title') : __('proactive_messages.create.title')" :agent="$agent" :account="$account">
     <x-page-header
         :title="$editing ? __('proactive_messages.edit.title') : __('proactive_messages.create.title')"
         :subtitle="__('proactive_messages.form.subtitle')"
@@ -140,4 +140,4 @@
             </form>
         </section>
     @endif
-</x-layouts.app>
+</x-layouts.site>

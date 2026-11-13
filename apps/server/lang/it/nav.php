@@ -33,6 +33,16 @@ return [
         'account' => 'Account',
         'operator' => 'Gestore',
     ],
+    // The rail inside one site: its sections replace the product's.
+    'site' => [
+        'sections_label' => 'Sezioni del sito',
+        'settings' => 'Impostazioni',
+        'status' => 'Stato',
+        'tester' => 'Pagina di prova',
+        'live' => 'Visitatori in tempo reale',
+        'proactive' => 'Messaggi proattivi',
+    ],
+
     'regions' => [
         'primary' => 'Navigazione principale',
         'breadcrumb' => 'Percorso di navigazione',

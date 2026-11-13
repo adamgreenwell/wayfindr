@@ -12,7 +12,6 @@ return [
     'title' => 'Site Settings',
     'subtitle' => 'Settings for :domain',
     'unconfigured_domain' => 'an unconfigured domain',
-    'back' => 'Back to sites',
 
     'flash' => [
         'identity_verification_on' => 'Visitor identity verification is on.',
@@ -503,8 +502,6 @@ return [
     ],
     'status' => [
         'title' => 'Site status',
-        'back' => 'Back to site settings',
         'subtitle' => 'How this site\'s support is running, as opposed to how it is set up.',
-        'link' => 'Site status',
     ],
 ];

@@ -1484,6 +1484,7 @@ function conversationQueueLanguageCognates(): array
         'Scanner' => 'a loanword German uses as-is',
         'Transport' => 'the same technical term in German and English',
         'Team' => 'a loanword German uses as-is, and already builds on (`Teamliste`); `Mannschaft` is a sports side',
+        'Tester' => 'a loanword German uses as-is, and the page is already `Website-Tester`; `Prüfprogramm` names something else',
         'English' => 'an autonym -- the language selector names each language in its own language',
         'Deutsch' => 'an autonym -- see above',
         'Italiano' => 'an autonym -- see above',
@@ -2073,6 +2074,10 @@ test('every cognate on the list still appears, so the list cannot rot', function
         // The mail transport label is also the same technical term in German.
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['operators']['de'])->get(route('operator.settings.mail.edit'))->getContent()
+        ),
+        // A site's rail is where `Tester` appears, as the widget tester's entry.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.sites.show', $world['site']))->getContent()
         ),
     ), 'text');
 
@@ -3174,6 +3179,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'account.team.document_title = Team',
         'account.team.title = Team',
         'account_shell.sections.team = Team',
+        'nav.site.status = Status',
+        'nav.site.tester = Tester',
         'automation_rules.list.status = Status',
         'automation_rules.condition_fields.status = Status',
         'automation_macros.list.status = Status',
