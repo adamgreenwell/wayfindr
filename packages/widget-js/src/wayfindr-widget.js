@@ -9007,8 +9007,9 @@
       // not a message in the transcript.
       '.wayfindr-widget__rating{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
       '.wayfindr-widget__rating-intro{margin:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
-      '.wayfindr-widget__rating-scores{display:flex;gap:8px}',
-      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:0;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
+      // Wraps, so a five-star scale keeps its labels on one line each.
+      '.wayfindr-widget__rating-scores{display:flex;flex-wrap:wrap;gap:8px}',
+      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:56px;white-space:nowrap;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-agent{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}',
       '.wayfindr-widget__rating-agent-question{margin:0;padding:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',

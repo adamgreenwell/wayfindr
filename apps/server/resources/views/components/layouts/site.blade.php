@@ -16,7 +16,7 @@
 
     $siteSections = [
         // AgentSiteController@show, @status and @tester: the `view` ability.
-        ['label' => __('nav.site.settings'), 'href' => route('dashboard.sites.show', $site), 'visible' => $siteViewable, 'active' => request()->routeIs('dashboard.sites.show')],
+        ['label' => __('nav.site.settings'), 'href' => route('dashboard.sites.show', $site), 'visible' => $siteViewable, 'active' => request()->routeIs('dashboard.sites.show', 'dashboard.sites.rating-template.*')],
         ['label' => __('nav.site.status'), 'href' => route('dashboard.sites.status', $site), 'visible' => $siteViewable, 'active' => request()->routeIs('dashboard.sites.status')],
         ['label' => __('nav.site.tester'), 'href' => route('dashboard.sites.tester', $site), 'visible' => $siteViewable, 'active' => request()->routeIs('dashboard.sites.tester')],
         // AgentSiteController@live: `viewLiveBoard`. Offered only while the

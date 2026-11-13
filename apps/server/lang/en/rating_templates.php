@@ -4,7 +4,6 @@ return [
     'document_title' => 'Rating template',
     'title' => 'Rating template for :site',
     'subtitle' => 'Write the questions visitors are asked when a conversation closes. Editing the draft changes nothing until you publish it.',
-    'back' => 'Back to site settings',
     'restricted' => 'Only an account admin can edit this site’s rating template.',
 
     'flash' => [

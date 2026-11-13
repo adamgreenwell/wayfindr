@@ -4,7 +4,6 @@ return [
     'document_title' => 'Bewertungsvorlage',
     'title' => 'Bewertungsvorlage für :site',
     'subtitle' => 'Schreiben Sie die Fragen, die Besuchenden beim Schließen einer Unterhaltung gestellt werden. Änderungen am Entwurf wirken erst nach dem Veröffentlichen.',
-    'back' => 'Zurück zu den Website-Einstellungen',
     'restricted' => 'Nur eine Admin-Person des Kontos kann die Bewertungsvorlage dieser Website bearbeiten.',
 
     'flash' => [
