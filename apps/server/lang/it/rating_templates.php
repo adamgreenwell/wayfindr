@@ -4,7 +4,6 @@ return [
     'document_title' => 'Modello di valutazione',
     'title' => 'Modello di valutazione per :site',
     'subtitle' => 'Scriva le domande poste ai visitatori quando una conversazione viene chiusa. Le modifiche alla bozza non hanno effetto finché non la pubblica.',
-    'back' => 'Torna alle impostazioni del sito',
     'restricted' => 'Solo un amministratore dell’account può modificare il modello di valutazione di questo sito.',
 
     'flash' => [

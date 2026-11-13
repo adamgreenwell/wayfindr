@@ -1,9 +1,25 @@
-<x-layouts.app :title="__('rating_templates.document_title')" :agent="$agent" :account="$account">
-            <x-page-header :subtitle="__('rating_templates.subtitle')" :back-href="route('dashboard.sites.show', $site).'#rating-prompt-heading'" :back-label="__('rating_templates.back')">
+<x-layouts.site :site="$site" :title="__('rating_templates.document_title')" :agent="$agent" :account="$account">
+            <x-page-header :subtitle="__('rating_templates.subtitle')">
                 <x-slot:title-content>
                     {!! __('rating_templates.title', ['site' => '<span lang="">'.e($site->name).'</span>']) !!}
                 </x-slot:title-content>
             </x-page-header>
+
+            <style>
+                /* The per-language wording sits in table cells, outside any
+                   .field, so it takes the field input look explicitly and keeps
+                   a readable minimum width on narrow screens. */
+                .rating-template-input {
+                    width: 100%;
+                    min-width: 12rem;
+                    border: 1px solid var(--border);
+                    border-radius: 6px;
+                    padding: 8px 10px;
+                    background: var(--wf-surface);
+                    color: var(--text);
+                    font-size: 1rem;
+                }
+            </style>
 
             @if (session('status'))
                 <p class="status-message" role="status">{{ __(session('status'), ['version' => session('published_version')]) }}</p>
@@ -27,7 +43,7 @@
                         <fieldset class="field">
                             <legend>{{ __('rating_templates.scale.legend') }}</legend>
                             @foreach (\App\Support\Sites\RatingTemplateDefinition::SCALES as $scale)
-                                <label for="draft_scale_{{ $scale }}">
+                                <label class="check-row" for="draft_scale_{{ $scale }}">
                                     <input type="radio" id="draft_scale_{{ $scale }}" name="draft[scale]" value="{{ $scale }}"
                                         @checked(old('draft.scale', $draft->scale()) === $scale)>
                                     {{ __('rating_templates.scale.'.$scale) }}
@@ -65,7 +81,7 @@
                                             </td>
                                             @foreach (\App\Support\Sites\RatingTemplateDefinition::LOCALES as $locale)
                                                 <td>
-                                                    <input type="text" lang="{{ $locale }}" maxlength="{{ \App\Support\Sites\RatingTemplateDefinition::TEXT_MAX }}"
+                                                    <input class="rating-template-input" type="text" lang="{{ $locale }}" maxlength="{{ \App\Support\Sites\RatingTemplateDefinition::TEXT_MAX }}"
                                                         name="draft[{{ $question }}][text][{{ $locale }}]"
                                                         aria-label="{{ __('rating_templates.questions.wording', ['question' => __('rating_templates.questions.'.$question), 'language' => __('rating_templates.locales.'.$locale)]) }}"
                                                         value="{{ old('draft.'.$question.'.text.'.$locale, $draft->toArray()[$question]['text'][$locale] ?? '') }}">
@@ -96,7 +112,7 @@
                                             <th scope="row">{{ __('rating_templates.labels.choices.'.$choice) }}</th>
                                             @foreach (\App\Support\Sites\RatingTemplateDefinition::LOCALES as $locale)
                                                 <td>
-                                                    <input type="text" lang="{{ $locale }}" maxlength="{{ \App\Support\Sites\RatingTemplateDefinition::LABEL_MAX }}"
+                                                    <input class="rating-template-input" type="text" lang="{{ $locale }}" maxlength="{{ \App\Support\Sites\RatingTemplateDefinition::LABEL_MAX }}"
                                                         name="draft[labels][{{ $choice }}][{{ $locale }}]"
                                                         aria-label="{{ __('rating_templates.labels.wording', ['answer' => __('rating_templates.labels.choices.'.$choice), 'language' => __('rating_templates.locales.'.$locale)]) }}"
                                                         value="{{ old('draft.labels.'.$choice.'.'.$locale, $draft->toArray()['labels'][$choice][$locale] ?? '') }}">
@@ -196,4 +212,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.site>

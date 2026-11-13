@@ -982,7 +982,7 @@
                         @method('PUT')
 
                         <div class="field">
-                            <label for="rating_enabled">
+                            <label class="check-row" for="rating_enabled">
                                 {{-- Unchecked boxes send nothing, so old() would fall back to the
                                      saved value and silently re-check a box just cleared. --}}
                                 <input type="hidden" name="rating_enabled" value="0">
@@ -998,7 +998,7 @@
                         <fieldset class="field">
                             <legend>{{ __('site_settings.rating.template') }}</legend>
                             @foreach (\App\Support\Sites\RatingTemplate::keys() as $templateKey)
-                                <label for="rating_template_{{ $templateKey }}">
+                                <label class="check-row" for="rating_template_{{ $templateKey }}">
                                     <input type="radio" id="rating_template_{{ $templateKey }}" name="rating_template" value="{{ $templateKey }}"
                                         @disabled($templateKey === 'custom' && $latestRatingTemplate === null)
                                         @checked(old('rating_template', $ratingPrompt->template->key) === $templateKey)>
