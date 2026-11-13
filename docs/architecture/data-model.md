@@ -4,8 +4,22 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 
 ## Core Records
 
-- `accounts`: tenant boundary for a support team.
+- `accounts`: tenant boundary for a support team. Nullable server-managed
+  `ai_article_catalogue_revision` and `ai_ticket_label_catalogue_revision` UUIDs
+  identify local AI catalogue dependencies without scanning source content on
+  repeated opens. PostgreSQL/SQLite triggers rotate them within relevant source
+  writes, including bulk SQL, and invalidate both owners on a move. NULL denotes
+  the existing-content revision zero; migration performs no backfill. Knowledge
+  adds an indexed latest-publication watermark for scheduled eligibility. Tokens
+  contain no transcript, visitor link, credentials or output and disappear with
+  the account. See [AI preparation](ai-assist-preparation-lifecycle.md).
 - `users`: Laravel users attached to one account with a starter `account_role` of `owner`, `admin`, or `agent`, optional `platform_role` instance authority, and an explicit online/away routing status for new automatic assignments.
+- `owner_bootstrap_requests`: the locked singleton for headless fresh-instance
+  owner bootstrap, holding the stable request hash, original completed receipt,
+  resource IDs and protected claim-file hash. It stores no reset token, URL or
+  private file path. Resource IDs deliberately have no cascading foreign keys,
+  so later owner/site changes retain the initial receipt; original claim issuance
+  and expiry do not prove consumption or grant management authority.
 - `custom_roles`: account-owned, deny-by-default permission sets for
   responsibilities the fixed Owner/Admin/Agent hierarchy cannot express. Checks
   read the currently assigned role rather than a copy on the user, so editing a
@@ -125,18 +139,114 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   coexist mid-deployment, so no process may delete another's rows. Those hidden
   rows are never collected. The subscribable side is polymorphic because the
   package is; only agents are ever attached.
+- `account_ai_connections`: at most one row per account, deleted with that
+  account. Proposed and active configurations are encrypted separately; an
+  installation selection references its revision without copying the operator
+  key. Opaque proposal/test/active revisions, fingerprint and policy identity
+  bind a successful synthetic test to the exact configuration, and a test
+  generation fences duplicate or superseded probes. Explicit activation changes
+  the processor; draft edits leave active processing intact. A nullable, sanitized
+  `test_failure_code` records actionable unavailable causes without provider text. `enabled` pauses
+  processing, while `uses_installation_default` preserves the existing manual
+  path only until deliberate selection or disconnect retires that eligibility.
+- `account_ai_assist_policies`: one explicit account policy, deleted with its
+  account. Off/Manual/Prepare, four task flags, published-context consent and an
+  optional narrower context ceiling are independent of connection test evidence.
+  An opaque UUID changes with processing choices; no row preserves legacy Manual
+  upgrade behavior. First opt-in initializes existing site policies as Manual.
+- `site_ai_assist_policies`: one site policy with an account link, deleted with
+  its site/account. Modes/tasks/context intersect the account policy; sites added
+  after explicit opt-in have no row and resolve Off until deliberately enabled.
+  Site consent gates same-account published context, without claiming
+  article ownership or site isolation. UUID revisions prevent policy ABA reuse.
+  Both tables carry nullable UUID `preparation_consent_revision`. Prepare is
+  effective only when this approval matches the current policy revision at both
+  scopes. Existing Prepare rows remain configured but resolve Manual; the shared
+  preparation migration adds NULL columns without approval backfill. Fresh saves
+  under the new disclosure stamp new revisions, and old forms/writers cannot
+  inherit that consent. Neither policy table stores visitor links, prompts,
+  output or credentials.
+- `account_ai_usage_limits`: one account's nullable request/token, concurrency
+  and output ceilings, deleted with the account. Null inherits installation
+  policy; zero denies new attempts; positive values can only narrow it. These
+  settings are independent of connection revisions, keys and enablement.
+- `ai_usage_scopes`: stable installation/account mutex rows and cross-period
+  concurrency counters. The installation singleton is created atomically on
+  first ledger use, keeping fresh migrations empty for restore safety;
+  account scope identities do not rotate with the connection. Plain internal
+  account identifiers deliberately survive account deletion so in-flight leases
+  can still reconcile without refunding installation usage.
+- `ai_usage_periods`: unique scope/UTC-day records with held and charged request
+  and token counters. Daily identity comes from database wall time under locks;
+  late receipts adjust only their original dispatch period. Old periods are
+  retained for reconciliation rather than zeroed into today's allowance.
+- `ai_usage_attempts`: content-free reservation/claim/dispatch receipts, ordered
+  by sequence and identified by unique UUID. Account/source/revision/purpose/work
+  fingerprints bind deduplication and explicit replacement. Conservative bounds,
+  nullable reported usage, original period, opaque nonces, deadlines, sanitized
+  outcome/cooldown and an explicit concurrency fence prevent duplicate dispatch
+  or double release. Internal account/requester IDs have no cascading foreign
+  keys, preserving active accounting across deletion. No prompt, output,
+  credential, model endpoint or visitor-record copy is stored here.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
-  conversation, one row per conversation, overwritten by each refresh instead
-  of kept as history. Every worker write is guarded on `generation`, so a
+  conversation, one current row per conversation. Shared preparation retains at
+  most one preceding authorized Ready snapshot during a pending/running refresh;
+  terminal completion or failure clears it. Every worker write is guarded on `generation`, so a
   superseded job cannot publish its answer, and `source_last_message_id` is
   what lets a ready summary be marked stale once the conversation moves on. No
   prompt text is stored; `requested_by_id` is kept so the worker can re-derive
-  that agent's access immediately before any text reaches the provider.
+  that agent's access immediately before any text reaches the provider. All
+  four copilot stores also carry a nullable 64-character `connection_revision`:
+  requests stamp the resolved processor identity, workers recheck it before
+  dispatch/publication, and readers withhold unversioned or superseded output.
+  Existing queued work without a stamp cannot run; a fresh manual request can.
+  All four stores additionally carry nullable `policy_revision` and
+  `source_context_fingerprint` HMACs. Policy changes fence queued/late/visible
+  output independently of connection tests; source proofs bind insertion to the
+  bounded scrubbed context actually used. Old unstamped output cannot be inserted.
+  Opaque internal proofs are excluded from visitor-export payloads.
+
+- `ai_assist_preparation_receipts`: one mutable metadata receipt per account,
+  conversation, task and opaque fingerprint. The unique identity coalesces
+  equivalent viewers and retains failed/insufficient/expired results through
+  input A→B→A cycles. A database-clock retry deadline and current generation
+  allow deliberate bounded retries. No prompt or output is stored. Conversation
+  and account deletion cascade; the requesting agent becomes null on deletion.
+  Visitor export includes generation/lifecycle metadata, retry deadlines and staff
+  roles, omitting the internal fingerprint. All four copilot stores add
+  `preparation_fingerprint`, a bounded opaque `preparation_source_snapshot`,
+  `previous_output` and `retry_not_before`; these contain no copied prompt.
+  Export applies the same business-field rules to the current and prior slots;
+  erasure removes both. See [the lifecycle](ai-assist-preparation-lifecycle.md).
+
+- `conversation_draft_refinements`: one private slot per owning agent/conversation,
+  scoped to its account, with encrypted scrubbed input, scope/source proofs and
+  candidate. A content-free `authorized` slot grants the browser a cancellation
+  handle before draft capture; it has an empty operation, no payload/reservation
+  and can be consumed once. Raw original text is never stored. Input clears on Ready/terminal;
+  scope/preview clear on Cancel/failure/stale/Apply. Fixed 15-minute validity and
+  minute cleanup bound retention. Account/conversation/user deletion cascades;
+  site/visitor erasure reaches it through conversation deletion. Excluded from
+  visitor export and shared preparation. See [private refinement](ai-assist-draft-refinement.md).
+- `conversation_draft_refinement_sends`: metadata-only account/conversation,
+  generation and start time for an erasure-visible provider send claim. It is
+  committed before provider code, survives Cancel/supersession/user deletion,
+  and clears after a known returned result/proven unsent failure, or the 180-second
+  uncertainty window for timeouts, lost responses and interrupted calls.
+  Visitor erasure refuses fresh claims. Account/conversation deletion cascades;
+  excluded from visitor export. Rollback drops claims before private slots after
+  stopping admission/workers; both tables are additive without backfill.
 - `conversation_copilot_reply_drafts`: the latest suggested agent reply, under
   the same single-row, `generation`-guarded contract as summaries. A draft the
   conversation has moved past is blocked from insertion rather than quietly
-  reused, and the stored text only ever fills an empty composer — nothing in
-  this table can send a message to a visitor.
+  reused. Explicit insertion fills an empty composer or uses a freshly authorized
+  Preview/Apply replacement that preserves concurrent edits; it never sends.
+  Nullable `grounding` JSON holds bounded scrubbed supplied passages, signed
+  source proofs, validated proposal metadata and prompt/scorer identities for
+  consented grounded replies. Historical plaintext rows remain NULL. Reset and
+  failure clear both draft and grounding; deletion cascades with the conversation.
+  Visitor export includes the editable draft and excludes server-only source
+  mapping/proofs and validation metadata. See [grounding](ai-assist-grounded-drafts.md).
 - `conversation_copilot_ticket_suggestions`: a suggested title and priority for
   a conversation that has no ticket yet; applying one prefills the ticket form
   rather than creating a ticket. The model never names a label — `label_ids`
@@ -287,6 +397,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `break_glass_grants`: scoped, reasoned, time-bound, read-only platform
   operator access grants for support events.
 - `audit_events`: append-style records for important user, visitor, or system actions.
+  Private AI refinement lifecycle events use a closed content-free envelope with
+  opaque route/model identities, coarse timings and nullable reported usage;
+  existing account/site visibility, visitor export and erasure scrubbing apply.
+  See [AI Assist observability](ai-assist-observability.md).
   Managed-update events are an optional global mirror of the authoritative host
   journal, with null account/site ownership and a nullable unique
   `managed_update_event_key` binding installation, operation and host revision.
@@ -352,3 +466,17 @@ operator-facing data inventory and retention posture.
   self-hosted installs persist their current version state for upgrade checks.
 - Integration packages should stay thin and write through Laravel APIs rather than owning product persistence directly.
 - Platform operator data should describe instance authority only. It should not grant account support visibility, customer content access, or site-access bypass by default.
+
+## AI Assist feedback
+
+- `ai_assist_feedback`: one server-scoped observation per conversation, purpose,
+  generation and viewer, protected by a database unique key. Account, site,
+  conversation and user foreign keys cascade deletion. Viewed, used and rejected
+  timestamps are independent; no event implies another. Nullable usefulness and
+  correction enums preserve unanswered observations. Assessment revisions support
+  explicit compare-and-set updates and identical retries. A keyed source revision
+  fences feedback after private Apply clears its encrypted scope. No suggestion,
+  draft, prompt, edit history, free-text feedback or authorization receipt is stored.
+  Visitor export projects the viewer to a staff role and omits the source proof.
+  The additive migration needs no backfill; rollback drops only this feedback table.
+  See [Assist observability](ai-assist-observability.md).

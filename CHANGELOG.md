@@ -30,6 +30,287 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-16
+
+**No operator action required.** Existing installation-level manual copilot
+settings and ordinary support workflows remain available. Account-owned AI
+connections and policies are optional; the seven additive migrations run through
+the normal migration path. New private password-reset links require JavaScript;
+previous links and custom notification URL callbacks remain supported. Host
+helper `0.11.0` remains a separate administrator upgrade. Managed application
+upgrades and protective-archive recovery remain unqualified, with **0/100**
+managed scenarios qualified.
+
+### Added
+
+- Account administrators can manage an installation connection selection or an
+  account-owned AI connection, test a proposed configuration before activation,
+  discover supported models, and inspect bounded usage. Credentials stay
+  encrypted and write-only; activation and delayed work recheck the current
+  account and site authority.
+- Account and site AI controls cover availability, enabled tasks, permitted
+  context, connection revision and usage ceilings. Existing manual tools obey
+  those controls without sending a visitor reply or applying support changes
+  automatically.
+- Account-owned and explicitly selected installation connections use the guarded
+  request, probe and discovery path. Endpoint policy, bounded transport and
+  atomic usage reservations bind outbound work to its approved processor and
+  current authority; dispatched or uncertain work retains conservative usage
+  accounting.
+- Shared AI work identities and cache classifications track bounded conversation
+  sources, policy and connection revisions, and local catalogue changes. This
+  foundation does not add generation on workspace open. Automatic preparation,
+  the unified Assist rail, grounded answer generation and draft refinement remain
+  future work.
+
+### Security
+
+- New recovery notifications carry reset credentials in a browser fragment on
+  the fixed `/reset-password` landing, keeping them out of HTTP request URLs.
+  The first-party script clears the fragment and submits through the existing
+  CSRF-protected reset POST. Uncertain outcomes disable resubmission; normal
+  expiry, single use and session revocation remain in force. The protected
+  owner-bootstrap v1 claim is unchanged, so integrations must validate it before
+  deriving a fragment link for a compatible destination.
+
+### Fixed
+
+- AI catalogue invalidation covers bulk SQL, account moves and rollback without
+  scanning catalogue content. PostgreSQL catalogue function definitions can be
+  safely recreated when a fresh migration or restore retains the owned functions.
+
+## [1.5.0] - 2026-10-15
+
+**No operator action required.** Existing installations retain their normal
+bootstrap and password-recovery behavior; the new bootstrap request table is
+additive. Headless owner provisioning is an optional path for a fresh, private
+installation. Host helper `0.11.0` remains a separate administrator upgrade.
+Managed application upgrades and protective-archive recovery remain unqualified,
+with **0/100** managed scenarios qualified.
+
+### Added
+
+- `wayfindr:bootstrap-owner` creates a fresh account, ordinary Owner and first
+  site without granting platform operator access. It delivers an expiring,
+  single-use password-setting claim exclusively into a protected file, using the
+  existing Laravel recovery flow without printing or mailing a password or link.
+- A stable request UUID and locked singleton bootstrap record serialize initial
+  requests. Exact committed retries return the original receipt without rotating
+  credentials; partial or uncertain outcomes preserve private evidence and hold
+  for operator reconciliation.
+- Read-only bootstrap status distinguishes the original completed receipt from
+  current owner/site bindings. The strict first-activation check remains separate
+  from `--status --completion-only`, which lets later restarts recognize a valid
+  completed bootstrap after a legitimate ownership transfer. Neither status
+  claims a completed password handoff or grants management authority.
+
+### Fixed
+
+- The VM qualification observer recognizes the already-published Helper `0.11.0`
+  through its exact approved source map and retained upgrade receipt. Existing
+  provenance, pending-transaction, retained-byte and live-generation checks remain
+  required; recognizing the helper does not qualify managed update scenarios.
+
+## [1.4.5] - 2026-10-14
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.11.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+upgrades and protective-archive recovery remain unqualified, with **0/100**
+managed scenarios qualified.
+
+### Fixed
+
+- The managed-update protection guard waits up to ten seconds for existing Docker
+  execs to settle before fencing writers. One monotonic deadline covers polling
+  and the final process check. Transient health checks can finish normally;
+  persistent execs, malformed metadata, Docker errors, deadline expiry and hidden
+  upgrade-window processes still refuse protection. No command is exempted.
+- The ordinary helper CLI admits the complete, unchanged public `0.10.0` bundle
+  on an independently verified idle installation. Historical executor journals
+  remain readable, and interrupted upgrades to `0.10.0` retain their original
+  v1.4.4 distribution and CLI. Mixed, modified and held installations remain
+  ineligible. See the [helper 0.11 contract](docs/self-hosting/helper-0.11-candidate.md).
+
+### Changed
+
+- Updated the v1.4.4 publication record and native qualification evidence,
+  including failed-safe source preservation, a separate ordinary v1.4.3 restore
+  and retirement of the fresh test lab. Earlier VMs and held operations remain
+  preserved; these observations do not qualify managed application upgrades.
+
+## [1.4.4] - 2026-10-12
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.10.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+updates and restore remain under disposable-VM qualification.
+
+### Fixed
+
+- The managed updater verifies the serving source's configured HTTPS origin and
+  fresh release/key-bound proof before taking maintenance ownership. Early
+  fallback and explicit pre-protection recovery repeat that admission, so a
+  missing trusted issuer or invalid proof cannot stop source writers first.
+  Existing protected recovery and held/released target verification remain in
+  force. This addresses the lab-trust gap observed during the public
+  v1.4.2-to-v1.4.3 attempt; its failed operation remains preserved.
+- The ordinary helper CLI admits the exact public `0.9.0` bundle on an idle
+  installation and preserves historical executor journals. Pending upgrades to
+  public `0.9.0` still require their original v1.4.3 distribution and transaction
+  UUID. Active or held application work refuses replacement. See the
+  [helper 0.10 candidate contract](docs/self-hosting/helper-0.10-candidate.md).
+
+## [1.4.3] - 2026-10-11
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.9.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper. Managed application
+updates and restore remain under disposable-VM qualification.
+
+### Fixed
+
+- Managed runtime verification decodes one layer of Compose JSON dollar
+  escaping before comparing the rendered configuration with Docker. This
+  corrects the backup-worker command refusal observed during the public
+  v1.4.1-to-v1.4.2 attempt while preserving exact inspected commands and inherited
+  image defaults. Saved-output replay and source regressions do not qualify a
+  complete application upgrade or recover its held partial transition.
+- The ordinary helper CLI admits the exact public `0.8.0` bundle on an idle
+  installation and preserves historical `0.8.0` executor journals. Interrupted
+  upgrades to public `0.8.0` must finish with the original v1.4.2 distribution and
+  the same transaction UUID before a distinct successor transaction. Earlier
+  recovery contracts and the historical v1.4.0 bridge stay unchanged. Active or
+  held application work still refuses replacement. See the
+  [helper 0.9 candidate contract](docs/self-hosting/helper-0.9-candidate.md).
+
+## [1.4.2] - 2026-10-11
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.8.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper.
+
+### Fixed
+
+- Managed runtime checks treat an omitted or explicit `null` Compose command or
+  entrypoint as the image default. Explicit empty overrides remain distinct.
+  The correction is source-tested against a retained native refusal; it does
+  not recover the held operation or establish successful managed qualification.
+- The ordinary helper CLI also admits the exact public `0.7.0` source bundle
+  on an idle installation and preserves historical `0.7.0` executor journals.
+  Pending upgrades to public `0.7.0` remain owned by the original v1.4.1 CLI,
+  complete distribution and transaction UUID. Earlier `0.5.0` and `0.6.0`
+  recovery contracts and the historical v1.4.0 bridge remain unchanged. Active
+  or held application work still refuses replacement. See the
+  [helper 0.8 compatibility contract](docs/self-hosting/helper-0.8-candidate.md).
+
+## [1.4.1] - 2026-10-10
+
+**No operator action required.** The application adds no release requirements.
+Host helper `0.7.0` remains a separate, root-only administrator upgrade; pulling
+the application image does not upgrade an installed helper.
+
+### Fixed
+
+- Managed application updates create each replacement with Compose's supported
+  `up --no-start --no-deps` command, with builds and pulls disabled. The helper
+  inspects the stopped replacement before starting it. A nonzero creation exit
+  reports `apply_failed`; only an actual deadline reports `apply_timeout`.
+  Existing ambiguous creation intents remain held and are never automatically
+  replayed. This correction does not qualify managed updates for production use.
+- The normal helper CLI admits only exact published `0.4.0`, `0.5.0` or `0.6.0`
+  source bundles on idle installations. Historical `0.6.0` journal records stay
+  readable. Interrupted upgrades to public `0.6.0` must finish with their
+  original public v1.4.0 distribution and transaction before a new upgrade;
+  they cannot be retargeted. The historical active-operation bridge remains
+  limited to the complete public v1.4.0 distribution and its original
+  pre-mutation `0.5.0` failure.
+
+## [1.4.0] - 2026-10-10
+
+**No operator action required.** Pull and restart the application; there are no
+new database migrations. Optional managed updates remain under disposable-VM
+qualification and are not qualified for production use. Application updates
+preserve the installed host helper. Installing the helper corrections below
+requires a separate, explicit administrator command from a reviewed source
+distribution; an application update never replaces privileged host code.
+
+### Added
+
+- **A separate root-only bridge preserves one blocked 0.5 application apply
+  during helper replacement.** The root-only CLI admits only the exact public
+  source/target and initial pre-mutation failure history, verifies the corrected
+  read-only baseline, retains the complete application journal and swaps only
+  helper code. Normal replacement remains idle-only; application recovery is a
+  separate operator action. One disposable ARM64/containerd VM completed a
+  candidate 0.5-to-0.6 bridge with preservation; its application operation remains
+  `recovery_required`. Managed qualification remains 0/100. See the
+  [bridge contract and bounded candidate evidence](docs/self-hosting/helper-active-recovery-bridge.md).
+
+- **Helper 0.6 supports explicit replacement of exact published 0.4
+  and 0.5 bundles.** Transactions retain their original source identity and
+  historical executor journals. A frozen corrected 0.5 CLI finishes an existing
+  0.4-to-0.5 transaction with its original UUID and destination before a separate
+  successor upgrade. Ordinary replacement still refuses active application
+  operations. See the [helper upgrade procedure](docs/self-hosting/managed-updater.md#upgrading-the-installed-helper)
+  and [bounded candidate observations](docs/self-hosting/helper-0.6-candidate.md).
+  Remaining native qualification is tracked under
+  [#1140](https://github.com/adamgreenwell/wayfindr/issues/1140).
+
+### Fixed
+
+- **Managed helper process listings include the PID column Docker requires.**
+  Command settlement and application-role readiness request both PID and full
+  command arguments, preventing a deterministic Docker process-listing refusal
+  while retaining pending-exec, orphaned upgrade-window and wrong-role guards.
+  Native read-only candidate component checks passed; full managed qualification
+  remains incomplete. An installed `0.5.0` helper receives this correction only
+  through the separate, supported replacement or recovery bridge procedure.
+
+- **Helper replacement verifies systemd's freezer state before admitting work.**
+  After the complete new helper starts, the upgrade CLI authenticates the exact
+  systemd process and verifies that its kernel cgroup is already unfrozen. If
+  systemd still caches the old generation's frozen state, the CLI explicitly
+  reconciles it and verifies the same process again before clearing the
+  transaction. Failed verification retains explicit recovery ownership.
+
+## [1.3.0] - 2026-10-10
+
+**No operator action required.** Pull and restart the application;
+there are no new database migrations. Managed updates remain under disposable
+VM qualification and are not yet qualified for production use. Application
+updates preserve an enrolled host's installed helper; choosing the fixed helper
+requires the separate, explicit root-only upgrade below.
+
+### Added
+
+- **Upgrade an enrolled helper without reenrolling the installation.** The
+  reviewed source distribution includes a separate root-only command for the
+  exact published `0.4.0` helper to `0.5.0`. It verifies the reviewed bundle,
+  preserves enrollment credentials, journal, locks and retained recovery
+  material, and atomically exchanges complete code generations. Interrupted
+  replacement keeps its transaction and stop gate for explicit recovery with
+  the same distribution and bundle. It does not update the application image,
+  restart application containers, migrate data or rotate credentials. See the
+  [helper upgrade procedure](docs/self-hosting/managed-updater.md#upgrading-the-installed-helper).
+
+### Fixed
+
+- **Qualification can observe a supported helper upgrade and early interruptions.**
+  The disposable-VM runner separately verifies the published application source
+  and installed helper distribution, exact code generations and completed
+  upgrade receipt. It can observe preparation and protection checkpoints before
+  apply, while preserving the stronger plan binding once resolution completes.
+  These controls collect evidence; they do not enroll a host or qualify an update.
+- **Managed image verification supports Docker 29's containerd image store.**
+  Helper `0.5.0` distinguishes the published OCI index, selected platform
+  manifest and configuration digest from Docker's local image identity. It
+  verifies immutable image selection, public configuration/rootfs identity and
+  the selected container platform before admitting a migration or reporting
+  serving success. The same identity checks retain support for the classic
+  Docker image store. The application protocol remains `1`; a newer application
+  image alone does not replace an already installed `0.4.0` helper.
+
 ## [1.2.0] - 2026-10-09
 
 **No operator action required.** Pull and restart. One additive

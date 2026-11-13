@@ -1,0 +1,222 @@
+{
+  "date": "2026-10-17",
+  "tester": "Codex",
+  "base_commit": "5954d0cfd3f498bdbdc1ead0446a7d8c3cfd15e6",
+  "branch": "feat/1176-ai-assist-qualification-completion",
+  "synthetic_only": true,
+  "live_provider_quality": false,
+  "human_screen_reader": "pending",
+  "physical_small_device": "pending",
+  "deployed_upgrade": "not_exercised",
+  "runtime": {
+    "php": "8.5.10",
+    "node": "26.8.1",
+    "chromium": "155.0.8059.80",
+    "sqlite": "3.53.4",
+    "postgresql": "17.10"
+  },
+  "candidate_source_hashes": {
+    "apps/server/lang/de/ai_assist.php": "98cb4c800d8f3e34bdba944f73f15ed55c4b2b2128e7e083ad1d220c9c673d1d",
+    "apps/server/lang/en/ai_assist.php": "dafb4c7664985a48b15cb98b52b5b8c548da80ef368c1d2a3f71590e199d363a",
+    "apps/server/lang/it/ai_assist.php": "6054244b291202875303768eff843658fd488c4f8dc1ff78961f63d1e353fa15",
+    "apps/server/resources/views/agent/conversations/partials/assist-feedback.blade.php": "62186a4ff183239c0361d62f5d0fbe63419f7447fe902bdc0fd12ed0cf615cbe",
+    "apps/server/resources/views/agent/conversations/partials/assist-rail-styles.blade.php": "27ff2aeda685881b079389703d2062e3fe0e73ce872c7f274216a6f522219543",
+    "apps/server/resources/views/agent/conversations/partials/draft-refinement-script.blade.php": "7a838bc853973ab5e4aa1dd11f0704a498cb7958eb332ae2364981073007c19a",
+    "apps/server/tests/BrowserScripts/draft-refinement.test.cjs": "fddff47a6c614673f7693bbb3973963f1c1e1f95b5d1813380b74a6c5cd5fb9c",
+    "apps/server/tests/Feature/AiAssistPanelIntegrationTest.php": "faf2f32ab365490fccd8c06c5ac8c065edf97ba08635867ad98e23c85d91c6f3",
+    "apps/server/tests/Feature/AiAssistRuntimeEvaluationTest.php": "4ebf8a5869053d21fa9cbbe4b81fc1d08eb96271079404e25841ce983a19b8c0",
+    "apps/server/tests/Feature/AiAssistUpgradeContainmentTest.php": "11e9f8c100b20d8fedc3d658b8950c3e0584a0f2e355b9ec35cd603494d3de66",
+    "apps/server/tests/Fixtures/ai-assist-runtime-evaluation.json": "4b32ddae97a355524c9e2dba88cdbe021ca98c561b355f91fd85aa669748b7b9",
+    "scripts/probes/ai-assist-feedback-layout.js": "ac6525af6dd42456819908f2c72026549e8f9b754eccdf988e0ab16048daa08e"
+  },
+  "full_sqlite": {
+    "command": "php artisan config:clear; php -d memory_limit=1G vendor/bin/pest --compact",
+    "cwd": "apps/server",
+    "exit_code": 2,
+    "report": {
+      "tool": "pest",
+      "result": "failed",
+      "tests": 6957,
+      "passed": 6887,
+      "assertions": 79594,
+      "duration_ms": 206651,
+      "failed": 3,
+      "errors": 7,
+      "skipped": 60
+    },
+    "exact_existing_bootstrap_baseline": true,
+    "source_unchanged_during_run": true,
+    "log_sha256": "f5d3cf1e3ed14eb72b8b9af827436503eb3fbf5e79ab2ee9c96953aa03c84446",
+    "baseline_cases": [
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_different_requests_or_changed_request_data_cannot_reuse_a_committed_bootstrap",
+        "line": 148
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_read_only_status_needs_no_claim_file_and_never_infers_token_consumption_or_management_authority",
+        "line": 263
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_completion_only_never_bypasses_missing_or_invalid_receipts_and_cannot_bootstrap_an_owner",
+        "line": 310
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_fresh_headless_bootstrap_issues_a_protected_claim_for_an_ordinary_owner_only",
+        "line": 86
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_the_claim_uses_the_normal_one_use_password_reset_and_sign_in_flow",
+        "line": 106
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_the_claim_expires_according_to_the_admitted_normal_broker_configuration",
+        "line": 123
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_an_exact_committed_retry_returns_the_stable_receipt_and_never_rotates_the_claim",
+        "line": 445
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_missing_or_changed_committed_claims_hold_without_token_reissuance",
+        "line": 445
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_replay_verifies_the_exact_claim_resource_envelope_beyond_a_matching_file_hash",
+        "line": 167
+      },
+      {
+        "test": "P\\Tests\\Feature\\BootstrapOwnerCommandTest::__pest_evaluable_completion_only_status_preserves_legitimate_later_ownership_changes_without_promoting_the_initial_binding",
+        "line": 850
+      }
+    ]
+  },
+  "scoped_postgresql": {
+    "report": {
+      "tool": "pest",
+      "result": "passed",
+      "tests": 1268,
+      "passed": 1268,
+      "assertions": 9153,
+      "duration_ms": 415395
+    },
+    "files": [
+      "tests/Feature/AccountAiConnectionPermissionTest.php",
+      "tests/Feature/AccountAiConnectionsTest.php",
+      "tests/Feature/AgentAccountAiAssistTest.php",
+      "tests/Feature/AgentConversationCopilotKnowledgeSuggestionTest.php",
+      "tests/Feature/AgentConversationCopilotPolicyIntegrationTest.php",
+      "tests/Feature/AgentConversationCopilotReplyDraftTest.php",
+      "tests/Feature/AgentConversationCopilotSummaryTest.php",
+      "tests/Feature/AgentConversationCopilotTicketSuggestionTest.php",
+      "tests/Feature/AgentConversationCopilotUsageIntegrationTest.php",
+      "tests/Feature/AgentCopilotProviderTest.php",
+      "tests/Feature/AiAssistFullFlowTest.php",
+      "tests/Feature/AiAssistPanelIntegrationTest.php",
+      "tests/Feature/AiAssistPolicyConcurrencyTest.php",
+      "tests/Feature/AiAssistPolicyTest.php",
+      "tests/Feature/AiAssistPolicyUiTest.php",
+      "tests/Feature/AiAssistPreparationAuditTest.php",
+      "tests/Feature/AiAssistPreparationConcurrencyTest.php",
+      "tests/Feature/AiAssistPreparationConsentTest.php",
+      "tests/Feature/AiAssistPreparationIdentityTest.php",
+      "tests/Feature/AiAssistPreparationLifecycleTest.php",
+      "tests/Feature/AiAssistPreparationMigrationTest.php",
+      "tests/Feature/AiAssistPreparationThrottleTest.php",
+      "tests/Feature/AiAssistProvenanceTest.php",
+      "tests/Feature/AiAssistRailTest.php",
+      "tests/Feature/AiAssistRuntimeEvaluationTest.php",
+      "tests/Feature/AiAssistSelectedSiteTokenControllerTest.php",
+      "tests/Feature/AiAssistSourceInspectionTest.php",
+      "tests/Feature/AiAssistThrottleIsolationTest.php",
+      "tests/Feature/AiAssistUpgradeContainmentTest.php",
+      "tests/Feature/AiUsageAdmissionFoundationTest.php",
+      "tests/Feature/AiUsageLedgerConcurrencyTest.php",
+      "tests/Feature/AiUsageLedgerTest.php",
+      "tests/Feature/AiUsagePolicyTest.php",
+      "tests/Feature/AssistFeedbackConcurrencyTest.php",
+      "tests/Feature/AssistFeedbackTest.php",
+      "tests/Feature/AssistRetentionTest.php",
+      "tests/Feature/ConversationGroundedReplyIntegrationTest.php",
+      "tests/Feature/ConversationGroundingSelectorTest.php",
+      "tests/Feature/DraftRefinementAuditTest.php",
+      "tests/Feature/DraftRefinementConcurrencyTest.php",
+      "tests/Feature/DraftRefinementContextTest.php",
+      "tests/Feature/DraftRefinementLifecycleTest.php",
+      "tests/Unit/AiReportedUsageParserTest.php",
+      "tests/Unit/ConversationGroundedReplyOutputParserTest.php",
+      "tests/Unit/DraftRefinementContractTest.php",
+      "tests/Unit/DraftRefinementSafetyGuardTest.php",
+      "tests/Unit/GroundingSourceReferenceTest.php",
+      "tests/Unit/GuardedAccountAiConnectionProbeTest.php"
+    ],
+    "stage": "Historical scoped run before feedback/browser copy and receipt orchestration fix; current affected suites and runtime receipts rerun separately",
+    "disposable_target_verified": true,
+    "historical_runtime_suite_identity": "a7d4a7e076fb66f838364b23784f657d71473e87e68e3f713e0025593ff7c151"
+  },
+  "final_sqlite_focused": {
+    "report": {
+      "tool": "pest",
+      "result": "passed",
+      "tests": 83,
+      "passed": 83,
+      "assertions": 1645,
+      "duration_ms": 4392
+    },
+    "runtime_suite_identity": "9346f056b0111d9c0eb1ffe902ad3d656da8b3f907a4e4d5d31e5aacf3c043ea",
+    "files": [
+      "AiAssistRuntimeEvaluationTest",
+      "AiAssistUpgradeContainmentTest",
+      "AiAssistPanelIntegrationTest",
+      "TranslationPipelineTest"
+    ]
+  },
+  "browser_scripts": {
+    "command": "node --test tests/BrowserScripts/*.test.cjs",
+    "cwd": "apps/server",
+    "passed": 310,
+    "failed": 0
+  },
+  "other_checks": [
+    "Pint on touched PHP/catalogues",
+    "Extracted inline refinement script: node --check",
+    "git diff --check",
+    "scripts/check-public-info-boundary.sh",
+    "make wiki-test"
+  ],
+  "copied_regressions": {
+    "php_variants": 6,
+    "intended_php_assertion_failures": 7,
+    "browser_variants": 1,
+    "native_layout_variants": 1,
+    "live_source_unchanged": true,
+    "identity_contract_variants": 2
+  },
+  "final_postgresql_affected": {
+    "report": {
+      "tool": "pest",
+      "result": "passed",
+      "tests": 132,
+      "passed": 132,
+      "assertions": 2121,
+      "duration_ms": 60558
+    },
+    "files": [
+      "tests/Feature/AiAssistRuntimeEvaluationTest.php",
+      "tests/Feature/AiAssistUpgradeContainmentTest.php",
+      "tests/Feature/AiAssistPanelIntegrationTest.php",
+      "tests/Feature/TranslationPipelineTest.php",
+      "tests/Feature/AiAssistFullFlowTest.php",
+      "tests/Feature/AssistFeedbackTest.php"
+    ],
+    "exit_code": 0,
+    "log_sha256": "f083ceb7e94abd4df03f269c9ecb172849042d564be3351be737b9f208a647d8",
+    "runtime_suite_identity": "9346f056b0111d9c0eb1ffe902ad3d656da8b3f907a4e4d5d31e5aacf3c043ea",
+    "disposable_target_verified": true
+  },
+  "filtered_receipt_contract": {
+    "runtime_cases": 25,
+    "identity_contract_passed": false,
+    "complete": false
+  },
+  "runtime_source_files": 1111
+}

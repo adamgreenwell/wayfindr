@@ -77,6 +77,20 @@ return [
     ],
 
     'actions' => [
+        'conversation_ai_summary_started' => 'Vorbereitung der Zusammenfassung gestartet',
+        'conversation_ai_reply_draft_started' => 'Vorbereitung des Antwortentwurfs gestartet',
+        'conversation_ai_knowledge_suggestion_started' => 'Vorbereitung der Artikelvorschläge gestartet',
+        'conversation_ai_ticket_suggestion_started' => 'Vorbereitung des Ticketvorschlags gestartet',
+
+        'conversation_ai_draft_refinement_requested' => 'Private Entwurfsüberarbeitung angefordert',
+        'conversation_ai_draft_refinement_started' => 'Private Entwurfsüberarbeitung gestartet',
+        'conversation_ai_draft_refinement_ready' => 'Private Entwurfsvorschau vorbereitet',
+        'conversation_ai_draft_refinement_failed' => 'Private Entwurfsüberarbeitung fehlgeschlagen',
+        'conversation_ai_draft_refinement_stale' => 'Private Entwurfsüberarbeitung veraltet',
+        'conversation_ai_draft_refinement_cancelled' => 'Private Entwurfsüberarbeitung abgebrochen',
+        'conversation_ai_draft_refinement_applied' => 'Ersetzen des privaten Entwurfs autorisiert',
+        'conversation_ai_draft_refinement_superseded' => 'Private Entwurfsüberarbeitung ersetzt',
+        'conversation_ai_draft_refinement_expired' => 'Private Entwurfsüberarbeitung abgelaufen',
         'agent_created' => 'Agent erstellt',
         'agent_deactivated' => 'Agent deaktiviert',
         'agent_password_updated' => 'Passwort geändert',

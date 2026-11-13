@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\GenerateConversationCopilotReplyDraft;
 use App\Models\Account;
+use App\Models\AccountAiConnection;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationCopilotReplyDraft;
@@ -15,14 +16,19 @@ use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Ai\AgentCopilotConnectionResolver;
 use App\Support\Ai\AgentCopilotPrompt;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\AgentCopilotResult;
+use App\Support\Ai\Usage\AiUsageClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+
+require_once __DIR__.'/../Fixtures/copilot-test-clock.php';
 
 uses(RefreshDatabase::class);
 
@@ -48,6 +54,7 @@ function conversationCopilotReplyDraftWorld(): array
 
 function configureConversationCopilotReplyDraft(): void
 {
+    app()->instance(AiUsageClock::class, new CopilotTestUsageClock);
     $settings = app(OperatorSettings::class);
     $settings->set('ai.provider', 'ollama');
     $settings->set('ai.model', 'qwen3.5:4b');
@@ -75,7 +82,7 @@ function queueConversationCopilotReplyDraft(array $world): GenerateConversationC
     return $queued;
 }
 
-test('the reply draft affordance and endpoints disappear when the provider is unconfigured', function (): void {
+test('an unconfigured provider leaves a resting rail without reply processing controls or endpoints', function (): void {
     $world = conversationCopilotReplyDraftWorld();
     ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'The checkout button is stuck.']);
     Queue::fake();
@@ -83,8 +90,8 @@ test('the reply draft affordance and endpoints disappear when the provider is un
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('Suggested reply')
-        ->assertDontSee('data-copilot-reply-draft', false);
+        ->assertSee(__('ai_assist.rail.unavailable'))
+        ->assertDontSee('data-task="reply"', false);
 
     $this->actingAs($world['agent'])
         ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
@@ -115,7 +122,7 @@ test('reply suggestions require current reply permission even when the transcrip
     $this->actingAs($viewer)
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertDontSee('data-copilot-reply-draft', false);
+        ->assertDontSee('data-task="reply"', false);
 
     $this->actingAs($viewer)
         ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
@@ -137,9 +144,9 @@ test('a configured provider exposes an explicitly suggested on-demand reply draf
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertSee('Suggested reply')
-        ->assertSee('Draft a reply')
+        ->assertSee('Prepare suggestion')
         ->assertSee('You review and send every reply.')
-        ->assertSee('data-copilot-reply-draft', false)
+        ->assertSee('data-task="reply"', false)
         ->assertSee('window.wayfindrConversationReplyDraftTranscriptUpdated', false);
 });
 
@@ -185,9 +192,10 @@ test('requesting a reply draft queues one id-only job and records safe audit met
         ->not->toContain('WF-AIDRAFT');
 
     $event = AuditEvent::query()->where('action', 'conversation.ai_reply_draft.requested')->sole();
-    expect($event->metadata)->toBe([
+    expect(Arr::only($event->metadata, ['draft_id', 'generation', 'connection_revision']))->toBe([
         'draft_id' => $draft->id,
         'generation' => $draft->generation,
+        'connection_revision' => $draft->connection_revision,
     ])->and(json_encode($event->metadata))->not->toContain('checkout button');
 
     $this->actingAs($world['agent'])
@@ -284,8 +292,8 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
         ->assertSee($draft->draft)
-        ->assertSee('Use suggested draft')
-        ->assertSee('data-copilot-reply-draft-use', false)
+        ->assertSee('Insert suggestion')
+        ->assertSee('data-ai-use', false)
         ->assertSee('body.value.trim() !==', false)
         ->assertSee("body.dispatchEvent(new Event('input'", false)
         ->assertSee('const maximumAttempts = 210;', false);
@@ -299,6 +307,7 @@ test('a new attachment-only message visibly stales a reply suggestion and blocks
         'conversation_id' => $world['conversation']->id,
         'requested_by_id' => $world['agent']->id,
         'generation' => (string) Str::uuid(),
+        'connection_revision' => app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision,
         'status' => ConversationCopilotReplyDraft::STATUS_READY,
         'draft' => 'Absolutely. What happened?',
         'source_last_message_id' => $source->id,
@@ -359,8 +368,8 @@ test('provider failures are generic in storage logs and the agent surface', func
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
         ->assertOk()
-        ->assertSee('The reply draft could not be generated.')
-        ->assertSee('Try draft again')
+        ->assertSee('AI assistance is unavailable right now. Your support workflow still works.')
+        ->assertSee('Try again')
         ->assertDontSee('provider-secret');
 });
 
@@ -450,4 +459,184 @@ test('the worker rechecks reply permission before sending transcript text', func
 
     expect($fake->called)->toBeFalse()
         ->and(ConversationCopilotReplyDraft::query()->sole()->failure_code)->toBe('access_revoked');
+});
+
+/** Provider callback runs inside the external wait boundary without making a network call. */
+function conversationCopilotReplyDraftRevisionProvider(Closure $callback): AgentCopilotProvider
+{
+    return new class($callback) implements AgentCopilotProvider
+    {
+        public int $calls = 0;
+
+        public ?AgentCopilotPrompt $prompt = null;
+
+        public function __construct(private readonly Closure $callback) {}
+
+        public function generate(AgentCopilotPrompt $prompt): AgentCopilotResult
+        {
+            $this->calls++;
+            $this->prompt = $prompt;
+            ($this->callback)();
+
+            return new AgentCopilotResult('A generated reply.', 'fake', 'fake');
+        }
+
+        public function probe(): AgentCopilotResult
+        {
+            throw new LogicException('A generation must not run a connection probe.');
+        }
+    };
+}
+
+test('reply-draft generations reject connection changes before and during provider work', function (bool $duringCall, bool $disable, bool $accountDisabled = false): void {
+    $world = conversationCopilotReplyDraftWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotReplyDraft();
+    $job = queueConversationCopilotReplyDraft($world);
+    $requestedRevision = ConversationCopilotReplyDraft::query()->sole()->connection_revision;
+    $change = static function () use ($disable, $accountDisabled, $world): void {
+        if ($accountDisabled) {
+            AccountAiConnection::query()->forceCreate(['account_id' => $world['account']->id, 'enabled' => false]);
+
+            return;
+        }
+        app(OperatorSettings::class)->set($disable ? 'ai.provider' : 'ai.model', $disable ? '' : 'replacement-model');
+    };
+    if (! $duringCall) {
+        $change();
+    }
+    $fake = conversationCopilotReplyDraftRevisionProvider(function () use ($duringCall, $change): void {
+        if ($duringCall) {
+            $change();
+        }
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    $artifact = ConversationCopilotReplyDraft::query()->sole();
+    expect($fake->calls)->toBe($duringCall ? 1 : 0)
+        ->and($artifact->status)->toBe(ConversationCopilotReplyDraft::STATUS_FAILED)
+        ->and($artifact->failure_code)->toBe('connection_changed');
+    if ($duringCall) {
+        expect($fake->prompt?->connection?->accountId)->toBe((int) $world['account']->id)
+            ->and($fake->prompt?->connection?->revision)->toBe($requestedRevision);
+    }
+})->with([
+    'rotated while queued' => [false, false],
+    'disabled while queued' => [false, true],
+    'rotated during provider' => [true, false],
+    'disabled during provider' => [true, true],
+    'account disabled while queued' => [false, false, true],
+    'account disabled during provider' => [true, false, true],
+]);
+
+test('reply-draft pending work coalesces only within the requested connection revision', function (): void {
+    $world = conversationCopilotReplyDraftWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotReplyDraft();
+    $oldJob = queueConversationCopilotReplyDraft($world);
+    $old = ConversationCopilotReplyDraft::query()->sole();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
+        ->assertRedirect();
+
+    $replacement = $old->fresh();
+    expect($replacement->generation)->not->toBe($old->generation)
+        ->and($replacement->connection_revision)->not->toBe($old->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotReplyDraft::class, 2);
+    $fake = conversationCopilotReplyDraftRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+    app()->call([$oldJob, 'handle']);
+    expect($fake->calls)->toBe(0)
+        ->and($replacement->fresh()->status)->toBe(ConversationCopilotReplyDraft::STATUS_PENDING);
+});
+
+test('reply-draft legacy queued work cannot adopt the current installation connection', function (): void {
+    $world = conversationCopilotReplyDraftWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotReplyDraft();
+    $job = queueConversationCopilotReplyDraft($world);
+    ConversationCopilotReplyDraft::query()->sole()->forceFill(['connection_revision' => null])->save();
+    $fake = conversationCopilotReplyDraftRevisionProvider(static function (): void {});
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(0)
+        ->and(ConversationCopilotReplyDraft::query()->sole()->failure_code)->toBe('connection_changed');
+});
+
+test('reply-draft output is withheld after connection changes and for unversioned legacy rows', function (bool $legacy): void {
+    $world = conversationCopilotReplyDraftWorld();
+    $message = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotReplyDraft();
+    $revision = app(AgentCopilotConnectionResolver::class)->forAccount((int) $world['account']->id)->revision;
+    ConversationCopilotReplyDraft::query()->create([
+        'conversation_id' => $world['conversation']->id,
+        'requested_by_id' => $world['agent']->id,
+        'generation' => (string) Str::uuid(),
+        'connection_revision' => $legacy ? null : $revision,
+        'status' => ConversationCopilotReplyDraft::STATUS_READY,
+        'draft' => 'A private obsolete draft.',
+        'source_last_message_id' => $message->id,
+        'source_message_count' => 1,
+        'requested_at' => now(),
+        'completed_at' => now(),
+    ]);
+    if (! $legacy) {
+        app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+    }
+
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.copilot-reply-draft.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete draft.');
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.conversations.show', $world['conversation']->support_code))
+        ->assertOk()
+        ->assertDontSee('A private obsolete draft.');
+})->with(['superseded revision' => false, 'legacy revision' => true]);
+
+test('reply-draft completion rechecks requester authority after the provider wait', function (): void {
+    $world = conversationCopilotReplyDraftWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help with renewal.']);
+    configureConversationCopilotReplyDraft();
+    $job = queueConversationCopilotReplyDraft($world);
+    $fake = conversationCopilotReplyDraftRevisionProvider(function () use ($world): void {
+        $world['agent']->forceFill(['deactivated_at' => now()])->save();
+    });
+    app()->instance(AgentCopilotProvider::class, $fake);
+
+    app()->call([$job, 'handle']);
+
+    expect($fake->calls)->toBe(1)
+        ->and(ConversationCopilotReplyDraft::query()->sole()->status)->toBe(ConversationCopilotReplyDraft::STATUS_FAILED)
+        ->and(ConversationCopilotReplyDraft::query()->sole()->failure_code)->toBe('access_revoked');
+});
+
+test('reply-draft rotation cannot replace an in-flight claim used by visitor erasure', function (): void {
+    $world = conversationCopilotReplyDraftWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please help.']);
+    configureConversationCopilotReplyDraft();
+    queueConversationCopilotReplyDraft($world);
+    $artifact = ConversationCopilotReplyDraft::query()->sole();
+    $artifact->forceFill([
+        'status' => ConversationCopilotReplyDraft::STATUS_RUNNING,
+        'started_at' => now(),
+    ])->save();
+    app(OperatorSettings::class)->set('ai.model', 'replacement-model');
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.conversations.copilot-reply-draft.store', $world['conversation']->support_code))
+        ->assertRedirect();
+
+    $retained = $artifact->fresh();
+    expect($retained->status)->toBe(ConversationCopilotReplyDraft::STATUS_RUNNING)
+        ->and($retained->generation)->toBe($artifact->generation)
+        ->and($retained->started_at->equalTo($artifact->started_at))->toBeTrue()
+        ->and($retained->connection_revision)->toBe($artifact->connection_revision);
+    Queue::assertPushed(GenerateConversationCopilotReplyDraft::class, 1);
 });

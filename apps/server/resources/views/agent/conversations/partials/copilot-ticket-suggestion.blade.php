@@ -1,3 +1,6 @@
+@if (isset($copilotPolicy) && ($copilotPolicy->explicit || $copilotTicketSuggestion === null || $copilotTicketSuggestion->preparation_fingerprint !== null))
+    @include('agent.conversations.partials.ai-assist-task', ['assistPurpose' => 'conversation_ticket_suggestion'])
+@else
 @php
     $copilotTicketSuggestionState = $copilotTicketSuggestion?->displayStatus();
     $copilotTicketSuggestionIsStale = $copilotTicketSuggestion?->isStaleComparedTo($latestConversationMessageId) ?? false;
@@ -8,6 +11,9 @@
     class="reply-template-preview"
     data-copilot-ticket-suggestion
     data-state="{{ $copilotTicketSuggestionState ?? 'empty' }}"
+    data-generation="{{ $copilotTicketSuggestion?->generation }}"
+    data-policy-revision="{{ $copilotTicketSuggestion?->policy_revision }}"
+    data-use-url="{{ route('dashboard.conversations.copilot-ticket-suggestion.use', ['supportCode' => $conversation->support_code]) }}"
     data-status-url="{{ route('dashboard.conversations.copilot-ticket-suggestion.show', $copilotTicketSuggestionRoute) }}"
 >
     <div class="reply-copilot-heading">
@@ -88,3 +94,5 @@
     <p class="field-help">{{ __('conversations.detail.ticket_copilot.privacy') }}</p>
     <p class="sr-only" role="status" aria-live="polite" data-copilot-ticket-suggestion-status></p>
 </div>
+
+@endif

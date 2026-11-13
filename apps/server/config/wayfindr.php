@@ -10,6 +10,34 @@ return [
         // Applied after deterministic secret/identifier scrubbing. Features
         // should still select the narrowest useful context before this guard.
         'max_context_characters' => (int) env('WAYFINDR_AI_MAX_CONTEXT_CHARACTERS', 30000),
+
+        // Operator-owned policy for the guarded account transport foundation.
+        // Usage admission remains unavailable; these values activate no calls.
+        'network' => [
+            'mode' => env('WAYFINDR_AI_NETWORK_MODE', 'public-only'),
+            'private_grants' => env('WAYFINDR_AI_PRIVATE_DESTINATIONS', '[]'),
+        ],
+
+        // New account attempts remain denied until an operator supplies finite
+        // ceilings and the adapter's output bound is enforced. Account values
+        // can only narrow these limits; existing manual installation work is
+        // not silently enrolled in this new admission path.
+        // Zero disables pruning; operators choose a justified retention window.
+        'observability' => [
+            'feedback_retention_days' => env('WAYFINDR_AI_FEEDBACK_RETENTION_DAYS', 0),
+            'audit_retention_days' => env('WAYFINDR_AI_AUDIT_RETENTION_DAYS', 0),
+            'usage_retention_days' => env('WAYFINDR_AI_USAGE_RETENTION_DAYS', 0),
+        ],
+        'usage' => [
+            'daily_requests' => env('WAYFINDR_AI_DAILY_REQUESTS', 0),
+            'daily_tokens' => env('WAYFINDR_AI_DAILY_TOKENS', 0),
+            'concurrency' => env('WAYFINDR_AI_CONCURRENCY', 0),
+            'max_output_tokens' => env('WAYFINDR_AI_MAX_OUTPUT_TOKENS', 0),
+            'queue_ttl_seconds' => env('WAYFINDR_AI_QUEUE_TTL_SECONDS', 300),
+            'claim_ttl_seconds' => env('WAYFINDR_AI_CLAIM_TTL_SECONDS', 30),
+            'dispatch_ttl_seconds' => env('WAYFINDR_AI_DISPATCH_TTL_SECONDS', 30),
+            'retry_cooldown_seconds' => env('WAYFINDR_AI_RETRY_COOLDOWN_SECONDS', 60),
+        ],
     ],
 
     'mail' => [
@@ -104,6 +132,16 @@ return [
                     (int) env('WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS', 1),
                 ) + 1).' hours',
                 'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three PLUS the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
+            ],
+            [
+                'label' => 'AI Assist observation metadata',
+                'value' => 'Operator configured; disabled at zero',
+                'description' => 'The scheduled wayfindr:prune-assist-observability command prunes configured feedback, Assist lifecycle audits and terminal usage metadata hourly in batches of 500. Zero disables each policy; usage requires at least 32 days. Active transport, concurrency and retry holds and current-day budgets are preserved. Backups and processor retention remain operator-owned.',
+            ],
+            [
+                'label' => 'Private AI refinements',
+                'value' => '15-minute validity; minute cleanup',
+                'description' => 'The scheduled wayfindr:prune-draft-refinements command deletes expired private input, source scope and previews every minute. Content is unusable after 15 minutes; physical deletion requires the scheduler. Metadata send claims survive cancellation and user deletion until the bounded 180-second uncertainty window ends.',
             ],
             [
                 'label' => 'API write receipts',

@@ -5,7 +5,43 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
-The latest public release is `v1.2.0`, at `56374e95`, published October 9 EDT
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb4`, dated October 12, 2026. Exact-main CI and the guarded publisher
+passed. Separate root and independent audits verified Release/assets, the source
+archive, both architecture OCI chains and static baked identities, and stable
+aliases. Helper `0.10.0` checks the serving source's trusted configured origin
+before maintenance ownership. It remains a separate administrator upgrade;
+application image updates preserve the installed helper. No operator action or
+migration is required for the application; standing notices remain. See
+[Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+The October 13 fresh AMD64/classic `v1.4.3` → `v1.4.4` attempt passed separate
+helper 0.10 installation and pre-Start continuity checks. One ordinary HTTPS
+Start returned 202, then native captures found `recovery_required` /
+`runtime_verification_failed` after mutation. Saved Docker layout/readiness
+checks pass for all five target roles, but configuration promotion and runtime
+verification remain incomplete. The [dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+retains the limits; uncaptured runtime/origin/realtime paths and the original
+refusal cause remain unknown.
+
+A later connection from the target web container to its own public HTTPS
+endpoint timed out at TCP, with zero TLS attempts. A read-only policy capture
+supports a current firewall inference: same-bridge traffic bypasses public-port
+DNAT and reaches local INPUT without an allow before default DROP. No packet
+trace or historical first-cause proof was captured. Before Start on a separately
+approved additional fresh pair, check configured public HTTPS and external
+S3/object-store reachability from web and managed migration contexts, then normal
+TLS and client access. Scope any lab rules to that VM's own application bridge
+and exact endpoints while retaining the SSH restriction. Restore keeps its own
+CA/bundle outside attachment restore scope; Source fixture/object evidence does
+not establish container access or external-object transfer.
+
+The current Source and Restore holds and all older held operations remain
+preserved, without recovery or Source keys/archive/ledger handoff to Restore.
+Managed updates remain **not qualified for production use**, with **0/100**
+scenarios qualified. Development source is `1.5.0-dev`; this reset publishes no
+release.
+
+The earlier public release, `v1.2.0` at `56374e95`, was published October 9 EDT
 (October 10 UTC). Its public Release, manifest, both platform image chains and
 aliases verified independently. ARM64 never-started baked identity verification
 passed. Actual ARM64 official installation/enrollment, idle helper restart and
@@ -24,9 +60,9 @@ and sequence/new API contact checks passed. One current key and no previous
 keys were present, so rotation was not exercised. Erasure used the production
 service, not dashboard confirmation. This is ordinary recovery, not managed
 protective custody.
-Managed protection/apply and active-operation reboot also require the
-[Docker 29 image-identity fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131)
-and a real newer compatible published target.
+The Docker 29 correction and real newer target are now published in 1.3.0.
+Managed protection/apply and active-operation reboot still require separate
+native qualification with the supported installed-helper upgrade.
 An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
 new published source enrolled with the fixed helper; an application image
 update alone does not replace host helper code.

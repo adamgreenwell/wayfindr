@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ProactiveMessageRule;
 use App\Models\User;
+use App\Support\Ai\Policy\AiAssistPolicyResolver;
 use JsonException;
 
 /** Select the shared minimum, text-only conversation context for copilot features. */
@@ -29,7 +30,7 @@ final readonly class ConversationTextContextSelector
     public function __construct(private AiContextSanitizer $sanitizer) {}
 
     /** @throws JsonException */
-    public function select(Conversation $conversation): ?ConversationTextContext
+    public function select(Conversation $conversation, ?int $maximumCharacters = null): ?ConversationTextContext
     {
         $messageQuery = $conversation->messages()
             ->whereNotNull('body')
@@ -37,13 +38,16 @@ final readonly class ConversationTextContextSelector
 
         $limit = min(
             self::PREFERRED_CONTEXT_CHARACTERS,
-            max(1_000, (int) config('wayfindr.ai.max_context_characters', 30_000)),
+            app(AiAssistPolicyResolver::class)->forConversation($conversation)->maxContextCharacters,
+            $maximumCharacters === null ? PHP_INT_MAX : max(300, $maximumCharacters),
         );
         $subject = filled($conversation->subject)
             ? mb_substr($this->sanitizer->sanitize(trim((string) $conversation->subject)), 0, self::MAX_SUBJECT_CHARACTERS)
             : null;
         $subject = $this->fitSubject($subject, $limit);
         $selected = [];
+        $selectedRevisions = [];
+        $selectedSources = [];
         $lastMessageId = null;
         $truncated = false;
 
@@ -67,11 +71,17 @@ final readonly class ConversationTextContextSelector
                 'role' => $this->role($message),
                 'body' => mb_substr($sanitizedBody, 0, self::MAX_MESSAGE_CHARACTERS),
             ];
+            // Server-only source identity also detects changes hidden by redaction.
+            // It never joins the provider input or retains a message body.
+            $revision = $this->sourceProof($message);
+            $source = ['id' => (int) $message->id, 'proof' => $revision];
             $candidate = [$entry, ...$selected];
             $candidateWasTruncated = $truncated || $entryWasTruncated;
 
             if (mb_strlen($this->encode($subject, $candidate, $candidateWasTruncated)) <= $limit) {
                 $selected = $candidate;
+                $selectedRevisions = [$revision, ...$selectedRevisions];
+                $selectedSources = [$source, ...$selectedSources];
                 $truncated = $candidateWasTruncated;
 
                 continue;
@@ -82,6 +92,8 @@ final readonly class ConversationTextContextSelector
             if ($selected === []) {
                 $entry['body'] = $this->fitNewestBody($subject, $entry, $limit);
                 $selected = [$entry];
+                $selectedRevisions = [$revision];
+                $selectedSources = [$source];
             }
 
             break;
@@ -95,7 +107,50 @@ final readonly class ConversationTextContextSelector
             input: $this->encode($subject, $selected, $truncated),
             messageCount: count($selected),
             lastMessageId: $lastMessageId,
+            sourceSnapshot: ['conversation_id' => (int) $conversation->id,
+                'subject' => hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')),
+                'messages' => $selectedSources],
+            sourceRevision: hash_hmac('sha256', json_encode([
+                'conversation-text-v1', (int) $conversation->id,
+                hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')), $selectedRevisions,
+            ], JSON_THROW_ON_ERROR), (string) config('app.key')),
         );
+    }
+
+    /** Re-authorize exactly the old selected sources; append-only activity may remain readable as stale. */
+    public function sourceStillCurrent(Conversation $conversation, array $snapshot): bool
+    {
+        $sources = $snapshot['messages'] ?? null;
+        if (($snapshot['conversation_id'] ?? null) !== (int) $conversation->id
+            || ! is_string($snapshot['subject'] ?? null)
+            || ! hash_equals($snapshot['subject'], hash_hmac('sha256', (string) $conversation->subject, (string) config('app.key')))
+            || ! is_array($sources) || $sources === [] || count($sources) > 1000) {
+            return false;
+        }
+        foreach ($sources as $source) {
+            if (! is_array($source) || ! is_int($source['id'] ?? null) || ! is_string($source['proof'] ?? null)) {
+                return false;
+            }
+        }
+        $messages = $conversation->messages()->whereIn('id', array_column($sources, 'id'))
+            ->select(['id', 'sender_type'])->selectRaw('SUBSTR(body, 1, ?) AS body', [self::MAX_RAW_MESSAGE_CHARACTERS])
+            ->get()->keyBy('id');
+        foreach ($sources as $source) {
+            $message = $messages->get($source['id']);
+            if ($message === null || ! hash_equals($source['proof'], $this->sourceProof($message))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function sourceProof(ConversationMessage $message): string
+    {
+        return hash_hmac('sha256', json_encode([
+            (int) $message->id, $this->role($message),
+            hash_hmac('sha256', trim((string) $message->body), (string) config('app.key')),
+        ], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     /**

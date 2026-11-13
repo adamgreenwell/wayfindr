@@ -77,6 +77,20 @@ return [
     ],
 
     'actions' => [
+        'conversation_ai_summary_started' => 'Preparazione della sintesi avviata',
+        'conversation_ai_reply_draft_started' => 'Preparazione della bozza di risposta avviata',
+        'conversation_ai_knowledge_suggestion_started' => 'Preparazione dei suggerimenti di articoli avviata',
+        'conversation_ai_ticket_suggestion_started' => 'Preparazione del suggerimento ticket avviata',
+
+        'conversation_ai_draft_refinement_requested' => 'Revisione privata della bozza richiesta',
+        'conversation_ai_draft_refinement_started' => 'Revisione privata della bozza avviata',
+        'conversation_ai_draft_refinement_ready' => 'Anteprima privata della bozza preparata',
+        'conversation_ai_draft_refinement_failed' => 'Revisione privata della bozza non riuscita',
+        'conversation_ai_draft_refinement_stale' => 'Revisione privata della bozza non più attuale',
+        'conversation_ai_draft_refinement_cancelled' => 'Revisione privata della bozza annullata',
+        'conversation_ai_draft_refinement_applied' => 'Sostituzione della bozza privata autorizzata',
+        'conversation_ai_draft_refinement_superseded' => 'Revisione privata della bozza sostituita',
+        'conversation_ai_draft_refinement_expired' => 'Revisione privata della bozza scaduta',
         'agent_created' => 'Agente creato',
         'agent_deactivated' => 'Agente disattivato',
         'agent_password_updated' => 'Password modificata',

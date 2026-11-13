@@ -14,6 +14,7 @@ enum AccountPermission: string
     case HandleDataRequests = 'handle_data_requests';
     case ManagePrivacySettings = 'manage_privacy_settings';
     case ManageIntegrations = 'manage_integrations';
+    case ManageAiConnections = 'manage_ai_connections';
     case ManageKnowledge = 'manage_knowledge';
     case ManageSecurity = 'manage_security';
     case ManageOperatorAccess = 'manage_operator_access';

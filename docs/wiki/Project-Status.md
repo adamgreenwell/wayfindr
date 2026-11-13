@@ -2,20 +2,34 @@
 
 [Back to Home](Home)
 
-The latest public release is `v1.2.0`, at `56374e95`, with
-successful [exact-main CI](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309).
-[Guarded publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed. Independent public readback verified the Release, manifest, both
-amd64/arm64 image chains and aliases. Publication was October 9 EDT, October 10
-UTC. ARM64 baked identity, official installation/enrollment, idle helper restart
-and autonomous idle guest reboot passed. Private HTTP/nonce/API checks were
-repeated after reboot. Ordinary archive/restore on a separate clean, unenrolled
-VM also passed without force, including exact post-archive erasure replay and
-survivor/file/decryption/sequence checks. These ARM64/private HTTP results
-cannot qualify managed apply.
-Development `main` now identifies as
-`1.3.0-dev`, following the separate version change at `bcb5474a`. The previous
-public artifact is `v1.1.1` (October 2, 2026), at tag `648caa1b`.
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb4`, dated October 12, 2026. Exact-main CI and the guarded publisher
+passed. Separate root and independent audits verified Release/assets, the source
+archive, both architecture OCI chains and static baked identities, and stable
+aliases. Helper `0.10.0` checks the serving source's trusted configured origin
+before maintenance ownership. It remains a separate administrator upgrade;
+application image updates preserve the installed helper. No operator action or
+migration is required for the application; standing notices remain. See
+[Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+The October 13 fresh `v1.4.3` → `v1.4.4` attempt passed separate helper 0.10
+installation and pre-Start continuity checks, then one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation. Five saved
+target-role layout/readiness checks pass; complete runtime verification,
+recovery and separate-VM restore remain unaccepted. Its Source and Restore
+holds and all older held operations remain preserved. Managed updates remain
+**not qualified for production use**, with **0/100** scenarios qualified. The
+[dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+separates the later TCP timeout with zero TLS attempts and current firewall-policy
+inference from the unknown historical refusal cause. Before Start on a separately
+approved additional fresh pair, check web/migration access to its configured
+public HTTPS and external object store, then normal TLS; keep any lab rules
+scoped and Restore's own CA/bundle independent. Existing holds are not repair
+targets. Development source is `1.5.0-dev`; this reset publishes no release.
+
+Earlier `v1.2.0` evidence, at `56374e95`, covers ARM64 baked identity,
+official source installation/enrollment, idle restart/reboot and separate
+ordinary restore over private HTTP. These source and ordinary-recovery
+results remain separate from managed apply and its fault matrix.
 
 It is a support desk reachable by widget, email, and help centre, with a
 measurement surface of its own. Mailgun and Postmark can post directly to
@@ -27,8 +41,10 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests. The October 1 public-artifact
 hosted runs cover a `v1.1.0` clean install and `v0.2.0 → v1.1.0` upgrade with a
-custom backup queue. The newest owner-operated bare-metal guest evidence still
-covers `v0.3.2`; see [Releases](Releases).
+custom backup queue. The dated owner-operated public-artifact
+clean-install/upgrade/reboot matrix covers `v0.3.2`; see [Releases](Releases).
+Later source, ordinary-recovery and failed managed-update observations retain
+their separate scopes above.
 
 The newest hosted public-artifact runs cover a `v1.1.1`
 [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36969131572)
@@ -53,10 +69,12 @@ finished its restructure in `v0.11.0`, after the sidebar in `v0.10.0`.
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## What's in `v1.2.0`
+## Earlier capability snapshot: `v1.4.0`
 
-This section describes public `v1.2.0` at `56374e95`. Some foundation was available in older
-releases; consult the release notes when operating one of those artifacts.
+This dated snapshot describes public `v1.4.0` at `0f4312f8`. It includes the Docker 29
+helper corrections, supported idle helper replacement and a bounded explicit
+active-operation bridge. Some foundation was
+available in older releases; consult their release notes when operating them.
 
 1.2.0 adds read-only release review in Operator → Updates and hardens terminal
 upgrades. Optional managed execution on explicitly enrolled Linux/systemd hosts
@@ -70,8 +88,8 @@ Managed execution is implemented but **not qualified for production use**.
 [U8/#1115](https://github.com/adamgreenwell/wayfindr/issues/1115) and
 [U9/#1116](https://github.com/adamgreenwell/wayfindr/issues/1116) remain open,
 with zero qualified managed scenarios. The first compatible source can prove
-enrollment, idle reboot and ordinary independent restore; protection and apply
-need a real newer compatible published target. See the
+enrollment, idle reboot and ordinary independent restore. The published
+1.2.0 → 1.4.0 pair supplies a real target for protection/apply tests. See the
 [qualification boundary](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/managed-update-qualification.md).
 
 `v1.1.1` changes, relative to `v1.1.0`: dashboard text, forms, pagination
@@ -355,9 +373,10 @@ restart/reboot passed, with runtime/private nonce/API checks. Ordinary
 separate-VM restore passed without force, using retained keys and a real
 post-archive erasure ledger with exact replay/survivor/decryption/sequence checks.
 Publication and ordinary recovery cannot close U8, U9 or the managed-update epic. Managed
-execution needs the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) and a newer compatible
-published target. Planning the running release returns `no_update_required`.
+execution needs installed-helper and target-bound native proof. The
+[Docker 29 fix #1131](https://github.com/adamgreenwell/wayfindr/issues/1131),
+helper upgrade CLI and newer target are now published in 1.3.0. Planning the
+running release still returns `no_update_required`.
 An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
 new published source enrolled with the fixed helper; an application image
 update alone does not replace host helper code.

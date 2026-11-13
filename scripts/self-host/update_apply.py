@@ -303,20 +303,40 @@ class Engine:
         return result
 
     def create(self, directory, service):
-        code, _ = self.api.capture(self.staged_compose(directory) + ["create", "--no-deps", "--pull=never", "--force-recreate", service], timeout=120)
+        # `compose create` has no --no-deps option. `up --no-start`
+        # selects just this role while leaving it stopped for layout checks.
+        try:
+            code, _ = self.api.capture(self.staged_compose(directory) + ["up", "--no-start", "--no-deps", "--no-build", "--pull=never", "--force-recreate", service], timeout=120)
+        except self.api.Refusal as failure:
+            if failure.reason == "prepare_timeout":
+                raise self.api.Refusal("apply_timeout") from None
+            raise
         if code != 0:
-            raise self.api.Refusal("apply_timeout")
+            raise self.api.Refusal("apply_failed")
 
     def render(self, directory):
         code, raw = self.api.capture(self.staged_compose(directory) + ["config", "--format", "json"])
         if code != 0:
             raise self.api.Refusal("configuration_changed")
-        return self.api.strict_json(raw, "configuration_changed")
+        # Compose re-escapes every literal dollar when serializing config,
+        # including JSON. Undo that one output layer before comparing with
+        # Docker; image defaults and inspected container values stay literal.
+        return self.api.strict_json(raw.replace(b"$$", b"$"), "configuration_changed")
 
     def target_layout(self, container, service, directory, state, *, processes=True):
         actual = self.layout(container)
         rendered = self.render(directory)["services"][service]
         image = self.base.call(["image", "inspect", "--format", '{"env":{{json .Config.Env}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"user":{{json .Config.User}},"workdir":{{json .Config.WorkingDir}}}', state["artifacts"]["execution_reference"]], "runtime_verification_failed", json=True)
+        command, entrypoint = rendered.get("command"), rendered.get("entrypoint")
+        # Compose null inherits the image default; explicit []/"" overrides it.
+        # An entrypoint override suppresses image CMD, so do not infer the
+        # managed role's command when that combination is unspecified.
+        if entrypoint is None:
+            entrypoint = image["entrypoint"]
+        elif command is None:
+            raise self.api.Refusal("runtime_verification_failed")
+        if command is None:
+            command = image["cmd"]
         expected = self.base.environment_map(image["env"])
         for key, value in rendered["environment"].items():
             if value is None:
@@ -329,7 +349,7 @@ class Engine:
                 or not self.manifest_bound(actual, state)
                 or rendered.get("image") != state["artifacts"]["execution_reference"] or rendered.get("platform") != state["artifacts"]["execution_platform"]
                 or self.base.environment_map(actual["env"]) != expected or actual["mounts"] != state["layouts"][service]["mounts"]
-                or actual["cmd"] != rendered.get("command", image["cmd"]) or actual["entrypoint"] != rendered.get("entrypoint", image["entrypoint"])
+                or actual["cmd"] != command or actual["entrypoint"] != entrypoint
                 or actual["user"] != rendered.get("user", image["user"]) or actual["workdir"] != rendered.get("working_dir", image["workdir"])):
             raise self.api.Refusal("runtime_verification_failed")
         try:
@@ -343,7 +363,7 @@ class Engine:
 
     def role_ready(self, container, service):
         # Inspect role argv and a live process; a healthy web alone is insufficient.
-        processes = self.base.call(["top", container, "-eo", "args"], "runtime_verification_failed", timeout=5)
+        processes = self.base.call(["top", container, "-eo", "pid,args"], "runtime_verification_failed", timeout=5)
         role = {"web": "frankenphp", "queue": "queue:work redis", "backup-queue": "queue:work backups", "scheduler": "schedule:work", "reverb": "reverb:start"}[service]
         if role not in processes.lower():
             raise self.api.Refusal("runtime_verification_failed")
@@ -737,10 +757,36 @@ class Applier:
         self.journal.apply_finish(operation, None, "succeeded")
 
     def fallback(self, directory, operation, state, reason):
-        self.checkpoint(operation, "apply_started", phase="protecting")
         protection = self.root / "protection" / operation
-        if (protection / "state.json").exists():
+        public = self.journal.status(operation)["operation"]
+        context = None
+        if protection.exists() or protection.is_symlink():
+            if protection.is_symlink():
+                self.fail("recovery_required")
+            if self.secure:
+                self.api.trusted(protection, directory=True)
             context = self.protector.load_context(protection, operation)
+        if (state["stage"] in {"download_intent", "downloaded", "protect_intent"}
+                and not public["apply"]["hold_owned"] and not public["protection"]["hold_owned"]):
+            # Error fallback and explicit recovery can both create the first
+            # fence. A persisted fence intent alone cannot prove ownership:
+            # capture may have crashed before entering the window or before
+            # recording its already-owned hold in the public journal.
+            unheld = context is None
+            if context is not None and context["stage"] == "fence_intent":
+                self.protector.check_records(context, True)
+                self.engine.settled(context["containers"], operation)
+                value = self.engine.window(context["containers"]["web"], operation, "status")
+                if not isinstance(value, dict) or type(value.get("held")) is not bool:
+                    self.fail("recovery_required")
+                self.protector.check_window(value, operation, context["source"], value["held"])
+                unheld = not value["held"]
+                if unheld and any(context[key] != state["source_context"][key] for key in ("containers", "image", "source", "key_fingerprints", "capture_binding_sha256", "environment_binding")):
+                    self.fail("source_changed")
+            if unheld:
+                self.verify_origin(directory, operation, state, False, source=True)
+        self.checkpoint(operation, "apply_started", phase="protecting")
+        if context is not None:
             state["source_context"] = context
         else:
             self.mkdir(protection)
@@ -776,7 +822,7 @@ class Applier:
         directory = self.root / "apply" / operation
         state = None
         fallback_attempted = False
-        protocol_preflight_pending = False
+        pre_protection_preflight_pending = False
         try:
             if recovery:
                 state = self.load(directory, operation) if (directory / "state.json").exists() or (directory / "state.json").is_symlink() else self.pre_start_recovery(directory, operation)
@@ -794,9 +840,13 @@ class Applier:
                 # target.yml is bound to the independently verified immutable
                 # repository digest and native platform. Check compatibility before owning intake or
                 # stopping a source writer; migration rechecks the same target.
-                protocol_preflight_pending = True
+                pre_protection_preflight_pending = True
                 self.operator_protocol(directory, operation, state)
-                protocol_preflight_pending = False
+                # Use the same verified TLS and fresh identity proof required
+                # after apply, while the original application still serves.
+                # Refusal must not enter fallback, which would itself fence it.
+                self.verify_origin(directory, operation, state, False, source=True)
+                pre_protection_preflight_pending = False
                 self.journal.check_cancel(operation)
                 self.persist(directory, state, "protect_intent")
                 context = self.protector.capture(operation, retain_hold=True)
@@ -829,12 +879,18 @@ class Applier:
             reason = failure.reason if isinstance(failure, self.api.Refusal) else "apply_failed"
             public = self.journal.status(operation)["operation"]
             private_intent = state is not None and state["stage"] in {"migration_intent", "migrated", "restart_intent", "runtime_verified", *PROMOTION_STAGES}
-            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted and not protocol_preflight_pending:
+            if state is not None and not public["mutation_started"] and not private_intent and not fallback_attempted and not pre_protection_preflight_pending:
                 try:
                     self.fallback(directory, operation, state, reason)
                     return
-                except Exception:
-                    pass
+                except Exception as fallback_failure:
+                    protection = self.root / "protection" / operation
+                    if (isinstance(fallback_failure, self.api.Refusal) and fallback_failure.reason == "origin_verification_failed"
+                            and state["stage"] in {"download_intent", "downloaded", "protect_intent"}
+                            and not protection.exists() and not protection.is_symlink()):
+                        # Report the refused admission, preserving the original
+                        # cause for failures after fallback acquired protection.
+                        reason = fallback_failure.reason
             elif state is not None and (public["mutation_started"] or private_intent):
                 try:
                     self.verify_staging(directory, operation, state)
@@ -843,7 +899,7 @@ class Applier:
                     self.checkpoint(operation, "apply_release_intent", phase="verifying", hold_owned=True)
                 except Exception:
                     pass
-            # A refused or unsettled pre-protection protocol probe leaves the
+            # A refused or unsettled pre-protection probe leaves the
             # source untouched. Automatic fallback would itself fence/drain it.
             # Retain ownership for explicit recovery without claiming a verified
             # failed-safe outcome or inventing a maintenance hold.

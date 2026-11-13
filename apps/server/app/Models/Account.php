@@ -137,4 +137,9 @@ class Account extends Model
     {
         return $this->hasOne(OidcConnection::class);
     }
+
+    public function aiConnection(): HasOne
+    {
+        return $this->hasOne(AccountAiConnection::class);
+    }
 }

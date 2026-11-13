@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\FirstRunState;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 /**
@@ -64,15 +66,23 @@ class PasswordResetController extends Controller
         return back()->with('status', $this->sentMessage());
     }
 
-    public function edit(Request $request, string $token): View
+    /** The credential arrives only in a browser fragment, never this GET. */
+    public function fragment(Request $request): Response
     {
-        return view('auth.reset-password', [
-            'token' => $token,
-            'email' => (string) $request->query('email', ''),
-        ]);
+        return $this->privateResponse(response()->view('auth.reset-password', [
+            'token' => '', 'email' => '', 'fragment' => true, 'alreadyAuthenticated' => $request->user() !== null,
+        ]));
     }
 
-    public function update(Request $request): RedirectResponse
+    public function edit(Request $request, string $token): Response
+    {
+        return $this->privateResponse(response()->view('auth.reset-password', [
+            'token' => $token,
+            'email' => (string) $request->query('email', ''),
+        ]));
+    }
+
+    public function update(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'token' => ['required', 'string'],
@@ -105,9 +115,26 @@ class PasswordResetController extends Controller
             $this->audit('password_reset.completed', $validated['email'], $user);
         }
 
-        return redirect()
+        if ($request->expectsJson()) {
+            return $this->privateResponse(response()->json(['status' => 'password_reset']));
+        }
+
+        return $this->privateResponse(redirect()
             ->route('login')
-            ->with('status', 'Your password has been reset. Sign in with it now.');
+            ->with('status', 'Your password has been reset. Sign in with it now.'));
+    }
+
+    /** @template T of Response
+     * @param  T  $response
+     * @return T
+     */
+    private function privateResponse(Response $response): Response
+    {
+        $response->headers->set('Cache-Control', 'no-store, private');
+        $response->headers->set('Pragma', 'no-cache');
+        $response->headers->set('Referrer-Policy', 'no-referrer');
+
+        return $response;
     }
 
     /**

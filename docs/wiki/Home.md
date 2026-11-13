@@ -5,27 +5,34 @@ a help centre, consent-based cobrowsing, and durable ticketing — with reportin
 over the conversations and tickets it handles. The project reached `v1.0.0` on
 September 30, 2026.
 
-The latest public release is `v1.2.0`, at `56374e95`, published October 9,
-2026 EDT (October 10 UTC). Its public Release, manifest, both platform image
-chains and stable aliases were independently verified. It adds release review and
-terminal-upgrade hardening, with optional managed host execution still under VM
-qualification. No operator action is required; one additive audit-event
-migration runs automatically. ARM64 never-started baked identity verification
-passed. Actual ARM64 official installation/enrollment, idle helper restart and
-autonomous idle guest reboot passed over private HTTP with runtime/nonce/API
-checks. Ordinary archive/restore on a separate clean, unenrolled VM also passed
-without force, with real post-archive erasure replay and survivor/file/decryption/
-sequence checks. These ARM64/private HTTP results do not qualify managed
-updates; U8 and U9 remain open. Managed upgrades need both a real newer
-compatible published target and the [Docker 29 image-identity fix
-#1131](https://github.com/adamgreenwell/wayfindr/issues/1131).
-An already-enrolled 1.2.0 host also needs a supported helper upgrade path or a
-new published source enrolled with the fixed helper; an application image
-update alone does not replace host helper code. Development `main` now
-identifies as `1.3.0-dev`, after the
-separate version change at `bcb5474a`.
-The previous public artifact is `v1.1.1` (October 2, 2026); its dated
-evidence is preserved on [Releases](Releases).
+The latest public release is [`v1.4.4`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.4),
+at `8ce37cb4`, dated October 12, 2026. Exact-main CI and the guarded publisher
+passed. Separate root and independent audits verified Release/assets, the source
+archive, both architecture OCI chains and static baked identities, and stable
+aliases. Helper `0.10.0` checks the serving source's trusted configured origin
+before maintenance ownership. It remains a separate administrator upgrade;
+application image updates preserve the installed helper. No operator action or
+migration is required for the application; standing notices remain. See
+[Releases](Releases) and the [public receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-12-v1.4.4-publication.json).
+The October 13 fresh `v1.4.3` → `v1.4.4` attempt passed separate helper 0.10
+installation and pre-Start continuity checks, then one Start ended in
+`recovery_required` / `runtime_verification_failed` after mutation. Five saved
+target-role layout/readiness checks pass; complete runtime verification,
+recovery and separate-VM restore remain unaccepted. Its Source and Restore
+holds and all older held operations remain preserved. Managed updates remain
+**not qualified for production use**, with **0/100** scenarios qualified. The
+[dated failure receipt](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+separates the later TCP timeout with zero TLS attempts and current firewall-policy
+inference from the unknown historical refusal cause. Before Start on a separately
+approved additional fresh pair, check web/migration access to its configured
+public HTTPS and external object store, then normal TLS; keep any lab rules
+scoped and Restore's own CA/bundle independent. Existing holds are not repair
+targets. Development source is `1.5.0-dev`; this reset publishes no release.
+
+Earlier `v1.2.0` evidence covers its ARM64 published-source install,
+enrollment, idle restart/reboot and separate ordinary restore over
+private HTTP. Those observations and older dated evidence remain on
+[Disposable VM Evidence](Disposable-VM-Evidence) and [Releases](Releases).
 
 It is a working support desk, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget

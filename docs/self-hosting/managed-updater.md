@@ -15,10 +15,38 @@ operator `start`, `history`, and `cancel` requests, with exact approved-plan,
 request, and numeric actor identities retained in its journal. Recovery remains
 an explicit root-only terminal action.
 
-The `0.5` helper binds Docker classic and containerd image identities separately
-and introduces an explicit root-only upgrade from the exact helper bundle
-published in `v1.2.0`. This development implementation still needs publication
-and the full published source-to-target qualification matrix.
+Public `v1.3.0` contains helper `0.5.0`, which binds Docker classic and
+containerd image identities separately. Public `v1.4.0` contains helper `0.6.0`,
+which keeps protocol `1`, corrects Docker process listings and supports a separate root-only
+replacement of either exact published `0.4.0` or `0.5.0` bundle. Pulling an
+application image does not install or replace host helper code.
+
+The helper 0.6 procedures below describe the published 1.4.0 distribution,
+independently verified against its exact public commit and Release/image contracts. The
+[dated publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+records those identities. Use a reviewed immutable source distribution for each
+administrator command. The dated
+[ordinary candidate observations](helper-0.6-candidate.md#bounded-native-candidate-observations-2026-10-10)
+and separate [active-operation bridge observation](helper-active-recovery-bridge.md#bounded-native-preservation-observation-2026-10-10)
+retain their original source identities and limits.
+
+Public `v1.4.1` contains helper `0.7.0`, including the supported Compose
+replacement-creation command. The 0.6 procedure and 0.7 candidate section below
+retain their original distribution boundaries. The separate
+[public v1.4.2/helper 0.8 contract](helper-0.8-candidate.md) adds the runtime
+image-default correction and exact public 0.7 idle-source compatibility. Its
+subsequent application upgrade failed; the
+[qualification record](managed-update-qualification.md) preserves that result.
+Public [v1.4.3/helper 0.9](helper-0.9-candidate.md) corrects
+Compose JSON dollar escaping and adds exact public 0.8 idle-source compatibility.
+Its subsequent application attempt exposed a missing lab host-CA trust
+prerequisite. Public [v1.4.4/helper 0.10](helper-0.10-candidate.md) adds
+serving-origin verification before protection and exact public 0.9 idle-source
+compatibility. Its [publication receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+records separate root and independent Release/assets, complete source archive
+and both architecture image-identity audits. Helper replacement remains a
+separate administrator upgrade. Pulling an application image does not
+replace the host helper or repair an interrupted application operation.
 
 Optional managed updates remain under disposable-VM qualification and are not
 qualified for production use. Publishing compatible application and helper
@@ -636,35 +664,72 @@ replace its helper files. Use the separate helper upgrade procedure below.
 
 Application updates and helper replacement are separate operations. Managed
 apply changes the application image and overlay; it does not replace privileged
-host code. The supported helper replacement starts with the exact, unmodified
-five-module `0.4.0` bundle published in `v1.2.0` and targets the reviewed `0.5.0`
-distribution. Other installed bundles refuse. The application protocol remains
-`1`, compatible with the published `v1.2.0` application contract.
+host code. The public normal `0.6.0` replacement accepts only the complete,
+unmodified five-module helper `0.4.0` from `v1.2.0` or `0.5.0` from `v1.3.0`.
+Modified, mixed and unknown installed bundles refuse. Protocol remains `1`,
+compatible with the published `v1.2.0` application contract. Enrollment cannot
+upgrade an existing helper, and neither pulling an image nor restarting the
+application activates this command.
 
-Obtain and review a complete distribution in a canonical, root-owned directory
-whose ancestors are root-owned and not writable by other users. The tool does
-not download, select or execute remote code. From that distribution, inspect
-the target bundle and retain its SHA-256 before starting:
+### Review the complete distribution first
+
+Before executing downloaded source, independently verify the complete public
+source archive for the selected stable release against its exact published tag
+and full commit. Review the five helper modules, normal upgrade CLI, frozen
+legacy recovery CLI, separate bridge CLI, installer, base and updater Compose
+files, systemd unit and tmpfiles rule. Retain the individual file hashes and the
+target bundle hash. The two Release manifest/image-digest assets do not by
+themselves verify this source distribution. A moving branch, a candidate archive
+or a reported helper version cannot substitute for that public source proof.
+Public v1.4.0/helper 0.6 is verified in the publication receipt above; its
+complete immutable source distribution must still be independently verified
+before execution. Public v1.4.1/helper 0.7, v1.4.2/helper 0.8, v1.4.3/helper 0.9
+and v1.4.4/helper 0.10 cannot substitute for the original destination distribution
+when recovering an older transaction.
+
+Stage the reviewed complete distribution in a canonical, root-owned directory
+such as `/root/reviewed-wayfindr-v1.4.0` for the public 0.6 commands below. Every
+ancestor and required file must be root-owned, without unsafe write permissions
+or symlinks. The tool does
+not download, select or execute remote code. Independently retain the installed
+source/runtime baseline, enrollment authority, journal, credentials and recovery
+material before replacement; keep credential-bearing evidence private.
+
+The host must support Python 3.11+, systemd 252+, unified cgroup v2 with freezing
+and `cgroup.kill`, and Linux `renameat2` atomic directory exchange, with trusted
+`/usr/bin/busctl` and `/usr/bin/test` binaries. The installed source module
+hashes, wrapper, service unit and tmpfiles rule must match the fixed published
+allowlist. Missing platform/API prerequisites refuse before installing a
+transaction gate. A later exchange failure retains the stopped transaction for
+explicit recovery; there is no file-by-file or ordinary-stop fallback.
+
+### Replace an idle helper with public 0.6
+
+Use a root shell for the following commands from the exact reviewed public
+v1.4.0 tree, commit `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`:
 
 ```bash
-cd /root/reviewed-wayfindr
-sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py inspect
-sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py upgrade \
-  --expected-bundle-sha256=<reviewed-bundle-sha256>
+cd /root/reviewed-wayfindr-v1.4.0
+/usr/bin/python3 scripts/self-host/upgrade-updater.py inspect
 ```
 
-Use the actual hash returned by `inspect`, which covers the five target helper
-modules; a changed target bundle refuses. The source module hashes, wrapper,
-service unit and tmpfiles rule must match the
-published allowlist. The host must support Python 3.11+, systemd 252+, unified
-cgroup v2 with freezing and `cgroup.kill`, and Linux `renameat2` atomic directory
-exchange, with trusted `/usr/bin/busctl` and `/usr/bin/test` binaries. Missing
-platform/API prerequisites refuse before installing a
-transaction gate. A later filesystem exchange failure retains the stopped
-transaction for explicit recovery; there is no file-by-file fallback.
+Require `helper_version = 0.6.0`, `protocol = 1` and the independently reviewed
+five-module bundle SHA-256 below. `inspect` reads the staged target; it does not
+establish that the installed host is idle or authorize changed source bytes.
+
+```bash
+/usr/bin/python3 scripts/self-host/upgrade-updater.py upgrade \
+  --expected-bundle-sha256=eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df
+```
 
 The command serializes helper upgrades, refuses active or held application
-operations and checks retained recovery ownership. It installs an exact systemd
+operations and checks retained recovery ownership. An existing helper transaction
+requires its own recovery; it cannot be retargeted to 0.6. A refused, partial or
+uncertain outcome must be inspected with its retained evidence before any
+continuation. Do not delete enrollment, qualification, journal, transaction or
+stop-gate state to make the normal path admit it.
+
+The command installs an exact systemd
 gate with both `ConditionPathExists` and `ExecCondition`, verifies the effective
 condition's executable and arguments through typed D-Bus metadata, freezes the
 helper's entire cgroup, then rereads the durable journal. `ExecCondition` also
@@ -683,18 +748,32 @@ preserves the installation UUID, credential, configuration, application files, r
 directory and lifetime-lock inode, journal operations and retained recovery
 bytes. It starts the complete new helper with application mutations blocked,
 checks an authenticated root-peer/HMAC response, a new executor generation and
-the preservation invariants, then admits work. A private success receipt and
+the preservation invariants. It verifies the same live process and unfrozen
+kernel cgroup, reconciles a stale systemd freezer cache when required and verifies
+again before clearing the transaction barrier. Failed verification retains
+recovery ownership. A private success receipt and
 the complete old code generation remain retained. It does not restart application
 containers, migrate a database or rotate credentials.
 
+### Recover the same 0.6 transaction
+
 An interrupted replacement keeps its private transaction and prevents unsafe
-startup or mutation. Run recovery with the reported transaction UUID and the
-same reviewed distribution and bundle hash:
+startup or mutation. Set `HELPER_TRANSACTION` to the exact reported canonical
+transaction UUID, then recover from the complete reviewed public v1.4.0
+distribution, with its original normal CLI and the same bundle hash. The 0.7
+candidate reports `public_06_helper_recovery_required` for an interrupted
+normal 0.4-to-0.6 or 0.5-to-0.6 transaction; it cannot retarget that transaction.
+Verify the original CLI's hash before executing it:
 
 ```bash
-sudo /usr/bin/python3 scripts/self-host/upgrade-updater.py recover \
-  --transaction=<recorded-transaction-uuid> \
-  --expected-bundle-sha256=<reviewed-bundle-sha256>
+cd /root/reviewed-wayfindr-v1.4.0
+printf '%s  %s\n' \
+  53e33e9361129201855964b2e7f696de42cc92ee1b85b287a91fc4b16ba8222f \
+  scripts/self-host/upgrade-updater.py \
+  | sha256sum --check --strict
+/usr/bin/python3 scripts/self-host/upgrade-updater.py recover \
+  --transaction="$HELPER_TRANSACTION" \
+  --expected-bundle-sha256=eb86ed370721250d0e22492f665b0fc116f0e292454150761014e5f6ae9d24df
 ```
 
 Recovery accepts only the recorded old/new code generations and exact preserved
@@ -710,6 +789,159 @@ application update must be settled with its original helper before replacement.
 Historical terminal schema-1 recovery material is retained and validated with
 the pinned original code; it is never converted into an executable schema-2
 operation.
+
+Require a completed receipt for the original UUID, its recorded 0.4.0 or 0.5.0
+source and 0.6.0 destination, `preserved = true` and
+`application_changed = false`. Retain both code generations and all original
+recovery evidence. Authenticate the resulting helper and independently verify
+that the host is idle before considering a distinct 0.7 candidate transaction.
+The normal recovery procedure does not recover a schema-2 bridge transaction.
+
+### Finish an existing 0.4-to-0.5 transaction first
+
+For an exact retained legacy transaction, the 0.6 and 0.7 normal CLIs return
+`legacy_helper_recovery_required` without changing code, journal, gate or
+transaction bytes. Finish it into its original public `0.5.0` destination with
+the original UUID, using the included frozen compatibility CLI; do not recover
+it as a 0.6 transaction or start a new one.
+
+Independently verify the public `v1.3.0` source at commit
+`1bae329c4e349017716827dd0ce26b9ba7f9f2ac` in a separate root-owned staging tree,
+`/root/reviewed-wayfindr-v1.3.0`. Its five helper modules must remain the exact
+public `0.5.0` bytes. After reviewing both distributions, verify the frozen CLI
+and replace only the CLI in that staging tree. Set `LEGACY_HELPER_TRANSACTION`
+to the original retained transaction UUID before recovery. The commands below
+use the frozen compatibility CLI from the reviewed public v1.4.0 tree:
+
+```bash
+cd /root/reviewed-wayfindr-v1.3.0
+printf '%s  %s\n' \
+  fe494f93552246677ee8a97c55a819ab748de4910bf300123dbb6afe408d4616 \
+  /root/reviewed-wayfindr-v1.4.0/scripts/self-host/upgrade-updater-0.5-recovery.py \
+  | sha256sum --check --strict
+install -m 0644 \
+  /root/reviewed-wayfindr-v1.4.0/scripts/self-host/upgrade-updater-0.5-recovery.py \
+  scripts/self-host/upgrade-updater.py
+/usr/bin/python3 scripts/self-host/upgrade-updater.py inspect
+/usr/bin/python3 scripts/self-host/upgrade-updater.py recover \
+  --transaction="$LEGACY_HELPER_TRANSACTION" \
+  --expected-bundle-sha256=e8523f24327188c36e6a352cd4366977afdb96b02f56d17760d7bd8063cada29
+```
+
+Require the inspected `0.5.0`/protocol `1` bundle and the completed receipt's
+original UUID, source `0.4.0`, target `0.5.0`, `preserved = true` and
+`application_changed = false`. Retain that receipt and both original recovery
+evidence and code generations. Authenticated status must verify the resulting
+idle 0.5 helper before a distinct normal upgrade, using the public 0.6 procedure
+above or another independently reviewed, eligible public successor distribution.
+If recovery refuses or an application operation remains active, stop this
+procedure and retain its evidence. The compatibility CLI has no 0.6 or 0.7 destination.
+The [legacy procedure and dated native observation](helper-0.6-candidate.md#finish-an-interrupted-04-to-05-helper-transaction-first)
+retain their original reviewed source identities.
+
+### Historical 0.7 candidate procedure on an idle qualification VM
+
+This section preserves the original pre-publication candidate procedure.
+v1.4.1/helper 0.7 is now public; its actual public distribution and source
+archive must be verified separately before use. The paths and candidate hashes
+below still refer to the original reviewed candidate, not the 0.8 successor.
+
+The v1.4.1/helper 0.7 candidate accepts only complete, exact public five-module
+source bundles: 0.4.0 from v1.2.0, 0.5.0 from v1.3.0 or 0.6.0 from v1.4.0.
+A version string, mixed module tree or an earlier candidate transaction is not
+proof of an eligible installed source. All platform, enrollment, idle-journal,
+authority and preservation requirements above still apply. Active or held
+application operations refuse, including a mutated 0.6 operation awaiting
+application recovery. Installing this candidate is not an application recovery
+procedure.
+
+Before any disposable-VM execution, independently review and freeze the
+complete immutable candidate distribution, every required file and its target
+bundle digest. Preserve the public source/runtime baseline and recovery material.
+Use a separate root-owned staging tree; retain the public v1.4.0 tree for pending
+0.6 recovery and historical bridge work. A future public v1.4.1 procedure also
+requires its own completed publication and complete public source-archive
+verification; this candidate section does not establish either gate.
+
+Only after that separate review, set `CANDIDATE_HELPER_BUNDLE_SHA256` to the
+independently retained candidate bundle hash. In a root shell:
+
+```bash
+cd /root/reviewed-wayfindr-0.7-candidate
+/usr/bin/python3 scripts/self-host/upgrade-updater.py inspect
+```
+
+Require `helper_version = 0.7.0`, `protocol = 1` and the exact reviewed bundle
+hash. After any earlier normal transaction has completed into its original
+destination and the helper is independently verified idle, start a new
+transaction:
+
+```bash
+/usr/bin/python3 scripts/self-host/upgrade-updater.py upgrade \
+  --expected-bundle-sha256="$CANDIDATE_HELPER_BUNDLE_SHA256"
+```
+
+If this new 0.7 transaction is interrupted, retain its own reported UUID in
+`CANDIDATE_HELPER_TRANSACTION` and use only the same immutable candidate tree
+and bundle:
+
+```bash
+/usr/bin/python3 scripts/self-host/upgrade-updater.py recover \
+  --transaction="$CANDIDATE_HELPER_TRANSACTION" \
+  --expected-bundle-sha256="$CANDIDATE_HELPER_BUNDLE_SHA256"
+```
+
+Do not use these commands to recover a pending 0.6 or legacy 0.5 transaction.
+Do not clear a journal, transaction, gate, qualification marker or retained
+generation to make a new transaction eligible. Candidate helper lifecycle
+checks do not qualify managed application upgrades or prove successful recovery
+of an already mutated application.
+
+### Keep the active-operation bridge separate
+
+Normal replacement continues to refuse active or interrupted application work.
+The separate [active-operation bridge](helper-active-recovery-bridge.md) admits
+only the exact published 0.5 process-listing failure during the initial read-only
+baseline of a public v1.2.0-to-v1.3.0 apply: `recovery_required`, checkpoint
+`apply_started`, exact seven-event prepare/start/failure history and receipts,
+with no schema mutation, owned hold, archive or executor custody. It reruns the
+corrected complete read-only baseline before any helper exchange. Its only
+destination is public 0.6, using the complete immutable public v1.4.0 tree above,
+including its original normal CLI. The bridge is deliberately unavailable from
+the 0.7, 0.8 or 0.9 distribution and cannot replace a mutated, held helper or repair
+that application's state. Other active operations remain refused.
+
+Use only that guide's root-only `inspect-apply-bridge`, `bridge-apply-recovery`
+and same-transaction `recover-apply-bridge` procedure, with the exact retained
+operation UUID, reviewed journal-state SHA-256 and bundle binding. Inspection
+explicitly reports `baseline_verified = false`; it cannot replace the full
+baseline. Its schema-2 `active_apply_helper_bridge` transaction is distinct from
+the normal schema-1 helper transaction. Neither CLI adopts the other's receipt.
+
+An existing supported VM attestation is preserved only as its exact private
+root-owned `qualification/disposable.json` subtree: complete historical public
+source/target identities, raw bytes and directory/file identities must match.
+The marker does not authorize replacement and is never rewritten, deleted or
+re-adopted. The full failed application journal and original helper generation
+remain retained. A completed bridge leaves the application `recovery_required`;
+application recovery needs a separate explicit operator action and preservation
+proof. It does not start or retry the application operation.
+
+### Native evidence limits
+
+The dated [ordinary 0.6 candidate observations](helper-0.6-candidate.md#bounded-native-candidate-observations-2026-10-10)
+cover one 0.4-to-0.6 AMD64/classic replacement and one 0.5-to-0.6 ARM64/classic
+replacement, including the retained legacy startup transaction before the latter.
+The separate [ARM64/containerd bridge observation](helper-active-recovery-bridge.md#bounded-native-preservation-observation-2026-10-10)
+preserved one failed operation, its marker and the fresh repaired S3 baseline;
+historical pre-loss S3 continuity remains invalidated. The earlier
+[0.5 lifecycle rehearsal](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+records a separate same-kernel post-exchange process-crash recovery. These dated
+observations do not establish native power-loss/reboot durability, application
+recovery, managed upgrade, protective backup, ordinary restore or publication.
+**Zero of 100 managed application-upgrade scenarios are qualified by these
+helper-only observations.** Public source delivery and the remaining native
+architecture/store/interruption cases remain separate gates.
 
 ## Docker image identity
 

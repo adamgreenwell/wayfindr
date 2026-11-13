@@ -4,8 +4,150 @@ This is the execution plan and evidence boundary for [U8 / #1115](https://github
 It extends the [disposable-VM evidence contract](disposable-vm-evidence.md)
 for the [independent host updater](managed-updater.md). It does not record a
 completed managed VM qualification. The managed source-to-target matrix below
-remains **proposed and unexecuted**. Actual source and ordinary-recovery
-observations are recorded separately and cannot complete its rows.
+remains **unqualified**. Individual failed or partial attempts retain their
+stated limits. Actual source and ordinary-recovery observations are recorded
+separately and cannot complete its rows.
+
+## October 14 native checkpoint — failed-safe preservation and ordinary restore
+
+The [fresh AMD64 checkpoint](evidence/managed-update/2026-10-14-helper010-failedsafe-amd64.json)
+records a normal public helper 0.9 → 0.10 exchange and one v1.4.3 → v1.4.4
+Start that ended `failed_safe` / `previous_serving_verified` before application
+mutation, migration or protective backup. The original services, configured
+origin and source data were verified. Its exact historical refusal cause
+remains unresolved.
+
+A separate ordinary v1.4.3 backup, production erasure and restore drill passed
+one normal `RestoreService(path, false)` call and two fresh verifiers. It does
+not establish a successful managed upgrade or protective-archive recovery.
+After the results and private archive were accepted, these two fresh VMs and
+their temporary copies were deleted. Older VMs and held operations, including
+the October 13 attempt below, remain preserved. Managed qualification remains
+**0/100**. The helper 0.11 correction in [PR #1162](https://github.com/adamgreenwell/wayfindr/pull/1162)
+is unpublished and has not undergone native qualification.
+
+## Earlier October 13 native observation — v1.4.4/helper 0.10
+
+The fresh AMD64/classic public v1.4.3 → v1.4.4 attempt used the separately
+installed public helper 0.10. Before Start, paired native audits rechecked the
+source fixture, normal host HTTPS trust and the original unstarted Plan after
+the helper and SSH processes restarted within the same guest boot. One ordinary
+HTTPS Start then returned HTTP 202. The local observer stopped on a filesystem
+save error after 156 saved HTTP records; it did not establish a poll timeout or
+save a terminal result. Start was not replayed.
+
+Separate read-only native captures found revision 18, `recovery_required` /
+`runtime_verification_failed`, with `mutation_started: true` and the hold owned.
+All five target v1.4.4 roles were running with the expected image and operation
+identity and zero recorded restarts. The private apply stage remains
+`restart_intent`; the runtime receipt is null and configuration promotion has
+not completed. The catch-path `apply_release_intent` checkpoint does not locate
+the original refusal. Its historical subcause remains unknown.
+
+An offline replay of the published helper's `check_target`,
+`target_layout(processes=False)` and role-readiness checks passes for all five
+roles using the saved Docker evidence. The readiness replay uses an explicit
+projection of the saved process arguments. Uncaptured writer, dependency,
+settlement, application-receipt, held-origin and realtime paths remain unknown;
+no application verification command was rerun on the held guest.
+
+A subsequent read-only diagnostic in the exact target web container attempted
+one connection to its configured public HTTPS endpoint. TCP establishment timed
+out with errno 110; zero TLS negotiations occurred. Paired raw-output audits
+accepted that observation and the unchanged failed operation/hold. This proves
+a current container-to-public-endpoint reachability blocker. It does not test
+certificate trust or reconstruct the original helper refusal. Host HTTPS trust
+alone does not establish that the container can reach and verify that endpoint.
+
+A separate read-only network capture retained routes, firewall rules, listeners
+and the owned Docker network. Its policy shows that HTTPS DNAT excludes the
+same bridge, the published port has a local Docker proxy listener, and UFW's
+incoming default is DROP with only the Mac's SSH allow. The inferred route
+therefore reaches host INPUT without an allow for the container's new HTTPS
+connection, consistent with the observed timeout. This is a current policy
+inference, not a packet trace or proof of the helper's historical first refusal.
+One bridge-netfilter sysctl query was unavailable; its nonzero result and nft's
+stderr remain in the evidence. No firewall change or second connection was made.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-13-v1.4.4-runtime-verification.json)
+binds the pre-Start, native and private-export audits. A read-only export retained
+the operation's stable private trees, before/after journal, installed helper
+identities and bounded Docker evidence. Migration and protective archive hashes
+match the journal. The public archive verifier accepted the source SQL, two
+local attachment bodies and declared key fingerprints. This does not verify
+post-migration target data, external objects, delivery, erasure or restore.
+
+No post-Start trust change, recovery, helper replacement or hold release occurred.
+The separate Restore VM remains writer-held without Source keys, archive or
+ledger handoff. All older VMs and held operations remain untouched. **Zero of
+100 scenarios are qualified.**
+
+## Previous native observation — v1.4.3/helper 0.9
+
+The fresh AMD64/classic public v1.4.2 → v1.4.3 attempt used the separately
+upgraded public helper 0.9. One ordinary HTTPS Start was accepted; the bounded
+observer then received maintenance responses and timed out without replaying
+Start. Its last reachable API status was revision 8, `protecting` /
+`target_verified`. Separate read-only native captures found revision 18,
+`recovery_required` / `origin_verification_failed`, with schema mutation begun.
+All five target v1.4.3 roles were running, but runtime verification and
+configuration promotion had not completed. The web health check returns an
+unhealthy result while the owned hold returns HTTP 503; that alone does not
+diagnose the failure.
+
+The guest's normal HTTPS trust rejected the private lab issuer with certificate
+verification error 20. Repeating the read-only `/up` probe using the exact
+independently captured lab CA, with hostname and chain verification enabled,
+returned HTTP 503 and a valid operation/key/release-bound v1.4.3 proof. This
+establishes a host trust prerequisite missed by the lab setup. It does not
+reconstruct the suppressed historical exception stack or prove complete serving.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-12-v1.4.3-origin-trust.json)
+binds the independent partial API, native and TLS audits. The private apply and
+protection directories, archive, migration receipt and journal were exported
+read-only. Archive and migration hashes match the journal. An independent replay
+of the public archive verifier accepted the source SQL, two local attachment
+bodies and declared key fingerprints. External object bodies, archive restore
+and post-migration data verification remain unaccepted.
+
+No certificate installation, Start replay, recovery, helper replacement or hold
+release occurred on that failed VM. Its Restore peer remains writer-held without
+Source keys, archive or ledger handoff. All older VMs and held operations remain
+untouched. Published [v1.4.4/helper 0.10](helper-0.10-candidate.md) checks the
+serving source origin before fencing, and repeats that admission before explicit
+recovery of a pre-protection refusal. Its [public readback receipt](evidence/managed-update/2026-10-12-v1.4.4-publication.json)
+verifies the Release/assets, complete source archive and both architecture image
+identities. Native helper replacement, complete application upgrade and ordinary
+separate-VM restore remain separate gates. **Zero of 100 scenarios are qualified.**
+
+## Previous native observation — v1.4.2/helper 0.8
+
+The public v1.4.2/helper 0.8 release chain, source and image aliases passed
+independent audits; the publication receipt's baked-file gate remains incomplete.
+A [subsequent static OCI-layer readback](evidence/managed-update/2026-10-12-v1.4.2-registry-baked-identity.json)
+verified the four baked identity files for both public architectures, including
+all later layers that could affect those paths. This separate registry-content
+proof leaves native image-probe and runtime qualification gates unchanged.
+The separate administrator helper exchange passed its actual-output audits.
+The fresh AMD64/classic public v1.4.1 → v1.4.2
+attempt then failed with `recovery_required` / `runtime_verification_failed`.
+Its private stage is `restart_intent`: target web and queue are running,
+backup-queue is created, and source scheduler/reverb remain stopped. The
+runtime receipt is null and configuration promotion has not completed.
+
+The [dated failed-attempt receipt](evidence/managed-update/2026-10-12-v1.4.2-compose-command-escaping.json)
+separates the bounded HTTPS observer timeout from native revision 17. Separate
+saved-output audits prove one Start and no POST replay. An unchanged-public-code
+replay isolates the backup worker's Compose JSON dollar escaping; the other
+layout predicates pass. [Issue #1150](https://github.com/adamgreenwell/wayfindr/issues/1150)
+tracks the correction, distinct helper delivery and fresh native qualification.
+
+No retry, recovery, active helper replacement, creation-intent clearing or hold
+release occurred. The second VM remains empty, unenrolled and writer-held; no
+Source keys, ledger or archive were handed over. Older held operations remain
+untouched. Target data/archive verification, delivery, post-archive erasure and
+ordinary restore remain unaccepted. **Zero of 100 scenarios are qualified.**
+The publication and historical observations below retain their dated scope.
 
 ## Publication and execution gates
 
@@ -21,84 +163,72 @@ There are three separate results:
    release assets and images, then independently verifies the resulting data,
    services, origin, reboot and restore behavior.
 
-Public `v1.2.0` is frozen at
-`56374e9574ed84616aae430d06589cfe2f0b33a0`, and
-[exact-main CI 38006329309](https://github.com/adamgreenwell/wayfindr/actions/runs/38006329309)
-and [publisher 38007100329](https://github.com/adamgreenwell/wayfindr/actions/runs/38007100329)
-passed. Independent public readback verified the Release, manifest, both
-amd64/arm64 image chains and aliases on October 10 UTC (October 9 EDT).
-ARM64 never-started-image baked version/commit/manifest/history verification
-passed, including exact public Config/rootfs equality, no start or mounts, and
-named UID/GID 1000. Actual ARM64 official installation, optional enrollment,
-idle helper restart and autonomous idle guest reboot passed; the
-[source/ordinary-recovery receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
-binds the exact official image and installed distribution. Five application
-roles passed PostgreSQL/production Redis/runtime checks, with private nonce and
-authenticated API/operator checks repeated after reboot. Container identities
-and credential/config/source fingerprints survived with a new helper generation
-and no operations. Ordinary archive/restore on a separate clean, unenrolled
-VM passed without force: the fixed archive predated a real erasure, its latest
-nonempty settled ledger preceded restore, and exact positive SYSTEM replay,
-survivor rows/local binary/settings/decryption and sequence/new API contact
-checks passed. One current key was retained, with no previous keys; rotation
-was not exercised. Erasure used the production service, not dashboard
-confirmation. These ARM64/private HTTP runs do not establish TLS, user-session
-broadcasting authorization, remote storage or managed protective custody. U8/#1115, U9/#1116 and epic #1107 remain open;
-managed qualification remains false, with zero executed managed scenarios.
-Public amd64 and arm64 manifest/configuration checks do not establish baked-file
-or installed-VM observations for an untested architecture.
+Public [`v1.4.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v1.4.0)
+is frozen at `0f4312f8f7bfae7dae556ea547fccda2cf66f43e`.
+All five [exact-main CI jobs](https://github.com/adamgreenwell/wayfindr/actions/runs/38086965749)
+and the [guarded publisher](https://github.com/adamgreenwell/wayfindr/actions/runs/38098816963)
+passed. Independent public verification and a separate raw-evidence audit passed
+for the Release, manifest/digest assets, exact source declarations, both
+amd64/arm64 OCI platform/config/RootFS chains and `1.4.0`/`1.4`/`latest` aliases.
+The release notes retain October 10, the release commit's date; public artifact
+verification completed October 11 UTC (October 10 EDT).
 
-**Docker 29 execution blocker:** on the ARM64 source guest, the containerd image
-store reports the OCI index digest as image `.Id` and container `.Image`; the
-public configuration digest is separate and is not a local image address. The
-source probe verified full public Config/rootfs equality and baked bytes, but
-published managed artifact verification/apply assume the local ID equals the configuration
-digest. [#1131](https://github.com/adamgreenwell/wayfindr/issues/1131) must be fixed
-and exercised with exact published artifacts before managed execution can be
-qualified. No managed operation was attempted. A newer compatible published
-target is a separate prerequisite.
+The [publication receipt](evidence/managed-update/2026-10-10-v1.4.0-publication.json)
+also binds helper `0.6.0` and its normal, legacy-recovery and active-operation
+administrator CLIs. Published source `v1.2.0` remains at
+`56374e9574ed84616aae430d06589cfe2f0b33a0`.
 
-The affected code is installed in the host helper. Managed apply replaces the
-application image/overlay and installation image/configuration binding; it does not replace helper
-code. Enrollment refuses existing helper artifacts, and terminal upgrade refuses
-enrolled hosts. A newer application image alone therefore cannot repair an
-already-enrolled 1.2.0 Docker 29 source. Keep that span unqualified until a
-supported, ownership-aware, byte-verified helper upgrade preserves enrollment
-identity, credential, journal, locks and recovery state while refusing active or
-partial work, or qualify a real newer published source freshly enrolled with the
-fixed helper. Manual helper overwrite, marker deletion, store switching and
-silent enrollment overwrite are not supported recovery paths.
+The real `v1.2.0` → `v1.4.0` minor pair is available for native testing.
+Publication does not qualify managed protection/apply, reboot, fault recovery
+or separate-VM restore. Managed updates remain **not qualified for production
+use**, with zero of 100 managed scenarios qualified. U8/#1115, U9/#1116,
+#1140 and epic #1107 remain open.
 
-The development `0.5.0` implementation addresses this image binding and adds the
-separate [exact-byte helper upgrade](managed-updater.md#upgrading-the-installed-helper).
-The published `v1.2.0` helper is still `0.4.0`. Implementation tests or a local
-candidate lifecycle rehearsal do not publish the fix or qualify a managed
-source-to-target span. Record actual installed-helper replacement, public target
-identity and the expanded matrix separately.
+Development source now identifies the next line as `1.5.0-dev`. The
+required-action declaration remains empty, standing notices and the retained
+1.4.0 history remain intact. This housekeeping does not publish another release
+or choose its feature scope.
 
-The [ARM64 Docker 29/containerd candidate receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
-records actual same-transaction recovery after interrupting the explicit
-helper-upgrade `recover` command,
-preserving the published `v1.2.0` application and its enrollment while completing
-`0.4.0` → `0.5.0`. Current-public-release `Artifacts.prepare` and retained
-read-only verification also passed. This is candidate helper-lifecycle and
-artifact-component evidence; an uninterrupted fresh upgrade is a separate
-observation. The fix remains unpublished, no newer application target or managed
-operation was created, and all 100 managed scenario cases remain unexecuted.
+**Installed Docker 29 compatibility is still a native gate.** The 1.2.0 helper
+`0.4.0` assumes the local image ID equals the public configuration digest.
+Docker 29/containerd instead exposed the OCI index as local image `.Id` and
+container `.Image` on the observed ARM64 guest. Published helper `0.5.0`
+separates those identities and verifies the selected platform manifest, full
+Config and rootfs. A newer application image cannot replace the installed host
+helper. Use the [supported exact-byte helper upgrade](managed-updater.md#upgrading-the-installed-helper)
+and bind its actual completed transaction when adopting an older application
+with the newer helper. Manual helper overwrite, marker deletion, store switching
+and silent enrollment overwrite cannot establish this path.
 
+The earlier [source and ordinary-restore receipt](evidence/managed-update/2026-10-10-published-source-and-ordinary-restore.json)
+proves ARM64 published 1.2.0 installation/enrollment, idle helper restart and
+actual autonomous idle guest reboot. It also records a separate clean,
+unenrolled ordinary restore without force, using a fixed pre-erasure archive,
+the real latest nonempty ledger and retained current encryption key. Positive
+SYSTEM replay, survivor rows/local binary/settings/decryption, scrubbed tickets
+and sequence checks passed. Those private-HTTP observations did not exercise
+TLS, user-session broadcasting authorization, remote storage or rotated keys.
+They do not qualify managed protection/apply or active-update recovery.
 
-The earlier October 9 publication gate checked public `v1.1.0` → `v1.1.1`.
-Neither immutable tag contains the managed-apply command required by enrollment;
-the now-merged implementation cannot change those older artifacts. Retain that
-[blocked receipt](evidence/managed-update/README.md) as dated evidence.
-A managed success span needs **two compatible published releases**, with the
-source and target satisfying the reviewed application/helper protocol and
-byte-identical supported base Compose configuration. The first compatible
-release can prove enrollment, idle helper reboot behavior, ordinary backups and
-an independent restore. Target-bound protection and active-operation reboot
-drills need an eligible newer published target; planning the running release
-returns `no_update_required`. One release cannot supply both ends of a published
-managed upgrade.
+The [earlier candidate recovery receipt](evidence/managed-update/2026-10-10-docker29-helper-recovery.json)
+and [merged-helper lifecycle rehearsal](evidence/managed-update/2026-10-10-helper-lifecycle-rehearsal.json)
+remain dated evidence of unpublished-code trials. The latter passed normal
+replacement and explicit same-transaction recovery after kernel-confirmed
+atomic exchange and SIGKILL on ARM64/containerd, preserving the published
+application, enrollment and seeded data. It proves same-kernel process-crash
+recovery before parent-directory fsync, not power-loss or reboot durability.
+Its historical `published: false` field remains unchanged; the later 1.3.0
+publication is recorded separately above.
+
+The older `v1.1.0` → `v1.1.1` [blocked gate](evidence/managed-update/README.md)
+also remains valid: those immutable tags lack the managed updater contracts.
+A success span needs two compatible published releases and supported base
+Compose bytes; one release cannot supply both ends. The 1.2.0 → 1.3.0 minor
+pair now exists, while other matrix cases still require their actual published
+prerequisites. Keep each missing case blocked. Publication, helper tests and
+source-only observations cannot fill the 100-case native matrix. U8/#1115,
+U9/#1116, #1131 and epic #1107 remain open; this document records zero qualified
+managed scenarios.
 
 Release/tag creation, registry publication, implementation merges, production
 changes and arbitrary image downgrades are separate actions. This qualification
@@ -133,6 +263,41 @@ checkpoint. Refuse absent or mismatched bindings. Retain an out-of-band guest
 console, a bounded timeout and a way to reconnect. Record which actor requested
 each mutation. A local developer Docker daemon, shared VM or production origin
 must never become an implicit fallback target.
+
+### Configured-origin trust before Start
+
+Admit the configured public browser endpoint from the **web container** as well
+as from the host. First establish TCP reachability, including the route from a
+Docker bridge back to that VM's published HTTPS port. Then check normal PHP
+peer and hostname verification with no application bootstrap or authenticated
+traffic. A TCP timeout leaves certificate trust untested. PHP's
+[certificate search locations](https://www.php.net/manual/en/function.openssl-get-cert-locations.php)
+and [SSL context options](https://www.php.net/manual/en/context.ssl.php) describe
+the container's own trust configuration; installing an issuer on the host does
+not populate the image's trust store. Record these admissions separately before
+Start. The published helper 0.10 host-origin check does not establish this
+container connection.
+
+Verify the enrolled HTTPS origin from the **guest host**, using its normal
+system trust store, before starting a managed update. A browser on another
+machine or a client supplied with a private CA does not establish host trust.
+The helper's bounded network probe uses normal system trust and strips custom
+process environment; passing `SSL_CERT_FILE` to an unrelated shell is insufficient.
+
+Use a publicly trusted certificate, or explicitly install a reviewed private
+issuer into that disposable host's operating-system trust store during lab
+setup. Authenticate the issuer against the certificate exported through the
+trusted guest/container connection and record its fingerprint before installation.
+On Ubuntu, an approved PEM CA with a `.crt` suffix belongs in
+`/usr/local/share/ca-certificates/`; `sudo update-ca-certificates` refreshes the
+system store. Trust only the public issuer certificate, never a private key.
+Do not use `--insecure`, an unverified SSL context or a helper-code patch.
+
+Record a successful host-default HTTPS chain and hostname check, a fresh signed
+source-release proof and the still-serving source state before Start. Preserve
+the separate browser/client trust and TLS material checks. Correcting lab trust
+does not convert an earlier failed operation into a successful upgrade or
+authorize recovery of an existing held VM.
 
 No procedure below requires a test-only bypass in the shipped helper. A fault
 controller operates outside the helper, within the explicitly disposable guest,
@@ -353,8 +518,8 @@ control boundaries without exercising Linux privileges or a real VM.
 
 | Command | Implemented effect |
 | --- | --- |
-| `preflight` | Read public declarations for the exact `--source` and `--target`; write an exclusive `--output` receipt and optional `--evidence-output` scaffold. It does not access a VM or Docker. A ready declaration is still unqualified. |
-| `adopt` | With `--ack-disposable`, verify the actual baked source identity, five distinct running canonical services on that image, no active operation and authenticated helper identity before writing a root-private source/target marker. Isolation remains an operator attestation. It does not provision or enroll the installation. |
+| `preflight` | Read public declarations for the exact `--source`, `--target` and optional distinct `--helper-release`; write an exclusive `--output` receipt and optional `--evidence-output` scaffold. It does not access a VM or Docker. A ready declaration is still unqualified. |
+| `adopt` | With `--ack-disposable`, verify the actual baked source identity, five distinct running canonical services on that image, no active operation and authenticated helper identity. Independently bind the exact published helper files and any completed supported helper-upgrade receipt before writing a root-private source/target/helper marker. Isolation remains an operator attestation. It does not provision or enroll the installation. |
 | `snapshot` | Capture the validated journal, authenticated helper identity when available, and minimal identities/running states for the five application services. It does not execute origin, runtime or data-survival checks. |
 | `interrupt-helper` | Wait within a bounded interval for the exact owned operation/checkpoint, retain an interruption-intent receipt, and signal only the fixed helper service. Existing systemd restart policy may restart the helper. This command does not recover it or terminate application containers. |
 | `checkpoint-reboot` | Retain an owned operation observation before a separately requested guest reboot. It does not reboot the VM. |
@@ -377,6 +542,44 @@ The running helper version comes from its authenticated local status response,
 with a root socket peer, nonce and HMAC verification. The observer distribution
 version is recorded separately. An offline journal remains readable with
 unverified helper identity and cannot authorize a fault injection.
+
+### Adopting a source with a separately upgraded helper
+
+An application release and its installed helper can have different published
+source tags. A `v1.2.0` application initially enrolls helper `0.4.0`; after the
+separate supported replacement, the application still reports `v1.2.0` while
+the authenticated helper reports `0.5.0`. Do not replace the application identity
+or reenroll to make those versions appear identical.
+
+After publishing and independently verifying the selected helper distribution,
+pass its exact stable tag as `--helper-release` and the completed replacement
+receipt UUID as `--helper-upgrade-transaction` to `adopt`. Both flags are required
+for this distinct-helper case. Use the receipt from that installation's actual
+root-only upgrade. The runner verifies the selected release, source-tree blobs,
+complete installed module hashes, source enrollment inputs, completed receipt
+and transaction-derived retained old generation. It requires no pending
+replacement/stop gate and verifies the current root systemd process through the
+authenticated socket peer PID.
+
+The private adoption marker uses schema `2`. Subsequent VM controls recheck its
+local generations and receipt without repeating public metadata requests. The
+receipt's startup generation is historical; a legitimate helper restart creates
+a new authenticated generation. A display version alone cannot admit the host.
+
+Public metadata reads are bounded and unauthenticated. Guests behind one NAT
+share GitHub's public API allowance; retain each adopted installation's own
+snapshot between fault scenarios instead of repeatedly adopting it. A transport
+or rate-limit refusal is a missing prerequisite, not permission to relax checks.
+
+The runner accepts the actual `accepted` and `prepare_started` checkpoints before
+source/target/plan resolution. Those observations bind the requested release,
+operation/request UUIDs, executor generation and journal revision and require
+null unresolved identities with no mutation. Protection checkpoints such as
+`fenced`, `drained` and `backup_verified` require the resolved plan and protection
+record. Observations do not constitute an atomic pause or prove that an
+intervention hit its intended window.
+
+### Validating the sanitized report
 
 Validate the sanitized report with the
 [managed-update evidence contract](../../scripts/self-host/update_vm_evidence.py)

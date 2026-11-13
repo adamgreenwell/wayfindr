@@ -38,6 +38,7 @@ return [
         'handle_data_requests' => ['label' => 'Datenanfragen bearbeiten', 'detail' => 'Alle zu einem Kontakt gespeicherten Daten auf zugewiesenen Websites exportieren oder löschen. Das Löschen kann nicht rückgängig gemacht werden.'],
         'manage_privacy_settings' => ['label' => 'Datenschutzeinstellungen verwalten', 'detail' => 'Besucherdaten- und Datenschutzkontrollen ändern.'],
         'manage_integrations' => ['label' => 'Integrationen verwalten', 'detail' => 'Anbieter, API-Token, Webhooks und Routing konfigurieren.'],
+        'manage_ai_connections' => ['label' => 'KI-Verbindungen verwalten', 'detail' => 'KI-Verbindungen dieses Kontos konfigurieren, ohne Zugriff auf Supportdaten oder Operatorrechte zu gewähren.'],
         'manage_knowledge' => ['label' => 'Wissen verwalten', 'detail' => 'Artikel, Antworten und Ticket-Labels erstellen und veröffentlichen.'],
         'manage_security' => ['label' => 'Sicherheit verwalten', 'detail' => 'Authentifizierungs- und Sicherheitseinstellungen ändern.'],
         'manage_operator_access' => ['label' => 'Operatorzugriff verwalten', 'detail' => 'Zugriffsanfragen von Plattform-Operatoren prüfen und bearbeiten.'],

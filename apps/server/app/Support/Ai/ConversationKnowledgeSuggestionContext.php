@@ -10,5 +10,7 @@ final readonly class ConversationKnowledgeSuggestionContext
         public AgentCopilotPrompt $prompt,
         public int $messageCount,
         public int $lastMessageId,
+        public ?string $sourceRevision = null,
+        public array $sourceSnapshot = [],
     ) {}
 }

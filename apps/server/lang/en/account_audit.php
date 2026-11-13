@@ -80,6 +80,20 @@ return [
     ],
 
     'actions' => [
+        'conversation_ai_summary_started' => 'Summary preparation started',
+        'conversation_ai_reply_draft_started' => 'Reply draft preparation started',
+        'conversation_ai_knowledge_suggestion_started' => 'Article suggestion preparation started',
+        'conversation_ai_ticket_suggestion_started' => 'Ticket suggestion preparation started',
+
+        'conversation_ai_draft_refinement_requested' => 'Private draft refinement requested',
+        'conversation_ai_draft_refinement_started' => 'Private draft refinement started',
+        'conversation_ai_draft_refinement_ready' => 'Private draft preview prepared',
+        'conversation_ai_draft_refinement_failed' => 'Private draft refinement failed',
+        'conversation_ai_draft_refinement_stale' => 'Private draft refinement became stale',
+        'conversation_ai_draft_refinement_cancelled' => 'Private draft refinement cancelled',
+        'conversation_ai_draft_refinement_applied' => 'Private draft replacement authorized',
+        'conversation_ai_draft_refinement_superseded' => 'Private draft refinement superseded',
+        'conversation_ai_draft_refinement_expired' => 'Private draft refinement expired',
         'agent_created' => 'Agent created',
         'agent_deactivated' => 'Agent deactivated',
         'agent_password_updated' => 'Password changed',

@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-12",
+  "kind": "published_managed_upgrade_failed_native_observation",
+  "issue": "https://github.com/adamgreenwell/wayfindr/issues/1153",
+  "environment": {
+    "architecture": "amd64",
+    "disposable": true,
+    "docker": "29.1.3",
+    "helper": "0.9.0",
+    "image_store": "classic",
+    "os": "Ubuntu Server 24.04 LTS"
+  },
+  "source": {
+    "tag": "v1.4.2",
+    "commit": "79ae1e96b267f0bac4ff4dc15bbc8380e394f999"
+  },
+  "target": {
+    "tag": "v1.4.3",
+    "commit": "4376acbd271e88c329e612efecfba753531bb4a9",
+    "index_digest": "sha256:20d310fc2182e800cb14e768a73c96e7331ecdc2de5ec2aaa948ba86af6633a5",
+    "platform_manifest_digest": "sha256:d3d8d980496341c7c7134fd472758b925e395ad32bab7bfbff0468c57c5400aa",
+    "config_digest": "sha256:118cb3884d68ee3023ff20cf5169cb69a915a54aecfa5a411d7b2294aca6ba86"
+  },
+  "ordinary_operator": {
+    "start_posts": 1,
+    "post_retries": 0,
+    "bounded_observer_failure": "bounded_read_only_poll_timeout",
+    "successful_status_observations": 26,
+    "transient_get_observations": 393,
+    "last_received_api_revision": 8,
+    "last_received_api_phase": "protecting",
+    "last_received_api_checkpoint": "target_verified",
+    "terminal_api_result": null,
+    "successful_terminal_consumption_accepted": false,
+    "failure_sha256": "92df8e218dc9b0bac3c4136fafc09969db304ade0ceb099da712ad9858542691",
+    "root_partial_audit_sha256": "634a2cc550a1986628d3fa0e945c6494544ead457776deb083aa1870446caf7f",
+    "independent_partial_audit_sha256": "26ee1f57268fca4daf71113c5c8a33635c7d09f155444e18ed925e0fda20c446"
+  },
+  "read_only_native_observation": {
+    "revision": 18,
+    "phase": "recovery_required",
+    "checkpoint": "apply_release_intent",
+    "error": "origin_verification_failed",
+    "mutation_started": true,
+    "hold_owned": true,
+    "private_stage": "restart_intent",
+    "five_target_roles_running": true,
+    "source_five_writer_hold_established": false,
+    "configuration_committed": false,
+    "runtime_receipt_sha256": null,
+    "migration_receipt_sha256": "4d2e3caf953b8f8e28f9e05aea865e9aa354056304addff8ee71b0b91a26cfa3",
+    "migration_receipt_matches_journal": true,
+    "private_capture_sha256": "91540d6ac775aeda0779c84c8584f063396f89ce312b921e8baa050951493e82",
+    "independent_diagnostic_audit_sha256": "da4c776a3d7c0373af381d851436a2b587eacdbccc2db64c576ab5c3344aa78f"
+  },
+  "read_only_origin_diagnostic": {
+    "same_fresh_challenge_for_both_attempts": true,
+    "hostname_and_chain_verification_required": true,
+    "redirects_and_proxy_disabled": true,
+    "guest_system_trust_verify_code": 20,
+    "guest_system_trust_error": "unable to get local issuer certificate",
+    "accepted_lab_ca_sha256": "681d1d3b2c0dfad45c1f1ac241ec351d87643d87350b5a0238aa11d1e268eaba",
+    "exact_lab_ca_status": 503,
+    "exact_lab_ca_target_held_proof_independently_verified": true,
+    "historical_exception_stack_retained": false,
+    "native_capture_sha256": "84509d1a49a200cdd1a72ed796ca48f890c0605d169d57b9ac1daf53df604bcd",
+    "independent_audit_sha256": "41fe4f328771be6b3fd8f13fafe295673cc850633da32f8849539ddfff13e67a"
+  },
+  "failed_operation_preservation": {
+    "private_export_sha256": "0e788cadcdc99b6565e4dd6a9b0fc2cf843d53cdc506fd2477b6786c369d7465",
+    "safe_export_members": 35,
+    "root_actual_audit_sha256": "9019c1211499f60d95cd4f153209e522c5f7d6824b1d4bfd2ab1d8e475a2c9cb",
+    "independent_actual_audit_sha256": "5db1764d2ffaa4dd6b3a6fb06fb8118334216400f3d71e5e4bfa4b7aa6e410f2",
+    "protective_archive_sha256": "cf49a85bd94c17e963576554e54f87d2abb75c38014a74297d7acb8b97f346e1",
+    "protective_manifest_sha256": "a7f23ab5a4ab23d544ba0e5507eb2502e64143d2ed99fe903bcfad3331880b6d",
+    "archive_hash_matches_journal": true,
+    "public_archive_verifier_replay_passed": true,
+    "source_sql_and_two_local_attachment_bodies_verified": true,
+    "declared_key_fingerprints_verified": 2,
+    "original_role_key_sets_preserved": true,
+    "external_object_bodies_verified": false,
+    "offsite_configured": false,
+    "archive_restored": false
+  },
+  "preserved_boundaries": {
+    "certificate_or_trust_store_installed": false,
+    "start_replayed": false,
+    "recovery_attempted": false,
+    "active_helper_replaced": false,
+    "hold_released": false,
+    "older_vms_or_held_operations_changed": false,
+    "restore_vm_writers_remain_held": true,
+    "source_keys_archive_or_ledger_handed_to_restore": false
+  },
+  "limits": [
+    "Partial API, native journal, TLS and preservation audits validate distinct recorded evidence; none accepts upgrade success.",
+    "The recorded guest-system-trust refusal establishes a missed trust prerequisite without reconstructing the suppressed historical exception stack.",
+    "The catch path can record apply_release_intent while reacquiring maintenance; it does not prove release or runtime verification.",
+    "Five running target roles and a valid held HTTP 503 proof do not establish complete serving or a five-writer source hold.",
+    "The private export and public archive-verifier replay prove captured source SQL and local attachment content, not external objects, target data or restore.",
+    "The successor helper is an unpublished candidate requiring distinct authorized delivery and fresh qualification; existing failed operations remain preserved."
+  ],
+  "unverified": [
+    "complete target serving",
+    "post-migration logical data and attachment contents",
+    "external attachment object bodies",
+    "authenticated user private-channel delivery and worker completion",
+    "post-archive erasure",
+    "ordinary second-VM restore"
+  ],
+  "qualification": false,
+  "qualified_managed_scenarios": 0
+}

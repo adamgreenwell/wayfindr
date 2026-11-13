@@ -320,11 +320,66 @@ link_laravel_environment_file() {
     ln -s ../../.env .env
 }
 
+# BEGIN WAYFINDR SHARED STORAGE LINK
+# A zero-downtime Forge site shares `apps/server/storage` by making it a symlink
+# into the site root. This script pulls IN PLACE, and git will not write through
+# a symlink: when upstream changes any of the tracked placeholder `.gitignore`
+# files under that path, the pull deletes the link and creates a real directory
+# holding only those placeholders (#1202). The release then boots against empty
+# storage - no release state, so the upgrade guard refuses with a misleading
+# "no recorded release", and backups, uploads and logs are all out of reach.
+#
+# So the link is noted before the pull and put back after it. The replacement is
+# deleted only when it holds nothing but tracked placeholders, which is exactly
+# what git creates; anything else in it refuses rather than being thrown away.
+restore_shared_storage_link() {
+    local storage_path="$1" link_target="$2"
+
+    if [[ -z "$link_target" || -L "$storage_path" ]]; then
+        return 0
+    fi
+
+    if [[ ! -d "$storage_path" ]]; then
+        ln -s "$link_target" "$storage_path"
+        return 0
+    fi
+
+    local unexpected
+    unexpected="$(comm -23 \
+        <(find "$storage_path" -mindepth 1 ! -type d | LC_ALL=C sort) \
+        <(git ls-files -- "$storage_path" | LC_ALL=C sort))"
+
+    if [[ -n "$unexpected" ]]; then
+        echo "The pull replaced the shared storage link $storage_path -> $link_target" >&2
+        echo "with a directory that holds files git did not create:" >&2
+        sed 's/^/  /' <<<"$unexpected" >&2
+        echo "Nothing was deleted. Move those files into $link_target, remove" >&2
+        echo "$storage_path, recreate the link and deploy again." >&2
+        return 1
+    fi
+
+    rm -rf "$storage_path"
+    ln -s "$link_target" "$storage_path"
+    echo "Restored the shared storage link $storage_path -> $link_target after the pull."
+}
+# END WAYFINDR SHARED STORAGE LINK
+
 assert_wayfindr_php_runtime
 assert_wayfindr_host_action_acknowledged
 
 cd "$FORGE_SITE_PATH"
-git pull origin "$FORGE_SITE_BRANCH"
+
+shared_storage_target=""
+if [[ -L apps/server/storage ]]; then
+    shared_storage_target="$(readlink apps/server/storage)"
+fi
+
+pull_status=0
+git pull origin "$FORGE_SITE_BRANCH" || pull_status=$?
+restore_shared_storage_link apps/server/storage "$shared_storage_target"
+if [[ "$pull_status" -ne 0 ]]; then
+    exit "$pull_status"
+fi
 
 cd apps/server
 

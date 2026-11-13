@@ -12,5 +12,7 @@ final readonly class ConversationTicketSuggestionContext
         public int $messageCount,
         public int $lastMessageId,
         public array $labelIds,
+        public ?string $sourceRevision = null,
+        public array $sourceSnapshot = [],
     ) {}
 }

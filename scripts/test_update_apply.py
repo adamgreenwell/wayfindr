@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import ssl
 from email.message import Message
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ import subprocess
 import tempfile
 import types
 import unittest
+import urllib.error
 import uuid
 from unittest.mock import patch
 
@@ -244,8 +246,9 @@ class ApplyTests(unittest.TestCase):
 
     def proof(self, origin, keys, operation, identity, held, api):
         assert origin == "https://fixture.invalid" and keys["current"] == FIX.KEY and held == self.engine.held
-        self.engine.calls.append("origin_held" if held else "origin_serving")
-        self.engine.trip("origin_held" if held else "origin_serving")
+        label = "source_origin_preflight" if not held and identity == SOURCE and "enter" not in self.engine.calls else "origin_held" if held else "origin_serving"
+        self.engine.calls.append(label)
+        self.engine.trip(label)
         if self.engine.origin_stale:
             raise UP.Refusal("origin_verification_failed")
 
@@ -273,7 +276,7 @@ class ApplyTests(unittest.TestCase):
         self.assertTrue(all(self.engine.target_running.values()))
         self.assertEqual("retained", self.status()["operation"]["protection"]["phase"])
         self.assertFalse(self.status()["operation"]["protection"]["services_recovered"])
-        for first, second in (("artifacts", "enter"), ("backup", "migrate"), ("migrate", "create_web"), ("prestart_web", "start_web"), ("role_reverb", "release"), ("origin_held", "release"), ("release", "origin_serving")):
+        for first, second in (("artifacts", "protocol"), ("protocol", "source_origin_preflight"), ("source_origin_preflight", "enter"), ("backup", "migrate"), ("migrate", "create_web"), ("prestart_web", "start_web"), ("role_reverb", "release"), ("origin_held", "release"), ("release", "origin_serving")):
             self.assertLess(self.engine.calls.index(first), self.engine.calls.index(second))
         self.assertEqual(1, self.engine.calls.count("backup"))
         self.assertEqual(1, self.engine.calls.count("migrate"))
@@ -375,6 +378,398 @@ class ApplyTests(unittest.TestCase):
         state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
         self.assertEqual("downloaded", state["stage"])
         self.assertFalse((self.root / "protection" / self.operation).exists())
+
+    def source_origin(self, failure):
+        self.origin_failure = failure
+        test = self
+
+        class Opener:
+            def open(self, request, timeout):
+                if test.origin_failure == "tls":
+                    raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))
+                if test.origin_failure == "timeout":
+                    raise TimeoutError("origin response timeout")
+                challenge = request.get_header("X-wayfindr-update-challenge")
+                held = test.engine.held
+                payload = json.dumps([1, challenge, test.operation if held else None, SOURCE["version"], SOURCE["commit"]], separators=(",", ":")).encode()
+                derived = hmac.digest(FIX.KEY.encode(), b"wayfindr-managed-origin-v1", "sha256")
+                value = hmac.new(derived, payload, "sha256").hexdigest()
+                return Response(503 if held else 200, [] if test.origin_failure == "missing" else ["f" * 64] if test.origin_failure == "wrong" else [value])
+
+        def proof(origin, keys, operation, identity, held, api):
+            self.proof(origin, keys, operation, identity, held, api)
+            APPLY.origin_proof(origin, keys, operation, identity, held, api, opener=Opener())
+        self.applier.proof = proof
+
+    def assert_source_origin_refused_without_interruption(self, config, stage="downloaded", protection_exists=False):
+        operation = self.status()["operation"]
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertFalse(operation["mutation_started"], "Serving-origin refusal must precede schema mutation")
+        for evidence in (operation["apply"], operation["protection"]):
+            self.assertFalse(evidence["hold_owned"], "Serving-origin refusal must precede maintenance fencing")
+        self.assertEqual("origin_verification_failed", operation["error"], "A refused pre-protection origin admission must be reported")
+        self.assertEqual(self.operation, self.status()["active_operation"])
+        for name in ("services_verified", "origin_verified", "configuration_committed", "migration_started", "migration_verified"):
+            self.assertFalse(operation["apply"][name])
+        self.assertIsNone(operation["apply"]["runtime_receipt_sha256"])
+        self.assertIsNone(operation["apply"]["migration_receipt_sha256"])
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate", "receipt"):
+            self.assertNotIn(forbidden, self.engine.calls, "A refused serving-origin proof must leave the source untouched: " + forbidden)
+        self.assertFalse(any(call.startswith(("create_", "start_")) for call in self.engine.calls))
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(200, self.engine.web_status(self.engine.originals["web"]))
+        self.assertEqual(self.engine.originals, self.engine.service_ids())
+        self.assertEqual(config, self.config.value)
+        self.assertEqual(config, UP.read_object(self.configpath, 16384, "configuration_changed"))
+        self.config.verify_files()
+        keys = UP.read_object(self.root / "apply" / self.operation / "keys.json", 16384, "recovery_required")
+        self.assertEqual(self.engine.effective_keys(self.engine.originals["web"]), keys)
+        self.assertEqual(protection_exists, (self.root / "protection" / self.operation).exists())
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual(stage, state["stage"])
+
+    def test_source_origin_tls_missing_wrong_proof_and_timeout_refuse_before_protection(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(failure)
+                self.apply()
+                self.assert_source_origin_refused_without_interruption(config)
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.recover()
+                self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+                self.assert_source_origin_refused_without_interruption(config)
+
+    def test_repaired_source_origin_allows_only_explicit_verified_source_recovery(self):
+        self.source_origin("tls")
+        config = copy.deepcopy(self.config.value)
+        self.apply()
+        self.assert_source_origin_refused_without_interruption(config)
+        self.origin_failure = None
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("origin_serving", self.engine.calls)
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(config, self.config.value)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+
+    def test_artifact_failure_and_untrusted_origin_never_enter_fallback_fence(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.engine.fault = "download"
+                self.source_origin(failure)
+                self.apply()
+                self.assert_source_origin_refused_without_interruption(config, "download_intent")
+                self.assertEqual(1, self.engine.calls.count("artifacts"))
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.recover()
+                self.assertEqual(1, self.engine.calls.count("artifacts"))
+                self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+                self.assert_source_origin_refused_without_interruption(config, "download_intent")
+
+    def test_artifact_failure_with_verified_origin_keeps_existing_safe_fallback(self):
+        self.engine.fault = "download"
+        self.source_origin(None)
+        self.apply()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+        self.assertEqual("apply_timeout", self.status()["operation"]["apply"]["error"])
+        self.assertIsNone(self.status()["active_operation"])
+        self.assertLess(self.engine.calls.index("source_origin_preflight"), self.engine.calls.index("enter"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("origin_serving", self.engine.calls)
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertFalse(self.engine.targets)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+
+    def test_crashed_source_origin_preflight_rechecks_before_any_recovery_fence(self):
+        self.engine.crash = "source_origin_preflight"
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.source_origin("tls")
+        config = copy.deepcopy(self.config.value)
+        self.recover()
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+        self.assert_source_origin_refused_without_interruption(config)
+
+    def test_crashed_protect_intent_without_capture_rechecks_origin_before_recovery_fence(self):
+        for failure in ("tls", "missing", "wrong", "timeout"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(None)
+                original = self.applier.persist
+                def crash_after_intent(directory, state, stage):
+                    original(directory, state, stage)
+                    if stage == "protect_intent":
+                        raise KeyboardInterrupt()
+                self.applier.persist = crash_after_intent
+                with self.assertRaises(KeyboardInterrupt):
+                    self.apply()
+                path = self.root / "apply" / self.operation / "state.json"
+                before = path.read_bytes()
+                self.assertEqual("protect_intent", json.loads(before)["stage"])
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertFalse((self.root / "protection" / self.operation).exists())
+                self.assertFalse(self.engine.held)
+                self.origin_failure = failure
+                for count in (2, 3):
+                    self.recover()
+                    self.assert_source_origin_refused_without_interruption(config, "protect_intent")
+                    self.assertEqual(count, self.engine.calls.count("source_origin_preflight"))
+                    self.assertEqual(before, path.read_bytes())
+                self.origin_failure = None
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+                self.assertIsNone(self.status()["active_operation"])
+                self.assertEqual(4, self.engine.calls.count("source_origin_preflight"))
+                self.assertIn("origin_held", self.engine.calls)
+                self.assertIn("origin_serving", self.engine.calls)
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertFalse(self.engine.targets)
+                self.assertEqual(config, self.config.value)
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+
+    def test_capture_refusal_before_ownership_reports_failed_origin_admission_without_fencing(self):
+        config = copy.deepcopy(self.config.value)
+        self.source_origin(None)
+        def refuse_before_capture(*_args, **_kwargs):
+            self.origin_failure = "tls"
+            raise UP.Refusal("source_changed")
+        self.protector.capture = refuse_before_capture
+        self.apply()
+        self.assert_source_origin_refused_without_interruption(config, "protect_intent")
+        self.assertEqual(2, self.engine.calls.count("source_origin_preflight"))
+
+    def crash_capture_window(self, *, entered=False, persisted=False):
+        original = self.engine.window
+        persist = self.protector.persist
+        def crash_persist(directory, context, stage):
+            persist(directory, context, stage)
+            if persisted and stage == "fence_intent":
+                raise KeyboardInterrupt()
+        def crash(container, operation, action):
+            if action == "enter":
+                if entered:
+                    original(container, operation, action)
+                raise KeyboardInterrupt()
+            return original(container, operation, action)
+        self.engine.window = crash
+        self.protector.persist = crash_persist
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                self.apply()
+        finally:
+            self.engine.window = original
+            self.protector.persist = persist
+        directory = self.root / "protection" / self.operation
+        self.assertEqual("protect_intent", json.loads((self.root / "apply" / self.operation / "state.json").read_bytes())["stage"])
+        self.assertEqual("fence_intent", json.loads((directory / "state.json").read_bytes())["stage"])
+        self.assertFalse(self.status()["operation"]["apply"]["hold_owned"])
+        self.assertFalse(self.status()["operation"]["protection"]["hold_owned"])
+        self.assertEqual(entered, self.engine.held)
+        return directory
+
+    def test_persisted_fence_intent_before_enter_rechecks_source_proof_without_creating_hold(self):
+        for persisted, failure in ((persisted, failure) for persisted in (False, True) for failure in ("tls", "missing", "wrong", "timeout")):
+            with self.subTest(persisted=persisted, failure=failure):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                self.source_origin(None)
+                directory = self.crash_capture_window(persisted=persisted)
+                before = {p.name: p.read_bytes() for p in directory.iterdir()}
+                self.origin_failure = failure
+                for count in (2, 3):
+                    self.recover()
+                    self.assert_source_origin_refused_without_interruption(config, "protect_intent", protection_exists=True)
+                    self.assertEqual(count, self.engine.calls.count("source_origin_preflight"))
+                    self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+                self.origin_failure = None
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"])
+                self.assertEqual(4, self.engine.calls.count("source_origin_preflight"))
+                self.assertIsNone(self.status()["active_operation"])
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+                self.assertFalse(self.engine.targets)
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertEqual(config, self.config.value)
+
+    def test_held_window_before_public_checkpoint_keeps_owned_recovery(self):
+        self.source_origin(None)
+        self.crash_capture_window(entered=True)
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"], "A verified same-operation hold must retain recovery when its public checkpoint lags")
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.assertIn("origin_held", self.engine.calls)
+        self.assertIn("release", self.engine.calls)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertNotIn("migrate", self.engine.calls)
+
+    def test_unheld_capture_context_replacement_refuses_before_source_proof_or_first_fence(self):
+        self.source_origin(None)
+        baseline = self.protector.baseline
+        layout = self.engine.layout
+        replacements = {role: hashlib.sha256(("replacement-" + role).encode()).hexdigest() for role in self.engine.originals}
+        calls = 0
+        def recreated_layout(container):
+            value = layout(container)
+            if container in replacements.values():
+                value["created"] = "2026-01-02T00:00:00Z"
+            return value
+        def recreated_baseline(operation):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.engine.originals = copy.deepcopy(replacements)
+                self.engine.ids = copy.deepcopy(replacements)
+            return baseline(operation)
+        self.engine.layout = recreated_layout
+        self.protector.baseline = recreated_baseline
+        directory = self.crash_capture_window(persisted=True)
+        before = {p.name: p.read_bytes() for p in directory.iterdir()}
+        config = copy.deepcopy(self.config.value)
+        apply = json.loads((self.root / "apply" / self.operation / "state.json").read_bytes())
+        context = json.loads((directory / "state.json").read_bytes())
+        immutable = ("containers", "image", "source", "key_fingerprints", "capture_binding_sha256", "environment_binding")
+        self.assertEqual(["containers"], [key for key in immutable if context[key] != apply["source_context"][key]])
+        offset = len(self.engine.calls)
+        self.recover()
+        operation = self.status()["operation"]
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertEqual("source_changed", operation["error"], "A new capture baseline must not replace the frozen apply source before its first fence")
+        for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate", "source_origin_preflight"):
+            self.assertNotIn(forbidden, self.engine.calls[offset:], "A changed unheld capture must refuse before proof or first fence: " + forbidden)
+        self.assertFalse(operation["mutation_started"])
+        self.assertFalse(operation["apply"]["hold_owned"])
+        self.assertFalse(operation["protection"]["hold_owned"])
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
+        self.assertFalse(self.engine.targets)
+        self.assertEqual(replacements, self.engine.originals)
+        self.assertEqual(config, self.config.value)
+        self.config.verify_files()
+        self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
+    def test_ambiguous_fence_intent_status_or_pending_commands_never_create_first_fence(self):
+        cases = ["unknown", "missing", "schema", "held", "owner", "foreign_held", "ordinary", "source", "ledger", "extra", "pending", "stopped", "partial", "malformed_state", "foreign_context", "symlink_directory"]
+        for fault in cases:
+            with self.subTest(fault=fault):
+                self.setUp()
+                config = copy.deepcopy(self.config.value)
+                directory = self.crash_capture_window()
+                original = self.engine.window
+                def invalid_status(container, operation, action):
+                    value = original(container, operation, action)
+                    if action != "status":
+                        return value
+                    if fault == "unknown":
+                        return None
+                    if fault == "missing":
+                        value.pop("held")
+                    elif fault == "schema":
+                        value["schema"] = True
+                    elif fault == "held":
+                        value["held"] = 0
+                    elif fault == "owner":
+                        value["operation_id"] = str(uuid.uuid4())
+                    elif fault == "foreign_held":
+                        value.update(held=True, operation_id=str(uuid.uuid4()))
+                    elif fault == "ordinary":
+                        value["ordinary_maintenance"] = True
+                    elif fault == "source":
+                        value["source"] = {**value["source"], "commit": "f" * 40}
+                    elif fault == "ledger":
+                        value["ledger_supported"] = False
+                    elif fault == "extra":
+                        value["extra"] = True
+                    return value
+                self.engine.window = invalid_status
+                if fault == "pending":
+                    self.engine.pending_window = "enter"
+                elif fault == "stopped":
+                    self.engine.running = False
+                elif fault == "partial":
+                    (directory / "state.json").unlink()
+                elif fault == "malformed_state":
+                    UP.atomic_write(directory / "state.json", {})
+                elif fault == "foreign_context":
+                    state = json.loads((directory / "state.json").read_bytes())
+                    UP.atomic_write(directory / "state.json", {**state, "operation_id": str(uuid.uuid4())})
+                elif fault == "symlink_directory":
+                    moved = directory.with_name("unadmitted")
+                    directory.rename(moved)
+                    directory.symlink_to(moved, target_is_directory=True)
+                before = {p.name: p.read_bytes() for p in directory.iterdir()}
+                calls = len(self.engine.calls)
+                self.recover()
+                operation = self.status()["operation"]
+                self.assertEqual("recovery_required", operation["phase"])
+                self.assertFalse(operation["mutation_started"])
+                self.assertFalse(operation["apply"]["hold_owned"])
+                self.assertFalse(operation["protection"]["hold_owned"])
+                for forbidden in ("enter", "ensure_fence", "drain", "backup", "start", "release", "assess", "migrate"):
+                    self.assertNotIn(forbidden, self.engine.calls[calls:], "Uncertain protection ownership must not create a first fence: " + forbidden)
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertFalse(self.engine.held)
+                self.assertFalse(self.engine.targets)
+                self.assertEqual(config, self.config.value)
+                self.config.verify_files()
+                self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
+    def test_source_origin_preflight_does_not_replace_existing_held_recovery(self):
+        for stage in ("protect_intent", "downloaded"):
+            with self.subTest(stage=stage):
+                self.setUp()
+                self.engine.crash_after_stop = True
+                with self.assertRaises(KeyboardInterrupt):
+                    self.apply()
+                self.assertTrue(self.engine.held)
+                self.assertTrue(self.status()["operation"]["protection"]["hold_owned"])
+                path = self.root / "apply" / self.operation / "state.json"
+                state = UP.read_object(path, 1_000_000, "recovery_required")
+                self.assertEqual("protect_intent", state["stage"])
+                state["stage"] = stage
+                UP.atomic_write(path, state)
+                self.engine.crash_after_stop = False
+                self.recover()
+                self.assertEqual("failed_safe", self.status()["operation"]["phase"], "Existing held recovery must not require a serving-source proof")
+                self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+                self.assertNotIn("migrate", self.engine.calls)
+                self.assertTrue(self.engine.running)
+                self.assertFalse(self.engine.held)
+
+    def test_completed_protection_recovers_without_requesting_a_serving_source_proof(self):
+        def crash_before_migration(*_args):
+            raise KeyboardInterrupt()
+        self.applier.migration = crash_before_migration
+        with self.assertRaises(KeyboardInterrupt):
+            self.apply()
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual("protected", state["stage"])
+        self.assertTrue(self.engine.held)
+        self.assertFalse(self.engine.running)
+        self.assertEqual(1, self.engine.calls.count("backup"))
+        self.recover()
+        self.assertEqual("failed_safe", self.status()["operation"]["phase"], "Existing protected recovery must not require a serving-source proof")
+        self.assertEqual(1, self.engine.calls.count("source_origin_preflight"))
+        self.assertNotIn("migrate", self.engine.calls)
+        self.assertTrue(self.engine.running)
+        self.assertFalse(self.engine.held)
 
     def test_broken_public_realtime_cannot_complete_or_release_the_target(self):
         self.engine.fault = "realtime_target"
@@ -580,6 +975,35 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(1, self.engine.calls.count("create_queue"))
         self.assertNotIn("release", self.engine.calls)
 
+    def test_real_create_refusal_retains_intent_and_never_retries_or_starts(self):
+        api = types.SimpleNamespace(**vars(FIX.API))
+        calls = []
+        api.capture = lambda command, **kwargs: (calls.append(command) or (1, b""))
+        actual = APPLY.Engine(self.config, api, self.root)
+        self.engine.create = actual.create
+        original_config = copy.deepcopy(self.config.value)
+        self.apply()
+        operation = self.status()["operation"]
+        self.assertEqual("apply_failed", operation["error"])
+        self.assertEqual("recovery_required", operation["phase"])
+        self.assertTrue(operation["mutation_started"])
+        self.assertTrue(self.engine.held)
+        self.assertTrue(operation["apply"]["migration_verified"])
+        self.assertFalse(operation["apply"]["configuration_committed"])
+        self.assertFalse(operation["apply"]["services_verified"])
+        state = UP.read_object(self.root / "apply" / self.operation / "state.json", 1_000_000, "recovery_required")
+        self.assertEqual(["web"], state["creation_intents"])
+        self.assertEqual({}, state["target_ids"])
+        self.recover()
+        self.assertEqual(1, len(calls), "An unobserved create outcome must never be replayed")
+        self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual(original_config, self.config.value)
+        self.assertFalse(self.engine.targets)
+        self.assertFalse(self.engine.running)
+        self.assertNotIn("release", self.engine.calls)
+        self.assertNotIn("prestart_web", self.engine.calls)
+        self.assertNotIn("start_web", self.engine.calls)
+
     def test_fresh_prepare_identity_change_refuses_before_protect(self):
         self.api.plan_facts = lambda *_: ("execution_not_available", {"source": SOURCE, "target": TARGET, "plan_id": "0" * 64})
         self.apply()
@@ -610,9 +1034,15 @@ class ApplyTests(unittest.TestCase):
 
     def test_source_fallback_origin_is_verified_before_release(self):
         self.engine.fault = "download"
-        self.engine.origin_stale = True
+        original = self.applier.proof
+        def stale_held_origin(origin, keys, operation, identity, held, api):
+            original(origin, keys, operation, identity, held, api)
+            if held:
+                raise UP.Refusal("origin_verification_failed")
+        self.applier.proof = stale_held_origin
         self.apply()
         self.assertEqual("recovery_required", self.status()["operation"]["phase"])
+        self.assertEqual("apply_timeout", self.status()["operation"]["apply"]["error"])
         self.assertTrue(self.engine.held)
         self.assertNotIn("release", self.engine.calls)
 
@@ -780,26 +1210,30 @@ class Response:
 
 
 class ProofTests(unittest.TestCase):
-    def proof(self, held, tamper=None):
+    def proof(self, held, tamper=None, identity=SOURCE):
         class Opener:
             def open(_self, request, timeout):
                 challenge = request.get_header("X-wayfindr-update-challenge")
-                payload = json.dumps([1, challenge, "operation" if held else None, SOURCE["version"], SOURCE["commit"]], separators=(",", ":")).encode()
+                payload = json.dumps([1, challenge, "operation" if held else None, identity["version"], identity["commit"]], separators=(",", ":")).encode()
                 derived = hmac.digest(FIX.KEY.encode(), b"wayfindr-managed-origin-v1", "sha256")
                 value = hmac.new(derived, payload, "sha256").hexdigest()
                 return Response(302 if tamper == "redirect" else 503 if held else 200,
                                 [] if tamper == "missing" else [value, value] if tamper == "duplicate" else ["f" * 64] if tamper == "stale" else [value])
-        APPLY.origin_proof("https://fixture.invalid", {"current": FIX.KEY}, "operation", SOURCE, held, FIX.API, opener=Opener())
+        APPLY.origin_proof("https://fixture.invalid", {"current": FIX.KEY}, "operation", identity, held, FIX.API, opener=Opener())
 
     def test_nonce_proof_matches_php_contract_held_and_released(self):
         self.proof(True)
         self.proof(False)
 
+    def test_serving_public_142_source_uses_existing_proof_contract(self):
+        self.proof(False, identity={"version": "1.4.2", "commit": "79ae1e96b267f0bac4ff4dc15bbc8380e394f999"})
+
     def test_stale_missing_duplicate_and_redirect_proofs_refuse(self):
-        for tamper in ("stale", "missing", "duplicate", "redirect"):
-            with self.subTest(tamper=tamper), self.assertRaises(UP.Refusal) as error:
-                self.proof(True, tamper)
-            self.assertEqual("origin_verification_failed", error.exception.reason)
+        for held in (False, True):
+            for tamper in ("stale", "missing", "duplicate", "redirect"):
+                with self.subTest(held=held, tamper=tamper), self.assertRaises(UP.Refusal) as error:
+                    self.proof(held, tamper)
+                self.assertEqual("origin_verification_failed", error.exception.reason)
 
     def test_origin_network_child_is_bounded_and_never_receives_application_key(self):
         child = types.SimpleNamespace(returncode=0, communicate=lambda request, timeout: (b'{"status":503,"proof":"' + b"a" * 64 + b'"}', None), poll=lambda: 0)
@@ -821,6 +1255,41 @@ class ProofTests(unittest.TestCase):
         for origin in ("ftp://fixture.invalid", "https://a:b@fixture.invalid", "https://fixture.invalid/path", "https://fixture.invalid/?x=1", "https://fixture.invalid/#fragment", "https://fixture.invalid\n", "https://fixture.invalid:0"):
             self.assertFalse(APPLY.valid_origin(origin), origin)
         self.assertTrue(APPLY.valid_origin("http://127.0.0.1:8000"))
+
+
+class DockerCreationTests(unittest.TestCase):
+    def setUp(self):
+        self.api = types.SimpleNamespace(**vars(FIX.API))
+        self.calls = []
+        self.api.capture = lambda command, **kwargs: (self.calls.append((command, kwargs)) or (0, b""))
+        config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
+        self.engine = APPLY.Engine(config, self.api, "/var/lib/wayfindr-updater")
+
+    def test_each_replacement_is_created_stopped_without_dependencies_build_or_pull(self):
+        directory = Path("/var/lib/wayfindr-updater/apply/operation")
+        for service in APPLY.SERVICES:
+            with self.subTest(service=service):
+                self.engine.create(directory, service)
+                command, options = self.calls[-1]
+                self.assertEqual(self.engine.staged_compose(directory) + [
+                    "up", "--no-start", "--no-deps", "--no-build", "--pull=never", "--force-recreate", service,
+                ], command, "Compose must support creating only one stopped replacement role")
+                self.assertEqual({"timeout": 120}, options)
+        self.assertEqual(len(APPLY.SERVICES), len(self.calls))
+
+    def test_nonzero_create_result_is_a_failure_not_a_claimed_timeout(self):
+        self.api.capture = lambda *_args, **_kwargs: (1, b"")
+        with self.assertRaises(UP.Refusal) as error:
+            self.engine.create(Path("/var/private"), "web")
+        self.assertEqual("apply_failed", error.exception.reason)
+
+    def test_only_actual_capture_deadline_becomes_apply_timeout(self):
+        for reason in ("prepare_timeout", "prepare_unavailable", "prepare_output_invalid"):
+            with self.subTest(reason=reason):
+                self.api.capture = lambda *_args, **_kwargs: (_ for _ in ()).throw(UP.Refusal(reason))
+                with self.assertRaises(UP.Refusal) as error:
+                    self.engine.create(Path("/var/private"), "web")
+                self.assertEqual("apply_timeout" if reason == "prepare_timeout" else reason, error.exception.reason)
 
 
 class DockerOneoffTests(unittest.TestCase):
@@ -883,6 +1352,47 @@ class DockerOneoffTests(unittest.TestCase):
         self.assertFalse(any("run" in args or args[0] == "rm" for args in self.calls))
 
 
+class DockerRoleReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.api = types.SimpleNamespace(**vars(FIX.API))
+        self.api.capture = self.capture
+        self.config = types.SimpleNamespace(value={"install_dir": "/opt/wayfindr", "compose_project": "wayfindr-self-hosting"})
+        self.engine = APPLY.Engine(self.config, self.api, "/var/lib/wayfindr-updater")
+        self.container = "a" * 64
+        self.top_code = 0
+        self.processes = b""
+        self.calls = []
+
+    def capture(self, command, **kwargs):
+        args = command[5:]
+        self.calls.append(args)
+        if args[:2] != ["top", self.container]:
+            raise AssertionError("Role readiness may only inspect the selected container's processes")
+        # Model Docker's process selection rather than accepting any ps argv.
+        fields = args[3].split(",") if len(args) == 4 and args[2] == "-eo" else []
+        if "pid" not in fields:
+            return 1, b""
+        return self.top_code, self.processes
+
+    def test_daemon_process_listing_accepts_each_live_role(self):
+        for service, command in (("web", "frankenphp run"), ("queue", "php artisan queue:work redis"),
+                                 ("backup-queue", "php artisan queue:work backups"), ("scheduler", "php artisan schedule:work"),
+                                 ("reverb", "php artisan reverb:start --port=8080")):
+            with self.subTest(service=service):
+                self.processes = ("PID COMMAND\n123 " + command + "\n").encode()
+                self.engine.role_ready(self.container, service)
+
+    def test_wrong_role_failed_or_empty_listing_cannot_prove_readiness(self):
+        for code, processes in ((0, b"PID COMMAND\n123 php artisan queue:work backups\n"),
+                                (1, b"PID COMMAND\n123 php artisan queue:work redis\n"),
+                                (0, b""), (0, b"PID COMMAND\n")):
+            with self.subTest(code=code, processes=processes):
+                self.top_code, self.processes = code, processes
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.role_ready(self.container, "queue")
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+
 class DockerLayoutTests(unittest.TestCase):
     def setUp(self):
         self.api = types.SimpleNamespace(**vars(FIX.API))
@@ -909,6 +1419,159 @@ class DockerLayoutTests(unittest.TestCase):
         self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state)
         self.assertTrue(any(args[0] == "top" for args in self.calls))
         self.assertTrue(all(args[-1] == self.reference for args in self.calls if args[0] == "image"))
+
+    def use_serialized_render(self):
+        # Exercise the actual Compose JSON boundary rather than the layout stub.
+        self.engine.render = types.MethodType(APPLY.Engine.render, self.engine)
+        self.api.capture = lambda *_args, **_kwargs: (0, json.dumps(self.rendered).encode())
+
+    def test_backup_queue_compose_escape_matches_actual_created_argv(self):
+        self.use_serialized_render()
+        self.state["layouts"]["backup-queue"] = {"mounts": []}
+        # Exact command pair captured from Docker 29 / Compose during the
+        # public 1.4.1 -> 1.4.2 upgrade; the worker was still stopped.
+        self.rendered["services"]["backup-queue"] = {
+            **copy.deepcopy(self.rendered["services"]["queue"]), "entrypoint": None,
+            "command": ["sh", "-c", 'exec php artisan queue:work backups --queue="$${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600'],
+        }
+        self.layout["cmd"] = ["sh", "-c", 'exec php artisan queue:work backups --queue="${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600']
+        actual, rendered = copy.deepcopy(self.layout), copy.deepcopy(self.rendered)
+        try:
+            self.engine.target_layout("a" * 64, "backup-queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Compose JSON dollar escaping must match the actual stopped backup worker: " + failure.reason)
+        self.assertEqual(actual, self.layout, "Inspected container argv must never be unescaped")
+        self.assertEqual(rendered, self.rendered)
+        self.assertFalse(any(args[0] == "top" for args in self.calls))
+
+    def test_explicit_command_and_entrypoint_dollars_decode_only_one_serialization_layer(self):
+        self.use_serialized_render()
+        for serialized, literal in (("$${QUEUE:-backups}", "${QUEUE:-backups}"),
+                                    ("$$QUEUE", "$QUEUE"), ("$$$$", "$$"),
+                                    ("\\$$QUEUE", "\\$QUEUE"), ("$$(printf untouched)", "$(printf untouched)")):
+            with self.subTest(serialized=serialized):
+                self.rendered["services"]["queue"].update(command=["printf", serialized], entrypoint=["wrapper", serialized])
+                self.layout.update(cmd=["printf", literal], entrypoint=["wrapper", literal])
+                try:
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                except UP.Refusal as failure:
+                    self.fail("Explicit command and entrypoint must decode one Compose serialization layer: " + failure.reason)
+                for field in ("cmd", "entrypoint"):
+                    original = self.layout[field]
+                    self.layout[field] = [original[0], serialized]
+                    with self.subTest(field=field), self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
+                    self.layout[field] = original
+
+    def test_escaped_compose_command_still_rejects_expansion_injection_and_argument_changes(self):
+        self.use_serialized_render()
+        command = 'exec php artisan queue:work backups --queue="${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600'
+        self.rendered["services"]["queue"]["command"] = ["sh", "-c", 'exec php artisan queue:work backups --queue="$${BACKUP_QUEUE:-backups}" --sleep=5 --tries=1 --timeout=3600']
+        for wrong in (["sh", "-c", command.replace("${BACKUP_QUEUE:-backups}", "$${BACKUP_QUEUE:-backups}")],
+                      ["sh", "-c", command.replace("${BACKUP_QUEUE:-backups}", "backups")],
+                      ["sh", "-c", command + "; printf injected"],
+                      ["sh", "-c", command.replace("exec php", "php")],
+                      ["sh", "-c", command, "unexpected-argument"]):
+            with self.subTest(wrong=wrong):
+                self.layout["cmd"] = wrong
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+    def test_inherited_image_command_and_entrypoint_keep_literal_double_dollars(self):
+        self.use_serialized_render()
+        self.image.update(cmd=["printf", "$$IMAGE_COMMAND"], entrypoint=["wrapper", "$$IMAGE_ENTRYPOINT"])
+        self.rendered["services"]["queue"].update(command=None, entrypoint=None)
+        self.layout.update(cmd=self.image["cmd"], entrypoint=self.image["entrypoint"])
+        try:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Inherited image defaults must retain their literal double dollars: " + failure.reason)
+        for field in ("cmd", "entrypoint"):
+            original = self.layout[field]
+            self.layout[field] = [original[0], original[1].replace("$$", "$")]
+            with self.subTest(field=field), self.assertRaises(UP.Refusal) as failure:
+                self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+            self.assertEqual("runtime_verification_failed", failure.exception.reason)
+            self.layout[field] = original
+
+    def test_compose_serialization_also_preserves_literal_environment_dollars(self):
+        self.use_serialized_render()
+        self.rendered["services"]["queue"]["environment"]["LITERAL_VALUE"] = "one$$two$$$$three"
+        self.layout["env"].append("LITERAL_VALUE=one$two$$three")
+        try:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        except UP.Refusal as failure:
+            self.fail("Compose JSON must preserve literal environment dollars: " + failure.reason)
+        self.layout["env"][-1] = "LITERAL_VALUE=one$$two$$$$three"
+        with self.assertRaises(UP.Refusal) as failure:
+            self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+        self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+    def test_missing_or_null_web_command_and_entrypoint_inherit_image_defaults(self):
+        self.state["layouts"]["web"] = {"mounts": []}
+        self.layout.update(cmd=self.image["cmd"], entrypoint=self.image["entrypoint"])
+        for command_present in (False, True):
+            for entrypoint_present in (False, True):
+                rendered = copy.deepcopy(self.rendered["services"]["queue"])
+                rendered.pop("command")
+                if command_present:
+                    rendered["command"] = None
+                if entrypoint_present:
+                    rendered["entrypoint"] = None
+                self.rendered["services"]["web"] = rendered
+                with self.subTest(command_present=command_present, entrypoint_present=entrypoint_present):
+                    try:
+                        self.engine.target_layout("a" * 64, "web", Path("/var/private"), self.state, processes=False)
+                    except UP.Refusal as failure:
+                        self.fail("Missing/null Compose command and entrypoint must inherit image defaults: " + failure.reason)
+
+    def test_null_entrypoint_keeps_each_explicit_role_command_strict(self):
+        for service, command in (("queue", ["php", "artisan", "queue:work", "redis"]),
+                                 ("backup-queue", ["php", "artisan", "queue:work", "backups"]),
+                                 ("scheduler", ["php", "artisan", "schedule:work"]),
+                                 ("reverb", ["php", "artisan", "reverb:start"])):
+            self.state["layouts"][service] = {"mounts": []}
+            self.rendered["services"][service] = {**copy.deepcopy(self.rendered["services"]["queue"]), "command": command, "entrypoint": None}
+            self.layout["cmd"] = command
+            with self.subTest(service=service):
+                try:
+                    self.engine.target_layout("a" * 64, service, Path("/var/private"), self.state, processes=False)
+                except UP.Refusal as failure:
+                    self.fail("Null entrypoint must retain the explicit role command: " + failure.reason)
+                self.layout["cmd"] = self.image["cmd"]
+                with self.assertRaises(UP.Refusal) as failure:
+                    self.engine.target_layout("a" * 64, service, Path("/var/private"), self.state, processes=False)
+                self.assertEqual("runtime_verification_failed", failure.exception.reason)
+
+    def test_explicit_empty_command_or_entrypoint_never_inherits_image_defaults(self):
+        for field, actual_field in (("command", "cmd"), ("entrypoint", "entrypoint")):
+            for empty in ([], ""):
+                with self.subTest(field=field, empty=empty):
+                    rendered, layout = copy.deepcopy(self.rendered), copy.deepcopy(self.layout)
+                    self.rendered["services"]["queue"][field] = empty
+                    self.layout[actual_field] = self.image[actual_field]
+                    with self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
+                    self.layout[actual_field] = empty
+                    self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.rendered, self.layout = rendered, layout
+
+    def test_nonnull_entrypoint_with_missing_or_null_command_refuses_image_CMD(self):
+        for command_present in (False, True):
+            for entrypoint in (["different-entrypoint"], [], ""):
+                with self.subTest(command_present=command_present, entrypoint=entrypoint):
+                    rendered = self.rendered["services"]["queue"]
+                    rendered.pop("command", None)
+                    if command_present:
+                        rendered["command"] = None
+                    rendered["entrypoint"] = entrypoint
+                    self.layout.update(cmd=self.image["cmd"], entrypoint=entrypoint)
+                    with self.assertRaises(UP.Refusal) as failure:
+                        self.engine.target_layout("a" * 64, "queue", Path("/var/private"), self.state, processes=False)
+                    self.assertEqual("runtime_verification_failed", failure.exception.reason)
 
     def test_wrong_operation_environment_role_mount_entrypoint_or_age_refuses_before_start(self):
         for field, wrong in (("operation", "other"), ("env", ["APP_KEY=private", "WAYFINDR_AUTO_MIGRATE=1"]), ("cmd", ["php", "artisan", "migrate"]),

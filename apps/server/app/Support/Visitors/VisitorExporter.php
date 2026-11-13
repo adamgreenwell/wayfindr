@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Support\Visitors;
 
 use App\Enums\PlatformRole;
+use App\Models\AiAssistFeedback;
+use App\Models\AiAssistPreparationReceipt;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\AutomationRuleExecution;
@@ -127,6 +129,12 @@ final class VisitorExporter
 
     private const COPILOT = [
         'id' => true, 'conversation_id' => true, 'requested_by_id' => self::ROLE, 'generation' => true, 'status' => true,
+        'connection_revision' => true,
+        'policy_revision' => 'server-only support policy fence',
+        'source_context_fingerprint' => 'keyed source freshness proof, not visitor content',
+        'preparation_fingerprint' => 'server-only preparation equivalence key',
+        'preparation_source_snapshot' => 'keyed source continuity proofs, not visitor content',
+        'previous_output' => true, 'retry_not_before' => 'retry scheduling bookkeeping',
         'source_last_message_id' => true, 'source_message_count' => true, 'provider' => true, 'model' => true,
         'prompt_tokens' => true, 'completion_tokens' => true, 'failure_code' => true, 'requested_at' => true,
         'started_at' => true, 'completed_at' => true, 'created_at' => true, 'updated_at' => true,
@@ -150,6 +158,7 @@ final class VisitorExporter
      * @var array<string, array<string, true|string>>
      */
     public const COLUMNS = [
+        'ai_assist_feedback' => ['id' => true, 'account_id' => true, 'site_id' => true, 'conversation_id' => true, 'user_id' => self::ROLE, 'purpose' => true, 'source_revision' => 'keyed source freshness proof, not visitor content', 'generation' => true, 'viewed_at' => true, 'used_at' => true, 'rejected_at' => true, 'usefulness' => true, 'correction' => true, 'revision' => true, 'created_at' => true, 'updated_at' => true],
         'visitors' => [
             'id' => true, 'site_id' => true, 'external_id' => true, 'anonymous_id' => true, 'name' => true, 'email' => true,
             'metadata' => true, 'last_seen_at' => true, 'created_at' => true, 'updated_at' => true,
@@ -196,8 +205,14 @@ final class VisitorExporter
             'status' => true, 'metadata' => true, 'consented_at' => true, 'ended_at' => true, 'created_at' => true,
             'updated_at' => true,
         ],
+        'ai_assist_preparation_receipts' => [
+            'id' => true, 'account_id' => 'tenant boundary bookkeeping', 'conversation_id' => true,
+            'purpose' => true, 'fingerprint' => 'server-only preparation equivalence key', 'generation' => true,
+            'requested_by_id' => self::ROLE, 'status' => true, 'requested_at' => true, 'completed_at' => true,
+            'retry_not_before' => true, 'created_at' => true, 'updated_at' => true,
+        ],
         'conversation_copilot_summaries' => self::COPILOT + ['summary' => true],
-        'conversation_copilot_reply_drafts' => self::COPILOT + ['draft' => true],
+        'conversation_copilot_reply_drafts' => self::COPILOT + ['draft' => true, 'grounding' => 'server-only article mapping, source proofs and proposal validation metadata; the editable draft is exported'],
         'conversation_copilot_ticket_suggestions' => self::COPILOT + ['title' => true, 'priority' => true, 'label_ids' => true],
         'conversation_copilot_knowledge_suggestions' => self::COPILOT + ['article_ids' => true],
         'proactive_message_deliveries' => [
@@ -287,6 +302,8 @@ final class VisitorExporter
         'conversation_messages' => ['sender'],
         'conversation_message_attachments' => ['uploaded_by', 'file'],
         'cobrowse_sessions' => ['requested_by'],
+        'ai_assist_preparation_receipts' => ['requested_by'],
+        'ai_assist_feedback' => ['viewer'],
         'conversation_copilot_summaries' => ['requested_by'],
         'conversation_copilot_reply_drafts' => ['requested_by'],
         'conversation_copilot_ticket_suggestions' => ['requested_by'],
@@ -565,6 +582,8 @@ final class VisitorExporter
                     ),
                     'ratings' => $this->rows(ConversationRating::query()->where('conversation_id', $id), 'conversation_ratings'),
                     'cobrowse_sessions' => $this->rows(CobrowseSession::query()->where('conversation_id', $id), 'cobrowse_sessions', $this->requestedBy(...)),
+                    'ai_assist_feedback' => $this->rows(AiAssistFeedback::query()->where('conversation_id', $id), 'ai_assist_feedback', fn ($feedback, array $row): array => [...$row, 'viewer' => $this->userRole($feedback->user_id)]),
+                    'ai_preparation_receipts' => $this->rows(AiAssistPreparationReceipt::query()->where('conversation_id', $id), 'ai_assist_preparation_receipts', $this->requestedBy(...)),
                     'copilot_summaries' => $this->rows(ConversationCopilotSummary::query()->where('conversation_id', $id), 'conversation_copilot_summaries', $this->requestedBy(...)),
                     'copilot_reply_drafts' => $this->rows(ConversationCopilotReplyDraft::query()->where('conversation_id', $id), 'conversation_copilot_reply_drafts', $this->requestedBy(...)),
                     'copilot_ticket_suggestions' => $this->rows(ConversationCopilotTicketSuggestion::query()->where('conversation_id', $id), 'conversation_copilot_ticket_suggestions', $this->requestedBy(...)),
@@ -995,6 +1014,15 @@ final class VisitorExporter
             }
 
             $value = $this->value($model, $column);
+
+            if ($column === 'previous_output' && is_array($value) && str_starts_with($table, 'conversation_copilot_')) {
+                // Apply the same export decisions to the bounded previous slot,
+                // including staff roles and omission of server-only proofs.
+                unset($value['previous_output']);
+                $prior = $model->newFromBuilder($value);
+                $value = $this->requestedBy($prior, $this->row($table, $prior));
+                unset($value['previous_output']);
+            }
 
             if (in_array($column, self::IDENTITY_COLUMNS[$table] ?? [], true)) {
                 $value = self::withoutIdentities($value);

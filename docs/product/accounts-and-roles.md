@@ -48,6 +48,19 @@ The first roles are:
 
 Custom roles are deny-by-default and account-owned. They can combine team, support, knowledge, settings, reporting, and audit permissions, but cannot receive `manage_roles`, ownership, platform-operator authority, or destructive site purge. Editing a custom role takes effect immediately for its assigned users. An assigned role cannot be deleted, and role creation, editing, deletion, and assignment are audited with the role name retained in history.
 
+`manage_ai_connections` separates account AI connection management from support
+work and general integration management. Owners and admins have it by default;
+owners can explicitly delegate it through a custom role without adding support
+permissions or site assignments. Proposal, synthetic test, name edits, disable
+and disconnect use that account authority; activation or re-enablement of a
+shared connection additionally requires current access to every affected site.
+Until per-site Assist policy exists, the foundation checks every account site.
+The permission grants no additional conversation, ticket,
+site, or platform-operator access. An AI connection manager cannot use Assist on
+a conversation unless they also have that capability’s support permission and
+the relevant site access. The account connection screen is a separate delivery;
+installation AI settings remain operator-owned.
+
 `manage_contacts` grants visitor attribute management and access to contact
 records on the role holder's supported sites. It does not imply conversation or
 ticket access. Definitions, typed filtering, and the underlying privacy boundary

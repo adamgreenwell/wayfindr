@@ -10,5 +10,10 @@ final readonly class ConversationReplyDraftContext
         public AgentCopilotPrompt $prompt,
         public int $messageCount,
         public int $lastMessageId,
+        public ?string $sourceRevision = null,
+        public array $sourceSnapshot = [],
+        public bool $groundingEnabled = false,
+        public array $groundingSources = [],
+        public array $groundingSnapshot = [],
     ) {}
 }
