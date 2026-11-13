@@ -424,10 +424,15 @@ test('an alias install default stays selectable, and survives a save', function 
     app(OperatorSettings::class)->set('localization.timezone', 'US/Eastern');
     app(OperatorSettings::class)->set('localization.language', 'en');
 
+    // The alias as stored where the platform resolves it, its canonical zone
+    // where the host's tzdata ships without aliases (#1204).
+    $kept = DashboardTimezone::normalise('US/Eastern');
+    expect($kept)->toBeIn(['US/Eastern', 'America/New_York']);
+
     $this->actingAs($operator)
         ->get(route('operator.settings.localization.edit'))
         ->assertOk()
-        ->assertSee('value="US/Eastern" selected', escape: false);
+        ->assertSee('value="'.$kept.'" selected', escape: false);
 
     $this->actingAs($operator)
         ->post(route('operator.settings.localization.update'), [
@@ -437,7 +442,7 @@ test('an alias install default stays selectable, and survives a save', function 
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    expect(app(OperatorSettings::class)->effective('localization.timezone'))->toBe('US/Eastern');
+    expect(app(OperatorSettings::class)->effective('localization.timezone'))->toBe($kept);
 });
 
 /**
@@ -530,4 +535,20 @@ test('the operator console raises language and region too, not just the checklis
         ->assertOk()
         ->assertSee('Language and region')
         ->assertDontSee('Nobody has confirmed that this is right.');
+});
+
+test('an alias install default stays selected on a host without aliases', function (): void {
+    DashboardTimezone::fakePlatform(DateTimeZone::listIdentifiers());
+
+    try {
+        app(OperatorSettings::class)->set('localization.timezone', 'US/Eastern');
+        app(OperatorSettings::class)->set('localization.language', 'en');
+
+        $this->actingAs(localizationOperator())
+            ->get(route('operator.settings.localization.edit'))
+            ->assertOk()
+            ->assertSee('value="America/New_York" selected', escape: false);
+    } finally {
+        DashboardTimezone::fakePlatform(null);
+    }
 });
