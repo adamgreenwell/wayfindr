@@ -2010,6 +2010,12 @@
     // cannot change who an open prompt is about (#1156).
     var ratingAgent = null;
     var ratingAgentScore = null;
+    // The template the prompt on screen was first shown with, for the same
+    // reason the agent is captured: a bootstrap refresh -- minimise and reopen
+    // after an operator changed the site's template -- must not change what an
+    // open survey asks, hide an answer already chosen, or send the response
+    // under a template the visitor never saw (#1206).
+    var ratingShownTemplate = null;
     // A skipped close is remembered by its opaque token in this browser, so
     // the prompt stays hidden across reloads -- and a NEW close, with a new
     // token, is asked about afresh. Skipping records nothing on the server.
@@ -2278,6 +2284,7 @@
         ratingEpisode = conversation.rating_episode;
         ratingScore = null;
         ratingAgentScore = null;
+        ratingShownTemplate = null;
         ratingAgent = conversation.rating_agent
           && typeof conversation.rating_agent.ref === 'string'
           && typeof conversation.rating_agent.name === 'string'
@@ -5503,6 +5510,11 @@
         return;
       }
 
+      // Fixed the first time this close's prompt is drawn.
+      if (ratingShownTemplate === null) {
+        ratingShownTemplate = ratingConfig.template || { key: 'overall', version: 1 };
+      }
+
       var asksAgent = ratingAsksAgent();
       var definition = ratingDefinition();
       var scores = definition && Array.isArray(definition.scores) ? definition.scores : ['good', 'ok', 'bad'];
@@ -5571,14 +5583,18 @@
     }
 
     function ratingTemplateKey() {
-      return ratingConfig && ratingConfig.template ? ratingConfig.template.key : 'overall';
+      var template = ratingShownTemplate || (ratingConfig && ratingConfig.template);
+
+      return template ? template.key : 'overall';
     }
 
     // A site's own published template (#1157), or null for the built-ins.
+    // Read from the template the prompt was shown with, so a bootstrap
+    // refresh cannot swap the wording or scale of an open survey.
     function ratingDefinition() {
-      return ratingConfig && ratingConfig.template && ratingConfig.template.definition
-        ? ratingConfig.template.definition
-        : null;
+      var template = ratingShownTemplate || (ratingConfig && ratingConfig.template);
+
+      return template && template.definition ? template.definition : null;
     }
 
     // Only when the template this widget was given asks about the agent AND
@@ -5718,7 +5734,7 @@
       var definitionShown = ratingDefinition();
 
       client.rateConversation(supportCode, ratingScore, definitionShown && definitionShown.comment === null ? '' : ratingComment.value.trim(), submittedEpisode, {
-        template: ratingConfig && ratingConfig.template ? ratingConfig.template : null,
+        template: ratingShownTemplate || (ratingConfig && ratingConfig.template) || null,
         agent: ratingAsksAgent() ? ratingAgent : null,
         agentScore: ratingAsksAgent() ? ratingAgentScore : null,
       }).then(function () {

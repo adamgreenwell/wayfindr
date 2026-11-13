@@ -39,6 +39,7 @@ function widgetWith({ rating = STARTER, agent = ADA, locale = null, storage = nu
   });
 
   const sent = [];
+  let currentRating = rating;
   let episode = 'episode-1';
   let answered = false;
   const store = storage || memoryStorage({
@@ -80,7 +81,7 @@ function widgetWith({ rating = STARTER, agent = ADA, locale = null, storage = nu
               color: 'blue',
               availability: { away: false, message: null, opens_at: null, timezone: 'UTC' },
               intake: { asks: false, intro: null, fields: { name: 'off', email: 'off', reason: 'off' } },
-              rating,
+              rating: currentRating,
             },
             visitor: { anonymous_id: 'anon-docs', token: 'visitor-token-docs', identified: false },
           },
@@ -108,6 +109,7 @@ function widgetWith({ rating = STARTER, agent = ADA, locale = null, storage = nu
   });
 
   widget.nextClose = (next) => { episode = next; answered = false; };
+  widget.setSiteRating = (next) => { currentRating = next; };
 
   return { widget, sent, store };
 }
@@ -268,4 +270,29 @@ test('skip holds for the open widget even where storage is unavailable', async (
 
   assert.equal(q(widget, '.wayfindr-widget__rating').hidden, true);
   assert.equal(ratingPosts(sent).length, 0);
+});
+
+test('a settings refresh mid-survey keeps the template the prompt was shown with', async () => {
+  const { widget, sent } = widgetWith();
+  await openPanel(widget);
+
+  agentScore(widget, 'bad').click();
+  q(widget, '.wayfindr-widget__rating-score[data-score="good"]').click();
+
+  // The operator switches the site to the single question; the visitor
+  // minimises and reopens, which refreshes the bootstrap configuration.
+  widget.setSiteRating({ asks: true, intro: null, template: { key: 'overall', version: 1 } });
+  q(widget, '.wayfindr-widget__close').click();
+  await settle();
+  await openPanel(widget);
+
+  assert.equal(agentBlock(widget).hidden, false);
+  assert.equal(agentScore(widget, 'bad').getAttribute('aria-pressed'), 'true');
+
+  q(widget, '.wayfindr-widget__rating').dispatchEvent(new widget.root.ownerDocument.defaultView.Event('submit', { cancelable: true }));
+  await settle();
+
+  const [post] = ratingPosts(sent);
+  assert.equal(post.body.template, 'starter');
+  assert.equal(post.body.agent_score, 'bad');
 });
