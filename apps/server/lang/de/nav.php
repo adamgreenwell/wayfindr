@@ -19,6 +19,16 @@ return [
         'operator' => 'Betrieb',
     ],
 
+    // The rail inside one site: its sections replace the product's.
+    'site' => [
+        'sections_label' => 'Website-Bereiche',
+        'settings' => 'Einstellungen',
+        'status' => 'Status',
+        'tester' => 'Tester',
+        'live' => 'Live-Besuchende',
+        'proactive' => 'Proaktive Nachrichten',
+    ],
+
     'regions' => [
         'primary' => 'Hauptnavigation',
         'breadcrumb' => 'Brotkrumennavigation',

@@ -199,7 +199,6 @@ return [
         'document_title' => 'Site tester',
         'title' => ':site tester',
         'subtitle' => 'Hosted sample page for this site\'s widget, chat loop, and cobrowse masking.',
-        'back' => 'Back to site settings',
         'context' => [
             'heading' => 'Test surface',
             'lede' => 'Site-scoped widget install',

@@ -197,7 +197,6 @@ return [
         'document_title' => 'Pagina di prova del sito',
         'title' => 'Pagina di prova di :site',
         'subtitle' => 'Pagina di esempio ospitata per verificare il widget, il ciclo della chat e la mascheratura del cobrowse di questo sito.',
-        'back' => 'Torna alle impostazioni del sito',
         'context' => [
             'heading' => 'Ambiente di prova',
             'lede' => 'Installazione del widget specifica del sito',

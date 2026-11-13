@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('sites_live.document_title')" :agent="$agent" :account="$account">
+<x-layouts.site :site="$site" :title="__('sites_live.document_title')" :agent="$agent" :account="$account">
     {{-- The heading MIXES our words with the account's: the site's name is
          theirs, in whatever language they named it, and the rest is ours. The
          catalogue keeps the word order, and the one fragment that is not ours
@@ -1253,4 +1253,4 @@
             })();
         </script>
     @endif
-</x-layouts.app>
+</x-layouts.site>
