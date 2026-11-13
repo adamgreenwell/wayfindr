@@ -380,6 +380,17 @@ operator action.
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,
   process-health affordances, platform-action audit inventory, and continued
   checks that break-glass support does not erode tenant boundaries.
+- Managed in-place updates: a manual stable-release update flow for official
+  installer-managed Linux VM/Compose installations, with an independent host
+  executor, protected data, target-version verification, operator progress and
+  recovery. [Epic #1107](https://github.com/adamgreenwell/wayfindr/issues/1107)
+  tracks nine features: the seven build features are complete and the opt-in
+  host helper has shipped since 1.2.0, while disposable-VM qualification and
+  independent operator acceptance remain open. Managed application upgrades are
+  unqualified (0/100 scenarios as of 1.6.0); existing terminal/external
+  deployment paths remain valid. The
+  [feature map](in-place-updates-feature-map.md) separates later host-PHP,
+  scheduling and compatibility-based rollback work.
 - Privacy and retention controls: transcript/message retention visibility,
   operator-owned defaults, deletion/export planning, and warnings that help
   self-hosters understand their responsibility.
