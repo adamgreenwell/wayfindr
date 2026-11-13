@@ -134,6 +134,7 @@ class ConversationRatingController extends Controller
                 'template_version' => $template->version,
                 'agent_user_id' => $agentId,
                 'agent_name' => $agentName,
+                'rated_agent_id' => $agentId,
                 'agent_score' => $agentScore,
                 'rated_at' => now()->toDateTimeString(),
                 'created_at' => now()->toDateTimeString(),
@@ -142,7 +143,7 @@ class ConversationRatingController extends Controller
             ['conversation_id', 'episode_event_id'],
             [
                 'score', 'comment', 'template_key', 'template_version',
-                'agent_user_id', 'agent_name', 'agent_score', 'rated_at', 'updated_at',
+                'agent_user_id', 'agent_name', 'rated_agent_id', 'agent_score', 'rated_at', 'updated_at',
             ],
         );
 

@@ -409,3 +409,38 @@ test('a deleted agent keeps the overall answer and drops only the agent answer',
     agentRatingPost($this, $token, ['score' => 'bad', 'agent' => 'not-a-real-handle', 'agent_score' => 'good'])
         ->assertUnprocessable()->assertJsonValidationErrors('agent');
 });
+
+test('deleting accounts never merges two agents, and a rename never splits one', function (): void {
+    $w = agentRatingWorld();
+    $owner = User::factory()->for($w['account'])->create(['account_role' => \App\Enums\AccountRole::Owner]);
+    $first = User::factory()->for($w['account'])->create(['name' => 'Sam']);
+    $second = User::factory()->for($w['account'])->create(['name' => 'Sam']);
+    $renamed = User::factory()->for($w['account'])->create(['name' => 'Robin']);
+    $closedAt = now()->subDay()->startOfHour();
+    $event = 4000;
+    $answer = function (User $agent, string $name, string $score) use ($w, $closedAt, &$event): void {
+        ConversationRating::query()->forceCreate([
+            'conversation_id' => $w['conversation']->id, 'site_id' => $w['site']->id,
+            'episode_event_id' => $event++, 'episode_closed_at' => $closedAt, 'rated_at' => $closedAt,
+            'score' => 'good', 'template_key' => 'starter', 'template_version' => 1,
+            'agent_user_id' => $agent->id, 'agent_name' => $name, 'rated_agent_id' => $agent->id, 'agent_score' => $score,
+        ]);
+    };
+
+    $answer($first, 'Sam', 'good');
+    $answer($second, 'Sam', 'bad');
+    $answer($renamed, 'Robin', 'good');
+    $answer($renamed, 'Robin B.', 'ok');
+
+    // Both Sams' accounts go, clearing the foreign key on every row.
+    $first->delete();
+    $second->delete();
+
+    $rows = (new SupportReport(ReportingScope::for($w['account'], $owner), ReportingWindow::ofDays(7)))->agentSatisfaction();
+    $byName = collect($rows)->groupBy('name')->map->count();
+
+    expect($rows)->toHaveCount(3)
+        ->and($byName['Sam'])->toBe(2)
+        ->and(collect($rows)->firstWhere('good', 1)['answered'] ?? null)->toBe(1)
+        ->and(collect($rows)->first(fn ($row) => in_array($row['name'], ['Robin', 'Robin B.'], true))['answered'])->toBe(2);
+});

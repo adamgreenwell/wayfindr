@@ -367,7 +367,7 @@ test('every key the code writes a user into is replaced by a role, or reviewed',
     $pattern = "/'((?:[a-z]+_)*(?:assignee|agent|requester|approver|author|operator|issuer|actor|user)(?:_id|_name)|requester|author|[a-z_]*_by(?:_user)?(?:_id|_name)?)'\\s*(?:=>|\\]\\s*=(?!=))/";
     $columns = [
         'assignee_id', 'assigned_agent_id', 'author_id', 'approver_id', 'uploaded_by_id', 'undone_by_user_id',
-        'requester_id', 'actor_id', 'agent_user_id', 'agent_name',
+        'requester_id', 'actor_id', 'agent_user_id', 'agent_name', 'rated_agent_id',
     ];
     $reviewed = [
         'agent_id' => 'log context, form fields and realtime session payloads: never stored where the export reads',
