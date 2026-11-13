@@ -30,6 +30,49 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-13
+
+**No operator action required.** There are no migrations and no configuration
+changes. Installs that scan attachments with ClamAV get stricter verdict
+handling automatically.
+
+### Security
+
+- **ClamAV verdicts must be complete.** Previously the scanner could accept a
+  malformed reply that ended in `OK`, approve a file after a timeout cut the
+  response short, or treat a readable prefix of an upload as the whole file. A
+  file is now clean only when ClamAV received the complete upload and returned
+  exactly one complete `stream: OK` verdict.
+  - Truncated, extra, contradictory or oversized replies, interrupted sends and
+    unreadable files all count as *scanner unavailable*. With the default
+    `WAYFINDR_ATTACHMENT_SCANNER_FAIL_CLOSED=true` the upload is rejected, as
+    before.
+  - A complete infected verdict that arrives early still rejects the upload.
+  - Connecting, streaming and waiting for the verdict now share one deadline,
+    `WAYFINDR_ATTACHMENT_SCANNER_TIMEOUT` (default 30 seconds). Connecting is
+    also capped at 5 seconds. Previously connecting and scanning could each use
+    the full timeout.
+  - The readiness `PING` uses the same bounded framing.
+  - `docs/self-hosting/attachment-scanning.md` now covers scanner memory, socket
+    protection, signature monitoring, and what readiness and new-upload-only
+    scanning do and don't prove.
+
+### Changed
+
+- Runtime dependencies were updated: `laravel/framework` 13.42, `laravel/reverb`
+  1.13, `laravel/ai` 1.4 and `predis/predis` 3.7.
+
+### Fixed
+
+- **Widget rating answers** size to their own labels. A long custom label (up to
+  40 characters) wraps inside its button instead of overflowing it. On phones,
+  the agent answers and Skip have the same 44px touch target as the other rating
+  buttons.
+- **The rating template editor** opens inside its site's layout, the same as
+  the site's other pages. Its wording fields keep a readable width on narrow
+  screens, and its scale choices and the site's rating settings use the
+  standard check-row radios.
+
 ## [1.7.0] - 2026-11-13
 
 **No operator action required.** Every migration is additive and runs through
