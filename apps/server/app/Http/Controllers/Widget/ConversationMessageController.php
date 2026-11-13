@@ -18,6 +18,7 @@ use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\ProactiveMessages\ProactiveConversationOpening;
+use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorConversationWriteAuthorization;
@@ -109,6 +110,10 @@ class ConversationMessageController extends Controller
                     // previous unanswered one -- both report awaiting, so a
                     // draft would otherwise survive into different work.
                     'rating_episode' => $conversation->currentCloseEpisodeToken(),
+                    // Who the agent question names for that close, or null when
+                    // it is not asked: the site is on the single question, or
+                    // nobody -- or more than one person -- helped (#1156).
+                    'rating_agent' => $this->ratingAgentPayload($conversation),
                 ],
                 'messages' => $messages,
                 'agent_typing' => $conversation->agentTypingPayload(),
@@ -402,6 +407,25 @@ class ConversationMessageController extends Controller
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @return array{ref: string, name: string}|null
+     */
+    private function ratingAgentPayload(Conversation $conversation): ?array
+    {
+        if (! SiteRatingPrompt::for($conversation->site)->template->asksAboutAgent()) {
+            return null;
+        }
+
+        $close = $conversation->currentCloseEpisode();
+        $agent = $close === null ? null : $conversation->ratingEpisodeAgent($close);
+
+        return $agent === null ? null : [
+            'ref' => Conversation::ratingAgentToken($close, $agent, $agent->name),
+            // The name the visitor already saw on this agent's messages.
+            'name' => $agent->name,
+        ];
     }
 
     private function senderPayload($message): array

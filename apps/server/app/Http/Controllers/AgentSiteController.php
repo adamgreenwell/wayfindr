@@ -20,6 +20,7 @@ use App\Support\ReaderNumber;
 use App\Support\Routing\SiteRouting;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
+use App\Support\Sites\RatingTemplate;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\Sites\SiteManagerCoverage;
@@ -885,6 +886,7 @@ class AgentSiteController extends Controller
         $validated = $request->validate([
             'rating_enabled' => ['nullable', 'boolean'],
             'rating_intro' => ['nullable', 'string', 'max:160'],
+            'rating_template' => ['nullable', 'string', Rule::in(RatingTemplate::keys())],
         ]);
 
         DB::transaction(function () use ($request, $site, $validated): void {
@@ -894,6 +896,9 @@ class AgentSiteController extends Controller
                 $settings['rating'] = [
                     'enabled' => (bool) ($validated['rating_enabled'] ?? false),
                     'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+                    // Which questions are asked. An open prompt keeps the
+                    // template it was shown with; this changes the next one.
+                    'template' => $validated['rating_template'] ?? RatingTemplate::OVERALL,
                 ];
 
                 return $settings;

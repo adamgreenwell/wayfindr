@@ -393,6 +393,18 @@ return [
         'restricted' => 'Only an account admin can change whether visitors are asked.',
         'once' => 'A visitor answers once per close. Changing their mind replaces the answer rather than adding one, so a small number of responses cannot be swamped — but a conversation that is reopened and closed again is asked afresh, because that is a genuinely different question.',
         'comments' => 'Comments are a visitor’s own words and are kept under this site’s retention rules like any other message. See :data.',
+        'template' => 'Which questions to ask',
+        'template_help' => 'The agent question names one person, and only when exactly one person replied to the visitor since the conversation last opened. With nobody or several people, only the overall question is asked. Its answers are reported separately and never change the overall figure.',
+        'templates' => [
+            'overall' => [
+                'label' => 'One question about the experience',
+                'questions' => ['How did we do? — good, ok, bad', 'Optional comment'],
+            ],
+            'starter' => [
+                'label' => 'The experience and the agent who helped',
+                'questions' => ['How was your overall support experience? — good, ok, bad', 'How was the help you received from [agent name]? — good, ok, bad, not applicable', 'Anything you would like us to know? — optional'],
+            ],
+        ],
     ],
 
     'intake' => [

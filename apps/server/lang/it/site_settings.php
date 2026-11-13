@@ -394,6 +394,18 @@ return [
         'restricted' => 'Solo un amministratore dell’account può cambiare se i visitatori ricevono la domanda.',
         'once' => 'Un visitatore risponde una volta per ogni chiusura. Se cambia idea, la risposta precedente viene sostituita e non se ne aggiunge una nuova, evitando che pochi risultati vengano sommersi. Se una conversazione viene riaperta e chiusa di nuovo, la domanda ricompare perché l’esperienza è realmente diversa.',
         'comments' => 'I commenti sono parole del visitatore e vengono conservati secondo le regole del sito come qualsiasi altro messaggio. Veda :data.',
+        'template' => 'Quali domande porre',
+        'template_help' => 'La domanda sull’agente nomina una persona, e solo quando esattamente una persona ha risposto al visitatore dall’ultima apertura della conversazione. Con nessuno o più persone viene posta solo la domanda generale. Le risposte vengono riportate separatamente e non modificano mai il dato generale.',
+        'templates' => [
+            'overall' => [
+                'label' => 'Una domanda sull’esperienza',
+                'questions' => ['Come siamo andati? — buono, discreto, negativo', 'Commento facoltativo'],
+            ],
+            'starter' => [
+                'label' => 'L’esperienza e l’agente che ha aiutato',
+                'questions' => ['Com’è stata la Sua esperienza di assistenza complessiva? — buono, discreto, negativo', 'Com’è stato l’aiuto ricevuto da [nome dell’agente]? — buono, discreto, negativo, non pertinente', 'C’è altro che vorrebbe farci sapere? — facoltativo'],
+            ],
+        ],
     ],
 
     'intake' => [
