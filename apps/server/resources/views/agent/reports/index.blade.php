@@ -642,6 +642,58 @@
                 </section>
             @endif
 
+            @foreach ($customTemplates as $custom)
+                {{-- A site's own published version is its own question: its own
+                     wording, scale and positive answers. Never combined with the
+                     built-in figure or another version (#1157). --}}
+                <section class="section" aria-labelledby="report-custom-template-{{ $custom['version_id'] }}">
+                    <div class="section-header">
+                        <h2 id="report-custom-template-{{ $custom['version_id'] }}">{{ __('reports.custom_template.heading', ['version' => $custom['version']]) }}</h2>
+                        <span class="lede">{{ __('reports.custom_template.scale_'.$custom['scale']) }}</span>
+                    </div>
+                    <p class="section-body"><span lang="en">{{ $custom['question'] }}</span></p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">{{ __('reports.custom_template.answer') }}</th>
+                                    <th scope="col">{{ __('reports.custom_template.count') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($custom['distribution'] as $choice => $count)
+                                    <tr>
+                                        <th scope="row" lang="en">{{ $custom['labels'][$choice] }}</th>
+                                        <td>{{ \App\Support\ReaderNumber::count($count) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="lede section-body">
+                        {{ __('reports.custom_template.summary_'.$custom['scale'], [
+                            'answered' => \App\Support\ReaderNumber::count($custom['answered']),
+                            'positive' => $custom['positive_label'],
+                            'average' => $custom['average'] === null ? '--' : \App\Support\ReaderNumber::decimal($custom['average'], 1),
+                        ]) }}
+                    </p>
+                    @if ($custom['agent']['asked'] > 0)
+                        <p class="lede section-body">
+                            {{ __('reports.custom_template.agent', [
+                                'answered' => \App\Support\ReaderNumber::count($custom['agent']['answered']),
+                                'asked' => \App\Support\ReaderNumber::count($custom['agent']['asked']),
+                                'not_applicable' => \App\Support\ReaderNumber::count($custom['agent']['not_applicable']),
+                                'skipped' => \App\Support\ReaderNumber::count($custom['agent']['skipped']),
+                                'positive' => $custom['agent_positive_label'],
+                            ]) }}
+                        </p>
+                    @endif
+                    @if ($custom['answered'] < 10)
+                        <p class="lede section-body">{{ __('reports.satisfaction.small_sample') }}</p>
+                    @endif
+                </section>
+            @endforeach
+
             <section class="section" aria-labelledby="report-comments-heading">
                 <div class="section-header">
                     <h2 id="report-comments-heading">{{ __('reports.comments.heading') }}</h2>
@@ -665,7 +717,7 @@
                             <tbody>
                                 @foreach ($ratingComments as $comment)
                                     <tr>
-                                        <td>{{ __('reports.satisfaction.'.$comment['score']) }}</td>
+                                        <td>{{ $comment['scale'] === 'five' ? trans_choice('reports.custom_template.stars', (int) $comment['score'], ['count' => $comment['score']]) : __('reports.satisfaction.'.$comment['score']) }}</td>
                                         {{-- Visitor-authored, so escaped like any other visitor text and
                                              never used as a link label. --}}
                                         <td class="cell-wrap report-comment" lang="">{{ $comment['comment'] }}</td>
@@ -675,7 +727,7 @@
                                             @elseif ($comment['agent_score'] === null)
                                                 <span lang="">{{ $comment['agent_name'] }}</span>: {{ __('reports.agent_satisfaction.skipped') }}
                                             @else
-                                                <span lang="">{{ $comment['agent_name'] }}</span>: {{ __('reports.agent_satisfaction.scores.'.$comment['agent_score']) }}
+                                                <span lang="">{{ $comment['agent_name'] }}</span>: {{ $comment['scale'] === 'five' && $comment['agent_score'] !== 'not_applicable' ? trans_choice('reports.custom_template.stars', (int) $comment['agent_score'], ['count' => $comment['agent_score']]) : __('reports.agent_satisfaction.scores.'.$comment['agent_score']) }}
                                             @endif
                                         </td>
                                         <td>

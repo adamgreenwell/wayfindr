@@ -201,6 +201,18 @@ return [
         'scores' => ['good' => 'Buono', 'ok' => 'Discreto', 'bad' => 'Negativo', 'not_applicable' => 'Non pertinente'],
     ],
 
+    'custom_template' => [
+        'heading' => 'Il Suo modello, versione :version',
+        'scale_three' => 'Tre risposte',
+        'scale_five' => 'Cinque stelle',
+        'answer' => 'Risposta',
+        'count' => 'Risposte',
+        'summary_three' => ':answered risposte; :positive buono. Una domanda separata dal dato predefinito, e mai combinata con esso.',
+        'summary_five' => ':answered risposte; :positive con quattro o cinque stelle; media :average stelle. Una domanda separata dal dato predefinito, e mai combinata con esso.',
+        'agent' => 'Sull’aiuto: :answered su :asked a cui è stato chiesto hanno dato una valutazione (:positive positive); :not_applicable non pertinenti e :skipped saltate, che non contano come valutazione.',
+        'stars' => '{1} :count stella|[0,*] :count stelle',
+    ],
+
     'comments' => [
         'heading' => 'Cosa hanno detto le persone',
         'empty' => 'In questo periodo nessuno ha lasciato un commento. Il campo è facoltativo e la maggior parte delle persone lo salta: un punteggio senza parole resta comunque una risposta.',

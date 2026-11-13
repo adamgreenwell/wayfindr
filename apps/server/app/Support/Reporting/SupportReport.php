@@ -11,8 +11,10 @@ use App\Models\ConversationMessage;
 use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
 use App\Models\Site;
+use App\Models\SiteRatingTemplateVersion;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\RatingTemplateDefinition;
 use App\Support\Sites\SiteAvailability;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
@@ -243,6 +245,10 @@ final class SupportReport
                 // who answers just after a boundary would otherwise be counted
                 // without the close they were answering about.
                 ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
+                // The built-in question only. A site's own wording is a
+                // different question, reported on its own by customTemplates()
+                // and never folded in here (#1157).
+                ->whereNull('template_version_id')
                 ->selectRaw('score, count(*) as aggregate')
                 ->groupBy('score')
                 ->pluck('aggregate', 'score');
@@ -289,6 +295,7 @@ final class SupportReport
                 ->whereIn('site_id', $this->scope->countableSiteIds())
                 ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
                 ->whereNotNull('agent_name')
+                ->whereNull('template_version_id')
                 ->selectRaw('agent_user_id, agent_name, agent_score, count(*) as aggregate, max(rated_at) as latest')
                 ->groupBy('agent_user_id', 'agent_name', 'agent_score')
                 ->orderByDesc('latest')
@@ -321,6 +328,120 @@ final class SupportReport
 
                 return $agent;
             }, $agents));
+        });
+    }
+
+    /**
+     * Answers to each of the site's own published templates, one entry per
+     * version, never combined with each other or with the built-in figure.
+     *
+     * A version fixes the wording, the scale and which answers count as
+     * positive, so two versions are two questions -- and a five-star average
+     * placed beside a good/ok/bad share would invite a comparison the numbers
+     * cannot support (#1157). Skipped and not-applicable agent answers are
+     * counts, never scores, exactly as for the built-in template.
+     *
+     * @return list<array{version_id: int, site_id: int, version: int, scale: string, question: string, distribution: array<string, int>, answered: int, positive: float|null, average: float|null, agent: array{asked: int, answered: int, not_applicable: int, skipped: int, positive: float|null}}>
+     */
+    public function customTemplates(): array
+    {
+        return $this->once('custom-templates', function (): array {
+            if ($this->scope->isEmpty()) {
+                return [];
+            }
+
+            $inWindow = fn () => ConversationRating::query()
+                ->whereIn('site_id', $this->scope->countableSiteIds())
+                ->whereBetween('episode_closed_at', [$this->window->start, $this->window->end])
+                ->whereNotNull('template_version_id');
+
+            $overall = $inWindow()
+                ->selectRaw('template_version_id, score, count(*) as aggregate')
+                ->groupBy('template_version_id', 'score')
+                ->get();
+
+            if ($overall->isEmpty()) {
+                return [];
+            }
+
+            $agent = $inWindow()
+                ->whereNotNull('agent_name')
+                ->selectRaw('template_version_id, agent_score, count(*) as aggregate')
+                ->groupBy('template_version_id', 'agent_score')
+                ->get()
+                ->groupBy('template_version_id');
+
+            $versions = SiteRatingTemplateVersion::query()
+                ->whereIn('id', $overall->pluck('template_version_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
+
+            $results = [];
+
+            foreach ($overall->groupBy('template_version_id') as $versionId => $rows) {
+                $version = $versions->get($versionId);
+
+                if ($version === null) {
+                    continue;
+                }
+
+                $definition = $version->definition();
+                $scale = $definition->scale();
+                $distribution = array_fill_keys($definition->scores(), 0);
+
+                foreach ($rows as $row) {
+                    if (array_key_exists((string) $row->score, $distribution)) {
+                        $distribution[(string) $row->score] = (int) $row->aggregate;
+                    }
+                }
+
+                $answered = array_sum($distribution);
+                $positive = array_sum(array_intersect_key($distribution, array_flip(RatingTemplateDefinition::positiveScores($scale))));
+
+                $agentCounts = ['answered' => 0, 'not_applicable' => 0, 'skipped' => 0, 'positive' => 0];
+
+                foreach ($agent->get($versionId, collect()) as $row) {
+                    $score = $row->agent_score === null ? null : (string) $row->agent_score;
+                    $count = (int) $row->aggregate;
+
+                    if ($score === null) {
+                        $agentCounts['skipped'] += $count;
+                    } elseif ($score === 'not_applicable') {
+                        $agentCounts['not_applicable'] += $count;
+                    } elseif (in_array($score, $definition->scores(), true)) {
+                        $agentCounts['answered'] += $count;
+                        $agentCounts['positive'] += in_array($score, RatingTemplateDefinition::positiveScores($scale), true) ? $count : 0;
+                    }
+                }
+
+                $results[] = [
+                    'version_id' => (int) $version->id,
+                    'site_id' => (int) $version->site_id,
+                    'version' => (int) $version->version,
+                    'scale' => $scale,
+                    'question' => $definition->text('overall'),
+                    'labels' => array_combine($definition->scores(), array_map(fn (string $choice): string => $definition->label($choice), $definition->scores())),
+                    'distribution' => $distribution,
+                    'answered' => $answered,
+                    'positive' => $answered === 0 ? null : round(($positive / $answered) * 100, 1),
+                    // Only a five-star scale has an average worth reading; a
+                    // mean of good/ok/bad would pretend they are numbers.
+                    'average' => $scale === 'five' && $answered > 0
+                        ? round(array_sum(array_map(fn (string $star, int $n): int => (int) $star * $n, array_keys($distribution), $distribution)) / $answered, 2)
+                        : null,
+                    'agent' => [
+                        'asked' => $agentCounts['answered'] + $agentCounts['not_applicable'] + $agentCounts['skipped'],
+                        'answered' => $agentCounts['answered'],
+                        'not_applicable' => $agentCounts['not_applicable'],
+                        'skipped' => $agentCounts['skipped'],
+                        'positive' => $agentCounts['answered'] === 0 ? null : round(($agentCounts['positive'] / $agentCounts['answered']) * 100, 1),
+                    ],
+                ];
+            }
+
+            usort($results, fn (array $a, array $b): int => [$a['site_id'], $b['version']] <=> [$b['site_id'], $a['version']]);
+
+            return $results;
         });
     }
 
@@ -358,6 +479,8 @@ final class SupportReport
                     'conversation_ratings.rated_at',
                     'conversation_ratings.agent_name',
                     'conversation_ratings.agent_score',
+                    'conversation_ratings.scale',
+                    'conversation_ratings.template_version_id',
                     'conversations.support_code',
                 ])
                 ->map(fn (ConversationRating $rating): array => [
@@ -368,6 +491,10 @@ final class SupportReport
                     // Shown beside the comment, never merged into its score.
                     'agent_name' => $rating->agent_name === null ? null : (string) $rating->agent_name,
                     'agent_score' => $rating->agent_score === null ? null : (string) $rating->agent_score,
+                    // A five-star answer is shown as stars, never through the
+                    // good/ok/bad labels it would otherwise be mistaken for.
+                    'scale' => $rating->scale === null ? 'three' : (string) $rating->scale,
+                    'custom' => $rating->template_version_id !== null,
                 ])
                 ->all();
         });

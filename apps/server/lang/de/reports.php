@@ -201,6 +201,18 @@ return [
         'scores' => ['good' => 'Gut', 'ok' => 'Okay', 'bad' => 'Schlecht', 'not_applicable' => 'Trifft nicht zu'],
     ],
 
+    'custom_template' => [
+        'heading' => 'Eigene Vorlage, Version :version',
+        'scale_three' => 'Drei Antworten',
+        'scale_five' => 'Fünf Sterne',
+        'answer' => 'Antwort',
+        'count' => 'Antworten',
+        'summary_three' => ':answered beantwortet; :positive gut. Eine eigene Frage, getrennt vom eingebauten Wert und nie damit verrechnet.',
+        'summary_five' => ':answered beantwortet; :positive mit vier oder fünf Sternen; Durchschnitt :average Sterne. Eine eigene Frage, getrennt vom eingebauten Wert und nie damit verrechnet.',
+        'agent' => 'Zur Hilfe: :answered von :asked Gefragten haben bewertet (:positive positiv); :not_applicable „trifft nicht zu“ und :skipped übersprungen, die als keine Bewertung zählen.',
+        'stars' => '{1} :count Stern|[0,*] :count Sterne',
+    ],
+
     'comments' => [
         'heading' => 'Was die Menschen gesagt haben',
         'empty' => 'In diesem Zeitraum hat niemand einen Kommentar hinterlassen. Das Kommentarfeld ist optional und wird meist übersprungen — eine Bewertung ohne Worte ist trotzdem eine Antwort.',

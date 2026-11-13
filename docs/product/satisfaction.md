@@ -167,6 +167,37 @@ question, and *answered* is how many gave a score. Ratings collected before the
 starter template existed stay overall feedback: no agent score is inferred for
 them.
 
+## A site's own template
+
+An account admin can write the site's own questions under **Sites → the site →
+Asking how it went → Edit your own template** (#1157).
+
+- **Draft, then publish.** The draft is a work in progress that no visitor ever
+  sees. Publishing turns the saved draft into the next numbered **version**, and
+  a version is never edited afterwards: a change in meaning is a new version. A
+  response records the exact version it was answered under, so a prompt that was
+  open while a new version was published is stored against the one the visitor
+  actually read.
+- **Publishing is not choosing.** The site's rating settings decide which
+  template is asked: one of the built-ins or the newest published version. A site
+  can switch back, or stop asking, without losing a version or an answer.
+- **What can change:** the wording of the overall, agent and comment questions in
+  English, German and Italian; the answer labels; whether the agent and comment
+  questions are asked; and the scale — three answers or five stars. English is
+  required for everything that is asked, and every other language falls back to
+  it. The agent question must contain `{name}`, and follows the same one-agent
+  rule as the starter template.
+- **What cannot:** which answers count as positive. It is fixed by the scale —
+  *good* on three answers, four and five stars on five — so a positive share means
+  the same thing on every site and in every version.
+- **Never combined.** A custom version is a different question from the built-in
+  one, so its answers never count towards the built-in figure or the per-agent
+  table. The Satisfaction tab reports each version on its own: its wording, scale,
+  distribution, positive share and, on five stars, its average. A five-star
+  average is never placed in the same figure as a good/ok/bad share.
+- **Text is plain text.** Questions and labels are stored as typed and escaped
+  wherever they are shown, in the editor, the report and the widget.
+
 ## Never a percentage nobody answered for
 
 The reports page has a **Satisfaction** tab. Its rules:

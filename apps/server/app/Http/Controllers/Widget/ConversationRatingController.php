@@ -43,7 +43,9 @@ class ConversationRatingController extends Controller
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
-            'score' => ['required', 'string', Rule::in(ConversationRating::SCORES)],
+            // Checked against the template's own scale once that is known:
+            // good/ok/bad, or 1-5 on a five-star template (#1157).
+            'score' => ['required', 'string', 'max:16'],
             'comment' => ['nullable', 'string', 'max:1000'],
             // Which close the visitor was looking at when they answered.
             'episode' => ['required', 'string', 'max:64'],
@@ -51,11 +53,11 @@ class ConversationRatingController extends Controller
             // that predates templates, which only ever asked the single
             // overall question.
             'template' => ['nullable', 'string', Rule::in(RatingTemplate::keys())],
-            'template_version' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'template_version' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
             // The handle of the agent the question named, and the answer to it.
             // A null score with a handle is "skipped", which is absent data.
             'agent' => ['nullable', 'string', 'max:64'],
-            'agent_score' => ['nullable', 'string', Rule::in(RatingTemplate::AGENT_SCORES)],
+            'agent_score' => ['nullable', 'string', 'max:16'],
         ]);
 
         $conversation = $conversations->resolve(
@@ -101,12 +103,33 @@ class ConversationRatingController extends Controller
         $template = RatingTemplate::find(
             $validated['template'] ?? RatingTemplate::OVERALL,
             (int) ($validated['template_version'] ?? 1),
+            $conversation->site,
         );
 
         if ($template === null) {
             throw ValidationException::withMessages([
                 'template' => 'That is not a question this site has asked.',
             ]);
+        }
+
+        // An answer on the template's own scale, and no other. A five-star
+        // answer must never be stored where a good/ok/bad one is read, or the
+        // reports would average two different questions together.
+        if (! in_array($validated['score'], $template->scores(), true)) {
+            throw ValidationException::withMessages([
+                'score' => 'That is not one of the answers this question offered.',
+            ]);
+        }
+
+        if (isset($validated['agent_score']) && ! in_array($validated['agent_score'], $template->agentScores(), true)) {
+            throw ValidationException::withMessages([
+                'agent_score' => 'That is not one of the answers this question offered.',
+            ]);
+        }
+
+        // A template that does not ask for a comment does not get one.
+        if ($template->isCustom() && ! $template->definition()->asksForComment()) {
+            $validated['comment'] = null;
         }
 
         [$agentId, $agentName, $agentScore] = $this->agentAnswer($conversation, $episode, $template, $validated);
@@ -132,6 +155,8 @@ class ConversationRatingController extends Controller
                 'comment' => $comment === '' ? null : $comment,
                 'template_key' => $template->key,
                 'template_version' => $template->version,
+                'template_version_id' => $template->published?->id,
+                'scale' => $template->isCustom() ? $template->scale() : null,
                 'agent_user_id' => $agentId,
                 'agent_name' => $agentName,
                 'agent_score' => $agentScore,
@@ -141,7 +166,7 @@ class ConversationRatingController extends Controller
             ]],
             ['conversation_id', 'episode_event_id'],
             [
-                'score', 'comment', 'template_key', 'template_version',
+                'score', 'comment', 'template_key', 'template_version', 'template_version_id', 'scale',
                 'agent_user_id', 'agent_name', 'agent_score', 'rated_at', 'updated_at',
             ],
         );

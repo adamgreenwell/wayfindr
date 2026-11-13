@@ -406,6 +406,12 @@ return [
                 'label' => 'Die Erfahrung und wer geholfen hat',
                 'questions' => ['Wie war Ihre Support-Erfahrung insgesamt? — gut, okay, schlecht', 'Wie war die Hilfe von [Name des Agents]? — gut, okay, schlecht, trifft nicht zu', 'Möchten Sie uns noch etwas mitteilen? — optional'],
             ],
+            'custom' => [
+                'label' => 'Eigene Vorlage',
+                'label_version' => 'Eigene Vorlage (Version :version)',
+                'none' => 'Veröffentlichen Sie eine Version Ihrer eigenen Vorlage, bevor Sie sie auswählen.',
+                'edit' => 'Eigene Vorlage bearbeiten',
+            ],
         ],
     ],
 

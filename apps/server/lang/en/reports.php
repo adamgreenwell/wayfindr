@@ -201,6 +201,18 @@ return [
         'scores' => ['good' => 'Good', 'ok' => 'Ok', 'bad' => 'Bad', 'not_applicable' => 'Not applicable'],
     ],
 
+    'custom_template' => [
+        'heading' => 'Your own template, version :version',
+        'scale_three' => 'Three answers',
+        'scale_five' => 'Five stars',
+        'answer' => 'Answer',
+        'count' => 'Answers',
+        'summary_three' => ':answered answered; :positive good. A separate question from the built-in figure, so never combined with it.',
+        'summary_five' => ':answered answered; :positive gave four or five stars; average :average stars. A separate question from the built-in figure, so never combined with it.',
+        'agent' => 'About the agent: :answered of :asked asked gave a score (:positive positive); :not_applicable not applicable and :skipped skipped, which count as no score.',
+        'stars' => '{1} :count star|[0,*] :count stars',
+    ],
+
     'comments' => [
         'heading' => 'What people said',
         'empty' => 'Nobody left a comment in this period. The comment box is optional, and most people skip it — a score with no words is still an answer.',

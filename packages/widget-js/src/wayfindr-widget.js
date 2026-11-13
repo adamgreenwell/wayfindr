@@ -1957,6 +1957,10 @@
     var ratingAgentBlock = rootEl.querySelector('.wayfindr-widget__rating-agent');
     var ratingAgentQuestion = rootEl.querySelector('.wayfindr-widget__rating-agent-question');
     var ratingSkip = rootEl.querySelector('.wayfindr-widget__rating-skip');
+    // The overall answers come first in the form, the agent's inside its own
+    // fieldset; both are rebuilt from the template's scale (#1157).
+    var ratingScores = rating.querySelector('.wayfindr-widget__rating-scores');
+    var ratingAgentScores = ratingAgentBlock.querySelector('.wayfindr-widget__rating-scores');
     // The window that owns this document, not the ambient global: a test
     // harness (and an embed inside an iframe) hands the widget a document whose
     // view is not the one this script happens to be running in.
@@ -5500,26 +5504,41 @@
       }
 
       var asksAgent = ratingAsksAgent();
+      var definition = ratingDefinition();
+      var scores = definition && Array.isArray(definition.scores) ? definition.scores : ['good', 'ok', 'bad'];
+      var asksComment = definition ? definition.comment !== null : true;
 
-      ratingIntro.textContent = ratingConfig.intro || t(ratingTemplateKey() === 'starter' ? 'rating.overall' : 'rating.intro');
-      ratingLabel.textContent = t('rating.comment');
+      syncRatingChoices(ratingScores, 'wayfindr-widget__rating-score', 'data-score', scores);
+      syncRatingChoices(ratingAgentScores, 'wayfindr-widget__rating-agent-score', 'data-agent-score', scores.concat(['not_applicable']));
+
+      // A site's own template asks its own question; the operator's intro line
+      // belongs to the built-in ones.
+      ratingIntro.textContent = definition
+        ? ratingText(definition.overall)
+        : (ratingConfig.intro || t(ratingTemplateKey() === 'starter' ? 'rating.overall' : 'rating.intro'));
+      ratingLabel.textContent = definition && definition.comment ? ratingText(definition.comment) : t('rating.comment');
+      ratingLabel.hidden = ! asksComment;
+      ratingComment.hidden = ! asksComment;
       ratingSend.textContent = t('rating.send');
       ratingSkip.textContent = t('rating.skip');
 
       // The agent's name is the one the visitor saw on their messages, and is
-      // set as text, never markup.
+      // set as text, never markup. Replaced literally, so a name that happens
+      // to contain braces is not read as another placeholder.
       ratingAgentBlock.hidden = ! asksAgent;
-      ratingAgentQuestion.textContent = asksAgent ? t('rating.agent', { name: ratingAgent.name }) : '';
+      ratingAgentQuestion.textContent = ! asksAgent
+        ? ''
+        : (definition ? ratingText(definition.agent).split('{name}').join(ratingAgent.name) : t('rating.agent', { name: ratingAgent.name }));
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-agent-score'), function (button) {
         var value = button.getAttribute('data-agent-score');
 
-        button.textContent = value === 'not_applicable' ? t('rating.notApplicable') : t('rating.' + value);
+        button.textContent = ratingChoiceLabel(value);
         button.setAttribute('aria-pressed', value === ratingAgentScore ? 'true' : 'false');
       });
 
       [].forEach.call(rating.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
-        button.textContent = t('rating.' + button.getAttribute('data-score'));
+        button.textContent = ratingChoiceLabel(button.getAttribute('data-score'));
         button.setAttribute('aria-pressed', button.getAttribute('data-score') === ratingScore ? 'true' : 'false');
       });
 
@@ -5555,21 +5574,96 @@
       return ratingConfig && ratingConfig.template ? ratingConfig.template.key : 'overall';
     }
 
+    // A site's own published template (#1157), or null for the built-ins.
+    function ratingDefinition() {
+      return ratingConfig && ratingConfig.template && ratingConfig.template.definition
+        ? ratingConfig.template.definition
+        : null;
+    }
+
     // Only when the template this widget was given asks about the agent AND
     // the server named exactly one for this close.
     function ratingAsksAgent() {
-      return ratingTemplateKey() === 'starter' && ratingAgent !== null;
+      var definition = ratingDefinition();
+      var asks = definition ? definition.agent !== null : ratingTemplateKey() === 'starter';
+
+      return asks && ratingAgent !== null;
     }
 
-    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-agent-score'), function (button) {
-      button.addEventListener('click', function () {
-        var value = button.getAttribute('data-agent-score');
+    // Site-written wording in the visitor's own language where the site wrote
+    // one, else English. Asked of the visitor's preference rather than the
+    // catalogue, which may not cover a language the site did write.
+    function ratingText(texts) {
+      if (!texts || typeof texts !== 'object') {
+        return '';
+      }
 
-        // Pressing the chosen answer again clears it: the agent question is
-        // optional, and an accidental press must not become a score.
-        ratingAgentScore = ratingAgentScore === value ? null : value;
-        renderRatingPrompt();
+      // The same order the widget's own language follows -- host page, then
+      // the visitor's browser, then the site default -- but matched against
+      // the languages the SITE wrote, which can include one the widget's
+      // catalogue does not carry.
+      var candidates = [localePreferences.requested]
+        .concat(localePreferences.navigatorLanguages || [])
+        .concat([localePreferences.siteDefault]);
+
+      for (var index = 0; index < candidates.length; index++) {
+        var language = candidates[index] ? baseLanguage(candidates[index]) : '';
+
+        if (language && typeof texts[language] === 'string' && texts[language]) {
+          return texts[language];
+        }
+      }
+
+      return typeof texts.en === 'string' ? texts.en : '';
+    }
+
+    function ratingChoiceLabel(choice) {
+      var definition = ratingDefinition();
+      var custom = definition && definition.labels ? ratingText(definition.labels[choice]) : '';
+
+      if (custom) {
+        return custom;
+      }
+
+      return choice === 'not_applicable' ? t('rating.notApplicable') : t('rating.' + choice);
+    }
+
+    // Rebuild a row of answer buttons when the scale it should offer changes.
+    function syncRatingChoices(container, className, attribute, choices) {
+      var current = [].map.call(container.querySelectorAll('.' + className), function (button) {
+        return button.getAttribute(attribute);
       });
+
+      if (current.join('|') === choices.join('|')) {
+        return;
+      }
+
+      container.textContent = '';
+      choices.forEach(function (choice) {
+        var button = rootEl.ownerDocument.createElement('button');
+
+        button.type = 'button';
+        button.className = className;
+        button.setAttribute(attribute, choice);
+        container.appendChild(button);
+      });
+    }
+
+    // Delegated, because a custom template's scale rebuilds these buttons and
+    // a listener bound to the old ones would quietly stop answering.
+    ratingAgentScores.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.wayfindr-widget__rating-agent-score') : null;
+
+      if (!button || button.disabled) {
+        return;
+      }
+
+      var value = button.getAttribute('data-agent-score');
+
+      // Pressing the chosen answer again clears it: the agent question is
+      // optional, and an accidental press must not become a score.
+      ratingAgentScore = ratingAgentScore === value ? null : value;
+      renderRatingPrompt();
     });
 
     ratingSkip.addEventListener('click', function () {
@@ -5582,11 +5676,15 @@
       rating.hidden = true;
     });
 
-    [].forEach.call(rootEl.querySelectorAll('.wayfindr-widget__rating-score'), function (button) {
-      button.addEventListener('click', function () {
-        ratingScore = button.getAttribute('data-score');
-        renderRatingPrompt();
-      });
+    ratingScores.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.wayfindr-widget__rating-score') : null;
+
+      if (!button || button.disabled) {
+        return;
+      }
+
+      ratingScore = button.getAttribute('data-score');
+      renderRatingPrompt();
     });
 
     rating.addEventListener('submit', function (event) {
@@ -5617,7 +5715,9 @@
       ratingInFlight = submittedEpisode;
       applyRatingFormState();
 
-      client.rateConversation(supportCode, ratingScore, ratingComment.value.trim(), submittedEpisode, {
+      var definitionShown = ratingDefinition();
+
+      client.rateConversation(supportCode, ratingScore, definitionShown && definitionShown.comment === null ? '' : ratingComment.value.trim(), submittedEpisode, {
         template: ratingConfig && ratingConfig.template ? ratingConfig.template : null,
         agent: ratingAsksAgent() ? ratingAgent : null,
         agentScore: ratingAsksAgent() ? ratingAgentScore : null,
@@ -6791,9 +6891,33 @@
       intro: typeof prompt.intro === 'string' && prompt.intro.trim() ? prompt.intro.trim() : null,
       // Which questions to ask. Absent from an older server: the single one.
       template: prompt.template && typeof prompt.template.key === 'string' && typeof prompt.template.version === 'number'
-        ? { key: prompt.template.key, version: prompt.template.version }
+        ? {
+          key: prompt.template.key,
+          version: prompt.template.version,
+          // A site's own template (#1157): its wording, labels and scale.
+          definition: ratingDefinitionFrom(prompt.template.definition),
+        }
         : null,
     } : null;
+  }
+
+  function ratingDefinitionFrom(value) {
+    if (!value || typeof value !== 'object' || !Array.isArray(value.scores) || value.scores.length === 0) {
+      return null;
+    }
+
+    var texts = function (map) {
+      return map && typeof map === 'object' ? map : null;
+    };
+
+    return {
+      scale: value.scale === 'five' ? 'five' : 'three',
+      scores: value.scores.filter(function (score) { return typeof score === 'string'; }),
+      overall: texts(value.overall) || {},
+      agent: texts(value.agent),
+      comment: texts(value.comment),
+      labels: texts(value.labels) || {},
+    };
   }
 
   function siteHasArticles(result) {

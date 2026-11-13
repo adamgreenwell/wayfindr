@@ -186,6 +186,13 @@ final class DashboardLanguage
         // the page around them follows the agent running the verification.
         'dashboard.sites.tester',
 
+        // A site's own rating template editor (#1157). The template's wording
+        // is authored data in the visitor's languages; the editor around it
+        // follows the agent.
+        'dashboard.sites.rating-template.edit',
+        'dashboard.sites.rating-template.update',
+        'dashboard.sites.rating-template.publish',
+
         // Site Settings and every write that renders validation or lifecycle
         // feedback back onto it. Stored visitor-facing copy remains authored
         // data; only the agent-facing controls and explanations are localized.

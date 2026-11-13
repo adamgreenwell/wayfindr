@@ -3127,6 +3127,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'reports.tabs.tickets = Tickets',
         'reports.metrics.median = Median',
         'reports.tables.agent = Agent',
+        'rating_templates.versions.version = Version',
+        'rating_templates.versions.number = Version :version',
         'sites.index.filters.options.install.live = Live',
         'sites.index.install.live = Live',
         'site_settings.common.roles.agent = Agent',
