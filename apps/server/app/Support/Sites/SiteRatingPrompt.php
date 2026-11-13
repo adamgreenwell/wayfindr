@@ -30,12 +30,12 @@ final class SiteRatingPrompt
         return new self(
             ($config['enabled'] ?? false) === true,
             $intro === '' ? null : mb_substr($intro, 0, 160),
-            RatingTemplate::current($template),
+            RatingTemplate::current($template, $site),
         );
     }
 
     /**
-     * @return array{asks: bool, intro: string|null, template: array{key: string, version: int}}
+     * @return array{asks: bool, intro: string|null, template: array<string, mixed>}
      */
     public function toPayload(): array
     {
