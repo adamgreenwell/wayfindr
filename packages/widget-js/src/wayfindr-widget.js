@@ -9007,16 +9007,18 @@
       // not a message in the transcript.
       '.wayfindr-widget__rating{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2)}',
       '.wayfindr-widget__rating-intro{margin:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
-      // Wraps, so a five-star scale keeps its labels on one line each.
+      // Answers size to their own labels (a site's custom label can be up to
+      // 40 characters): short ones share a row, a long one takes a row of
+      // its own and wraps inside the button rather than overflowing it.
       '.wayfindr-widget__rating-scores{display:flex;flex-wrap:wrap;gap:8px}',
-      '.wayfindr-widget__rating-score{flex:1 1 0;min-width:56px;white-space:nowrap;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-score{flex:1 1 auto;min-width:56px;max-width:100%;overflow-wrap:anywhere;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-agent{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}',
       '.wayfindr-widget__rating-agent-question{margin:0;padding:0;color:var(--wf-ink);font-size:13px;line-height:1.4}',
       // Four answers on a narrow phone wrap rather than squeezing a label
       // below its readable width.
       '.wayfindr-widget__rating-agent .wayfindr-widget__rating-scores{flex-wrap:wrap}',
-      '.wayfindr-widget__rating-agent-score{flex:1 1 0;min-width:72px;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1.2 var(--wf-font-sans)}',
+      '.wayfindr-widget__rating-agent-score{flex:1 1 auto;min-width:72px;max-width:100%;overflow-wrap:anywhere;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 8px;font:700 13px/1.2 var(--wf-font-sans)}',
       '.wayfindr-widget__rating-agent-score:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__rating-agent-score[aria-pressed="true"]{border-color:var(--wf-brand);background:color-mix(in srgb, var(--wf-brand) 12%, var(--wf-surface));color:var(--wf-brand);box-shadow:inset 0 0 0 1px var(--wf-brand)}',
       // The chosen answer has to be visible without colour alone carrying it,
