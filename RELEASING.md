@@ -96,8 +96,11 @@ if [ -z "$LAST_TAG" ]; then
     exit 1
 fi
 
+# `\.?` because some squash subjects end in a full stop -- `... (#1196).` --
+# and an anchored `\)$` drops them without a word: the 1.7.0 pass missed two
+# PRs that way before this was widened.
 git log --oneline "$LAST_TAG"..main \
-  | grep -oE '\(#[0-9]+\)$' | grep -oE '[0-9]+' | sort -n -u > /tmp/squashed.txt
+  | grep -oE '\(#[0-9]+\)\.?$' | grep -oE '[0-9]+' | sort -n -u > /tmp/squashed.txt
 git log --merges --format='%s' "$LAST_TAG"..main \
   | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' | sort -n -u > /tmp/merged.txt
 sort -n -u /tmp/squashed.txt /tmp/merged.txt   # the set to check
