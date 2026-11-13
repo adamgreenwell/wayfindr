@@ -9122,7 +9122,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__close{min-width:44px;min-height:44px}.wayfindr-widget__attach-chip-remove{min-width:44px;min-height:44px;flex-shrink:0}.wayfindr-widget__intake input,.wayfindr-widget__help-input,.wayfindr-widget__intake-submit,.wayfindr-widget__rating-score,.wayfindr-widget__rating-send,.wayfindr-widget__send,.wayfindr-widget__attach,.wayfindr-widget__refresh{min-height:44px}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__close{min-width:44px;min-height:44px}.wayfindr-widget__attach-chip-remove{min-width:44px;min-height:44px;flex-shrink:0}.wayfindr-widget__intake input,.wayfindr-widget__help-input,.wayfindr-widget__intake-submit,.wayfindr-widget__rating-score,.wayfindr-widget__rating-agent-score,.wayfindr-widget__rating-skip,.wayfindr-widget__rating-send,.wayfindr-widget__send,.wayfindr-widget__attach,.wayfindr-widget__refresh{min-height:44px}}',
     ].join('');
 
     doc.head.appendChild(style);
