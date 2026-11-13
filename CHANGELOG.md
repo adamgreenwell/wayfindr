@@ -30,6 +30,98 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-13
+
+**No operator action required.** Every migration is additive and runs through
+the normal migration path, and new background work uses the existing default
+queue and scheduler. Conversation Assist stays on demand ("Manual") after the
+upgrade: automatic preparation starts only once an account administrator and
+each site save it again under the new disclosure. AI output is never sent to a
+visitor; an agent reviews every insertion and sends it with the ordinary Send.
+Forge sites that deploy in place benefit from the shared-storage fix only after
+re-pasting `deploy/forge/standard-deploy.sh` (see *Fixed*); nothing breaks
+without it.
+
+### Added
+
+- **Conversation Assist rail.** Catch up, Suggested reply and Sources sit in a
+  collapsible rail beside the transcript. When the composer already holds text,
+  Assist shows the original and the proposal side by side; Apply rechecks
+  authorization before replacing anything, Cancel keeps the draft, and Assist
+  never sends.
+- **Opt-in automatic preparation.** Each account and site chooses Off, Manual or
+  Prepare. With Prepare, opening a conversation prepares the summary, reply and
+  knowledge suggestions in the background; the ticket suggestion waits for the
+  conversion workspace. Prepare applies only where both the account and the site
+  approved the current policy revision, so choices saved before this release
+  resolve to Manual. Reopening reuses existing results instead of spending usage
+  again.
+- **Replies grounded in published articles.** Where an account and its site both
+  enable Relevant articles, reply drafts may draw on passages from the account's
+  published articles — at most 50 candidates, 900 characters per passage and
+  3,000 in total — and cite them, with the sources open in a read-only inspector.
+  Missing or conflicting guidance produces a request for clarification; an
+  invalid citation withholds the whole draft. Off keeps transcript-only drafts.
+  Articles belong to the account, not to individual sites.
+- **Private draft refinement.** An agent can ask Assist to clarify, shorten,
+  change the tone of (calm, friendly, professional) or translate (English,
+  German, Italian) their own unsent draft. Only that explicit request sends the
+  draft, bounded to 4,000 characters and scrubbed first; automatic preparation
+  never does. A proposal expires after 15 minutes and the scheduler deletes it.
+- **Assist feedback and reporting.** Agents can mark a suggestion viewed, used or
+  rejected and rate its usefulness and how much it needed correcting. Members
+  who can view the audit log get an Assist report over 1–31 days, filterable by
+  task. Prompts, suggestions and draft text are not stored for measurement.
+- **Optional AI retention.** `WAYFINDR_AI_FEEDBACK_RETENTION_DAYS`,
+  `WAYFINDR_AI_AUDIT_RETENTION_DAYS` and `WAYFINDR_AI_USAGE_RETENTION_DAYS` default
+  to 0 (keep everything); when set, `wayfindr:prune-assist-observability`
+  (`--dry-run` available) prunes hourly.
+- **Agent feedback in ratings.** A site can ask the *starter* rating template:
+  how the overall support experience went and, separately, how the help from the
+  one agent who replied in that closed stretch of work was (good, ok, bad or not
+  applicable), plus a comment. The agent is named only when exactly one person
+  helped; the name recorded is the one the visitor was shown. Visitors can skip
+  the survey. The Satisfaction report shows per-agent results beside the
+  unchanged overall figure, and skipped or not-applicable answers are never
+  scores. See `docs/product/satisfaction.md`.
+- **A site's own rating questions.** An account admin can write a site's rating
+  template — wording in English, German and Italian, answer labels, which
+  optional questions are asked, and a three-answer or five-star scale — as a
+  draft, and publish it as an immutable, numbered version. Rating settings choose
+  between the built-in questions and the newest published version. Each version
+  is reported on its own and never combined with the built-in figure; which
+  answers count as positive is fixed by the scale.
+- **One contextual sidebar.** In the account, the operator console or a single
+  site, the rail shows that surface's sections with a way back up one level,
+  replacing the second context column. Sites gain Settings, Status, Tester, Live
+  visitors and Proactive messages entries.
+
+### Changed
+
+- Dashboard type now uses seven named size steps; section headings and
+  subheadings are visibly distinct.
+- Visitor export includes Assist preparation receipts and grounded reply drafts
+  (the draft text, not the server-only grounding metadata), and erasure also
+  removes preparation receipts and draft refinements. The new rating columns are
+  exported with the agent's identity replaced by a role.
+- If the application key is lost, the recovery procedure in
+  `docs/self-hosting/backup-restore.md` also clears stored draft refinements.
+- `guzzlehttp/guzzle` is held at `^7`: the bounded AI transport depends on its
+  internals, so the next major will be ported deliberately.
+
+### Fixed
+
+- Agents and install defaults stored as a backward-compatible time-zone alias
+  (`US/Eastern`) kept their clock on hosts whose PHP uses system tzdata without
+  Ubuntu's `tzdata-legacy` package; such aliases now map to their canonical zone
+  instead of falling back to the install default.
+- `deploy/forge/standard-deploy.sh` keeps a shared `apps/server/storage` link
+  across an in-place pull. Previously a change to a tracked storage placeholder
+  replaced the link with an empty directory, and the upgrade guard then refused
+  with a misleading "no recorded release". Re-paste the script into Forge to
+  pick this up.
+- `wayfindr:bootstrap-owner` no longer refuses its own claim file on macOS.
+
 ## [1.6.0] - 2026-10-16
 
 **No operator action required.** Existing installation-level manual copilot
