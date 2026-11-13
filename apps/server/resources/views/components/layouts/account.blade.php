@@ -85,31 +85,27 @@
     $accountCrumb = collect($accountSectionGroups)->flatMap(fn (array $group): array => $group['sections'])->firstWhere('active')['label'] ?? null;
 @endphp
 
-<x-layouts.app :title="$title" :title-lang="$titleLang" :agent="$accountAgent" :account="$accountAccount" :crumb="$accountCrumb">
-    <div class="wf-context">
-        {{-- One contextual sidebar in place of the account overview's jump
-             list, its directory of management pages, and the three different
-             "back to account" links those pages used to get out again. The
-             rail says you are in Account; this says where in it. --}}
-        <nav class="wf-context-nav" aria-label="{{ __('account_shell.sections_label') }}">
-            @foreach ($accountSectionGroups as $group)
-                <p class="wf-context-heading">{{ $group['label'] }}</p>
-
-                @foreach ($group['sections'] as $section)
-                    <a
-                        class="wf-context-link"
-                        href="{{ $section['href'] }}"
-                        @if ($section['active']) aria-current="page" @endif
-                    >{{ $section['label'] }}</a>
-                @endforeach
-            @endforeach
-        </nav>
-
-        {{-- No flash region here, unlike the operator layout: account pages
-             already render their own status messages, several with runtime
-             parameters of their own. --}}
-        <div class="wf-context-body">
-            {{ $slot }}
-        </div>
+<x-layouts.app
+    :title="$title"
+    :title-lang="$titleLang"
+    :agent="$accountAgent"
+    :account="$accountAccount"
+    :crumb="$accountCrumb"
+    :context="[
+        'label' => __('account_shell.sections_label'),
+        'title' => __('nav.items.account'),
+        'icon' => 'account',
+        'back' => ['href' => route('dashboard'), 'label' => __('nav.items.dashboard')],
+        'groups' => $accountSectionGroups,
+    ]"
+>
+    {{-- The account's sections live in the rail now, in place of the
+         product's. They replaced the overview's jump list, its directory of
+         management pages, and the three different "back to account" links
+         those pages used to get out again. No flash region here, unlike the
+         operator layout: account pages already render their own status
+         messages, several with runtime parameters of their own. --}}
+    <div class="wf-context-body">
+        {{ $slot }}
     </div>
 </x-layouts.app>
